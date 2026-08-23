@@ -209,6 +209,28 @@ img{display:block}
   color:var(--ink3);font-variant-numeric:tabular-nums}
 .editor .coords em{font-style:normal;margin-left:auto;font-variant-numeric:normal}
 
+/* ---------------- places found on the map ---------------- */
+/* Deliberately unlike a real pin: these are suggestions, not part of the trip
+   until you pick one. */
+.mfind{position:absolute;left:0;top:0;transform:translate(-50%,-50%);display:flex;align-items:center;
+  gap:7px;max-width:210px;padding:4px 10px 4px 4px;border-radius:99px;background:var(--bg1);
+  border:1.5px dashed var(--line2);box-shadow:0 3px 10px rgba(0,0,0,.35);cursor:pointer;z-index:4}
+.mfind:hover{border-color:var(--hot);border-style:solid;z-index:10}
+.mfind img{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;background:var(--bg3)}
+.mfind span{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.editor .epic{position:relative;flex:none}
+.editor .epic img{width:100%;height:132px;object-fit:cover;background:var(--bg3)}
+.editor .epic button{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;
+  background:rgba(6,9,14,.65);color:#fff;display:grid;place-items:center;backdrop-filter:blur(6px)}
+.editor .epic a{position:absolute;left:8px;bottom:8px;font-size:10.5px;font-weight:700;color:#fff;
+  background:rgba(6,9,14,.6);padding:3px 8px;border-radius:99px;text-decoration:none}
+.editor .epic a:hover{background:rgba(6,9,14,.85)}
+.editor .lookup{display:flex;align-items:center;justify-content:center;gap:7px;height:34px;
+  border-radius:9px;border:1px dashed var(--line2);font-size:12.5px;font-weight:700;color:var(--ink2)}
+.editor .lookup:hover{border-color:var(--hot);border-style:solid;color:var(--ink)}
+.editor .lookup:disabled{opacity:.5;cursor:default}
+
 /* ---------------- boot ---------------- */
 .boot{height:100%;display:grid;place-items:center;background:var(--bg)}
 .bootIn.wide{max-width:420px}

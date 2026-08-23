@@ -9,6 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // this the map builds, loads its style and then silently never requests a tile.
 setWorkerUrl(maplibreWorkerUrl)
 import { AHEAD, pic, picFallback } from './data'
+import { findPlaces, describePlace, radiusForView, imageForPage } from './places'
 import {
   hasBackend, supabase, loadTrip, createStop, updateStop, deleteStop,
   addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
@@ -289,7 +290,7 @@ function useGliding(target, ms = 800) {
 const MapCanvas = memo(function MapCanvas({
   view, onView, theme, tint, interactive = true, route = [], stops = [], photos = [], live = null,
   selectedStop, onStop, onPhoto, onLive, labels = false, highlight = null,
-  editing = false, onMapClick, onStopMove, liveAvatar, children,
+  editing = false, onMapClick, onStopMove, liveAvatar, places = [], onPickPlace, children,
 }) {
   const holder = useRef(null)
   const [map, setMap] = useState(null)
@@ -503,6 +504,16 @@ const MapCanvas = memo(function MapCanvas({
         </MapMarker>
       ))}
 
+      {map && places.map(pl => (
+        <MapMarker key={pl.id} map={map} lng={pl.lng} lat={pl.lat}>
+          <button className="mfind" title={pl.kind || pl.name}
+                  onClick={e => { e.stopPropagation(); onPickPlace?.(pl) }}>
+            {pl.image && <img src={pl.image} alt="" />}
+            <span>{pl.name}</span>
+          </button>
+        </MapMarker>
+      ))}
+
       {map && livePt && (
         <MapMarker map={map} lng={livePt[0]} lat={livePt[1]}>
           <div className="mme" onClick={e => { e.stopPropagation(); if (!moved.current) onLive?.() }}
@@ -611,7 +622,9 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
             <h2>{photo.caption}</h2>
             <p className="loc">
               <Icon n="pin" s={14} c="rgba(255,255,255,.5)" />
-              {stop ? stop.name + ' · ' : ''}{photo.lat.toFixed(4)} N, {photo.lng.toFixed(4)} E
+              {stop ? stop.name : ''}
+              {photo.lat != null && photo.lng != null
+                ? `${stop ? ' · ' : ''}${photo.lat.toFixed(4)} N, ${photo.lng.toFixed(4)} E` : ''}
             </p>
           </div>
           <div className="ct">{index + 1} of {list.length} · uploaded from the trip</div>
@@ -810,7 +823,7 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
         <Item>{km.toFixed(1)} km walked</Item>
         <Item>{doneCount} of {stopCount} stops</Item>
         <Item>{photoCount} photos</Item>
-        {nowStop && <Item hot>NOW AT {nowStop.name.toUpperCase()}</Item>}
+        {nowStop && <Item hot>NOW AT {(nowStop.name || '').toUpperCase()}</Item>}
         {nextStop && <Item>next: {nextStop.name}</Item>}
       </div>
       <div className="tright">
@@ -856,7 +869,8 @@ const HeroCard = memo(function HeroCard({ stop, photos, onClose, openViewer, toa
       <Img className="hero" item={stop} w={800} h={400} eager />
       <button className="x" onClick={onClose}><Icon n="x" s={15} c="#fff" w={2} /></button>
       <div className="bd">
-        <div className="ey"><span>{label}</span><em>{stop.day} · {stop.time}</em></div>
+        <div className="ey"><span>{label}</span>
+          <em>{[stop.day, stop.time].filter(Boolean).join(' · ')}</em></div>
         <h2>{stop.name}</h2>
         <p>{stop.note}</p>
         {here.length > 0 && (
@@ -886,7 +900,9 @@ const HeroCard = memo(function HeroCard({ stop, photos, onClose, openViewer, toa
   )
 })
 
-const ALL_DAYS = ' all'
+// A sentinel for the day filter. A plain string, not a control character:
+// a literal NUL in the source makes grep and diff treat the file as binary.
+const ALL_DAYS = 'all-days'
 
 const Filmstrip = memo(function Filmstrip({ stops, photos, byName, selected, onSelect, day, setDay,
                                             days, openViewer, query, setQuery }) {
@@ -926,8 +942,10 @@ const Filmstrip = memo(function Filmstrip({ stops, photos, byName, selected, onS
               </div>
               <div className="t">
                 <b>{s.name}</b>
-                <span>{s.day.startsWith('Sat') ? s.time : s.day + ' ' + s.time.split(' ')[0]}
-                  {here.length ? ` · ${here.length} photo${here.length === 1 ? '' : 's'}` : ' · planned'}</span>
+                {/* A stop added from the map may have no day or time yet, and the
+                    old hardcoded "Sat" special case crashed on the first one. */}
+                <span>{[s.day, s.time].filter(Boolean).join(' · ') || 'No time set'}
+                  {here.length ? ` · ${here.length} photo${here.length === 1 ? '' : 's'}` : ''}</span>
               </div>
             </div>
           )
@@ -1354,7 +1372,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
 const STOP_ICONS = ['pin', 'plane', 'bed', 'boat', 'museum', 'food', 'walk', 'camera']
 const STOP_STATES = [['planned', 'Planned'], ['next', 'Up next'], ['now', 'Now'], ['done', 'Visited']]
 
-function StopEditor({ draft, days, onField, onSave, onDelete, onMove, onClose, busy }) {
+function StopEditor({ draft, days, onField, onSave, onDelete, onMove, onLookUp, onClose, busy }) {
   const isNew = !draft.id
   return (
     <div className="editor">
@@ -1362,6 +1380,18 @@ function StopEditor({ draft, days, onField, onSave, onDelete, onMove, onClose, b
         <b>{isNew ? 'New stop' : 'Edit stop'}</b>
         <button onClick={onClose} title="Close"><Icon n="x" s={15} w={2} /></button>
       </div>
+
+      {draft.src && (
+        <div className="epic">
+          <img src={draft.src} alt="" />
+          <button title="Remove this picture" onClick={() => { onField('src', null); onField('sourceUrl', null) }}>
+            <Icon n="x" s={13} w={2} />
+          </button>
+          {draft.sourceUrl && (
+            <a href={draft.sourceUrl} target="_blank" rel="noopener noreferrer">Wikipedia</a>
+          )}
+        </div>
+      )}
 
       <div className="eb">
         <label className="f">
@@ -1425,6 +1455,11 @@ function StopEditor({ draft, days, onField, onSave, onDelete, onMove, onClose, b
           {draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}
           <em>{isNew ? 'click the map to move it' : 'drag the pin to move it'}</em>
         </p>
+
+        <button className="lookup" onClick={onLookUp} disabled={busy}>
+          <Icon n="search" s={14} />
+          Fill in from Wikipedia
+        </button>
       </div>
 
       <div className="ef">
@@ -1518,6 +1553,8 @@ function TripApp({ data, session, onReload }) {
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
   const [routeDraft, setRouteDraft] = useState(null)   // non-null while editing the line
+  const [places, setPlaces] = useState([])             // candidates from a place search
+  const [finding, setFinding] = useState(false)
 
   const { tripId, canEdit } = data
   const [trip, setTrip] = useState(data.trip)
@@ -1740,14 +1777,82 @@ function TripApp({ data, session, onReload }) {
   }, [])
 
   // Clicking bare map while editing drops a new stop there.
+  // The day filter's "all" is a sentinel, not a day — never write it to a stop.
+  const dayForNewStop = day === ALL_DAYS ? (days[0] || '') : (day || '')
+
   const onMapClick = useCallback(lngLat => {
     if (routeDraft) { setRouteDraft(r => [...r, lngLat]); return }
     setDraft(d => (d && !d.id)
       ? { ...d, lng: lngLat[0], lat: lngLat[1] }            // reposition the pending one
-      : { name: '', icon: 'pin', status: 'planned', day: day || '',
+      : { name: '', icon: 'pin', status: 'planned', day: dayForNewStop,
           lng: lngLat[0], lat: lngLat[1] })
     setSelected(null)
-  }, [day, routeDraft])
+  }, [dayForNewStop, routeDraft])
+
+  /* ---- places ------------------------------------------------------------
+     Search what is currently on screen, drop the results as candidates, and let
+     a click turn one into a stop with its name, description and photograph
+     already filled in. */
+  const searchPlaces = useCallback(async () => {
+    if (finding) return
+    setFinding(true)
+    try {
+      const v = viewRef.current
+      const found = await findPlaces({
+        lng: v.center[0], lat: v.center[1],
+        radius: radiusForView(v.zoom, v.center[1], window.innerWidth),
+      })
+      const taken = new Set(stops.map(x => (x.name || '').toLowerCase()))
+      const fresh = found.filter(pl => !taken.has(pl.name.toLowerCase()))
+      setPlaces(fresh)
+      toast(fresh.length ? `Found ${fresh.length} place${fresh.length === 1 ? '' : 's'} here`
+                         : 'Nothing new found here — try zooming out')
+    } catch (e) {
+      toast(e.message || 'Could not search for places')
+    } finally {
+      setFinding(false)
+    }
+  }, [finding, stops, toast])
+
+  const pickPlace = useCallback(pl => {
+    setPlaces(list => list.filter(x => x.id !== pl.id))
+    setDraft({
+      name: pl.name, kind: pl.kind || '', icon: pl.icon || 'pin', status: 'planned',
+      day: dayForNewStop, note: pl.note || '', lng: pl.lng, lat: pl.lat,
+      src: pl.image || null, sourceUrl: pl.source || null,
+    })
+    setSelected(null)
+
+    // No lead photograph — go looking in the article body, and drop it in if the
+    // draft is still the same one by the time it arrives.
+    if (!pl.image && pl.pageTitle) {
+      imageForPage(pl.pageTitle)
+        .then(url => { if (url) setDraft(d => (d && !d.id && d.name === pl.name && !d.src ? { ...d, src: url } : d)) })
+        .catch(() => {})
+    }
+  }, [dayForNewStop])
+
+  // Fill in a stop you placed by hand from whatever is at those coordinates.
+  const lookUpDraft = useCallback(async () => {
+    if (!draft) return
+    try {
+      const pl = await describePlace({ lng: draft.lng, lat: draft.lat, name: draft.name })
+      if (!pl) { toast('Nothing found at that spot'); return }
+      const image = pl.image || (pl.pageTitle ? await imageForPage(pl.pageTitle).catch(() => null) : null)
+      setDraft(d => ({
+        ...d,
+        name: (d.name || '').trim() || pl.name,
+        kind: d.kind || pl.kind || '',
+        icon: d.icon && d.icon !== 'pin' ? d.icon : pl.icon,
+        note: (d.note || '').trim() || pl.note || '',
+        src: d.src || image || null,
+        sourceUrl: d.sourceUrl || pl.source || null,
+      }))
+      toast('Filled in from ' + pl.name)
+    } catch (e) {
+      toast(e.message || 'Could not look that up')
+    }
+  }, [draft, toast])
 
   const saveRoute = useCallback(async () => {
     if (!routeDraft) return
@@ -1793,7 +1898,8 @@ function TripApp({ data, session, onReload }) {
         const saved = await updateStop(tripId, draft.id, {
           name: draft.name, kind: draft.kind, icon: draft.icon, day: draft.day,
           time: draft.time, status: draft.status, note: draft.note,
-          lng: draft.lng, lat: draft.lat,
+          lng: draft.lng, lat: draft.lat, src: draft.src || null,
+          sourceUrl: draft.sourceUrl || null,
         })
         setStops(list => list.map(s => (s.id === draft.id ? { ...s, ...saved } : s)))
         toast('Stop saved')
@@ -1872,11 +1978,13 @@ function TripApp({ data, session, onReload }) {
           route={routeDraft || track} stops={stops} photos={photos} live={live} selectedStop={selected}
           labels={view.zoom > 13} onStop={pickStop}
           onPhoto={openViewer} onLive={onLive} liveAvatar={family[0]?.avatar}
-          editing={editing} onMapClick={onMapClick} onStopMove={onStopMove} />
+          editing={editing} onMapClick={onMapClick} onStopMove={onStopMove}
+          places={editing && !routeDraft ? places : []} onPickPlace={pickPlace} />
 
         {editing && draft && (
           <StopEditor draft={draft} days={days} onField={onDraftField}
                       onSave={saveDraft} onDelete={removeDraft} onMove={moveStop}
+                      onLookUp={lookUpDraft}
                       onClose={() => setDraft(null)} busy={saving} />
         )}
 
@@ -1895,6 +2003,12 @@ function TripApp({ data, session, onReload }) {
             ) : (
               <>
                 <span>Click the map to add a stop, or a pin to change one. Drag pins to move them.</span>
+                <button onClick={searchPlaces} disabled={finding}>
+                  {finding ? 'Searching…' : 'Find places'}
+                </button>
+                {places.length > 0 && (
+                  <button onClick={() => setPlaces([])}>Hide {places.length}</button>
+                )}
                 <button onClick={() => setRouteDraft(route.slice())}>Edit route</button>
               </>
             )}

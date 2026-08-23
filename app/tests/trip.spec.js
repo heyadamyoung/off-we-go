@@ -219,3 +219,35 @@ test('the roster lists people and takes an invite', async ({ page }) => {
   await page.locator('.rperson.pend .rm').click()
   await expect(page.locator('.rperson')).toHaveCount(before)
 })
+
+test('finding a place fills in its name, description and picture', async ({ page }) => {
+  await open(page)
+  await page.locator('.fdays button').first().click()
+  await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
+  await page.waitForTimeout(1800)
+
+  await page.locator('.tbtn.ghost[title*="Edit"]').click()
+  await page.getByRole('button', { name: 'Find places' }).click()
+  await expect(page.locator('.mfind').first()).toBeVisible({ timeout: 20_000 })
+
+  // Real destinations, not the streets and neighbourhoods geosearch also returns.
+  const names = await page.locator('.mfind span').allTextContents()
+  expect(names.length).toBeGreaterThan(2)
+  expect(names.join(' ')).not.toMatch(/straat|neighbourhood|district/i)
+
+  const before = await page.locator('.mstop').count()
+  await page.locator('.mfind').first().click()
+  await expect(page.locator('.editor')).toBeVisible()
+
+  await expect(page.locator('.editor .f input').first()).not.toHaveValue('')
+  await expect(page.locator('.editor textarea')).not.toHaveValue('')
+  await expect(page.locator('.editor .epic img')).toBeVisible({ timeout: 15_000 })
+  // the day filter's "all" sentinel must never land in a real field
+  await expect(page.locator('.editor .frow .f input').first()).not.toHaveValue(/all-days/)
+
+  await page.locator('.editor .btn.pri').click()
+  await expect(page.locator('.mstop')).toHaveCount(before + 1)
+  // a stop with no time used to crash the filmstrip on render
+  await expect(page.locator('.ticker')).toBeVisible()
+  await expect(page.locator('.fcard').first()).toBeVisible()
+})

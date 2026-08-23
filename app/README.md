@@ -48,6 +48,7 @@ pnpm dev         # http://localhost:5173
 | People | Invite by email, choose view or edit, cancel a pending invite |
 | Comments | Post against your own account; everyone on the trip sees them; delete your own |
 | Editing | Click the map to add a stop, drag pins to move them, reorder, retitle, redraw the walked route |
+| Find places | Search what is on screen and drop in a real place — name, description and photograph already filled in |
 | Photos | Change a caption, move a photo to another stop, delete it |
 | Live updates | Changes made by one person appear for everyone else without a refresh |
 
@@ -98,6 +99,34 @@ people table to keep in step.
 
 Photos live in a **private** bucket, fetched with short-lived signed URLs, since there are
 no anonymous viewers to serve.
+
+## Where the place details come from
+
+"Find places" in edit mode searches Wikipedia's geosearch for whatever is on screen and
+offers each result as a candidate on the map. Picking one creates a stop with its name,
+its description and a photograph already in place, so building an itinerary is mostly
+clicking rather than typing. There is also **Fill in from Wikipedia** in the stop editor
+for a stop you placed by hand.
+
+It needs no API key and one request per search — `generator=geosearch` feeds the found
+pages straight into `prop=extracts|pageimages`, so a dozen places cost a single round
+trip. Three things in `places.js` are doing the real work, and all three exist because
+the raw results were unusable without them:
+
+* **Streets and neighbourhoods are dropped.** Geosearch returns every geotagged article,
+  which in a city centre is mostly administrative areas — accurate, useless.
+* **Locator maps, flags and logos are rejected as photographs.** Matched against the file
+  name with separators either side, never the whole url: `map` is a substring of
+  *Amsterdam*, which silently stripped the photo off half the results in a Dutch city.
+* **Destinations sort above everything else**, then by distance.
+
+Some articles genuinely lead with a logo — the Van Gogh Museum does. For those the first
+usable image in the article body is used instead, fetched only when you actually add that
+place. It is not always the building; a museum often yields its most famous work, which
+is a fair hero for a trip card and replaceable by one of your own photos.
+
+Content is CC BY-SA and images carry their own licences, so every stop keeps the page it
+came from and the editor links back to it.
 
 ## Tests
 

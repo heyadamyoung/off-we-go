@@ -84,7 +84,7 @@ export async function loadTrip(session) {
     .from('trips')
     .select(`id, slug, title, crew, dates, day_count,
              trip_members (user_id, role, display_name, avatar_url),
-             stops (id, name, kind, icon, day, time, lng, lat, status, note, seq),
+             stops (id, name, kind, icon, day, time, lng, lat, status, note, image_url, source_url, seq),
              photos (id, stop_id, lng, lat, caption, taken_by, taken_at, storage_path, external_url, seq),
              route_points (lng, lat, seq),
              comments (id, photo_id, user_id, body, created_at),
@@ -123,7 +123,12 @@ export async function loadTrip(session) {
     source: 'supabase',
     tripId: t.id,
     trip: { id: t.id, slug: t.slug, title: t.title, crew: t.crew, dates: t.dates, dayCount: t.day_count },
-    stops: (t.stops || []).map((s, i) => ({ ...s, id: String(s.id), seq: i })),
+    stops: (t.stops || []).map((s, i) => ({
+      ...s, id: String(s.id), seq: i,
+      // `src` is what the image component looks for, so a stop that came from a
+      // place lookup shows its real photograph instead of a random placeholder.
+      src: s.image_url || null, sourceUrl: s.source_url || null,
+    })),
     photos,
     route: (t.route_points || []).sort((a, b) => a.seq - b.seq).map(r => [r.lng, r.lat]),
     family,
@@ -149,10 +154,12 @@ const toRow = (tripId, s) => ({
   trip_id: tripId, name: s.name, kind: s.kind || null, icon: s.icon || 'pin',
   day: s.day || null, time: s.time || null, lng: s.lng, lat: s.lat,
   status: s.status || 'planned', note: s.note || null, seq: s.seq ?? 0,
+  image_url: s.src || null, source_url: s.sourceUrl || null,
 })
 const fromRow = r => ({
   id: String(r.id), name: r.name, kind: r.kind, icon: r.icon, day: r.day,
   time: r.time, lng: r.lng, lat: r.lat, status: r.status, note: r.note, seq: r.seq,
+  src: r.image_url || null, sourceUrl: r.source_url || null,
 })
 const isSample = tripId => tripId === 'sample' || !hasBackend
 
@@ -173,7 +180,11 @@ export async function updateStop(tripId, id, fields) {
     if (s) Object.assign(s, fields)
     return s
   }
-  const { data, error } = await supabase.from('stops').update(fields).eq('id', id).select().single()
+  const patch = {}
+  for (const [k, v] of Object.entries(fields)) {
+    patch[{ src: 'image_url', sourceUrl: 'source_url' }[k] || k] = v
+  }
+  const { data, error } = await supabase.from('stops').update(patch).eq('id', id).select().single()
   if (error) throw error
   return fromRow(data)
 }

@@ -61,6 +61,11 @@ create table if not exists stops (
   lat        double precision not null,
   status     text default 'planned' check (status in ('done','now','next','planned')),
   note       text,
+  -- A picture and the page it came from, when a stop was created from a place
+  -- lookup. Kept as a url rather than copied into storage so the licence and
+  -- attribution stay with the source.
+  image_url  text,
+  source_url text,
   seq        int not null default 0,
   created_at timestamptz not null default now()
 );
@@ -114,6 +119,8 @@ create index if not exists comments_photo_idx    on comments (photo_id, created_
 create index if not exists likes_photo_idx       on photo_likes (photo_id);
 
 -- Migration from the earlier link-based version -----------------------------
+alter table stops        add column if not exists image_url  text;
+alter table stops        add column if not exists source_url text;
 alter table trip_members add column if not exists display_name text;
 alter table trip_members add column if not exists avatar_url   text;
 alter table trip_members add column if not exists joined_at    timestamptz not null default now();
