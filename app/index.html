@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#08090c" />
+    <title>Wayfare — Sample Family in Amsterdam</title>
+
+    <!-- Paint the shell immediately: no white flash while the CSS bundle arrives. -->
+    <style>
+      html,body,#root{height:100%;margin:0;background:#0a0c10}
+      body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#eef1f6}
+      @media (prefers-color-scheme: light){html,body,#root{background:#eef1f5}body{color:#101620}}
+    </style>
+
+    <!-- Map tiles are the LCP element, and the handshake to this CDN measured ~210ms.
+         Preconnect only: which tiles are wanted depends on theme, viewport and DPR,
+         so a hardcoded preload is as likely to waste a request as to save one. -->
+    <link rel="preconnect" href="https://basemaps.cartocdn.com" />
+
+    <!-- Photo + avatar origins: loremflickr answers with a 302, so the handshake cost is paid twice. -->
+    <link rel="preconnect" href="https://loremflickr.com" />
+    <link rel="dns-prefetch" href="https://randomuser.me" />
+    <link rel="dns-prefetch" href="https://picsum.photos" />
+
+    <!--
+      One variable font file (wght@400..800) instead of five static weights, loaded
+      off the critical path. `media=print` keeps it non-render-blocking; onload promotes it.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap"
+          media="print" onload="this.media='all';this.onload=null" />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" />
+    </noscript>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
