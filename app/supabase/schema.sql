@@ -263,7 +263,33 @@ on conflict (id) do update set public = false;
 drop policy if exists "members read photos"   on storage.objects;
 drop policy if exists "public read photos"    on storage.objects;
 drop policy if exists "members upload photos" on storage.objects;
+drop policy if exists "members change photos" on storage.objects;
+drop policy if exists "members remove photos" on storage.objects;
 create policy "members read photos" on storage.objects for select to authenticated
   using (bucket_id = 'trip-photos');
 create policy "members upload photos" on storage.objects for insert to authenticated
   with check (bucket_id = 'trip-photos');
+create policy "members change photos" on storage.objects for update to authenticated
+  using (bucket_id = 'trip-photos') with check (bucket_id = 'trip-photos');
+create policy "members remove photos" on storage.objects for delete to authenticated
+  using (bucket_id = 'trip-photos');
+
+-- ---------------------------------------------------------------------------
+-- Realtime
+--
+-- Added here rather than left as a dashboard checkbox, so a fresh project has
+-- live updates working the moment the schema is applied. Two people editing the
+-- itinerary see each other's changes without refreshing.
+-- ---------------------------------------------------------------------------
+do $$
+declare t text;
+begin
+  foreach t in array array['stops','photos','route_points','comments','photo_likes','trip_members'] loop
+    begin
+      execute format('alter publication supabase_realtime add table %I', t);
+    exception
+      when duplicate_object then null;   -- already published
+      when undefined_object then null;   -- publication absent on self-hosted
+    end;
+  end loop;
+end $$;

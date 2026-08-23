@@ -59,7 +59,7 @@ const sampleResult = () => {
   const t = sampleTrip()
   return {
     trip: t.trip,
-    stops: t.stops.map(x => ({ ...x })),
+    stops: t.stops.map((x, i) => ({ ...x, seq: i })),
     photos: t.photos.map(x => ({ ...x })),
     route: t.route.map(x => [...x]),
     family: t.family.map(x => ({ ...x })),
@@ -90,6 +90,7 @@ export async function loadTrip(session) {
              comments (id, photo_id, user_id, body, created_at),
              photo_likes (photo_id, user_id)`)
     .order('seq', { referencedTable: 'stops' })
+    .order('created_at', { referencedTable: 'stops' })
   if (wanted) q = q.eq('slug', wanted)
 
   const { data: rows, error } = await q.limit(1)
@@ -122,7 +123,7 @@ export async function loadTrip(session) {
     source: 'supabase',
     tripId: t.id,
     trip: { id: t.id, slug: t.slug, title: t.title, crew: t.crew, dates: t.dates, dayCount: t.day_count },
-    stops: (t.stops || []).map(s => ({ ...s, id: String(s.id) })),
+    stops: (t.stops || []).map((s, i) => ({ ...s, id: String(s.id), seq: i })),
     photos,
     route: (t.route_points || []).sort((a, b) => a.seq - b.seq).map(r => [r.lng, r.lat]),
     family,
@@ -254,6 +255,162 @@ export async function revokeInvite(tripId, id) {
   }
   const { error } = await supabase.from('trip_invites').delete().eq('id', id)
   if (error) throw error
+}
+
+/* ---- photos ---------------------------------------------------------------
+   A photo is a file in the bucket plus a row pointing at it. The row is written
+   second and the file removed again if it fails, so neither half is ever left
+   pointing at nothing. */
+export async function uploadPhoto(tripId, file, meta) {
+  if (isSample(tripId)) {
+    const p = { id: uid(), src: URL.createObjectURL(file), seq: sampleTrip().photos.length, ...meta }
+    sampleTrip().photos.push(p)
+    return { ...p }
+  }
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const path = tripId + '/' + crypto.randomUUID() + '.' + ext
+  const up = await supabase.storage.from('trip-photos')
+    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+  if (up.error) throw up.error
+
+  const { data, error } = await supabase.from('photos').insert({
+    trip_id: tripId, stop_id: meta.stopId || null, lng: meta.lng, lat: meta.lat,
+    caption: meta.caption || null, taken_by: meta.by || null, taken_at: meta.when || null,
+    storage_path: path, seq: meta.seq ?? 0,
+  }).select().single()
+  if (error) {
+    await supabase.storage.from('trip-photos').remove([path])   // no orphan files
+    throw error
+  }
+  const [withUrl] = await withPhotoUrls([{
+    id: String(data.id), stopId: data.stop_id, lng: data.lng, lat: data.lat,
+    caption: data.caption, by: data.taken_by, when: data.taken_at,
+    storagePath: data.storage_path, src: null, seq: data.seq,
+  }])
+  return withUrl
+}
+
+export async function updatePhoto(tripId, id, fields) {
+  if (isSample(tripId)) {
+    const p = sampleTrip().photos.find(x => x.id === id)
+    if (p) Object.assign(p, fields)
+    return { ...p }
+  }
+  const patch = {}
+  if ('caption' in fields) patch.caption = fields.caption
+  if ('stopId' in fields) patch.stop_id = fields.stopId || null
+  const { data, error } = await supabase.from('photos').update(patch).eq('id', id).select().single()
+  if (error) throw error
+  return { id: String(data.id), stopId: data.stop_id, caption: data.caption }
+}
+
+export async function deletePhoto(tripId, id) {
+  if (isSample(tripId)) {
+    sampleTrip().photos = sampleTrip().photos.filter(p => p.id !== id)
+    return
+  }
+  const { data: row } = await supabase.from('photos').select('storage_path').eq('id', id).single()
+  const { error } = await supabase.from('photos').delete().eq('id', id)
+  if (error) throw error
+  if (row && row.storage_path) await supabase.storage.from('trip-photos').remove([row.storage_path])
+}
+
+/* ---- the walked route -----------------------------------------------------
+   Replaced wholesale rather than diffed: the line is short, and a partial update
+   that half-applied would leave a route nobody walked. */
+export async function replaceRoute(tripId, points) {
+  if (isSample(tripId)) {
+    sampleTrip().route = points.map(p => [...p])
+    return
+  }
+  const del = await supabase.from('route_points').delete().eq('trip_id', tripId)
+  if (del.error) throw del.error
+  if (!points.length) return
+  const { error } = await supabase.from('route_points').insert(
+    points.map((p, i) => ({ trip_id: tripId, lng: p[0], lat: p[1], seq: i })))
+  if (error) throw error
+}
+
+/* ---- the trip itself ------------------------------------------------------ */
+export async function createTrip({ title, crew, dates, dayCount }) {
+  if (!hasBackend) throw new Error('No backend configured')
+  const base = (title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+  const slug = base + '-' + Math.random().toString(36).slice(2, 6)
+  const { data, error } = await supabase.from('trips')
+    .insert({ slug, title, crew: crew || null, dates: dates || null, day_count: dayCount || 1 })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateTrip(tripId, fields) {
+  if (isSample(tripId)) { Object.assign(sampleTrip().trip, fields); return { ...sampleTrip().trip } }
+  const patch = {}
+  if ('title' in fields) patch.title = fields.title
+  if ('crew' in fields) patch.crew = fields.crew
+  if ('dates' in fields) patch.dates = fields.dates
+  if ('dayCount' in fields) patch.day_count = fields.dayCount
+  const { data, error } = await supabase.from('trips').update(patch).eq('id', tripId).select().single()
+  if (error) throw error
+  return { id: data.id, slug: data.slug, title: data.title, crew: data.crew,
+           dates: data.dates, dayCount: data.day_count }
+}
+
+/* ---- your own profile on this trip ---------------------------------------- */
+export async function updateMe(tripId, userId, { name, avatarUrl }) {
+  if (isSample(tripId)) {
+    const me = sampleTrip().family[1] || sampleTrip().family[0]
+    if (name !== undefined) me.name = name
+    if (avatarUrl !== undefined) me.avatar = avatarUrl
+    return { ...me }
+  }
+  const patch = {}
+  if (name !== undefined) patch.display_name = name
+  if (avatarUrl !== undefined) patch.avatar_url = avatarUrl
+  const { data, error } = await supabase.from('trip_members').update(patch)
+    .eq('trip_id', tripId).eq('user_id', userId).select().single()
+  if (error) throw error
+  return asPerson(data)
+}
+
+export async function uploadAvatar(tripId, userId, file) {
+  if (isSample(tripId)) return URL.createObjectURL(file)
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const path = 'avatars/' + userId + '.' + ext
+  const up = await supabase.storage.from('trip-photos')
+    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
+  if (up.error) throw up.error
+  const { data } = await supabase.storage.from('trip-photos')
+    .createSignedUrl(path, 60 * 60 * 24 * 365)
+  return (data && data.signedUrl) || null
+}
+
+export async function deleteComment(tripId, id) {
+  if (isSample(tripId)) {
+    const c = sampleTrip().comments
+    for (const k of Object.keys(c)) c[k] = c[k].filter(x => x.id !== id)
+    return
+  }
+  const { error } = await supabase.from('comments').delete().eq('id', id)
+  if (error) throw error
+}
+
+/* ---- live updates ----------------------------------------------------------
+   One channel for the whole trip. The callback is deliberately coarse — it says
+   "something changed" and the app refetches — because reconciling six tables of
+   partial payloads by hand is a lot of code to get subtly wrong, and a trip is
+   small enough to reload cheaply. */
+export function subscribeToTrip(tripId, onChange) {
+  if (isSample(tripId) || !supabase) return () => {}
+  const ch = supabase.channel('trip:' + tripId)
+  const tables = ['stops', 'photos', 'route_points', 'comments', 'photo_likes', 'trip_members']
+  for (const table of tables) {
+    ch.on('postgres_changes',
+      { event: '*', schema: 'public', table, filter: 'trip_id=eq.' + tripId },
+      onChange)
+  }
+  ch.subscribe()
+  return () => { supabase.removeChannel(ch) }
 }
 
 /* ---- auth ----------------------------------------------------------------- */

@@ -1,0 +1,17 @@
+# Netlify. The build needs VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY set in
+# Site settings -> Environment variables; they are baked in at build time, so a
+# change to either needs a redeploy, not just a restart.
+[build]
+  base    = "app"
+  command = "pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: every path serves index.html so the magic-link callback,
+# which comes back to whatever URL it was sent from, is not a 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

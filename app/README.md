@@ -38,15 +38,18 @@ pnpm dev         # http://localhost:5173
 | Map | Pan, zoom, fit-whole-trip, click any pin or photo |
 | Stop card | Hero image, status, times, notes, photo grid, open in Google Maps |
 | Photo viewer | Prev/next, arrow keys, Esc, filmstrip, like, contributors, minimap centred on the shot |
-| Upload | Pick a file from your device; it is pinned at the live position and attached to the nearest stop within 400 m |
+| Upload | Pick a file from your device; it uploads to storage, is pinned at the live position and attached to the nearest stop within 400 m |
 | Timeline | Day-grouped stops with photo strips; "show on map" jumps back |
 | Photos | Grid with per-person filters |
 | Family | Who is travelling, who is following |
-| Search | Filters stops by name, kind, notes and photo captions |
-| Day filter | All days or a single day |
+| Search | Filters stops by name, kind, note, day and the captions of photos taken there |
+| Day filter | All days, or a single day |
 | Theme | Dark and light chrome; the map picks its own from daylight at the trip until you press the toggle |
 | People | Invite by email, choose view or edit, cancel a pending invite |
-| Comments | Post against your own account; everyone on the trip sees them |
+| Comments | Post against your own account; everyone on the trip sees them; delete your own |
+| Editing | Click the map to add a stop, drag pins to move them, reorder, retitle, redraw the walked route |
+| Photos | Change a caption, move a photo to another stop, delete it |
+| Live updates | Changes made by one person appear for everyone else without a refresh |
 
 ## Running it against your own trip
 
@@ -65,18 +68,12 @@ invites, comments — works; it just does not outlive a refresh. To make it real
    to store or reset, and the same link creates the account if there is not one yet.
    Supabase sends these itself on the free tier; past light use, point it at your own SMTP
    under Authentication -> Emails.
-5. **Create your trip row** from the SQL Editor while signed in. Whoever inserts a trip
-   becomes its owner automatically:
-
-   ```sql
-   insert into trips (slug, title, crew, dates, day_count)
-   values ('youngs-europe', 'Amsterdam Weekend', 'Sample Family', '4 – 16 September', 13);
-   ```
-
+5. **Start a trip.** Sign in and the app offers it — you become the owner. No SQL needed.
 6. **Invite everyone else** with the People button — name, email, and whether they can view
    or edit. They get access the first time they sign in with that address.
 7. **Add the itinerary from the map.** Pencil button -> click the map to drop a stop, fill
-   in name, day, time and note, drag pins to nudge them. Nobody types a coordinate.
+   in name, day, time and note, drag pins to nudge them, and the arrows in the editor
+   reorder them. "Edit route" turns clicks into the walked line. Nobody types a coordinate.
 
 ### Who can see what
 
@@ -101,6 +98,35 @@ people table to keep in step.
 
 Photos live in a **private** bucket, fetched with short-lived signed URLs, since there are
 no anonymous viewers to serve.
+
+## Tests
+
+```bash
+pnpm test          # headless
+pnpm test:ui       # watch them run
+```
+
+`tests/trip.spec.js` runs against a production build in sample mode, so it needs no
+credentials and no database. The cases are regression guards for things that genuinely
+broke during development — a save that created two stops, a reorder that flung rows to
+the end, a photo viewer holding a stale snapshot, pins that stopped being clickable, the
+map going blank mid-gesture — rather than a smoke test that everything renders.
+
+First run downloads a browser: `npx playwright install chromium`.
+
+## Deploying
+
+Static build, so anything that serves files works. `netlify.toml` and `vercel.json` are
+here and set two things that matter:
+
+* **The SPA rewrite.** Magic links return to the URL they were sent from; without every
+  path serving `index.html` that callback is a 404 and sign-in appears to silently fail.
+* **`VITE_SUPABASE_*` as build-time variables.** They are baked into the bundle, so
+  changing either needs a rebuild, not just a restart.
+
+Then add your deployed origin to Supabase under **Authentication -> URL Configuration**,
+as both Site URL and a Redirect URL. Magic links to an origin that is not listed are
+rejected, and the failure looks like a link that just does not work.
 
 ## Wiring it to a backend
 

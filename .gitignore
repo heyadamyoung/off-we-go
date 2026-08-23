@@ -1,8 +1,8 @@
-node_modules/
-dist/
 .env
-.env.local
 .env.*.local
+.env.local
 .playwright-mcp/
-test-results/
+dist/
+node_modules/
 playwright-report/
+test-results/

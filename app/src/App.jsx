@@ -12,6 +12,8 @@ import { AHEAD, pic, picFallback } from './data'
 import {
   hasBackend, supabase, loadTrip, createStop, updateStop, deleteStop,
   addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
+  uploadPhoto, updatePhoto, deletePhoto, replaceRoute, createTrip, updateTrip,
+  updateMe, uploadAvatar, deleteComment, subscribeToTrip,
   sendMagicLink, signOut,
 } from './backend'
 
@@ -521,7 +523,9 @@ const MapCanvas = memo(function MapCanvas({
 /* =========================================================================
    Photo viewer — the Studio screen
    ========================================================================= */
-function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, addComment, likes, toggleLike, theme, tint, me }) {
+function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, addComment, likes,
+                       toggleLike, theme, tint, me, canEdit, onPhotoChange, onPhotoDelete,
+                       onCommentDelete }) {
   const photo = list[index]
   const stop = stops.find(s => s.id === photo?.stopId)
   const [draft, setDraft] = useState('')
@@ -651,15 +655,35 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
           <span className="n">{here.length}</span>
         </div>
 
+        {canEdit && (
+          <div className="vedit">
+            <input value={photo.caption || ''} placeholder="Caption"
+                   onChange={e => onPhotoChange(photo.id, { caption: e.target.value })} />
+            <div className="row">
+              <select value={photo.stopId || ''}
+                      onChange={e => onPhotoChange(photo.id, { stopId: e.target.value || null })}>
+                <option value="">Not at a stop</option>
+                {stops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <button className="del" title="Delete photo"
+                      onClick={() => onPhotoDelete(photo.id)}><Icon n="x" s={14} w={2} /></button>
+            </div>
+          </div>
+        )}
+
         <div className="vcomments">
           {cmts.length === 0 && <div className="vnone">No notes yet. Be the first to say something.</div>}
           {cmts.map(c => (
-            <div className="cmt" key={c.id}>
+            <div className={'cmt' + (c.pending ? ' pending' : '')} key={c.id}>
               <img src={byName(c.by).avatar} alt="" />
               <div className="t">
                 <b>{c.by}</b><em>{c.when}</em>
                 <p>{c.text}</p>
               </div>
+              {(canEdit || c.by === me.name) && !c.pending && (
+                <button className="cdel" title="Delete"
+                        onClick={() => onCommentDelete(photo.id, c.id)}><Icon n="x" s={12} w={2} /></button>
+              )}
             </div>
           ))}
         </div>
@@ -709,12 +733,19 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
     fileUrl.current = URL.createObjectURL(f)
     setFile({ file: f, url: fileUrl.current })
   }
-  const submit = () => {
-    if (!file) return
-    fileUrl.current = null            // ownership passes to the photo list
-    onAdd({ src: file.url, caption: caption.trim() || 'Untitled', stopId: near?.id || null })
-    toast(near ? `Photo added at ${near.name}` : 'Photo added at your current location')
-    onClose()
+  const [busy, setBusy] = useState(false)
+  const submit = async () => {
+    if (!file || busy) return
+    setBusy(true)
+    try {
+      await onAdd({ file: file.file, caption: caption.trim() || 'Untitled', stopId: near?.id || null })
+      toast(near ? `Photo added at ${near.name}` : 'Photo added at your current location')
+      onClose()
+    } catch (e) {
+      toast(e.message || 'Could not upload that photo')
+    } finally {
+      setBusy(false)
+    }
   }
   useEffect(() => () => { if (fileUrl.current) URL.revokeObjectURL(fileUrl.current) }, [])
 
@@ -739,7 +770,9 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
         </p>
         <div className="linkrow">
           <button className="btn" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
-          <button className="btn pri" style={{ flex: 1 }} disabled={!file} onClick={submit}>Add to the map</button>
+          <button className="btn pri" style={{ flex: 1 }} disabled={!file || busy} onClick={submit}>
+            {busy ? 'Uploading…' : 'Add to the map'}
+          </button>
         </div>
       </div>
     </Modal>
@@ -764,7 +797,7 @@ const LivePill = memo(function LivePill({ resetKey }) {
 })
 
 const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
-                                     liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
+                                     dayIndex, liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
                                      sunPhase, canEdit, editing, onToggleEdit, me, onSignOut }) {
   const Item = ({ children, hot }) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
   return (
@@ -773,7 +806,7 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
       <div className="tflow">
 <span className="crew">{(trip.crew || '').toUpperCase()}</span>
         <Item>{trip.title}</Item>
-        {trip.dayCount ? <Item hot>DAY {trip.dayIndex || 1} OF {trip.dayCount}</Item> : null}
+        {trip.dayCount ? <Item hot>DAY {dayIndex} OF {trip.dayCount}</Item> : null}
         <Item>{km.toFixed(1)} km walked</Item>
         <Item>{doneCount} of {stopCount} stops</Item>
         <Item>{photoCount} photos</Item>
@@ -841,6 +874,10 @@ const HeroCard = memo(function HeroCard({ stop, photos, onClose, openViewer, toa
             <Icon n="camera" s={15} c="#0a0c10" w={2.2} />
             {here.length ? `See ${here.length} photo${here.length === 1 ? '' : 's'}` : 'No photos yet'}
           </button>
+          <a className="wbtn" title="Open in Google Maps" target="_blank" rel="noopener noreferrer"
+             href={`https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lng}`}>
+            <Icon n="map" s={16} />
+          </a>
           <button className="wbtn" onClick={() => toast('Saved to favourites')}><Icon n="heart" s={16} /></button>
           <button className="wbtn" onClick={() => toast('Note sent to the family')}><Icon n="send" s={16} /></button>
         </div>
@@ -849,16 +886,25 @@ const HeroCard = memo(function HeroCard({ stop, photos, onClose, openViewer, toa
   )
 })
 
-const Filmstrip = memo(function Filmstrip({ stops, photos, byName, selected, onSelect, day, setDay, days, openViewer }) {
+const ALL_DAYS = ' all'
+
+const Filmstrip = memo(function Filmstrip({ stops, photos, byName, selected, onSelect, day, setDay,
+                                            days, openViewer, query, setQuery }) {
   return (
     <div className="filmstrip">
       <div className="fh">
         <div className="fdays">
+          <button className={day === ALL_DAYS ? 'on' : ''} onClick={() => setDay(ALL_DAYS)}>ALL DAYS</button>
           {days.map(d => (
             <button key={d} className={day === d ? 'on' : ''} onClick={() => setDay(d)}>{d.toUpperCase()}</button>
           ))}
         </div>
-        <span className="hint">Click a card to fly there · a photo to open it</span>
+        <label className="fsearch">
+          <Icon n="search" s={14} c="var(--ink3)" />
+          <input value={query} placeholder="Search stops and captions"
+                 onChange={e => setQuery(e.target.value)} />
+          {query && <button onClick={() => setQuery('')} title="Clear"><Icon n="x" s={13} w={2} /></button>}
+        </label>
       </div>
       <div className="frow">
         {stops.map((s, ci) => {
@@ -1081,18 +1127,62 @@ function SignInScreen() {
   )
 }
 
-function NoTrip({ email }) {
+function NoTrip({ email, onCreated }) {
+  const [making, setMaking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [f, setF] = useState({ title: '', crew: '', dates: '', dayCount: 7 })
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }))
+
+  const create = async e => {
+    e.preventDefault()
+    if (!f.title.trim() || busy) return
+    setBusy(true); setErr(null)
+    try { await createTrip({ ...f, dayCount: Number(f.dayCount) || 1 }); onCreated() }
+    catch (e2) { setErr(e2.message || 'Could not create that trip'); setBusy(false) }
+  }
+
   return (
     <div className="boot">
       <div className="bootIn wide">
         <span className="mk"><Icon n="pin" s={15} c="#0a0c10" w={2.4} /></span>
-        <b>No trip yet</b>
-        <p>You are signed in as <strong>{email}</strong>, but nobody has invited that
-           address to a trip. Ask whoever is running it to add you — invitations go by
-           email address, so it has to be this one.</p>
-        <button className="btn" onClick={() => signOut().then(() => window.location.reload())}>
-          Sign out
-        </button>
+        {making ? (
+          <>
+            <b>Start a trip</b>
+            <p>You will be its owner, and can invite everyone else once it exists.</p>
+            <form className="newtrip" onSubmit={create}>
+              <input autoFocus required placeholder="Amsterdam Weekend" value={f.title}
+                     onChange={e => set('title', e.target.value)} />
+              <input placeholder="Sample Family" value={f.crew} onChange={e => set('crew', e.target.value)} />
+              <div className="linkrow">
+                <input placeholder="4 – 16 September" value={f.dates}
+                       onChange={e => set('dates', e.target.value)} />
+                <input type="number" min="1" max="365" style={{ maxWidth: 92 }} value={f.dayCount}
+                       onChange={e => set('dayCount', e.target.value)} title="How many days" />
+              </div>
+              <div className="linkrow">
+                <button type="button" className="btn" style={{ flex: 1 }}
+                        onClick={() => setMaking(false)}>Back</button>
+                <button type="submit" className="btn pri" style={{ flex: 1 }}
+                        disabled={busy || !f.title.trim()}>{busy ? 'Creating…' : 'Create trip'}</button>
+              </div>
+            </form>
+            {err && <p className="warn">{err}</p>}
+          </>
+        ) : (
+          <>
+            <b>No trip yet</b>
+            <p>You are signed in as <strong>{email}</strong>, but nobody has invited that
+               address to a trip. Invitations go by email address, so it has to be this one —
+               ask whoever is running it to add you. Or start your own.</p>
+            <div className="linkrow">
+              <button className="btn" onClick={() => signOut().then(() => window.location.reload())}>
+                Sign out
+              </button>
+              <button className="btn pri" onClick={() => setMaking(true)}>Start a trip</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1101,7 +1191,59 @@ function NoTrip({ email }) {
 /* =========================================================================
    Who is on the trip
    ========================================================================= */
-function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink }) {
+function TripSettings({ trip, onSave }) {
+  const [f, setF] = useState({ title: trip.title || '', crew: trip.crew || '',
+                               dates: trip.dates || '', dayCount: trip.dayCount || 1 })
+  const [dirty, setDirty] = useState(false)
+  const set = (k, v) => { setF(x => ({ ...x, [k]: v })); setDirty(true) }
+  return (
+    <div className="tset">
+      <div className="linkrow">
+        <input value={f.title} placeholder="Trip name" onChange={e => set('title', e.target.value)} />
+        <input value={f.crew} placeholder="Crew" onChange={e => set('crew', e.target.value)} />
+      </div>
+      <div className="linkrow">
+        <input value={f.dates} placeholder="4 – 16 September" onChange={e => set('dates', e.target.value)} />
+        <input type="number" min="1" max="365" style={{ maxWidth: 84 }} value={f.dayCount}
+               title="How many days" onChange={e => set('dayCount', e.target.value)} />
+        <button className="btn" disabled={!dirty}
+                onClick={() => { onSave({ ...f, dayCount: Number(f.dayCount) || 1 }); setDirty(false) }}>
+          Save
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function MyProfile({ me, onSave }) {
+  const [name, setName] = useState(me.name || '')
+  const [file, setFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const ref = useRef(null)
+  const preview = file ? URL.createObjectURL(file) : me.avatar
+
+  const save = async () => {
+    setBusy(true)
+    try { await onSave({ name: name.trim() || me.name, file }) ; setFile(null) }
+    finally { setBusy(false) }
+  }
+  const changed = name.trim() !== (me.name || '') || !!file
+
+  return (
+    <div className="mine">
+      <button className="av" onClick={() => ref.current?.click()} title="Change your picture">
+        {preview ? <img src={preview} alt="" /> : <span className="ini">{(name || '?')[0]}</span>}
+        <em><Icon n="camera" s={12} /></em>
+      </button>
+      <input ref={ref} type="file" accept="image/*" hidden
+             onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
+      <input value={name} placeholder="Your name" onChange={e => setName(e.target.value)} />
+      <button className="btn" disabled={!changed || busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+    </div>
+  )
+}
+
+function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, onSaveTrip, me, onSaveMe }) {
   const [invites, setInvites] = useState([])
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -1139,6 +1281,17 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink }) {
   return (
     <Modal title="Who is on this trip" onClose={onClose}>
       <div className="mb">
+        <div className="sect">You</div>
+        <MyProfile me={me} onSave={onSaveMe} />
+
+        {canEdit && trip && (
+          <>
+            <div className="sect">Trip</div>
+            <TripSettings trip={trip} onSave={onSaveTrip} />
+          </>
+        )}
+
+        <div className="sect">Everyone</div>
         <div className="roster">
           {family.map(f => (
             <div className="rperson" key={f.id}>
@@ -1201,7 +1354,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink }) {
 const STOP_ICONS = ['pin', 'plane', 'bed', 'boat', 'museum', 'food', 'walk', 'camera']
 const STOP_STATES = [['planned', 'Planned'], ['next', 'Up next'], ['now', 'Now'], ['done', 'Visited']]
 
-function StopEditor({ draft, days, onField, onSave, onDelete, onClose, busy }) {
+function StopEditor({ draft, days, onField, onSave, onDelete, onMove, onClose, busy }) {
   const isNew = !draft.id
   return (
     <div className="editor">
@@ -1275,7 +1428,17 @@ function StopEditor({ draft, days, onField, onSave, onDelete, onClose, busy }) {
       </div>
 
       <div className="ef">
-        {!isNew && <button className="del" onClick={onDelete} disabled={busy}>Delete</button>}
+        {!isNew && (
+          <>
+            <button className="ord" onClick={() => onMove(-1)} disabled={busy} title="Move earlier">
+              <Icon n="chevl" s={14} w={2} />
+            </button>
+            <button className="ord" onClick={() => onMove(1)} disabled={busy} title="Move later">
+              <Icon n="chev" s={14} w={2} />
+            </button>
+            <button className="del" onClick={onDelete} disabled={busy}>Delete</button>
+          </>
+        )}
         <button className="btn pri" onClick={onSave} disabled={busy || !(draft.name || '').trim()}>
           {busy ? 'Saving…' : isNew ? 'Add stop' : 'Save'}
         </button>
@@ -1309,6 +1472,7 @@ export default function App() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [attempt, setAttempt] = useState(0)
+  const reload = useCallback(() => setAttempt(a => a + 1), [])
 
   useEffect(() => {
     if (!ready) return
@@ -1323,13 +1487,16 @@ export default function App() {
   if (error) return <Boot error={error} onRetry={() => setAttempt(a => a + 1)} />
   if (!data) return <Boot />
   if (data.needsAuth) return <SignInScreen />
-  if (data.noTrip) return <NoTrip email={data.email} />
+  if (data.noTrip) return <NoTrip email={data.email} onCreated={reload} />
   // Remount cleanly if the signed-in identity changes which trip we are showing.
-  return <TripApp key={data.tripId + ':' + (session?.user?.id || 'anon')} data={data} session={session} />
+  return <TripApp key={data.tripId + ':' + (session?.user?.id || 'anon')}
+                  data={data} session={session} onReload={reload} />
 }
 
-function TripApp({ data, session }) {
-  const [theme, setTheme] = useState('dark')
+function TripApp({ data, session, onReload }) {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('wf-theme') || 'dark' } catch { return 'dark' }
+  })
   const [tab, setTab] = useState('map')
   const [stops, setStops] = useState(data.stops)
   const [photos, setPhotos] = useState(data.photos)
@@ -1338,6 +1505,7 @@ function TripApp({ data, session }) {
   const [selected, setSelected] = useState(() => data.stops[0]?.id || null)
   const [viewer, setViewer] = useState(null)
   const [day, setDay] = useState(() => data.stops.find(s => s.status === 'now')?.day || data.stops[0]?.day || '')
+  const [query, setQuery] = useState('')
   const [person, setPerson] = useState(null)
   const [share, setShare] = useState(false)
   const [upload, setUpload] = useState(false)
@@ -1349,9 +1517,13 @@ function TripApp({ data, session }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [routeDraft, setRouteDraft] = useState(null)   // non-null while editing the line
 
-  const { trip, family, route, tripId, canEdit } = data
-  const me = data.me || family[0] || { name: 'You', avatar: '' }
+  const { tripId, canEdit } = data
+  const [trip, setTrip] = useState(data.trip)
+  const [route, setRoute] = useState(data.route)
+  const [family, setFamily] = useState(data.family)
+  const [me, setMe] = useState(data.me || data.family[0] || { name: 'You', avatar: '' })
   const byName = useCallback(
     n => family.find(f => f.name === n) || family[0] || { name: n, avatar: '' }, [family])
 
@@ -1365,7 +1537,18 @@ function TripApp({ data, session }) {
   const viewRef = useRef(view); viewRef.current = view
 
   const [mapOverride, setMapOverride] = useState(null)
-  useEffect(() => { document.body.dataset.theme = theme }, [theme])
+  useEffect(() => {
+    document.body.dataset.theme = theme
+    try { localStorage.setItem('wf-theme', theme) } catch { /* private mode */ }
+  }, [theme])
+
+  // A reload (realtime, or the retry button) hands down new data; adopt it.
+  useEffect(() => {
+    setTrip(data.trip); setRoute(data.route); setFamily(data.family)
+    setStops(data.stops); setPhotos(data.photos)
+    setComments(data.comments || {}); setLikes(new Set(data.likes || []))
+    if (data.me) setMe(data.me)
+  }, [data])
 
   const toastT = useRef(0)
   const toast = useCallback(m => {
@@ -1386,18 +1569,52 @@ function TripApp({ data, session }) {
     return () => clearInterval(id)
   }, [])
 
+  // Live updates. Held off while someone is mid-edit, since refetching under an
+  // open editor would pull the ground out from under them.
+  const busyEditing = useRef(false)
+  busyEditing.current = editing || !!draft || !!routeDraft
+  useEffect(() => {
+    if (!onReload) return
+    let timer = 0
+    const stop = subscribeToTrip(tripId, () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => { if (!busyEditing.current) onReload() }, 400)
+    })
+    return () => { clearTimeout(timer); stop() }
+  }, [tripId, onReload])
+
   useEffect(() => {
     if (following) setView(v => ({ center: live, zoom: v.zoom, ms: 900 }))
   }, [live, following])
 
-  const days = useMemo(() => [...new Set(stops.map(s => s.day).filter(Boolean))], [stops])
-  const dayStops = useMemo(() => stops.filter(s => s.day === day), [stops, day])
+  const ordered = useMemo(
+    () => [...stops].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)), [stops])
+  const days = useMemo(() => [...new Set(ordered.map(s => s.day).filter(Boolean))], [ordered])
+
+  // Search wins over the day filter: a query searches the whole trip, matching a
+  // stop's own text or the caption of any photo taken there.
+  const dayStops = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (q) {
+      const hit = s => [s.name, s.kind, s.note, s.day].some(v => (v || '').toLowerCase().includes(q))
+        || photos.some(p => p.stopId === s.id && (p.caption || '').toLowerCase().includes(q))
+      return ordered.filter(hit)
+    }
+    return day === ALL_DAYS ? ordered : ordered.filter(s => s.day === day)
+  }, [ordered, photos, day, query])
   const selectedStop = stops.find(s => s.id === selected)
   const nowStop = stops.find(s => s.status === 'now')
   const nextStop = stops.find(s => s.status === 'next')
   const doneCount = stops.filter(s => s.status === 'done').length
+  // Which day of the trip we are on, read off the stop marked "now" rather than
+  // stored separately and left to drift.
+  const dayIndex = Math.max(1, days.indexOf(nowStop?.day) + 1)
 
-  const openViewer = useCallback((list, index) => setViewer({ list, index: clamp(index, 0, list.length - 1) }), [])
+  // Ids, not a snapshot: the viewer must reflect edits and deletions made while
+  // it is open, which a captured array cannot.
+  const openViewer = useCallback((list, index) => setViewer({
+    ids: list.map(p => p.id), index: clamp(index, 0, list.length - 1),
+  }), [])
   const closeViewer = useCallback(() => setViewer(null), [])
   const setIndex = useCallback(i => setViewer(v => v && ({ ...v, index: i })), [])
 
@@ -1429,13 +1646,43 @@ function TripApp({ data, session }) {
     }
   }, [likes, tripId, session, toast])
 
-  const addPhoto = useCallback(({ src, caption, stopId }) => {
-    setPhotos(list => [...list, {
-      id: 'up' + Date.now(), stopId, lng: live[0], lat: live[1], by: me.name,
-      when: 'Just now', caption, src, seed: 'up',
-    }])
+  const addPhoto = useCallback(async ({ file, caption, stopId }) => {
+    const saved = await uploadPhoto(tripId, file, {
+      stopId, lng: live[0], lat: live[1], by: me.name, when: 'Just now',
+      caption, seq: photos.length,
+    })
+    setPhotos(list => [...list, saved])
     if (stopId) setSelected(stopId)
-  }, [live, me.name])
+  }, [tripId, live, me.name, photos.length])
+
+  const changePhoto = useCallback(async (id, fields) => {
+    const before = photos.find(p => p.id === id)
+    setPhotos(list => list.map(p => (p.id === id ? { ...p, ...fields } : p)))
+    try { await updatePhoto(tripId, id, fields) }
+    catch (e) {
+      setPhotos(list => list.map(p => (p.id === id ? before : p)))
+      toast(e.message || 'Could not save that')
+    }
+  }, [tripId, photos, toast])
+
+  const removePhoto = useCallback(async id => {
+    const before = photos
+    setPhotos(list => list.filter(p => p.id !== id))
+    setViewer(v => {
+      if (!v) return v
+      const ids = v.ids.filter(x => x !== id)
+      return ids.length ? { ids, index: clamp(v.index, 0, ids.length - 1) } : null
+    })
+    try { await deletePhoto(tripId, id); toast('Photo deleted') }
+    catch (e) { setPhotos(before); toast(e.message || 'Could not delete that') }
+  }, [tripId, photos, toast])
+
+  const removeComment = useCallback(async (photoId, id) => {
+    const before = comments
+    setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== id) }))
+    try { await deleteComment(tripId, id) }
+    catch (e) { setComments(before); toast(e.message || 'Could not delete that') }
+  }, [tripId, comments, toast])
 
   const handleView = useCallback((next, opts) => {
     if (opts?.user) setFollowing(false)
@@ -1447,7 +1694,7 @@ function TripApp({ data, session }) {
     const s = stops.find(x => x.id === id)
     if (s) {
       setView({ center: [s.lng, s.lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520 })
-      if (s.day !== day) setDay(s.day)
+      if (day !== ALL_DAYS && s.day !== day) setDay(s.day)
     }
   }, [stops, day])
 
@@ -1494,12 +1741,21 @@ function TripApp({ data, session }) {
 
   // Clicking bare map while editing drops a new stop there.
   const onMapClick = useCallback(lngLat => {
+    if (routeDraft) { setRouteDraft(r => [...r, lngLat]); return }
     setDraft(d => (d && !d.id)
       ? { ...d, lng: lngLat[0], lat: lngLat[1] }            // reposition the pending one
       : { name: '', icon: 'pin', status: 'planned', day: day || '',
           lng: lngLat[0], lat: lngLat[1] })
     setSelected(null)
-  }, [day])
+  }, [day, routeDraft])
+
+  const saveRoute = useCallback(async () => {
+    if (!routeDraft) return
+    const next = routeDraft
+    setRoute(next); setRouteDraft(null)
+    try { await replaceRoute(tripId, next); toast('Route saved') }
+    catch (e) { toast(e.message || 'Could not save the route') }
+  }, [routeDraft, tripId, toast])
 
   // Dragging a pin writes straight through; there is nothing to confirm.
   const onStopMove = useCallback(async (id, lngLat) => {
@@ -1513,6 +1769,21 @@ function TripApp({ data, session }) {
   }, [tripId, toast])
 
   const onDraftField = useCallback((k, v) => setDraft(d => ({ ...d, [k]: v })), [])
+
+  // Swap seq with the neighbour. Both rows move, so both are saved.
+  const moveStop = useCallback(async dir => {
+    if (!draft || !draft.id) return
+    const i = ordered.findIndex(x => x.id === draft.id)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= ordered.length) return
+    const a = ordered[i], b = ordered[j]
+    const aSeq = a.seq ?? i, bSeq = b.seq ?? j
+    setStops(list => list.map(x =>
+      x.id === a.id ? { ...x, seq: bSeq } : x.id === b.id ? { ...x, seq: aSeq } : x))
+    try {
+      await Promise.all([updateStop(tripId, a.id, { seq: bSeq }), updateStop(tripId, b.id, { seq: aSeq })])
+    } catch (e) { toast(e.message || 'Could not reorder those') }
+  }, [draft, ordered, tripId, toast])
 
   const saveDraft = useCallback(async () => {
     if (!draft || saving) return
@@ -1557,14 +1828,38 @@ function TripApp({ data, session }) {
     }
   }, [draft, saving, tripId, selected, toast])
 
+  const saveTrip = useCallback(async fields => {
+    const before = trip
+    setTrip(t => ({ ...t, ...fields }))
+    try { await updateTrip(tripId, fields) }
+    catch (e) { setTrip(before); toast(e.message || 'Could not save that') }
+  }, [trip, tripId, toast])
+
+  const saveMe = useCallback(async ({ name, file }) => {
+    let avatarUrl
+    try {
+      if (file) avatarUrl = await uploadAvatar(tripId, me.id, file)
+      const saved = await updateMe(tripId, me.id, { name, avatarUrl })
+      setMe(m => ({ ...m, ...saved }))
+      setFamily(list => list.map(f => (f.id === me.id ? { ...f, ...saved } : f)))
+      toast('Saved')
+    } catch (e) { toast(e.message || 'Could not save that') }
+  }, [tripId, me.id, toast])
+
   const onPeople = useCallback(() => setShare(true), [])
   const onUpload = useCallback(() => setUpload(true), [])
   const backToMap = useCallback(() => setTab('map'), [])
   const onLive = useCallback(() => selectStop(nowStop?.id || stops[0]?.id), [selectStop, nowStop, stops])
 
+  const viewerList = useMemo(() => {
+    if (!viewer) return null
+    const by = new Map(photos.map(p => [p.id, p]))
+    return viewer.ids.map(id => by.get(id)).filter(Boolean)
+  }, [viewer, photos])
+
   return (
     <div className="app wide">
-      <Ticker trip={trip} km={km} doneCount={doneCount} stopCount={stops.length}
+      <Ticker trip={trip} km={km} doneCount={doneCount} stopCount={stops.length} dayIndex={dayIndex}
         photoCount={photos.length} nowStop={nowStop} nextStop={nextStop}
         liveKey={step} onPeople={onPeople} tab={tab} setTab={setTab}
         onUpload={onUpload} theme={theme} onToggleTheme={toggleTheme}
@@ -1574,21 +1869,35 @@ function TripApp({ data, session }) {
 
       <div className="stagewrap">
         <MapCanvas theme={mapTheme} tint={sun} view={view} onView={handleView}
-          route={track} stops={stops} photos={photos} live={live} selectedStop={selected}
+          route={routeDraft || track} stops={stops} photos={photos} live={live} selectedStop={selected}
           labels={view.zoom > 13} onStop={pickStop}
           onPhoto={openViewer} onLive={onLive} liveAvatar={family[0]?.avatar}
           editing={editing} onMapClick={onMapClick} onStopMove={onStopMove} />
 
         {editing && draft && (
           <StopEditor draft={draft} days={days} onField={onDraftField}
-                      onSave={saveDraft} onDelete={removeDraft}
+                      onSave={saveDraft} onDelete={removeDraft} onMove={moveStop}
                       onClose={() => setDraft(null)} busy={saving} />
         )}
 
         {editing && !draft && (
           <div className="edithint">
-            <b>Edit mode</b>
-            <span>Click the map to add a stop, or a pin to change one. Drag pins to move them.</span>
+            <b>{routeDraft ? 'Route' : 'Edit mode'}</b>
+            {routeDraft ? (
+              <>
+                <span>Click to extend the line · {routeDraft.length} point{routeDraft.length === 1 ? '' : 's'}</span>
+                <button onClick={() => setRouteDraft(r => r.slice(0, -1))}
+                        disabled={!routeDraft.length}>Undo</button>
+                <button onClick={() => setRouteDraft([])}>Clear</button>
+                <button onClick={() => setRouteDraft(null)}>Cancel</button>
+                <button className="go" onClick={saveRoute}>Save route</button>
+              </>
+            ) : (
+              <>
+                <span>Click the map to add a stop, or a pin to change one. Drag pins to move them.</span>
+                <button onClick={() => setRouteDraft(route.slice())}>Edit route</button>
+              </>
+            )}
           </div>
         )}
 
@@ -1614,15 +1923,19 @@ function TripApp({ data, session }) {
       </div>
 
       <Filmstrip stops={dayStops} photos={photos} byName={byName} selected={selected} onSelect={selectStop}
-                 day={day} setDay={setDay} days={days} openViewer={openViewer} />
+                 day={day} setDay={setDay} days={days} openViewer={openViewer}
+                 query={query} setQuery={setQuery} />
 
-      {viewer && (
-        <PhotoViewer list={viewer.list} index={viewer.index} setIndex={setIndex}
+      {viewerList && viewerList.length > 0 && (
+        <PhotoViewer list={viewerList} index={clamp(viewer.index, 0, viewerList.length - 1)} setIndex={setIndex}
           onClose={closeViewer} stops={stops} byName={byName} comments={comments} addComment={addComment}
-          likes={likes} toggleLike={toggleLike} theme={mapTheme} tint={sun} me={me} />
+          likes={likes} toggleLike={toggleLike} theme={mapTheme} tint={sun} me={me}
+          canEdit={canEdit} onPhotoChange={changePhoto} onPhotoDelete={removePhoto}
+          onCommentDelete={removeComment} />
       )}
       {share && <PeopleModal onClose={() => setShare(false)} toast={toast} tripId={tripId}
-                             family={family} canEdit={canEdit}
+                             family={family} canEdit={canEdit} trip={trip} onSaveTrip={saveTrip}
+                             me={me} onSaveMe={saveMe}
                              appLink={window.location.origin + window.location.pathname
                                       + (trip.slug ? `?t=${trip.slug}` : '')} />}
       {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhoto} live={live} stops={stops} toast={toast} />}
