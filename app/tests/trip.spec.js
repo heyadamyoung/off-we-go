@@ -251,3 +251,24 @@ test('finding a place fills in its name, description and picture', async ({ page
   await expect(page.locator('.ticker')).toBeVisible()
   await expect(page.locator('.fcard').first()).toBeVisible()
 })
+
+test('stops without a picture get a real one on load', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
+  await page.waitForTimeout(14_000)          // load, then the lookups land
+  await page.locator('.fdays button').first().click()
+  await page.waitForTimeout(800)
+
+  const names = await stopNames(page)
+  let real = 0
+  for (const n of names) {
+    await page.locator('.fcard', { hasText: n }).first().click()
+    await page.waitForTimeout(700)
+    const src = await page.locator('.herocard img.hero').getAttribute('src')
+    if (/wikimedia/.test(src || '')) real++
+  }
+  // Not all of them: two of the sample stops have no article and one is not a
+  // place at all. Matching is strict on purpose — a wrong photograph of the
+  // building next door is worse than the placeholder.
+  expect(real).toBeGreaterThanOrEqual(4)
+})

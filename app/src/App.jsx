@@ -9,7 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // this the map builds, loads its style and then silently never requests a tile.
 setWorkerUrl(maplibreWorkerUrl)
 import { AHEAD, pic, picFallback } from './data'
-import { findPlaces, describePlace, radiusForView, imageForPage } from './places'
+import { findPlaces, describePlace, radiusForView, imageForPage, enrichStops } from './places'
 import {
   hasBackend, supabase, loadTrip, createStop, updateStop, deleteStop,
   addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
@@ -1788,6 +1788,36 @@ function TripApp({ data, session, onReload }) {
           lng: lngLat[0], lat: lngLat[1] })
     setSelected(null)
   }, [dayForNewStop, routeDraft])
+
+  /* Stops with no picture of their own get one looked up, once, on load. This
+     is the difference between a trip that arrives already looking like
+     something and one you have to fill in by hand a stop at a time. Strict
+     name matching, so an unrecognised stop keeps its placeholder rather than
+     being handed a photograph of somewhere else. */
+  const enriched = useRef(false)
+  useEffect(() => {
+    if (enriched.current || !stops.length) return
+    enriched.current = true
+    let alive = true
+    enrichStops(stops).then(found => {
+      if (!alive || !found.length) return
+      setStops(list => list.map(s => {
+        const p = found.find(f => f.id === s.id)
+        return p ? { ...s, src: p.src, sourceUrl: p.sourceUrl,
+                     note: p.note === undefined ? s.note : p.note } : s
+      }))
+      // Persist so it is a one-time cost, but only if this account may write.
+      if (canEdit) {
+        for (const p of found) {
+          updateStop(tripId, p.id, {
+            src: p.src, sourceUrl: p.sourceUrl,
+            ...(p.note === undefined ? {} : { note: p.note }),
+          }).catch(() => {})
+        }
+      }
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [stops, canEdit, tripId])
 
   /* ---- places ------------------------------------------------------------
      Search what is currently on screen, drop the results as candidates, and let

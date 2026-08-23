@@ -102,6 +102,20 @@ no anonymous viewers to serve.
 
 ## Where the place details come from
 
+**Stops with no picture of their own get one on load**, without anyone asking. That is
+the difference between a trip that arrives looking like something and one you fill in by
+hand a stop at a time. It happens once and, if you can edit the trip, the result is saved
+so it is not paid for again.
+
+Matching is deliberately strict, and it does not fill everything in. Of the eight sample
+stops it finds five. The three it skips are the right answer rather than a shortfall:
+*Hotel Jakarta* has no article, *Foodhallen* has none within range, and *Canal cruise* is
+not a place at all — its nearest article is the Westerkerk, and a looser rule would have
+confidently given it a photograph of a church. Anything unmatched keeps its placeholder,
+and **Fill in from Wikipedia** in the stop editor will take the nearest match if you want
+it anyway.
+
+
 "Find places" in edit mode searches Wikipedia's geosearch for whatever is on screen and
 offers each result as a candidate on the map. Picking one creates a stop with its name,
 its description and a photograph already in place, so building an itinerary is mostly

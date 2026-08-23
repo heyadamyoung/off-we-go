@@ -117,15 +117,69 @@ export async function findPlaces({ lng, lat, radius = 1200, limit = 30, signal }
   return places
 }
 
+/* Deciding whether an article is really about a stop.
+
+   Plain containment is not enough: "Schiphol Airport" and "Amsterdam Airport
+   Schiphol" are the same place and neither contains the other. So compare the
+   distinctive words, ignoring the ones that appear in half of all place names —
+   otherwise "Anne Frank House" happily matches "Rembrandt House". */
+const STOPWORDS = new Set([
+  'the', 'de', 'het', 'van', 'and', 'en', 'of', 'at', 'in', 'op',
+  'museum', 'house', 'huis', 'hotel', 'park', 'airport', 'station', 'centre',
+  'center', 'gallery', 'church', 'kerk', 'square', 'plein', 'cruise', 'tour',
+  'amsterdam', 'city', 'national', 'royal', 'new', 'old',
+])
+const tokens = s => (s || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().split(/[^a-z0-9]+/)
+  .filter(w => w.length > 2 && !STOPWORDS.has(w))
+
+export function namesMatch(a, b) {
+  const A = tokens(a), B = tokens(b)
+  if (!A.length || !B.length) return false
+  if (A.some(w => B.includes(w))) return true
+  // Also allow one distinctive word inside another, so "Foodhallen" finds
+  // "De Hallen". Only for longer words: short fragments match anything.
+  return A.some(x => B.some(y =>
+    (x.length >= 5 && y.includes(x)) || (y.length >= 5 && x.includes(y))))
+}
+
 // The single best match for somewhere you already have — used to fill in a stop
 // you placed by hand. Tight radius, because "nearest article" gets silly fast.
-export async function describePlace({ lng, lat, name, radius = 250 }) {
-  const near = await findPlaces({ lng, lat, radius, limit: 10 })
+export async function describePlace({ lng, lat, name, radius = 250, strict = false }) {
+  const near = await findPlaces({ lng, lat, radius, limit: 20 })
   if (!near.length) return null
-  if (!name) return near[0]
-  const want = name.trim().toLowerCase()
-  return near.find(p => p.name.toLowerCase().includes(want) || want.includes(p.name.toLowerCase()))
-      || near[0]
+  const matched = name ? near.find(p => namesMatch(p.name, name)) : null
+  if (matched) return matched
+  // Unattended, a wrong picture is worse than no picture.
+  return strict ? null : (name ? near[0] : near[0])
+}
+
+/* Fill in the stops that have no picture of their own.
+
+   Runs unattended, so it is strict: a stop only takes a picture from an article
+   whose name genuinely matches it. Anything unrecognised keeps its placeholder
+   rather than being given a photograph of the building next door. */
+export async function enrichStops(stops, { onOne } = {}) {
+  const need = stops.filter(s => !s.src && s.name)
+  const found = []
+  await Promise.all(need.map(async stop => {
+    try {
+      const pl = await describePlace({
+        lng: stop.lng, lat: stop.lat, name: stop.name, radius: 400, strict: true,
+      })
+      if (!pl) return
+      const image = pl.image || (pl.pageTitle ? await imageForPage(pl.pageTitle).catch(() => null) : null)
+      if (!image) return
+      const patch = {
+        id: stop.id, src: image, sourceUrl: pl.source || null,
+        note: (stop.note || '').trim() ? undefined : pl.note || undefined,
+      }
+      found.push(patch)
+      onOne?.(patch)
+    } catch { /* one failure must not stop the rest */ }
+  }))
+  return found
 }
 
 /* Some articles lead with a logo rather than a photograph — the Van Gogh
