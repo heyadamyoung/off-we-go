@@ -301,6 +301,12 @@ begin
   end loop;
 end $$;
 
+-- When the trip runs. `dates` was a free-text field nobody could fill in
+-- confidently and the app never displayed; these are what the form now asks
+-- for, and the day count and the printed range are both worked out from them.
+alter table trips add column if not exists starts_on date;
+alter table trips add column if not exists ends_on   date;
+
 -- ---------------------------------------------------------------------------
 -- Attractions
 --

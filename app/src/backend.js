@@ -92,7 +92,7 @@ export async function loadTrip(session) {
   const wanted = new URLSearchParams(window.location.search).get('t')
   let q = supabase
     .from('trips')
-    .select(`id, slug, title, crew, dates, day_count,
+    .select(`id, slug, title, crew, dates, day_count, starts_on, ends_on,
              trip_members (user_id, role, display_name, avatar_url),
              stops (id, name, kind, icon, day, time, lng, lat, status, note, image_url, source_url, seq),
              photos (id, stop_id, lng, lat, caption, taken_by, taken_at, storage_path, external_url, seq),
@@ -132,7 +132,8 @@ export async function loadTrip(session) {
   return {
     source: 'supabase',
     tripId: t.id,
-    trip: { id: t.id, slug: t.slug, title: t.title, crew: t.crew, dates: t.dates, dayCount: t.day_count },
+    trip: { id: t.id, slug: t.slug, title: t.title, crew: t.crew, dates: t.dates,
+            dayCount: t.day_count, startsOn: t.starts_on, endsOn: t.ends_on },
     stops: (t.stops || []).map((s, i) => ({
       ...s, id: String(s.id), seq: i,
       // `src` is what the image component looks for, so a stop that came from a
@@ -353,7 +354,7 @@ export async function replaceRoute(tripId, points) {
 }
 
 /* ---- the trip itself ------------------------------------------------------ */
-export async function createTrip({ title, crew, dates, dayCount }) {
+export async function createTrip({ title, crew, dates, dayCount, startsOn, endsOn }) {
   if (!hasBackend) throw new Error('No backend configured')
   const base = (title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
   const slug = base + '-' + Math.random().toString(36).slice(2, 6)
@@ -366,7 +367,8 @@ export async function createTrip({ title, crew, dates, dayCount }) {
      the statement and cannot see the ownership the trigger has just granted.
      The insert succeeds and the whole thing fails at the returning clause. */
   const { error } = await supabase.from('trips')
-    .insert({ slug, title, crew: crew || null, dates: dates || null, day_count: dayCount || 1 })
+    .insert({ slug, title, crew: crew || null, dates: dates || null, day_count: dayCount || 1,
+              starts_on: startsOn || null, ends_on: endsOn || null })
   if (error) throw error
 
   const { data, error: readBack } = await supabase.from('trips')
@@ -382,10 +384,13 @@ export async function updateTrip(tripId, fields) {
   if ('crew' in fields) patch.crew = fields.crew
   if ('dates' in fields) patch.dates = fields.dates
   if ('dayCount' in fields) patch.day_count = fields.dayCount
+  if ('startsOn' in fields) patch.starts_on = fields.startsOn || null
+  if ('endsOn' in fields) patch.ends_on = fields.endsOn || null
   const { data, error } = await supabase.from('trips').update(patch).eq('id', tripId).select().single()
   if (error) throw error
   return { id: data.id, slug: data.slug, title: data.title, crew: data.crew,
-           dates: data.dates, dayCount: data.day_count }
+           dates: data.dates, dayCount: data.day_count,
+           startsOn: data.starts_on, endsOn: data.ends_on }
 }
 
 /* ---- your own profile on this trip ---------------------------------------- */

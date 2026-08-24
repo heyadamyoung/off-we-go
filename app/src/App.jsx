@@ -1018,7 +1018,7 @@ const LivePill = memo(function LivePill({ resetKey }) {
 })
 
 const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
-                                     dayIndex, liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
+                                     liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
                                      sunPhase, canEdit, editing, onToggleEdit, me, onSignOut,
                                      attractionsOn, onToggleAttractions }) {
   const Item = ({ children, hot }) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
@@ -1028,7 +1028,7 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
       <div className="tflow">
 <span className="crew">{(trip.crew || '').toUpperCase()}</span>
         <Item>{trip.title}</Item>
-        {trip.dayCount ? <Item hot>DAY {dayIndex} OF {trip.dayCount}</Item> : null}
+        {trip.dates ? <Item hot>{trip.dates}</Item> : null}
         <Item>{km.toFixed(1)} km walked</Item>
         <Item>{doneCount} of {stopCount} stops</Item>
         <Item>{photoCount} photos</Item>
@@ -1516,18 +1516,64 @@ function SignInScreen() {
   )
 }
 
+/* Dates.
+
+   The form used to ask for a line of text and, separately, a number of days.
+   Nothing checked that "4 – 16 September" and 7 agreed, nothing explained what
+   either was for, and the text was never shown anywhere at all. Now it asks
+   for two dates and works out both from them. */
+const MONTH = ['January', 'February', 'March', 'April', 'May', 'June',
+               'July', 'August', 'September', 'October', 'November', 'December']
+
+// Parsed at midday: a date-only string read as UTC lands on the previous day
+// for anyone west of Greenwich, which is a whole class of off-by-one bug.
+const onDay = iso => (iso ? new Date(iso + 'T12:00:00') : null)
+
+function formatRange(startsOn, endsOn) {
+  const a = onDay(startsOn), b = onDay(endsOn)
+  if (!a && !b) return ''
+  if (a && !b) return `from ${a.getDate()} ${MONTH[a.getMonth()]}`
+  if (!a && b) return `until ${b.getDate()} ${MONTH[b.getMonth()]}`
+  const sameYear = a.getFullYear() === b.getFullYear()
+  if (sameYear && a.getMonth() === b.getMonth()) {
+    return `${a.getDate()} – ${b.getDate()} ${MONTH[b.getMonth()]}`
+  }
+  if (sameYear) {
+    return `${a.getDate()} ${MONTH[a.getMonth()]} – ${b.getDate()} ${MONTH[b.getMonth()]}`
+  }
+  return `${a.getDate()} ${MONTH[a.getMonth()]} ${a.getFullYear()}` +
+         ` – ${b.getDate()} ${MONTH[b.getMonth()]} ${b.getFullYear()}`
+}
+
+// Inclusive: leaving on the 4th and coming home on the 16th is thirteen days.
+function daysBetween(startsOn, endsOn) {
+  const a = onDay(startsOn), b = onDay(endsOn)
+  if (!a || !b) return null
+  const days = Math.round((b - a) / 86400000) + 1
+  return days > 0 ? days : null
+}
+
 function NoTrip({ email, onCreated }) {
   const [making, setMaking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
-  const [f, setF] = useState({ title: '', crew: '', dates: '', dayCount: 7 })
+  const [f, setF] = useState({ title: '', crew: '', startsOn: '', endsOn: '' })
+  const span = daysBetween(f.startsOn, f.endsOn)
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))
 
   const create = async e => {
     e.preventDefault()
     if (!f.title.trim() || busy) return
     setBusy(true); setErr(null)
-    try { await createTrip({ ...f, dayCount: Number(f.dayCount) || 1 }); onCreated() }
+    try {
+      await createTrip({
+        title: f.title, crew: f.crew,
+        startsOn: f.startsOn || null, endsOn: f.endsOn || null,
+        dates: formatRange(f.startsOn, f.endsOn),
+        dayCount: span || 1,
+      })
+      onCreated()
+    }
     catch (e2) { setErr(e2.message || 'Could not create that trip'); setBusy(false) }
   }
 
@@ -1540,15 +1586,24 @@ function NoTrip({ email, onCreated }) {
             <b>Start a trip</b>
             <p>You will be its owner, and can invite everyone else once it exists.</p>
             <form className="newtrip" onSubmit={create}>
-              <input autoFocus required placeholder="Amsterdam Weekend" value={f.title}
-                     onChange={e => set('title', e.target.value)} />
-              <input placeholder="Sample Family" value={f.crew} onChange={e => set('crew', e.target.value)} />
+              <label>Where are you going?
+                <input autoFocus required placeholder="Amsterdam Weekend" value={f.title}
+                       onChange={e => set('title', e.target.value)} />
+              </label>
+              <label>Who is going?
+                <input placeholder="Sample Family" value={f.crew}
+                       onChange={e => set('crew', e.target.value)} />
+              </label>
               <div className="linkrow">
-                <input placeholder="4 – 16 September" value={f.dates}
-                       onChange={e => set('dates', e.target.value)} />
-                <input type="number" min="1" max="365" style={{ maxWidth: 92 }} value={f.dayCount}
-                       onChange={e => set('dayCount', e.target.value)} title="How many days" />
+                <label>Leaving
+                  <input type="date" value={f.startsOn} onChange={e => set('startsOn', e.target.value)} />
+                </label>
+                <label>Coming home
+                  <input type="date" value={f.endsOn} min={f.startsOn || undefined}
+                         onChange={e => set('endsOn', e.target.value)} />
+                </label>
               </div>
+              {span && <p className="span">{formatRange(f.startsOn, f.endsOn)}</p>}
               <div className="linkrow">
                 <button type="button" className="btn" style={{ flex: 1 }}
                         onClick={() => setMaking(false)}>Back</button>
@@ -1582,7 +1637,7 @@ function NoTrip({ email, onCreated }) {
    ========================================================================= */
 function TripSettings({ trip, onSave }) {
   const [f, setF] = useState({ title: trip.title || '', crew: trip.crew || '',
-                               dates: trip.dates || '', dayCount: trip.dayCount || 1 })
+                               startsOn: trip.startsOn || '', endsOn: trip.endsOn || '' })
   const [dirty, setDirty] = useState(false)
   const set = (k, v) => { setF(x => ({ ...x, [k]: v })); setDirty(true) }
   return (
@@ -1592,11 +1647,19 @@ function TripSettings({ trip, onSave }) {
         <input value={f.crew} placeholder="Crew" onChange={e => set('crew', e.target.value)} />
       </div>
       <div className="linkrow">
-        <input value={f.dates} placeholder="4 – 16 September" onChange={e => set('dates', e.target.value)} />
-        <input type="number" min="1" max="365" style={{ maxWidth: 84 }} value={f.dayCount}
-               title="How many days" onChange={e => set('dayCount', e.target.value)} />
+        <label>Leaving
+          <input type="date" value={f.startsOn} onChange={e => set('startsOn', e.target.value)} />
+        </label>
+        <label>Coming home
+          <input type="date" value={f.endsOn} min={f.startsOn || undefined}
+                 onChange={e => set('endsOn', e.target.value)} />
+        </label>
         <button className="btn" disabled={!dirty}
-                onClick={() => { onSave({ ...f, dayCount: Number(f.dayCount) || 1 }); setDirty(false) }}>
+                onClick={() => {
+                  onSave({ ...f, dates: formatRange(f.startsOn, f.endsOn),
+                           dayCount: daysBetween(f.startsOn, f.endsOn) || 1 })
+                  setDirty(false)
+                }}>
           Save
         </button>
       </div>
@@ -2020,7 +2083,6 @@ function TripApp({ data, session, onReload }) {
   const doneCount = stops.filter(s => s.status === 'done').length
   // Which day of the trip we are on, read off the stop marked "now" rather than
   // stored separately and left to drift.
-  const dayIndex = Math.max(1, days.indexOf(nowStop?.day) + 1)
 
   // Ids, not a snapshot: the viewer must reflect edits and deletions made while
   // it is open, which a captured array cannot.
@@ -2420,7 +2482,7 @@ function TripApp({ data, session, onReload }) {
 
   return (
     <div className="app wide">
-      <Ticker trip={trip} km={km} doneCount={doneCount} stopCount={stops.length} dayIndex={dayIndex}
+      <Ticker trip={trip} km={km} doneCount={doneCount} stopCount={stops.length}
         photoCount={photos.length} nowStop={nowStop} nextStop={nextStop}
         liveKey={step} onPeople={onPeople} tab={tab} setTab={setTab}
         onUpload={onUpload} theme={theme} onToggleTheme={toggleTheme}
