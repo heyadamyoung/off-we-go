@@ -28,10 +28,12 @@
    =========================================================================== */
 import { createClient } from '@supabase/supabase-js'
 import { cellsCovering, attractionsInCell, isHeadline, setApiHeaders,
-         extractsFor } from '../src/places.js'
+         setApiThrottle, extractsFor } from '../src/places.js'
 
 // Wikimedia asks scripts to identify themselves, and refuses them otherwise.
-setApiHeaders({ 'User-Agent': 'Wayfare/1.0 (family trip viewer)' })
+setApiHeaders({ 'User-Agent': 'Wayfare/1.0 (family trip viewer; support@threadway.ai)' })
+// Two a second. Measured: ten requests in four seconds already earns a 429.
+setApiThrottle(500)
 
 const dryRun = process.argv.includes('--dry-run')
 
@@ -156,11 +158,18 @@ async function fillExtracts() {
   let filled = 0
   for (;;) {
     const { data: rows, error } = await db.from('attractions')
-      .select(COLUMNS).is('extract', null).limit(500)
+      .select(COLUMNS).is('extract', null).limit(200)
     if (error) throw new Error(`select failed: ${error.message}`)
     if (!rows.length) break
 
-    const text = await extractsFor(rows.map(r => r.id))
+    // A whole batch failing is a rate limit, not a dead end: wait longer and
+    // try again. Giving up here would strand every row behind it.
+    let text = null
+    for (let attempt = 0; attempt < 4 && !text; attempt++) {
+      try { text = await extractsFor(rows.map(r => r.id)) }
+      catch { await pause(5000 * (attempt + 1)) }
+    }
+    if (!text) { console.log('  Wikipedia is refusing; stopping here, run again to carry on'); break }
     const { error: wrote } = await db.from('attractions')
       .upsert(rows.map(r => ({ ...r, extract: text.get(r.id) ?? '' })), { onConflict: 'id' })
     if (wrote) throw new Error(`upsert failed: ${wrote.message}`)
