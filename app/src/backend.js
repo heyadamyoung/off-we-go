@@ -452,13 +452,22 @@ export async function signOut() {
    rediscover them from Wikipedia on their own device. Returns null when there
    is no backend, which is the app's signal to go and look them up live.
    --------------------------------------------------------------------------- */
-export async function loadAttractions(box, { headlineOnly = false, limit = 4000 } = {}) {
+/* A thousand, because that is what PostgREST will return however much more you
+   ask for: a limit of four thousand came back with exactly one thousand rows
+   and no indication that anything had been left out. Ordered by page id so the
+   thousand is always the same thousand — unordered, panning away and back
+   reshuffles which pins exist — and low page ids skew towards the older, better
+   known articles, which is the right end to keep. */
+const MAX_PINS = 1000
+
+export async function loadAttractions(box, { headlineOnly = false, limit = MAX_PINS } = {}) {
   if (!hasBackend) return null
   let q = supabase.from('attractions')
     .select('id,name,descr,category,image_file,lng,lat,extract')
     .gte('lat', box.south).lte('lat', box.north)
     .gte('lng', box.west).lte('lng', box.east)
-    .limit(limit)
+    .order('id')
+    .limit(Math.min(limit, MAX_PINS))
   if (headlineOnly) q = q.eq('headline', true)
 
   const { data, error } = await q

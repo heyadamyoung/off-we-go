@@ -132,8 +132,10 @@ SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SECRET_KEY=sb_secret_... npm run 
 ```
 
 That walks the Netherlands and Scotland in ten-kilometre cells — the largest circle
-Wikipedia's geosearch will answer — and upserts what it finds. It is about 1,700 cells
-and a quarter of an hour, once, on one machine. `--dry-run` reports what a region comes
+Wikipedia's geosearch will answer — and upserts what it finds. It is 1,683 cells and
+about half an hour, once, on one machine; the real run produced **11,052 attractions**,
+3,877 in the Netherlands and 6,755 in Scotland, every one of them with a paragraph and
+nine in ten with a picture. `--dry-run` reports what a region comes
 to without credentials or writes; `--box=w,s,e,n` seeds anywhere else. Re-running is
 safe: rows are upserted by page id, so a second pass refreshes rather than duplicates
 and an interrupted run can just be started again.
@@ -147,17 +149,35 @@ filename, the paragraph from the row, and the Wikipedia link from the page id, w
 resolves to the article without a request. Clicking a pin costs nothing at all.
 
 The point of seeding is that a visitor's device does none of that. Opening the app is
-one indexed bounding-box query — measured at **0.18 ms** for a city-sized view over
-60,000 rows, and 1.2 ms for the whole of Scotland asking only for the headline ones.
-Grandma Jo's phone does not rediscover Edinburgh Castle; it asks for what is on
-screen and gets it in a single round trip.
+one indexed bounding-box query. Measured against the live project through a real
+signed-in session: **327 pins for Amsterdam in 345 ms**, 339 for Edinburgh in 86 ms,
+and 1,000 for the whole of Scotland in 127 ms. Grandma Jo's phone does not
+rediscover Edinburgh Castle; it asks for what is on screen and gets it in one round
+trip.
+
+A thousand is the ceiling, and deliberately so: PostgREST returns at most that many
+however much more you ask for, and a request for four thousand came back with exactly
+one thousand rows and no indication anything had been left out. The query is ordered by
+page id so the thousand is always the same thousand — unordered, panning away and back
+reshuffles which pins exist — and low page ids skew towards older, better known
+articles, which is the right end to keep.
+
+What the first live run also showed is what the classifier was letting through: of
+14,870 rows, 7,007 were uncategorised, and those were largely 1,934 railway stations,
+213 described only as a building, 75 areas of a city, some rowing clubs, a wind farm
+and a German submarine. `classify()` is now one function shared by the map, the seeder
+and `tidy-attractions.mjs`, which re-judges what is already stored — an upsert refreshes
+what it is given and knows nothing about what should no longer be there. That pass
+removed 3,818 rows and re-categorised 1,514.
 
 Nobody but the seeder can write. The table has a read policy for signed-in accounts and
 no insert, update or delete policy at all, so only the `service_role` key can change it
 — which is why that key is passed on the command line for one run and never put in a
 file beside the app. Both halves were checked against a real Postgres rather than
-assumed: the schema applies clean, and `anon` and `authenticated` are each refused an
-insert by row level security.
+assumed, first against a throwaway Postgres and then against the live project: the
+schema applies clean, a signed-out client reads **0 rows**, a signed-in one reads what
+it should, and both `anon` and `authenticated` are refused an insert by row level
+security.
 
 **Without a database it still works**, which is how it was built before there was one:
 the map falls back to asking Wikipedia directly, ten kilometres at a time, keeping what
