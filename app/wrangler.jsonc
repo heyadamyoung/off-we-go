@@ -9,10 +9,15 @@
   "assets": {
     "directory": "./dist",
 
-    // Every unknown path serves index.html rather than a 404. The magic-link
-    // callback comes back to whatever url it was sent from, and on a static
-    // host there is no file at that path — this is the Workers equivalent of
-    // the _redirects rule that Pages and Netlify read.
+    /* Every unknown path serves index.html rather than a 404. The magic-link
+       callback comes back to whatever url it was sent from, and on a static
+       host there is no file at that path.
+
+       This is the only place that rule lives now. A public/_redirects file
+       saying the same thing was rejected outright by Workers — it reads
+       _redirects as well, and "/* -> /index.html" trips its loop detector,
+       which fails the deploy after the assets have already uploaded. Netlify
+       and Vercel carry the same rule in their own config files. */
     "not_found_handling": "single-page-application"
   }
 }

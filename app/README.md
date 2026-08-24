@@ -61,14 +61,20 @@ config in the repository for three:
 
 | Host | What to set |
 |------|-------------|
-| Cloudflare Pages | Root directory `app`, build `pnpm build`, output `dist`. `public/_redirects` handles routing. |
+| Cloudflare Workers | Path `/app`, build `pnpm install && pnpm build`, deploy `npx wrangler deploy`. `wrangler.jsonc` uploads `dist` and handles routing. |
 | Netlify | `netlify.toml` covers all of it. |
 | Vercel | `vercel.json` covers all of it. |
 
-Whichever it is, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as build
-environment variables — they are baked in at build time, so changing one needs a
-redeploy rather than a restart. Both are safe to expose: the key identifies the
-project, not the caller, and row level security grants the anonymous role nothing.
+`.env.production` carries `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, so
+no host needs build variables set; one of the same name still overrides it. Both are
+safe to expose: the key identifies the project, not the caller, and row level security
+grants the anonymous role nothing. They are baked in at build time, so changing either
+means a redeploy rather than a restart.
+
+Only one file may own the single-page routing rule. Workers reads `_redirects` as well
+as `wrangler.jsonc`, and a `/* -> /index.html` line in both trips its loop detector and
+fails the deploy after the assets have already uploaded, which reads as a build problem
+and is not one.
 
 Then add the deployed origin to Supabase → Authentication → URL Configuration.
 Localhost is allowed out of the box; a real domain is not, and a magic link sent to
