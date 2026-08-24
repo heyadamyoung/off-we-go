@@ -52,9 +52,32 @@ const fileNameOf = url => {
   catch { return url }
 }
 
+/* Not somewhere you go, however precisely it is geotagged: the works *inside*
+   a museum carry the museum's coordinates, so a search around the Rijksmuseum
+   comes back with a stack of paintings sitting on the same pin. Monuments and
+   public sculpture stay — you can walk to those. */
+const NOT_SOMEWHERE_YOU_GO =
+  /(painting|drawing|etching|engraving|altarpiece|triptych|tapestry|watercolour|illuminated manuscript|novel by|poem by|album by|song by|sonata|symphony|species of|genus of|asteroid)/i
+
 // Worth surfacing first.
 const IS_A_DESTINATION =
   /\b(museum|gallery|park|garden|church|cathedral|basilica|synagogue|mosque|temple|castle|palace|monument|memorial|tower|bridge|market|square|theatre|theater|zoo|aquarium|stadium|restaurant|cafe|café|brewery|library|station|harbou?r|windmill|statue|house|hall)\b/i
+
+/* Wikipedia's opening sentence carries asides no traveller wants: the Dutch
+   spelling, the English gloss, and a full IPA pronunciation. On a card that is
+   three lines tall they crowd out what the place actually is. */
+const ASIDE = /\s*\((?:Dutch|English|French|German|Latin|Italian|Spanish|abbreviated|lit\.|pronounced|IPA)[^()]*\)/gi
+const NESTED_ASIDE = /\s*\([^()]*(?:pronunciation|pronounced|\[[^\]]*\])[^()]*\)/gi
+
+function tidy(text) {
+  return (text || '')
+    .replace(NESTED_ASIDE, '')
+    .replace(ASIDE, '')
+    .replace(/\s*\(\s*\)/g, '')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
 
 const metresBetween = (a, b) => {
   const R = 6371000, r = d => (d * Math.PI) / 180
@@ -66,7 +89,7 @@ const metresBetween = (a, b) => {
 
 const cache = new Map()
 
-export async function findPlaces({ lng, lat, radius = 1200, limit = 30, signal }) {
+export async function findNearby({ lng, lat, radius = 1200, limit = 30, signal }) {
   const key = [lng.toFixed(3), lat.toFixed(3), radius, limit].join(':')
   if (cache.has(key)) return cache.get(key)
 
@@ -96,7 +119,7 @@ export async function findPlaces({ lng, lat, radius = 1200, limit = 30, signal }
         pageTitle: p.title,                              // needed to look deeper
         name: p.title.replace(/\s*\([^)]*\)\s*$/, ''),   // "NEMO (museum)" -> "NEMO"
         kind: p.description || '',
-        note: (p.extract || '').trim(),
+        note: tidy(p.extract),
         // A locator map is worse than no picture: it looks like a photograph in
         // the card and tells you nothing.
         image: image && !NOT_A_PHOTO.test(fileNameOf(image)) ? image : null,
@@ -106,7 +129,8 @@ export async function findPlaces({ lng, lat, radius = 1200, limit = 30, signal }
         icon: iconFor(about),
         metres: Math.round(metresBetween([lng, lat], [p.coordinates[0].lon, p.coordinates[0].lat])),
         destination: IS_A_DESTINATION.test(about),
-        skip: NOT_A_PLACE.test(p.description || p.title),
+        skip: NOT_A_PLACE.test(p.description || p.title) ||
+              NOT_SOMEWHERE_YOU_GO.test(p.description || ''),
       }
     })
     .filter(p => !p.skip)
@@ -147,7 +171,7 @@ export function namesMatch(a, b) {
 // The single best match for somewhere you already have — used to fill in a stop
 // you placed by hand. Tight radius, because "nearest article" gets silly fast.
 export async function describePlace({ lng, lat, name, radius = 250, strict = false }) {
-  const near = await findPlaces({ lng, lat, radius, limit: 20 })
+  const near = await findNearby({ lng, lat, radius, limit: 20 })
   if (!near.length) return null
   const matched = name ? near.find(p => namesMatch(p.name, name)) : null
   if (matched) return matched
@@ -211,4 +235,132 @@ export async function imageForPage(pageTitle, signal) {
   }), { signal }).then(r => r.json()).catch(() => null)
 
   return Object.values(info?.query?.pages || {})[0]?.imageinfo?.[0]?.thumburl || null
+}
+
+
+/* =========================================================================
+   Listing the sights in an area
+
+   The obvious version of this — one geosearch, take what comes back — is
+   wrong, and measurably so. Geosearch returns the *nearest* articles, and near
+   the middle of Amsterdam the forty nearest are canals, squats and side
+   streets: the Rijksmuseum is only the sixty-ninth. Filtering that list cannot
+   recover what the limit already threw away.
+
+   So cast the net wide and rank it afterwards, by how many people read the
+   article. Popularity is the closest free stand-in for "worth going to", and
+   it needs no taste of my own encoded in a keyword list.
+
+     1. geosearch, 500 articles, coordinates only — cheap and unfiltered
+     2. drop the streets and districts by title
+     3. keep every plausible destination, plus the nearest few regardless
+     4. fetch description, extract, picture and readership for those
+     5. rank by readers, then by distance
+
+   Step 4 is the expensive one and it is batched in twenties, because both
+   TextExtracts and PageViewInfo quietly return nothing above that — no error,
+   no warning, just absent fields, which reads as "nobody visits the
+   Rijksmuseum" rather than "you asked for too much".
+   ========================================================================= */
+
+// Matched without word boundaries: Dutch names are compounds, and \bmuseum\b
+// does not match "Rijksmuseum" — which is how the city's best-known museum
+// went missing from a list of its sights.
+const LOOKS_LIKE_A_DESTINATION =
+  /(museum|gallery|park|garden|church|kerk|cathedral|basilica|synagogue|mosque|temple|castle|palace|paleis|monument|memorial|tower|toren|bridge|brug|market|markt|square|plein|gracht|theatre|theater|zoo|aquarium|stadium|library|windmill|molen|statue|hall|huis|house|hof|gebouw|poort|station|harbou?r)/i
+
+const BATCH = 20                 // extracts and pageviews both stop above this
+const MAX_CANDIDATES = 120
+
+const pause = ms => new Promise(r => setTimeout(r, ms))
+
+async function ask(params, signal) {
+  const url = API + '?' + new URLSearchParams({ action: 'query', format: 'json', origin: '*', ...params })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url, { signal })
+    if (res.ok) {
+      const text = await res.text()
+      if (text.startsWith('{')) return JSON.parse(text)
+    }
+    if (attempt < 2) await pause(700 * (attempt + 1))   // usually the rate limiter
+  }
+  throw new Error('Could not reach Wikipedia')
+}
+
+const dailyReaders = page => {
+  const counts = Object.values(page.pageviews || {}).filter(n => typeof n === 'number')
+  return counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : 0
+}
+
+const sightsCache = new Map()
+
+export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }) {
+  const key = [lng.toFixed(3), lat.toFixed(3), Math.round(radius / 250)].join(':')
+  if (sightsCache.has(key)) return sightsCache.get(key).slice(0, limit)
+
+  const wide = await ask({
+    list: 'geosearch',
+    gscoord: lat + '|' + lng,
+    gsradius: String(Math.min(MAX_RADIUS, Math.max(500, Math.round(radius)))),
+    gslimit: '500',
+  }, signal)
+
+  const found = (wide.query?.geosearch || []).filter(p => !NOT_A_PLACE.test(p.title))
+  const candidates = [...new Map([
+    ...found.filter(p => LOOKS_LIKE_A_DESTINATION.test(p.title)),
+    ...found.slice(0, 30),                    // somewhere unremarkable but close still counts
+  ].map(p => [p.pageid, p])).values()].slice(0, MAX_CANDIDATES)
+
+  const away = new Map(candidates.map(p => [p.pageid, Math.round(p.dist)]))
+  const detail = []
+  for (let i = 0; i < candidates.length; i += BATCH) {
+    const batch = candidates.slice(i, i + BATCH)
+    const json = await ask({
+      pageids: batch.map(p => p.pageid).join('|'),
+      prop: 'extracts|pageimages|description|info|pageviews|coordinates', inprop: 'url',
+      exintro: '1', explaintext: '1', exsentences: '2', exlimit: 'max',
+      piprop: 'thumbnail', pithumbsize: '800', pvipdays: '14',
+    }, signal)
+    detail.push(...Object.values(json.query?.pages || {}))
+    if (i + BATCH < candidates.length) await pause(80)   // be a good citizen
+  }
+
+  const places = detail
+    .map(p => {
+      const about = (p.description || '') + ' ' + (p.extract || '')
+      const image = p.thumbnail?.source || null
+      return {
+        id: 'wk' + p.pageid,
+        pageTitle: p.title,
+        name: p.title.replace(/\s*\([^)]*\)\s*$/, '').replace(/,\s*Amsterdam$/i, ''),
+        kind: p.description || '',
+        note: tidy(p.extract),
+        image: image && !NOT_A_PHOTO.test(fileNameOf(image)) ? image : null,
+        source: p.fullurl || null,
+        lng: p.coordinates?.[0]?.lon ?? null,
+        lat: p.coordinates?.[0]?.lat ?? null,
+        icon: iconFor(about),
+        metres: away.get(p.pageid) ?? null,
+        readers: Math.round(dailyReaders(p)),
+        /* Tested against the one-line description only, never the article text.
+           Run over the extract it threw away the Rijksmuseum, whose opening
+           paragraph mentions the borough it stands in — the filter is meant to
+           catch things that *are* a district, not things that name one. */
+        skip: NOT_A_PLACE.test(p.description || '') ||
+              NOT_SOMEWHERE_YOU_GO.test(p.description || ''),
+      }
+    })
+    .filter(p => !p.skip)
+    .sort((a, b) => (b.readers - a.readers) || (a.metres - b.metres))
+
+  // Coordinates come from pass one; pass two is not asked for them again.
+  for (const p of places) {
+    if (p.lng == null) {
+      const src = candidates.find(c => 'wk' + c.pageid === p.id)
+      if (src) { p.lng = src.lon; p.lat = src.lat }
+    }
+  }
+
+  sightsCache.set(key, places)
+  return places.slice(0, limit)
 }

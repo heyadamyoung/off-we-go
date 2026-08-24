@@ -48,6 +48,7 @@ pnpm dev         # http://localhost:5173
 | People | Invite by email, choose view or edit, cancel a pending invite |
 | Comments | Post against your own account; everyone on the trip sees them; delete your own |
 | Editing | Click the map to add a stop, drag pins to move them, reorder, retitle, redraw the walked route |
+| Sights | A list of what is worth seeing around the map, each with a picture, a name and a description; add any of them to the trip in one click |
 | Find places | Search what is on screen and drop in a real place — name, description and photograph already filled in |
 | Photos | Change a caption, move a photo to another stop, delete it |
 | Live updates | Changes made by one person appear for everyone else without a refresh |
@@ -116,16 +117,33 @@ and **Fill in from Wikipedia** in the stop editor will take the nearest match if
 it anyway.
 
 
-"Find places" in edit mode searches Wikipedia's geosearch for whatever is on screen and
-offers each result as a candidate on the map. Picking one creates a stop with its name,
-its description and a photograph already in place, so building an itinerary is mostly
-clicking rather than typing. There is also **Fill in from Wikipedia** in the stop editor
-for a stop you placed by hand.
+The **Sights** tab lists what is around the middle of the map — a picture, a name and a
+description each — without going near edit mode, because choosing where to go and editing
+an itinerary are different jobs. Anywhere already on the itinerary is marked rather than
+offered again, and one click adds the rest. "Find places" in edit mode is the same search
+drawn on the map instead, and there is **Fill in from Wikipedia** in the stop editor for a
+stop you placed by hand.
 
-It needs no API key and one request per search — `generator=geosearch` feeds the found
-pages straight into `prop=extracts|pageimages`, so a dozen places cost a single round
-trip. Three things in `places.js` are doing the real work, and all three exist because
-the raw results were unusable without them:
+The obvious way to build that list is wrong, and measurably so. Geosearch returns the
+*nearest* articles, and the forty nearest to the middle of Amsterdam are canals, squats
+and side streets — the Rijksmuseum is only the sixty-ninth. No amount of filtering
+recovers what the limit already discarded. So `findSights` casts a wide net and ranks
+afterwards:
+
+1. one `list=geosearch` call for 500 articles, coordinates only — cheap and unfiltered
+2. drop the streets and districts by title
+3. keep every plausible destination, plus the nearest thirty regardless
+4. fetch description, extract, picture and readership for those, **in batches of twenty**
+5. rank by daily readers, then by distance
+
+Twenty is not a round number chosen for tidiness: both `TextExtracts` and `PageViewInfo`
+return nothing above it — no error and no warning, just absent fields, which reads as
+"nobody visits the Rijksmuseum" rather than "you asked for too much". Readership is the
+closest free stand-in for "worth going to", and it needs no taste of mine encoded in a
+keyword list.
+
+Three more things in `places.js` are doing real work, and all three exist because the raw
+results were unusable without them:
 
 * **Streets and neighbourhoods are dropped.** Geosearch returns every geotagged article,
   which in a city centre is mostly administrative areas — accurate, useless.

@@ -9,7 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // this the map builds, loads its style and then silently never requests a tile.
 setWorkerUrl(maplibreWorkerUrl)
 import { AHEAD, pic, picFallback } from './data'
-import { findPlaces, describePlace, radiusForView, imageForPage, enrichStops } from './places'
+import { findSights, describePlace, radiusForView, imageForPage, enrichStops } from './places'
 import {
   hasBackend, supabase, loadTrip, createStop, updateStop, deleteStop,
   addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
@@ -50,6 +50,7 @@ const PATHS = {
   copy:'M9 9h11v11H9zM5 15V4h11',
   upload:'M12 19V7M7 12l5-5 5 5M5 20h14',
   edit:'M4 20h4l10-10-4-4L4 16z|M13.5 6.5l4 4',
+  star:'M12 3.2l2.6 5.6 6 .8-4.4 4.3 1.1 6.1-5.3-3-5.3 3 1.1-6.1L3.4 9.6l6-.8z',
   download:'M12 4v12M7 11l5 5 5-5M5 20h14',
 }
 // Icons re-render on every map frame; split the path data once, not 50x per frame.
@@ -828,7 +829,8 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
       </div>
       <div className="tright">
         <nav className="tnav">
-          {[['map', 'map'], ['timeline', 'list'], ['photos', 'grid'], ['family', 'users']].map(([k, ic]) => (
+          {[['map', 'map'], ['timeline', 'list'], ['photos', 'grid'],
+            ['sights', 'star'], ['family', 'users']].map(([k, ic]) => (
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} title={k}>
               <Icon n={ic} s={15} />
             </button>
@@ -1046,6 +1048,114 @@ function PhotosView({ stops, photos, byName, openViewer, person, setPerson, onCl
               <img className="av" src={byName(p.by).avatar} alt="" loading="lazy" decoding="async" />
               <div className="ov"><b>{p.caption}</b><span>{stop ? stop.name + ' · ' : ''}{p.when}</span></div>
             </button>
+          )
+        })}
+      </div>
+    </Pane>
+  )
+}
+
+/* =========================================================================
+   Sights nearby
+
+   A plain list of what is around, with a picture, a name and a description —
+   browsable without entering edit mode, because deciding where to go and
+   editing an itinerary are different jobs.
+   ========================================================================= */
+function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose, toast }) {
+  const [items, setItems] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [added, setAdded] = useState(() => new Set())
+
+  const load = useCallback(async () => {
+    setBusy(true); setError(null)
+    try {
+      const found = await findSights({
+        lng: centre.center[0], lat: centre.center[1],
+        radius: Math.max(1200, radiusForView(centre.zoom, centre.center[1], window.innerWidth)),
+        limit: 40,
+      })
+      setItems(found)
+    } catch (e) {
+      setError(e.message || 'Could not reach Wikipedia')
+    } finally { setBusy(false) }
+  }, [centre])
+
+  useEffect(() => { load() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* A handful of articles lead with a logo rather than a photograph — the Van
+     Gogh Museum is one — and the picture filter correctly rejects it, leaving a
+     blank card. Go looking inside those articles afterwards, so the list is not
+     held up waiting for the exceptions. */
+  useEffect(() => {
+    if (!items) return
+    const blank = items.filter(p => !p.image && p.pageTitle).slice(0, 12)
+    if (!blank.length) return
+    let alive = true
+    ;(async () => {
+      for (const place of blank) {
+        const url = await imageForPage(place.pageTitle).catch(() => null)
+        if (!alive) return
+        if (url) setItems(list => list.map(p => (p.id === place.id ? { ...p, image: url } : p)))
+      }
+    })()
+    return () => { alive = false }
+  }, [items])
+
+  const already = new Set(stops.map(s => (s.name || '').toLowerCase()))
+  const list = items || []
+
+  return (
+    <Pane
+      title="Sights nearby"
+      sub="Around the middle of the map, most visited first — not merely the nearest."
+      onClose={onClose}
+      actions={<button className="wbtn" onClick={load} disabled={busy}>
+        <Icon n="search" s={15} />{busy ? 'Searching…' : 'Search this area'}
+      </button>}>
+
+      {error && <p className="swarn">{error}</p>}
+      {!items && busy && <p className="snote">Looking for sights around here…</p>}
+      {items && !list.length && !busy && (
+        <p className="snote">Nothing found here. Move the map somewhere else and search again.</p>
+      )}
+
+      <div className="sights">
+        {list.map(pl => {
+          const have = already.has(pl.name.toLowerCase()) || added.has(pl.id)
+          return (
+            <article className="sight" key={pl.id}>
+              <div className="spic">
+                {pl.image
+                  ? <img src={pl.image} alt="" loading="lazy" decoding="async" />
+                  : <span className="none"><Icon n={pl.icon} s={22} c="var(--ink3)" /></span>}
+                {pl.metres != null && <em>{pl.metres < 1000
+                  ? pl.metres + ' m' : (pl.metres / 1000).toFixed(1) + ' km'}</em>}
+              </div>
+              <div className="sbody">
+                {/* The name carries the attribution the licence asks for; a
+                    separate "Wikipedia" link only crowded the buttons out. */}
+                {pl.source
+                  ? <a className="sname" href={pl.source} target="_blank" rel="noopener noreferrer"
+                       title="Read about it on Wikipedia">{pl.name}</a>
+                  : <b className="sname">{pl.name}</b>}
+                {pl.kind && <span className="kind">{pl.kind}</span>}
+                <p>{pl.note}</p>
+                <div className="sacts">
+                  <button className="wbtn sm" onClick={() => onShow(pl)}>Show on map</button>
+                  {canEdit && (
+                    <button className="wbtn sm hot" disabled={have}
+                            onClick={async () => {
+                              await onAdd(pl)
+                              setAdded(a => new Set(a).add(pl.id))
+                            }}>
+                      {have ? 'In your trip' : 'Add to trip'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </article>
           )
         })}
       </div>
@@ -1828,9 +1938,13 @@ function TripApp({ data, session, onReload }) {
     setFinding(true)
     try {
       const v = viewRef.current
-      const found = await findPlaces({
+      const found = await findSights({
+        // The narrower screen dimension, not the wider one: a candidate you
+        // cannot see is a candidate you cannot click, and results are ranked by
+        // how well known they are now rather than by how close they are.
         lng: v.center[0], lat: v.center[1],
-        radius: radiusForView(v.zoom, v.center[1], window.innerWidth),
+        radius: radiusForView(v.zoom, v.center[1],
+          Math.min(window.innerWidth, window.innerHeight) * 0.8),
       })
       const taken = new Set(stops.map(x => (x.name || '').toLowerCase()))
       const fresh = found.filter(pl => !taken.has(pl.name.toLowerCase()))
@@ -1982,6 +2096,28 @@ function TripApp({ data, session, onReload }) {
     } catch (e) { toast(e.message || 'Could not save that') }
   }, [tripId, me.id, toast])
 
+  // From the sights list: add it to the trip outright, rather than opening an
+  // editor — you are browsing, not authoring.
+  const addSight = useCallback(async pl => {
+    try {
+      const image = pl.image || (pl.pageTitle ? await imageForPage(pl.pageTitle).catch(() => null) : null)
+      const saved = await createStop(tripId, {
+        name: pl.name, kind: pl.kind || '', icon: pl.icon || 'pin', status: 'planned',
+        day: dayForNewStop, note: pl.note || '', lng: pl.lng, lat: pl.lat,
+        src: image || null, sourceUrl: pl.source || null, seq: stops.length,
+      })
+      setStops(list => [...list, saved])
+      toast(`${pl.name} added to the trip`)
+    } catch (e) {
+      toast(e.message || 'Could not add that')
+    }
+  }, [tripId, dayForNewStop, stops.length, toast])
+
+  const showSight = useCallback(pl => {
+    setTab('map'); setFollowing(false)
+    setView({ center: [pl.lng, pl.lat], zoom: Math.max(viewRef.current.zoom, 16), ms: 620 })
+  }, [])
+
   const onPeople = useCallback(() => setShare(true), [])
   const onUpload = useCallback(() => setUpload(true), [])
   const backToMap = useCallback(() => setTab('map'), [])
@@ -2063,6 +2199,9 @@ function TripApp({ data, session, onReload }) {
                                              openViewer={openViewer} onSelect={selectStop} onClose={backToMap} />}
         {tab === 'photos' && <PhotosView stops={stops} photos={photos} byName={byName} openViewer={openViewer}
                                          person={person} setPerson={setPerson} onClose={backToMap} />}
+        {tab === 'sights' && <SightsView centre={view} stops={stops} canEdit={canEdit}
+                                         onAdd={addSight} onShow={showSight}
+                                         onClose={backToMap} toast={toast} />}
         {tab === 'family' && <FamilyView family={family} photos={photos} toast={toast} onClose={backToMap} />}
       </div>
 

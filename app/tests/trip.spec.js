@@ -272,3 +272,47 @@ test('stops without a picture get a real one on load', async ({ page }) => {
   // building next door is worse than the placeholder.
   expect(real).toBeGreaterThanOrEqual(4)
 })
+
+test('the sights list shows real landmarks with a picture and a description', async ({ page }) => {
+  await open(page)
+
+  // Reachable without entering edit mode: browsing and authoring are different jobs.
+  await page.locator('.tnav button[title="sights"]').click()
+  await expect(page.locator('.sight').first()).toBeVisible({ timeout: 30_000 })
+  await page.waitForTimeout(2500)          // the logo-led articles fill in after
+
+  const cards = page.locator('.sight')
+  expect(await cards.count()).toBeGreaterThan(15)
+
+  // Every card carries the three things asked for: picture, name, description.
+  const shown = await cards.evaluateAll(els => els.map(e => ({
+    name: e.querySelector('.sname')?.textContent || '',
+    note: (e.querySelector('p')?.textContent || '').trim(),
+    pic: !!e.querySelector('.spic img'),
+  })))
+  expect(shown.filter(s => s.pic).length).toBeGreaterThan(shown.length * 0.9)
+  expect(shown.every(s => s.name && s.note)).toBe(true)
+
+  /* Ranked by readership, not by distance — the nearest forty articles to the
+     middle of Amsterdam are canals and side streets, and an earlier version of
+     this listed those instead. */
+  const top = shown.slice(0, 12).map(s => s.name).join(' | ')
+  expect(top).toMatch(/Rijksmuseum|Anne Frank|Van Gogh|Dam Square|Vondelpark/)
+  expect(top).not.toMatch(/straat|neighbourhood|district/i)
+
+  // Somewhere already on the itinerary is marked, not offered again.
+  await expect(page.locator('.sight .wbtn.hot:disabled').first()).toHaveText('In your trip')
+
+  // Adding one puts it on the map.
+  const before = await page.locator('.mstop').count()
+  const name = await page.locator('.sight').filter({ has: page.locator('.wbtn.hot:not(:disabled)') })
+    .first().locator('.sname').textContent()
+  // Pinned by name: the "first addable card" moves as soon as one is added.
+  const card = page.locator('.sight').filter({ has: page.locator('.sname', { hasText: name }) }).first()
+  await card.locator('.wbtn.hot').click()
+  await expect(page.locator('.toast')).toContainText(name)
+  await expect(card.locator('.wbtn.hot')).toHaveText('In your trip')
+
+  await page.locator('.tnav button[title="map"]').click()
+  await expect(page.locator('.mstop')).toHaveCount(before + 1)
+})

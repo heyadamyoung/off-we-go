@@ -404,6 +404,34 @@ img{display:block}
 .person span{font-size:12.5px;color:var(--ink3)}
 .person .n{margin-left:auto;font-size:12px;color:var(--ink3);text-align:right}
 
+/* ---------------- sights nearby ---------------- */
+.sights{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;
+  padding-bottom:16px;align-items:start}
+.sight{display:grid;grid-template-columns:118px 1fr;border:1px solid var(--line);border-radius:12px;
+  overflow:hidden;background:var(--bg1);min-width:0;min-height:158px}
+.sight:hover{border-color:var(--line2)}
+.spic{position:relative;background:var(--bg3)}
+.spic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.spic .none{position:absolute;inset:0;display:grid;place-items:center}
+.spic em{position:absolute;left:6px;bottom:6px;font-style:normal;font-size:10px;font-weight:700;
+  color:#fff;background:rgba(6,9,14,.66);padding:2px 6px;border-radius:99px;letter-spacing:.01em}
+.sbody{padding:11px 12px 10px;display:flex;flex-direction:column;min-width:0}
+.sbody .sname{font-size:14.5px;font-weight:700;letter-spacing:-.012em;line-height:1.25;
+  color:var(--ink);text-decoration:none;display:block}
+.sbody a.sname:hover{text-decoration:underline;text-underline-offset:2px}
+.sbody .kind{margin-top:2px;font-size:11.5px;font-weight:600;color:var(--hot);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbody p{margin:5px 0 0;font-size:12.5px;line-height:1.48;color:var(--ink2);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.sacts{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:10px}
+.sacts .wbtn.sm{height:27px;padding:0 10px;font-size:11.5px;margin:0;flex:none;white-space:nowrap}
+.sacts .wbtn.sm.hot{background:var(--hot);color:#0a0c10;border-color:transparent;font-weight:700}
+.sacts .wbtn.sm.hot:disabled{background:transparent;color:var(--ink3);border-color:var(--line);
+  opacity:1;cursor:default;font-weight:600}
+.snote,.swarn{font-size:13.5px;color:var(--ink3);padding:6px 0 14px}
+.swarn{color:#ff8b6b}
+@media (max-width:560px){.sights{grid-template-columns:1fr}}
+
 /* ---------------- photo viewer ---------------- */
 .viewer{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;grid-template-columns:1fr 372px}
 .vstage{position:relative;display:flex;flex-direction:column;min-height:0;background:#06070a}
