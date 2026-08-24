@@ -439,3 +439,28 @@ export async function sendMagicLink(email) {
 export async function signOut() {
   if (hasBackend) await supabase.auth.signOut()
 }
+
+/* ---------------------------------------------------------------------------
+   Attractions
+
+   Seeded once into the database by scripts/seed-attractions.mjs, so a visitor
+   gets the castles and museums in one indexed query rather than paying to
+   rediscover them from Wikipedia on their own device. Returns null when there
+   is no backend, which is the app's signal to go and look them up live.
+   --------------------------------------------------------------------------- */
+export async function loadAttractions(box, { headlineOnly = false, limit = 4000 } = {}) {
+  if (!hasBackend) return null
+  let q = supabase.from('attractions')
+    .select('id,name,descr,category,image_file,lng,lat')
+    .gte('lat', box.south).lte('lat', box.north)
+    .gte('lng', box.west).lte('lng', box.east)
+    .limit(limit)
+  if (headlineOnly) q = q.eq('headline', true)
+
+  const { data, error } = await q
+  if (error) throw new Error(error.message)
+  return data.map(r => ({
+    id: r.id, n: r.name, d: r.descr || '', k: r.category,
+    f: r.image_file, x: r.lng, y: r.lat,
+  }))
+}

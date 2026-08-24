@@ -274,10 +274,15 @@ const MAX_CANDIDATES = 120
 
 const pause = ms => new Promise(r => setTimeout(r, ms))
 
+/* Wikipedia refuses a request with no User-Agent. A browser always sends one;
+   Node does not, which is why the seed script has to say who it is. */
+let apiHeaders = {}
+export function setApiHeaders(headers) { apiHeaders = headers || {} }
+
 async function ask(params, signal) {
   const url = API + '?' + new URLSearchParams({ action: 'query', format: 'json', origin: '*', ...params })
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(url, { signal })
+    const res = await fetch(url, { signal, headers: apiHeaders })
     if (res.ok) {
       const text = await res.text()
       if (text.startsWith('{')) return JSON.parse(text)

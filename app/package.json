@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "playwright test",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "seed:attractions": "node scripts/seed-attractions.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

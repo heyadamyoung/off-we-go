@@ -125,25 +125,53 @@ monuments are already on it, everywhere it goes. Click one for a picture, what i
 and a line about it, and add it to the itinerary from there. The pin button in the
 header turns the layer off.
 
-Geosearch caps at a ten-kilometre radius, so covering a country means covering it in
-circles. The map is tiled onto a fixed global grid of ten-kilometre cells; whatever
-cells the view touches are fetched two at a time, kept in the browser afterwards, and
-never asked for again. Panning across Scotland fills it in cell by cell rather than in
-one doomed request, and a small pill says so while it happens. Wikidata's SPARQL
-endpoint and OpenStreetMap's Overpass were both tried first and both were rejected —
-41 seconds and a 502 for the one, and a throttled IP after three queries for the other.
+They come from a table, seeded once:
+
+```
+SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SERVICE_ROLE=eyJhbGci... npm run seed:attractions
+```
+
+That walks the Netherlands and Scotland in ten-kilometre cells — the largest circle
+Wikipedia's geosearch will answer — and upserts what it finds. It is about 1,700 cells
+and a quarter of an hour, once, on one machine. `--dry-run` reports what a region comes
+to without credentials or writes; `--box=w,s,e,n` seeds anywhere else. Re-running is
+safe: rows are upserted by page id, so a second pass refreshes rather than duplicates
+and an interrupted run can just be started again.
+
+The point of seeding is that a visitor's device does none of that. Opening the app is
+one indexed bounding-box query — measured at **0.18 ms** for a city-sized view over
+60,000 rows, and 1.2 ms for the whole of Scotland asking only for the headline ones.
+Grandma Jo's phone does not rediscover Edinburgh Castle; it asks for what is on
+screen and gets it in a single round trip.
+
+Nobody but the seeder can write. The table has a read policy for signed-in accounts and
+no insert, update or delete policy at all, so only the `service_role` key can change it
+— which is why that key is passed on the command line for one run and never put in a
+file beside the app. Both halves were checked against a real Postgres rather than
+assumed: the schema applies clean, and `anon` and `authenticated` are each refused an
+insert by row level security.
+
+**Without a database it still works**, which is how it was built before there was one:
+the map falls back to asking Wikipedia directly, ten kilometres at a time, keeping what
+it finds in that browser. Every visitor then pays for it again, and only for the ground
+they personally wandered over — hence the table. The fallback is per region, not per
+session, so panning somewhere the seeder never reached fills in live and the seeded
+regions still come back in one query.
 
 Two things matter for it to stay smooth, and both were measured rather than assumed:
 
 - The pins are a GeoJSON source and two map layers, not DOM markers. A thousand
   absolutely positioned elements re-laid-out per frame is exactly the jank this map was
   rebuilt to be rid of; as map layers they cost the GPU almost nothing.
-- Arrivals are published to the map on a slow timer rather than per cell, and the fill
-  holds its breath while a hand is on the map. Rebuilding the collection per cell put a
-  pan at 8.1s of task time; batching brought it to 3.2s against a 2.9s baseline with
-  the layer switched off, which is to say no measurable cost once an area has filled.
-  The first fill of a new area is still felt — 3.7 to 7.6s in that same measure — and
-  happens once, because it is then in the browser for good.
+- On the fallback path, arrivals are published to the map on a slow timer rather than
+  per cell, and the fill holds its breath while a hand is on the map. Rebuilding the
+  collection per cell put a pan at 8.1s of task time; batching brought it to 3.2s
+  against a 2.9s baseline with the layer switched off. The first fill of a new area is
+  still felt — 3.7 to 7.6s in that same measure — which is the cost seeding removes.
+
+Wikidata's SPARQL endpoint and OpenStreetMap's Overpass were both tried first and both
+rejected: 41 seconds and then a 502 for the one, a throttled IP after three queries for
+the other.
 
 The **Sights** tab lists what is around the middle of the map — a picture, a name and a
 description each — without going near edit mode, because choosing where to go and editing

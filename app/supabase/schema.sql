@@ -300,3 +300,44 @@ begin
     end;
   end loop;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Attractions
+--
+-- The castles, museums, lochs and monuments drawn under the itinerary. Shared
+-- by every trip and every account, because they are facts about the world
+-- rather than anything belonging to a family.
+--
+-- Seeded once by scripts/seed-attractions.mjs, which walks a region in
+-- ten-kilometre cells and upserts what it finds. Doing it here rather than in
+-- the browser means one person pays for the fetching, once, instead of every
+-- visitor paying for it again on their own device.
+-- ---------------------------------------------------------------------------
+create table if not exists attractions (
+  id          bigint primary key,              -- wikipedia pageid
+  name        text not null,
+  descr       text,
+  category    text not null default 'place',
+  image_file  text,
+  lng         double precision not null,
+  lat         double precision not null,
+  headline    boolean not null default false,  -- worth a pin at country zoom
+  updated_at  timestamptz not null default now()
+);
+
+-- Views are always a bounding box: latitude narrows it, longitude finishes it.
+create index if not exists attractions_bbox on attractions (lat, lng);
+-- The wide-zoom query asks only for the headline ones, so let it skip the rest.
+create index if not exists attractions_headline_bbox on attractions (lat, lng)
+  where headline;
+
+alter table attractions enable row level security;
+
+-- Readable by anyone signed in. There is nothing private here, but the rest of
+-- this schema grants the anonymous role nothing and this is no reason to start.
+drop policy if exists attractions_read on attractions;
+create policy attractions_read on attractions
+  for select to authenticated using (true);
+
+-- No insert, update or delete policy exists, so only the service_role key can
+-- write - which is the seed script, run from a machine and never the browser.
