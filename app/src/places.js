@@ -364,3 +364,154 @@ export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }
   sightsCache.set(key, places)
   return places.slice(0, limit)
 }
+
+/* =========================================================================
+   Attractions on the map
+
+   Not a search you run, but a layer that is simply there: everywhere the map
+   goes, the castles, museums, lochs and monuments are already drawn.
+
+   Geosearch caps at a ten-kilometre radius, so covering a country means
+   covering it in circles. The map is tiled onto a fixed global grid of
+   ten-kilometre cells; whatever cells the view touches get fetched once, are
+   kept in the browser afterwards, and are never asked for again. Panning
+   across Scotland fills it in cell by cell rather than in one doomed request.
+
+   One cell is about 450 ms and comes back with a description and the name of a
+   picture for roughly nine articles in ten, so a pin can open into a card with
+   no further request at all.
+   ========================================================================= */
+
+const CELL_DEG = 0.12                       // ~13 km of latitude, so 10 km circles overlap
+const lngStepAt = lat => CELL_DEG / Math.max(0.2, Math.cos((lat * Math.PI) / 180))
+
+export function cellsCovering({ west, south, east, north }, { limit = 12, centre } = {}) {
+  const cells = []
+  const row0 = Math.floor(south / CELL_DEG), row1 = Math.floor(north / CELL_DEG)
+  for (let row = row0; row <= row1 && cells.length < 4000; row++) {
+    const lat = (row + 0.5) * CELL_DEG
+    const step = lngStepAt(lat)
+    for (let col = Math.floor(west / step); col <= Math.floor(east / step); col++) {
+      cells.push({ key: row + '_' + col, lat, lng: (col + 0.5) * step })
+    }
+  }
+  if (centre) {
+    cells.sort((a, b) =>
+      ((a.lat - centre[1]) ** 2 + (a.lng - centre[0]) ** 2) -
+      ((b.lat - centre[1]) ** 2 + (b.lng - centre[0]) ** 2))
+  }
+  return cells.slice(0, limit)
+}
+
+/* What the pin is, which decides its colour and whether it survives a wide
+   zoom. Read off Wikipedia's one-line description, which for a place is
+   reliably of the form "castle in Highland, Scotland". */
+const KINDS = [
+  ['castle',   /castle|fortress|fort\b|citadel|palace|stronghold|tower house/i],
+  ['museum',   /museum|gallery|exhibition|library|archive/i],
+  ['worship',  /cathedral|abbey|priory|minster|church|chapel|kirk|synagogue|mosque|temple/i],
+  ['outdoors', /national park|country park|park\b|garden|forest|glen|loch|lake|reservoir|falls|waterfall|beach|bay\b|island|isle of|mountain|munro|hill|peak|summit|cave|nature reserve|moor|cliff/i],
+  ['history',  /monument|memorial|standing stone|stone circle|cairn|broch|ruins|battlefield|archaeological|burial|henge|roman/i],
+  ['culture',  /theatre|theater|concert hall|opera house|cinema|arts centre|stadium|arena/i],
+  ['food',     /distillery|brewery|winery|restaurant|market|food hall|pub\b/i],
+  ['fun',      /zoo|aquarium|theme park|amusement|observatory|planetarium|lighthouse|windmill|bridge|pier|viewpoint/i],
+]
+const kindOf = text => (KINDS.find(([, re]) => re.test(text)) || ['place'])[0]
+
+// Worth a pin even when the whole country is on screen.
+const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun'])
+
+/* Things geotagged like places that are not places to go. Settlements are the
+   big one: every village in Scotland has an article, and a map peppered with
+   hamlets tells you nothing about where to spend an afternoon. */
+const NOT_AN_ATTRACTION =
+  /\b(village|hamlet|human settlement|civil parish|parish|council area|electoral|ward|constituency|suburb|neighbou?rhood|district|locality|county|region of|street|road|railway line|bus route|school|academy|college|university|hospital|company|car park|roundabout|retail park|industrial estate|business park|housing estate|office building|warehouse|petrol station|quarry|landfill|football club|f\.c\.|newspaper|band|album|song|painting|novel|person|politician|footballer|surname|given name)\b/i
+
+export function attractionThumb(file, width = 480) {
+  if (!file) return null
+  return 'https://commons.wikimedia.org/wiki/Special:FilePath/' +
+         encodeURIComponent(file.replace(/^File:/, '')) + '?width=' + width
+}
+
+const STORE_PREFIX = 'wf-attr-'
+const STORE_CAP = 150                       // cells kept before the oldest go
+
+function readCell(key) {
+  try {
+    const raw = localStorage.getItem(STORE_PREFIX + key)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function writeCell(key, items) {
+  try {
+    localStorage.setItem(STORE_PREFIX + key, JSON.stringify(items))
+    const seen = JSON.parse(localStorage.getItem(STORE_PREFIX + 'index') || '[]')
+      .filter(k => k !== key)
+    seen.push(key)
+    while (seen.length > STORE_CAP) {
+      try { localStorage.removeItem(STORE_PREFIX + seen.shift()) } catch { /* gone already */ }
+    }
+    localStorage.setItem(STORE_PREFIX + 'index', JSON.stringify(seen))
+  } catch {
+    // Quota, or private browsing. The layer still works, it just refetches.
+    try { localStorage.removeItem(STORE_PREFIX + 'index') } catch { /* nothing to do */ }
+  }
+}
+
+const liveCells = new Map()
+
+export async function attractionsInCell(cell, signal) {
+  if (liveCells.has(cell.key)) return liveCells.get(cell.key)
+  const stored = readCell(cell.key)
+  if (stored) { liveCells.set(cell.key, stored); return stored }
+
+  const json = await ask({
+    generator: 'geosearch',
+    ggscoord: cell.lat + '|' + cell.lng,
+    ggsradius: '10000',
+    ggslimit: '500',
+    prop: 'coordinates|description|pageprops',
+    ppprop: 'page_image_free',
+    // Every prop here has its own quiet page cap, and coordinates is the
+    // meanest of them: ten, by default, out of five hundred articles. Without
+    // this the layer silently drew a handful of pins and looked simply broken.
+    colimit: 'max',
+  }, signal)
+
+  const items = Object.values(json.query?.pages || {})
+    .filter(p => p.coordinates?.length && p.description)
+    .filter(p => !NOT_AN_ATTRACTION.test(p.description) && !NOT_A_PLACE.test(p.description))
+    .map(p => ({
+      id: p.pageid,
+      n: p.title.replace(/\s*\([^)]*\)\s*$/, ''),
+      d: p.description.slice(0, 90),
+      k: kindOf(p.description),
+      f: p.pageprops?.page_image_free || null,
+      x: +p.coordinates[0].lon.toFixed(5),
+      y: +p.coordinates[0].lat.toFixed(5),
+    }))
+    .filter(p => p.k !== 'place' || p.f)      // unclassifiable and pictureless is noise
+
+  liveCells.set(cell.key, items)
+  writeCell(cell.key, items)
+  return items
+}
+
+export const isHeadline = kind => HEADLINE.has(kind)
+
+// Everything a pin's card wants that the map layer did not need to carry.
+export async function articleSummary(pageId, signal) {
+  const json = await ask({
+    pageids: String(pageId), prop: 'extracts|info|pageimages', inprop: 'url',
+    exintro: '1', explaintext: '1', exsentences: '3',
+    piprop: 'thumbnail', pithumbsize: '800',
+  }, signal)
+  const page = Object.values(json.query?.pages || {})[0]
+  if (!page) return null
+  return {
+    note: tidy(page.extract),
+    image: page.thumbnail?.source || null,
+    source: page.fullurl || null,
+  }
+}

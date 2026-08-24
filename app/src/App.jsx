@@ -9,7 +9,9 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // this the map builds, loads its style and then silently never requests a tile.
 setWorkerUrl(maplibreWorkerUrl)
 import { AHEAD, pic, picFallback } from './data'
-import { findSights, describePlace, radiusForView, imageForPage, enrichStops } from './places'
+import { findSights, describePlace, radiusForView, imageForPage, enrichStops,
+         cellsCovering, attractionsInCell, attractionThumb, isHeadline,
+         articleSummary } from './places'
 import {
   hasBackend, supabase, loadTrip, createStop, updateStop, deleteStop,
   addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
@@ -288,10 +290,107 @@ function useGliding(target, ms = 800) {
   return pt || target
 }
 
+const EMPTY_FC = { type: 'FeatureCollection', features: [] }
+
+/* Which attraction cells the screen is touching, and everything ever fetched.
+
+   Cells are asked for one at a time and abandoned the moment the view moves
+   again, so a long pan does not queue up a hundred requests for country you
+   have already left. Anything fetched stays: the layer only ever grows. */
+function useAttractions(view, enabled) {
+  /* Cells arrive every few hundred milliseconds, and each one used to rebuild
+     the whole collection and hand the map a fresh copy — thousands of features
+     re-tiled fifty times over, competing with the gesture under the user's
+     hand. New arrivals are collected in a ref and published on a slow timer
+     instead, so a blanket-fill of a country costs the map a handful of updates
+     rather than one per cell. */
+  const seen = useRef(new Map())
+  const [data, setData] = useState(EMPTY_FC)
+  const [filling, setFilling] = useState(0)
+  const dirty = useRef(false)
+
+  /* Fetching and parsing five hundred articles is real work, and doing it
+     while a hand is on the map is the one moment it is felt. The fill holds
+     its breath for the length of a gesture. */
+  const handOn = useRef(false)
+  useEffect(() => {
+    const down = () => { handOn.current = true }
+    const up = () => { handOn.current = false }
+    window.addEventListener('pointerdown', down, { passive: true })
+    window.addEventListener('pointerup', up, { passive: true })
+    window.addEventListener('pointercancel', up, { passive: true })
+    return () => {
+      window.removeEventListener('pointerdown', down)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!enabled) return
+    const publish = setInterval(() => {
+      if (!dirty.current) return
+      dirty.current = false
+      setData({
+        type: 'FeatureCollection',
+        features: [...seen.current.values()].map(poi => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [poi.x, poi.y] },
+          properties: {
+            id: poi.id, n: poi.n, d: poi.d, k: poi.k,
+            f: poi.f || '', big: isHeadline(poi.k),
+          },
+        })),
+      })
+    }, 700)
+    return () => clearInterval(publish)
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled || view.zoom < 7.4) { setFilling(0); return }
+    let alive = true
+
+    const timer = setTimeout(async () => {
+      const scale = 360 / (256 * Math.pow(2, view.zoom))
+      const lngSpan = window.innerWidth * scale
+      const latSpan = window.innerHeight * scale * Math.cos((view.center[1] * Math.PI) / 180)
+      const cells = cellsCovering({
+        west: view.center[0] - lngSpan / 2, east: view.center[0] + lngSpan / 2,
+        south: view.center[1] - latSpan / 2, north: view.center[1] + latSpan / 2,
+      }, { limit: 150, centre: view.center })
+
+      let left = cells.length
+      setFilling(left)
+      // Two at a time: enough to blanket a country in a minute, few enough that
+      // Wikipedia does not start refusing us. Cells already in the browser come
+      // back without a request at all, so this is instant the second time.
+      for (let i = 0; i < cells.length; i += 2) {
+        if (!alive) return
+        while (handOn.current && alive) await new Promise(r => setTimeout(r, 140))
+        if (!alive) return
+        const batch = cells.slice(i, i + 2)
+        const got = await Promise.all(batch.map(c => attractionsInCell(c).catch(() => null)))
+        if (!alive) return
+        left -= batch.length
+        setFilling(left)
+        for (const poi of got.filter(Boolean).flat()) {
+          if (!seen.current.has(poi.id)) { seen.current.set(poi.id, poi); dirty.current = true }
+        }
+      }
+      setFilling(0)
+    }, 320)
+
+    return () => { alive = false; clearTimeout(timer) }
+  }, [view, enabled])
+
+  return { data, filling, count: data.features.length }
+}
+
 const MapCanvas = memo(function MapCanvas({
   view, onView, theme, tint, interactive = true, route = [], stops = [], photos = [], live = null,
   selectedStop, onStop, onPhoto, onLive, labels = false, highlight = null,
-  editing = false, onMapClick, onStopMove, liveAvatar, places = [], onPickPlace, children,
+  editing = false, onMapClick, onStopMove, liveAvatar, places = [], onPickPlace,
+  attractions = null, onPickAttraction, children,
 }) {
   const holder = useRef(null)
   const [map, setMap] = useState(null)
@@ -326,6 +425,9 @@ const MapCanvas = memo(function MapCanvas({
     })
     m.touchZoomRotate?.disableRotation?.()
     setMap(m)
+    // A handle for the test suite: the attraction layer is drawn by the GPU,
+    // so there is no element to select and assert against.
+    if (interactive) window.__wayfareMap = m
     return () => { m.remove(); setMap(null) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -376,6 +478,79 @@ const MapCanvas = memo(function MapCanvas({
     const src = map.getSource('route')
     if (src) src.setData(lineOf(route))
   }, [map, route])
+
+  /* Attractions are drawn by the map itself rather than as DOM markers. There
+     can be thousands of them across a country, and a thousand absolutely
+     positioned elements re-laid-out on every frame is exactly the jank this
+     map was rebuilt to be rid of. As a source and two layers they cost the GPU
+     almost nothing and stay put during a gesture. */
+  const pickRef = useRef(onPickAttraction); pickRef.current = onPickAttraction
+  useEffect(() => {
+    if (!map) return
+    const add = () => {
+      if (map.getSource('attr')) return
+      map.addSource('attr', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'attr-dot', type: 'circle', source: 'attr',
+        // Below the route, so the trip always reads on top of the scenery.
+        ...(map.getLayer('route-halo') ? { beforeId: 'route-halo' } : {}),
+        filter: ['any', ['get', 'big'], ['>=', ['zoom'], 11]],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 2.4, 10, 3.4, 14, 5, 17, 7],
+          'circle-color': ['match', ['get', 'k'],
+            'castle', '#c98bdb', 'museum', '#6fb1ff', 'worship', '#9aa6b8',
+            'outdoors', '#57c78a', 'history', '#d8a25f', 'culture', '#e07ea8',
+            'food', '#e8a33d', 'fun', '#4fc9d4', '#8b93a3'],
+          'circle-stroke-width': 1.4,
+          'circle-stroke-color': 'rgba(8,11,16,.75)',
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.72, 12, 0.95],
+        },
+      })
+      map.addLayer({
+        id: 'attr-label', type: 'symbol', source: 'attr',
+        ...(map.getLayer('route-halo') ? { beforeId: 'route-halo' } : {}),
+        minzoom: 12.6,
+        filter: ['any', ['get', 'big'], ['>=', ['zoom'], 13.4]],
+        layout: {
+          'text-field': ['get', 'n'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 12.6, 10, 16, 12.5],
+          'text-offset': [0, 1.05], 'text-anchor': 'top',
+          'text-optional': true, 'text-padding': 6,
+          'text-max-width': 9,
+        },
+        paint: {
+          'text-color': themeRef.current === 'light' ? '#2a3140' : '#e8edf5',
+          'text-halo-color': themeRef.current === 'light' ? 'rgba(255,255,255,.92)' : 'rgba(8,11,16,.85)',
+          'text-halo-width': 1.3,
+        },
+      })
+    }
+    if (map.isStyleLoaded()) add()
+    map.on('style.load', add)
+
+    const hit = e => {
+      const f = e.features?.[0]
+      if (f) pickRef.current?.({ ...f.properties, lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] })
+    }
+    const enter = () => { map.getCanvas().style.cursor = 'pointer' }
+    const leave = () => { map.getCanvas().style.cursor = '' }
+    map.on('click', 'attr-dot', hit)
+    map.on('mouseenter', 'attr-dot', enter)
+    map.on('mouseleave', 'attr-dot', leave)
+    return () => {
+      map.off('style.load', add)
+      map.off('click', 'attr-dot', hit)
+      map.off('mouseenter', 'attr-dot', enter)
+      map.off('mouseleave', 'attr-dot', leave)
+    }
+  }, [map])
+
+  useEffect(() => {
+    if (!map || !attractions) return
+    const src = map.getSource('attr')
+    if (src) src.setData(attractions)
+  }, [map, attractions])
 
   useEffect(() => {
     if (!map || !map.getLayer('route-halo')) return
@@ -812,7 +987,8 @@ const LivePill = memo(function LivePill({ resetKey }) {
 
 const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
                                      dayIndex, liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
-                                     sunPhase, canEdit, editing, onToggleEdit, me, onSignOut }) {
+                                     sunPhase, canEdit, editing, onToggleEdit, me, onSignOut,
+                                     attractionsOn, onToggleAttractions }) {
   const Item = ({ children, hot }) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
   return (
     <header className="ticker">
@@ -842,6 +1018,10 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
             <Icon n={editing ? 'check' : 'edit'} s={15} />
           </button>
         )}
+        <button className={'tbtn ghost' + (attractionsOn ? ' on' : '')} onClick={onToggleAttractions}
+                title={attractionsOn ? 'Hide attractions on the map' : 'Show attractions on the map'}>
+          <Icon n="pin" s={15} />
+        </button>
         <button className="tbtn ghost" onClick={onUpload} title="Add a photo"><Icon n="camera" s={15} /></button>
         <button className="tbtn ghost" onClick={onToggleTheme}
                 title={sunPhase ? `Theme · the map is following ${sunPhase} where the family is`
@@ -905,6 +1085,11 @@ const HeroCard = memo(function HeroCard({ stop, photos, onClose, openViewer, toa
 // A sentinel for the day filter. A plain string, not a control character:
 // a literal NUL in the source makes grep and diff treat the file as binary.
 const ALL_DAYS = 'all-days'
+
+const ICON_FOR_KIND = {
+  castle: 'museum', museum: 'museum', worship: 'pin', outdoors: 'walk',
+  history: 'pin', culture: 'museum', food: 'food', fun: 'boat',
+}
 
 const Filmstrip = memo(function Filmstrip({ stops, photos, byName, selected, onSelect, day, setDay,
                                             days, openViewer, query, setQuery }) {
@@ -1062,6 +1247,46 @@ function PhotosView({ stops, photos, byName, openViewer, person, setPerson, onCl
    browsable without entering edit mode, because deciding where to go and
    editing an itinerary are different jobs.
    ========================================================================= */
+/* The card a pin on the map opens into. The name, the sort of thing it is and
+   a picture are already in hand from the layer, so it appears at once and the
+   fuller description arrives after. */
+function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }) {
+  const [more, setMore] = useState(null)
+  const [adding, setAdding] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setMore(null)
+    articleSummary(poi.id).then(m => { if (alive) setMore(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [poi.id])
+
+  const picture = more?.image || attractionThumb(poi.f)
+
+  return (
+    <div className="acard">
+      <button className="ax" onClick={onClose} title="Close"><Icon n="x" s={15} w={2} /></button>
+      {picture && <div className="apic"><img src={picture} alt="" decoding="async" /></div>}
+      <div className="abody">
+        <b>{poi.n}</b>
+        <span className="kind">{poi.d}</span>
+        <p>{more ? more.note : ''}</p>
+        <div className="aacts">
+          {canEdit && (
+            <button className="wbtn sm hot" disabled={inTrip || adding}
+              onClick={async () => { setAdding(true); await onAdd({ ...poi, image: picture, source: more?.source, note: more?.note }); setAdding(false) }}>
+              {inTrip ? 'In your trip' : adding ? 'Adding…' : 'Add to trip'}
+            </button>
+          )}
+          {more?.source && (
+            <a className="wbtn sm" href={more.source} target="_blank" rel="noopener noreferrer">Wikipedia</a>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose, toast }) {
   const [items, setItems] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -1664,6 +1889,10 @@ function TripApp({ data, session, onReload }) {
   const [saving, setSaving] = useState(false)
   const [routeDraft, setRouteDraft] = useState(null)   // non-null while editing the line
   const [places, setPlaces] = useState([])             // candidates from a place search
+  const [attraction, setAttraction] = useState(null)   // the pin whose card is open
+  const [showAttractions, setShowAttractions] = useState(() => {
+    try { return localStorage.getItem('wf-attractions') !== 'off' } catch { return true }
+  })
   const [finding, setFinding] = useState(false)
 
   const { tripId, canEdit } = data
@@ -2113,6 +2342,30 @@ function TripApp({ data, session, onReload }) {
     }
   }, [tripId, dayForNewStop, stops.length, toast])
 
+  const { data: attractions, filling: attrFilling, count: attrCount } =
+    useAttractions(view, showAttractions && tab === 'map')
+
+  const toggleAttractions = useCallback(() => {
+    setShowAttractions(on => {
+      const next = !on
+      try { localStorage.setItem('wf-attractions', next ? 'on' : 'off') } catch { /* private mode */ }
+      if (!next) setAttraction(null)
+      return next
+    })
+  }, [])
+
+  const addAttraction = useCallback(async poi => {
+    try {
+      const saved = await createStop(tripId, {
+        name: poi.n, kind: poi.d || '', icon: ICON_FOR_KIND[poi.k] || 'pin', status: 'planned',
+        day: dayForNewStop, note: poi.note || '', lng: poi.lng, lat: poi.lat,
+        src: poi.image || null, sourceUrl: poi.source || null, seq: stops.length,
+      })
+      setStops(list => [...list, saved])
+      toast(`${poi.n} added to the trip`)
+    } catch (e) { toast(e.message || 'Could not add that') }
+  }, [tripId, dayForNewStop, stops.length, toast])
+
   const showSight = useCallback(pl => {
     setTab('map'); setFollowing(false)
     setView({ center: [pl.lng, pl.lat], zoom: Math.max(viewRef.current.zoom, 16), ms: 620 })
@@ -2135,6 +2388,7 @@ function TripApp({ data, session, onReload }) {
         photoCount={photos.length} nowStop={nowStop} nextStop={nextStop}
         liveKey={step} onPeople={onPeople} tab={tab} setTab={setTab}
         onUpload={onUpload} theme={theme} onToggleTheme={toggleTheme}
+        attractionsOn={showAttractions} onToggleAttractions={toggleAttractions}
         sunPhase={mapOverride ? null : sun.phase}
         canEdit={canEdit} editing={editing} onToggleEdit={startEditing}
         me={me} onSignOut={hasBackend ? () => signOut().then(() => window.location.reload()) : null} />
@@ -2145,7 +2399,18 @@ function TripApp({ data, session, onReload }) {
           labels={view.zoom > 13} onStop={pickStop}
           onPhoto={openViewer} onLive={onLive} liveAvatar={family[0]?.avatar}
           editing={editing} onMapClick={onMapClick} onStopMove={onStopMove}
-          places={editing && !routeDraft ? places : []} onPickPlace={pickPlace} />
+          places={editing && !routeDraft ? places : []} onPickPlace={pickPlace}
+          attractions={attractions} onPickAttraction={setAttraction} />
+
+        {showAttractions && attrFilling > 0 && (
+          <div className="attrfill"><i /> Finding attractions… {attrCount}</div>
+        )}
+
+        {attraction && (
+          <AttractionCard poi={attraction} canEdit={canEdit}
+            inTrip={stops.some(s => (s.name || '').toLowerCase() === (attraction.n || '').toLowerCase())}
+            onAdd={addAttraction} onClose={() => setAttraction(null)} />
+        )}
 
         {editing && draft && (
           <StopEditor draft={draft} days={days} onField={onDraftField}

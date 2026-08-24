@@ -48,6 +48,7 @@ pnpm dev         # http://localhost:5173
 | People | Invite by email, choose view or edit, cancel a pending invite |
 | Comments | Post against your own account; everyone on the trip sees them; delete your own |
 | Editing | Click the map to add a stop, drag pins to move them, reorder, retitle, redraw the walked route |
+| Attractions | Castles, museums, lochs and monuments drawn on the map everywhere it goes — Amsterdam, the Highlands, anywhere; click one for a picture, a description and a way to add it |
 | Sights | A list of what is worth seeing around the map, each with a picture, a name and a description; add any of them to the trip in one click |
 | Find places | Search what is on screen and drop in a real place — name, description and photograph already filled in |
 | Photos | Change a caption, move a photo to another stop, delete it |
@@ -116,6 +117,33 @@ confidently given it a photograph of a church. Anything unmatched keeps its plac
 and **Fill in from Wikipedia** in the stop editor will take the nearest match if you want
 it anyway.
 
+
+### Attractions on the map
+
+The map is not just the trip drawn on a basemap: the castles, museums, lochs and
+monuments are already on it, everywhere it goes. Click one for a picture, what it is
+and a line about it, and add it to the itinerary from there. The pin button in the
+header turns the layer off.
+
+Geosearch caps at a ten-kilometre radius, so covering a country means covering it in
+circles. The map is tiled onto a fixed global grid of ten-kilometre cells; whatever
+cells the view touches are fetched two at a time, kept in the browser afterwards, and
+never asked for again. Panning across Scotland fills it in cell by cell rather than in
+one doomed request, and a small pill says so while it happens. Wikidata's SPARQL
+endpoint and OpenStreetMap's Overpass were both tried first and both were rejected —
+41 seconds and a 502 for the one, and a throttled IP after three queries for the other.
+
+Two things matter for it to stay smooth, and both were measured rather than assumed:
+
+- The pins are a GeoJSON source and two map layers, not DOM markers. A thousand
+  absolutely positioned elements re-laid-out per frame is exactly the jank this map was
+  rebuilt to be rid of; as map layers they cost the GPU almost nothing.
+- Arrivals are published to the map on a slow timer rather than per cell, and the fill
+  holds its breath while a hand is on the map. Rebuilding the collection per cell put a
+  pan at 8.1s of task time; batching brought it to 3.2s against a 2.9s baseline with
+  the layer switched off, which is to say no measurable cost once an area has filled.
+  The first fill of a new area is still felt — 3.7 to 7.6s in that same measure — and
+  happens once, because it is then in the browser for good.
 
 The **Sights** tab lists what is around the middle of the map — a picture, a name and a
 description each — without going near edit mode, because choosing where to go and editing

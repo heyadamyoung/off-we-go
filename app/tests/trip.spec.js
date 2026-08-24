@@ -316,3 +316,46 @@ test('the sights list shows real landmarks with a picture and a description', as
   await page.locator('.tnav button[title="map"]').click()
   await expect(page.locator('.mstop')).toHaveCount(before + 1)
 })
+
+test('attractions are drawn across the map and open into a card', async ({ page }) => {
+  await open(page)
+  // Drawn by the map itself, not as elements, so ask the map what it rendered.
+  const dots = async () => page.evaluate(() => {
+    const m = window.__wayfareMap
+    return m?.getLayer('attr-dot') ? m.queryRenderedFeatures({ layers: ['attr-dot'] }).length : 0
+  })
+  await expect.poll(dots, { timeout: 40_000, intervals: [1000] }).toBeGreaterThan(40)
+
+  // They follow the map anywhere, not just where the trip already goes.
+  await page.mouse.move(700, 500)
+  await page.mouse.down(); await page.mouse.move(660, 470, { steps: 8 }); await page.mouse.up()
+  await page.evaluate(() => window.__wayfareMap.jumpTo({ center: [-3.1883, 55.9533], zoom: 13.5 }))
+  await expect.poll(dots, { timeout: 60_000, intervals: [1500] }).toBeGreaterThan(30)
+
+  const names = await page.evaluate(() => window.__wayfareMap
+    .queryRenderedFeatures({ layers: ['attr-dot'] }).map(f => f.properties.n).join(' | '))
+  expect(names).toMatch(/Castle|Museum|Monument|Gallery|Park/)
+
+  // A pin opens a card with the three things worth knowing.
+  const hit = await page.evaluate(() => {
+    const m = window.__wayfareMap, c = m.getCanvas()
+    const fs = m.queryRenderedFeatures({ layers: ['attr-dot'] })
+    let best = null, bd = Infinity
+    for (const f of fs) {
+      const pt = m.project(f.geometry.coordinates)
+      const d = (pt.x - c.clientWidth / 2) ** 2 + (pt.y - c.clientHeight / 2) ** 2
+      if (d < bd) { bd = d; best = { x: Math.round(pt.x), y: Math.round(pt.y) } }
+    }
+    return best
+  })
+  const box = await page.locator('.mapcanvas').boundingBox()
+  await page.mouse.click(box.x + hit.x, box.y + hit.y)
+  await expect(page.locator('.acard')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.acard b')).not.toHaveText('')
+  await expect(page.locator('.acard .kind')).not.toHaveText('')
+  await expect(page.locator('.acard p')).not.toHaveText('', { timeout: 15_000 })
+
+  // And the layer can be turned off.
+  await page.locator('.tbtn.ghost[title*="Hide attractions"]').click()
+  await expect(page.locator('.acard')).toHaveCount(0)
+})
