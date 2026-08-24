@@ -262,12 +262,36 @@ export async function invitePerson(tripId, { email, name, role = 'viewer' }) {
     sampleTrip().invites.push(row)
     return row
   }
+  const to = email.trim().toLowerCase()
   const { data, error } = await supabase.from('trip_invites')
-    .upsert({ trip_id: tripId, email: email.trim().toLowerCase(), name: name || null, role },
+    .upsert({ trip_id: tripId, email: to, name: name || null, role },
             { onConflict: 'trip_id,email' })
     .select().single()
   if (error) throw error
-  return data
+
+  /* And actually invite them.
+
+     Writing the row only records that they may join; it sends nothing, because
+     the only mail Supabase sends is for signing in. So an invitation used to be
+     an entry in a table and a person who never heard anything. Sending them a
+     sign-in link is the invitation: following it creates their account, and
+     accept_invites() turns this row into membership on the way in.
+
+     Sent from its own client so the request cannot disturb the session of the
+     person doing the inviting, and reported separately — the invitation itself
+     stands even when the mail is refused, which above a certain rate it will be. */
+  let mailed = true, mailError = null
+  try {
+    const courier = createClient(URL_, KEY_, { auth: { persistSession: false, autoRefreshToken: false } })
+    const { error: sendErr } = await courier.auth.signInWithOtp({
+      email: to,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname },
+    })
+    if (sendErr) { mailed = false; mailError = sendErr.message }
+  } catch (e) {
+    mailed = false; mailError = e.message
+  }
+  return { ...data, mailed, mailError }
 }
 
 export async function revokeInvite(tripId, id) {

@@ -1749,7 +1749,11 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
       const row = await invitePerson(tripId, { email, name, role })
       setInvites(list => [...list.filter(i => i.id !== row.id), row])
       setEmail(''); setName('')
-      toast(`Invited ${row.email}`)
+      // The invitation stands either way; say plainly which happened, because
+      // "Invited" over a mail that never went is how somebody ends up waiting.
+      toast(row.mailed
+        ? `Invited ${row.email} — sign-in link sent`
+        : `${row.email} can join, but the email did not send: ${row.mailError || 'unknown error'}`)
     } catch (e2) {
       toast(e2.message || 'Could not send that invite')
     } finally { setBusy(false) }
