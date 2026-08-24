@@ -97,12 +97,20 @@ Links are single use and last about an hour, so send one when the person is arou
 click it; run it again for another. Roles are `viewer` (look and comment) or `editor`
 (change the itinerary).
 
-Two things about the free tiers are worth knowing before the family relies on it.
-A free Supabase project pauses after about a week of no traffic, which for a trip
-viewer opened once a fortnight means somebody has to wake it from the dashboard.
-And the built-in auth mail is rate limited to a handful an hour and lands in spam
-often enough to matter — plugging in custom SMTP fixes both invitations and
-sign-ins.
+### Mail
+
+Sign-in links go out through Resend, from `trips@send.threadway.ai`. A sending
+subdomain rather than the root domain, so the Microsoft 365 mail on `threadway.ai`
+is untouched by any of it: three records under `send.` carry the DKIM key and the
+bounce path, and nothing above them changes.
+
+Links last a day rather than the default hour. A link emailed to somebody's mother
+is not clicked within the hour, and an expired one is indistinguishable from a
+broken app.
+
+The one free-tier fact left to plan around: a free Supabase project pauses after
+about a week of no traffic, which for a trip viewer opened once a fortnight means
+somebody has to wake it from the dashboard.
 
 ## Running it against your own trip
 
