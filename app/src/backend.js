@@ -81,7 +81,13 @@ export async function loadTrip(session) {
   if (!session) return { needsAuth: true }
 
   // Turn any invitation addressed to this account into a membership first.
-  await supabase.rpc('accept_invites').catch(() => {})
+  /* Claim any invitations issued to this address before the account existed.
+
+     Awaited inside a try rather than given a .catch: rpc() hands back a query
+     builder, which is thenable but has no .catch, so the tidy-looking version
+     throws a TypeError before the sign-in ever completes. Failing here should
+     cost you the invite, not the whole trip. */
+  try { await supabase.rpc('accept_invites') } catch { /* try again next load */ }
 
   const wanted = new URLSearchParams(window.location.search).get('t')
   let q = supabase
@@ -351,10 +357,21 @@ export async function createTrip({ title, crew, dates, dayCount }) {
   if (!hasBackend) throw new Error('No backend configured')
   const base = (title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
   const slug = base + '-' + Math.random().toString(36).slice(2, 6)
-  const { data, error } = await supabase.from('trips')
+  /* Written and read back as two statements, deliberately.
+
+     What makes a trip yours is a trip_members row, and that is created by an
+     after-insert trigger. Asking for the new row in the same statement — the
+     usual .insert().select() — is refused outright: the select policy calls
+     is_trip_member, which is stable, so it reads the snapshot from the start of
+     the statement and cannot see the ownership the trigger has just granted.
+     The insert succeeds and the whole thing fails at the returning clause. */
+  const { error } = await supabase.from('trips')
     .insert({ slug, title, crew: crew || null, dates: dates || null, day_count: dayCount || 1 })
-    .select().single()
   if (error) throw error
+
+  const { data, error: readBack } = await supabase.from('trips')
+    .select().eq('slug', slug).single()
+  if (readBack) throw readBack
   return data
 }
 
