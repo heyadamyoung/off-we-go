@@ -54,6 +54,33 @@ pnpm dev         # http://localhost:5173
 | Photos | Change a caption, move a photo to another stop, delete it |
 | Live updates | Changes made by one person appear for everyone else without a refresh |
 
+## Putting it somewhere
+
+It is a static build and a Supabase project, so any static host will do. There is
+config in the repository for three:
+
+| Host | What to set |
+|------|-------------|
+| Cloudflare Pages | Root directory `app`, build `pnpm build`, output `dist`. `public/_redirects` handles routing. |
+| Netlify | `netlify.toml` covers all of it. |
+| Vercel | `vercel.json` covers all of it. |
+
+Whichever it is, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as build
+environment variables — they are baked in at build time, so changing one needs a
+redeploy rather than a restart. Both are safe to expose: the key identifies the
+project, not the caller, and row level security grants the anonymous role nothing.
+
+Then add the deployed origin to Supabase → Authentication → URL Configuration.
+Localhost is allowed out of the box; a real domain is not, and a magic link sent to
+an unlisted origin quietly comes back to the site url instead.
+
+Two things about the free tiers are worth knowing before the family relies on it.
+A free Supabase project pauses after about a week of no traffic, which for a trip
+viewer opened once a fortnight means somebody has to wake it from the dashboard.
+And the built-in auth mail is rate limited to a handful an hour and lands in spam
+often enough to matter — plugging in custom SMTP fixes both invitations and
+sign-ins.
+
 ## Running it against your own trip
 
 With no configuration the app runs on the bundled sample trip and everything — editor,

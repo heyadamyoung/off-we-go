@@ -1,6 +1,10 @@
-# Netlify. The build needs VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY set in
-# Site settings -> Environment variables; they are baked in at build time, so a
-# change to either needs a redeploy, not just a restart.
+# Netlify. The build needs VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
+# set in Site settings -> Environment variables (VITE_SUPABASE_ANON_KEY is still
+# read, for a project set up before Supabase renamed it). They are baked in at
+# build time, so changing either needs a redeploy, not just a restart.
+#
+# Both are safe to expose: the key identifies the project, not the caller, and
+# row level security grants the anonymous role nothing at all.
 [build]
   base    = "app"
   command = "pnpm build"

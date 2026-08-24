@@ -1,0 +1,7 @@
+# Cloudflare Pages (and Netlify) single-page-app routing.
+#
+# Every path serves index.html, because the magic-link callback comes back to
+# whatever URL it was sent from and would otherwise be a 404 on a static host.
+# Vite copies anything in public/ to the root of dist/, which is where both
+# hosts look for this file.
+/*    /index.html   200
