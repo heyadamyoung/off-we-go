@@ -432,14 +432,17 @@ export function cellsCovering({ west, south, east, north }, { limit = 12, centre
    zoom. Read off Wikipedia's one-line description, which for a place is
    reliably of the form "castle in Highland, Scotland". */
 const KINDS = [
-  ['castle',   /castle|fortress|fort\b|citadel|palace|stronghold|tower house/i],
-  ['museum',   /museum|gallery|exhibition|library|archive/i],
-  ['worship',  /cathedral|abbey|priory|minster|church|chapel|kirk|synagogue|mosque|temple/i],
-  ['outdoors', /national park|country park|park\b|garden|forest|glen|loch|lake|reservoir|falls|waterfall|beach|bay\b|island|isle of|mountain|munro|hill|peak|summit|cave|nature reserve|moor|cliff/i],
-  ['history',  /monument|memorial|standing stone|stone circle|cairn|broch|ruins|battlefield|archaeological|burial|henge|roman/i],
-  ['culture',  /theatre|theater|concert hall|opera house|cinema|arts centre|stadium|arena/i],
-  ['food',     /distillery|brewery|winery|restaurant|market|food hall|pub\b/i],
-  ['fun',      /zoo|aquarium|theme park|amusement|observatory|planetarium|lighthouse|windmill|bridge|pier|viewpoint/i],
+  ['castle',   /castle|fortress|fort\b|citadel|palace|stronghold|tower house|country house|stately home|manor|chateau/i],
+  ['museum',   /museum|gallery|exhibition|library|archive|visitor centre|visitor center/i],
+  ['worship',  /cathedral|abbey|priory|minster|monastery|convent|church|chapel|kirk|synagogue|mosque|temple|shrine/i],
+  ['outdoors', /national park|country park|park\b|garden|forest|wood|glen|loch|lake|reservoir|falls|waterfall|beach|bay\b|island|isle of|mountain|munro|hill|peak|summit|cave|nature reserve|protected area|moor|cliff|coast|dune|gorge|valley/i],
+  ['history',  /monument|memorial|standing stone|stone circle|cairn|broch|ruins|battlefield|archaeological|burial|henge|roman|historic site|historic house|cemetery|graveyard|crypt|tomb|city walls|listed building/i],
+  ['culture',  /theatre|theater|concert hall|opera house|cinema|arts centre|arts center|stadium|arena|square|plein|piazza|market square/i],
+  ['food',     /distillery|brewery|winery|restaurant|market|food hall|pub\b|inn\b/i],
+  ['fun',      /zoo|aquarium|theme park|amusement|observatory|planetarium|lighthouse|windmill|smock mill|tower mill|watermill|bridge|pier|viewpoint|funicular|cable car|pleasure/i],
+  // Water is real scenery but there is a great deal of it: kept, and kept off
+  // the map until you are close enough to care which burn it is.
+  ['water',    /river|stream|burn\b|canal|gracht|estuary|firth|sound\b|strait/i],
 ]
 const kindOf = text => (KINDS.find(([, re]) => re.test(text)) || ['place'])[0]
 
@@ -452,8 +455,43 @@ const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun'])
 const IS_A_SETTLEMENT =
   /^(the )?(capital |former |small |large )*(city|town|village|hamlet|burgh|settlement|community)\b/i
 
-const NOT_AN_ATTRACTION =
-  /\b(village|hamlet|human settlement|civil parish|parish|council area|electoral|ward|constituency|suburb|neighbou?rhood|district|locality|county|region of|street|road|railway line|bus route|school|academy|college|university|hospital|company|car park|roundabout|retail park|industrial estate|business park|housing estate|office building|warehouse|petrol station|quarry|landfill|football club|f\.c\.|newspaper|band|album|song|painting|novel|person|politician|footballer|surname|given name)\b/i
+const NOT_AN_ATTRACTION = new RegExp([
+  // administrative and residential
+  'village', 'hamlet', 'human settlement', 'civil parish', 'parish', 'council area',
+  'electoral', 'ward', 'constituency', 'suburb', 'neighbou?rhood', 'district',
+  'locality', 'county', 'region of', 'area of', 'townland', 'arrondissement',
+  'housing estate', 'residential',
+  // getting about, rather than arriving
+  'railway station', 'metro station', 'train station', 'bus station', 'tram stop',
+  'railway line', 'bus route', 'road', 'street', 'thoroughfare', 'roundabout',
+  'motorway', 'junction', 'airport', 'airfield', 'ferry terminal', 'car park',
+  // buildings named only as buildings
+  'municipal building', 'judicial building', 'office building', 'apartment building',
+  'commercial building', 'residential building', 'warehouse', 'skyscraper',
+  'shopping mall', 'shopping centre', 'retail park', 'industrial estate',
+  'business park', 'petrol station', 'quarry', 'landfill', 'wind farm',
+  'power station', 'water tower', 'telephone exchange',
+  // organisations and things that are not places at all
+  'school', 'academy', 'college', 'university', 'hospital', 'company', 'society',
+  'charity', 'trust\b', 'association', 'institute', 'football club', 'f\.c\.',
+  'rowing club', 'golf club', 'sports club', 'newspaper', 'band', 'political party',
+  'submarine', 'shipwreck', 'lifeboat station', 'surname', 'given name',
+  'painting', 'novel', 'album', 'song',
+].join('|'), 'i')
+
+/* One decision about one article, so the map, the seeder and the tidy-up pass
+   can never drift apart. Everything is judged on Wikipedia's one-line
+   description, which for a place is reliably of the form "castle in Highland,
+   Scotland" — and never on the article prose, which mentions the borough. */
+export function classify(description) {
+  const d = (description || '').trim()
+  if (!d) return { skip: true, kind: 'place' }
+  if (NOT_AN_ATTRACTION.test(d)) return { skip: true, kind: 'place' }
+  if (NOT_A_PLACE.test(d)) return { skip: true, kind: 'place' }
+  if (NOT_SOMEWHERE_YOU_GO.test(d)) return { skip: true, kind: 'place' }
+  if (IS_A_SETTLEMENT.test(d)) return { skip: true, kind: 'place' }
+  return { skip: false, kind: kindOf(d) }
+}
 
 export function attractionThumb(file, width = 480) {
   if (!file) return null
@@ -509,17 +547,16 @@ export async function attractionsInCell(cell, signal) {
 
   const items = Object.values(json.query?.pages || {})
     .filter(p => p.coordinates?.length && p.description)
-    .filter(p => !NOT_AN_ATTRACTION.test(p.description) && !NOT_A_PLACE.test(p.description))
+    .filter(p => !classify(p.description).skip)
     /* A place you are already standing in is not somewhere to go: "Edinburgh"
        described as the capital city earns a pin in the middle of Edinburgh,
        which is no use to anyone. Anchored to the start of the description so
        the City Observatory and the City Chambers keep theirs. */
-    .filter(p => !IS_A_SETTLEMENT.test(p.description))
     .map(p => ({
       id: p.pageid,
       n: p.title.replace(/\s*\([^)]*\)\s*$/, ''),
       d: p.description.slice(0, 90),
-      k: kindOf(p.description),
+      k: classify(p.description).kind,
       f: p.pageprops?.page_image_free || null,
       x: +p.coordinates[0].lon.toFixed(5),
       y: +p.coordinates[0].lat.toFixed(5),
