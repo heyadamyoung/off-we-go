@@ -1286,14 +1286,20 @@ function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }) {
   const [more, setMore] = useState(null)
   const [adding, setAdding] = useState(false)
 
+  /* A seeded pin already carries its paragraph, so the card is complete the
+     moment it opens. Only a pin the seeder never reached goes and asks. */
   useEffect(() => {
+    if (poi.t) { setMore(null); return }
     let alive = true
     setMore(null)
     articleSummary(poi.id).then(m => { if (alive) setMore(m) }).catch(() => {})
     return () => { alive = false }
-  }, [poi.id])
+  }, [poi.id, poi.t])
 
   const picture = more?.image || attractionThumb(poi.f)
+  const note = poi.t || more?.note || ''
+  // A page id resolves to its article on its own, so the link costs no request.
+  const source = more?.source || `https://en.wikipedia.org/?curid=${poi.id}`
 
   return (
     <div className="acard">
@@ -1302,17 +1308,15 @@ function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }) {
       <div className="abody">
         <b>{poi.n}</b>
         <span className="kind">{poi.d}</span>
-        <p>{more ? more.note : ''}</p>
+        <p>{note}</p>
         <div className="aacts">
           {canEdit && (
             <button className="wbtn sm hot" disabled={inTrip || adding}
-              onClick={async () => { setAdding(true); await onAdd({ ...poi, image: picture, source: more?.source, note: more?.note }); setAdding(false) }}>
+              onClick={async () => { setAdding(true); await onAdd({ ...poi, image: picture, source, note }); setAdding(false) }}>
               {inTrip ? 'In your trip' : adding ? 'Adding…' : 'Add to trip'}
             </button>
           )}
-          {more?.source && (
-            <a className="wbtn sm" href={more.source} target="_blank" rel="noopener noreferrer">Wikipedia</a>
-          )}
+          <a className="wbtn sm" href={source} target="_blank" rel="noopener noreferrer">Wikipedia</a>
         </div>
       </div>
     </div>

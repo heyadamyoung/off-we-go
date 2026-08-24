@@ -27,7 +27,8 @@
    be started again.
    =========================================================================== */
 import { createClient } from '@supabase/supabase-js'
-import { cellsCovering, attractionsInCell, isHeadline, setApiHeaders } from '../src/places.js'
+import { cellsCovering, attractionsInCell, isHeadline, setApiHeaders,
+         extractsFor } from '../src/places.js'
 
 // Wikimedia asks scripts to identify themselves, and refuses them otherwise.
 setApiHeaders({ 'User-Agent': 'Wayfare/1.0 (family trip viewer)' })
@@ -35,16 +36,19 @@ setApiHeaders({ 'User-Agent': 'Wayfare/1.0 (family trip viewer)' })
 const dryRun = process.argv.includes('--dry-run')
 
 const URL_ = process.env.SUPABASE_URL
-const KEY_ = process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_ROLE_KEY
+// Supabase calls it the secret key now and called it service_role before.
+const KEY_ = process.env.SUPABASE_SECRET_KEY ||
+             process.env.SUPABASE_SERVICE_ROLE ||
+             process.env.SUPABASE_SERVICE_ROLE_KEY
 
 if (!dryRun && (!URL_ || !KEY_)) {
   console.error(`
 Missing credentials.
 
   SUPABASE_URL            your project url, from Settings -> API
-  SUPABASE_SERVICE_ROLE   the service_role key on that same page
+  SUPABASE_SECRET_KEY     the secret key on that same page (sb_secret_...)
 
-The service_role key bypasses row level security. Keep it out of .env.local,
+The secret key bypasses row level security entirely. Keep it out of .env.local,
 out of the repository, and out of anything the browser can read.
 `)
   process.exit(1)
@@ -138,6 +142,42 @@ for (const region of regions) {
   total += await flush()
   process.stdout.write(`\r  ${done}/${cells.length} cells · ${found} found · ${total} written\n`)
 }
+
+
+/* Second pass: the opening lines of each article.
+
+   Kept separate from the cell walk because it is resumable on its own — it asks
+   the table what is still missing rather than starting from the top, so an
+   interrupted run costs only the batch it was in the middle of. Anything with
+   no extract to be had is stored as an empty string, which is what stops it
+   being asked for again for ever.  */
+async function fillExtracts() {
+  const COLUMNS = 'id,name,descr,category,image_file,lng,lat,headline'
+  let filled = 0
+  for (;;) {
+    const { data: rows, error } = await db.from('attractions')
+      .select(COLUMNS).is('extract', null).limit(500)
+    if (error) throw new Error(`select failed: ${error.message}`)
+    if (!rows.length) break
+
+    const text = await extractsFor(rows.map(r => r.id))
+    const { error: wrote } = await db.from('attractions')
+      .upsert(rows.map(r => ({ ...r, extract: text.get(r.id) ?? '' })), { onConflict: 'id' })
+    if (wrote) throw new Error(`upsert failed: ${wrote.message}`)
+
+    filled += rows.length
+    if (filled % 2000 === 0) console.log(`  ${filled} paragraphs so far`)
+    await pause(120)
+  }
+  console.log(`  ${filled} paragraphs`)
+}
+
+if (!dryRun) {
+  console.log('')
+  console.log('Fetching the opening lines, twenty articles at a time.')
+  await fillExtracts()
+}
+
 
 if (dryRun) {
   console.log(`

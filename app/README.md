@@ -128,7 +128,7 @@ header turns the layer off.
 They come from a table, seeded once:
 
 ```
-SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SERVICE_ROLE=eyJhbGci... npm run seed:attractions
+SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SECRET_KEY=sb_secret_... npm run seed:attractions
 ```
 
 That walks the Netherlands and Scotland in ten-kilometre cells — the largest circle
@@ -137,6 +137,14 @@ and a quarter of an hour, once, on one machine. `--dry-run` reports what a regio
 to without credentials or writes; `--box=w,s,e,n` seeds anywhere else. Re-running is
 safe: rows are upserted by page id, so a second pass refreshes rather than duplicates
 and an interrupted run can just be started again.
+
+It then makes a second pass for the opening lines of each article, twenty at a time,
+because that is where TextExtracts silently stops. That pass asks the table what is
+still missing rather than starting from the top, so it resumes on its own and an
+article with nothing to say is stored as an empty string rather than being asked about
+for ever. With those seeded, a card opens complete: the picture comes from the stored
+filename, the paragraph from the row, and the Wikipedia link from the page id, which
+resolves to the article without a request. Clicking a pin costs nothing at all.
 
 The point of seeding is that a visitor's device does none of that. Opening the app is
 one indexed bounding-box query — measured at **0.18 ms** for a city-sized view over

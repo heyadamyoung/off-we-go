@@ -331,6 +331,11 @@ create index if not exists attractions_bbox on attractions (lat, lng);
 create index if not exists attractions_headline_bbox on attractions (lat, lng)
   where headline;
 
+-- The opening lines of the article, so a card opens without asking Wikipedia
+-- anything. Filled by the seeder's second pass; empty string means "looked and
+-- there was nothing", which is what stops it being looked for again.
+alter table attractions add column if not exists extract text;
+
 alter table attractions enable row level security;
 
 -- Readable by anyone signed in. There is nothing private here, but the rest of

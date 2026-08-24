@@ -10,12 +10,16 @@ import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
    whole app can be exercised without a database.
 
    Access is invite-only: everybody signs in, and you see a trip only if an owner
-   has invited your email address. The anon key below is meant to be public — it
+   has invited your email address. The key below is meant to be public — it
    identifies the project, not the caller — and row level security grants the
    anonymous role nothing at all.
+
+   Supabase calls it the publishable key now and called it the anon key before.
+   Both names are read, so a project set up under either convention works.
    ========================================================================= */
 const URL_ = import.meta.env.VITE_SUPABASE_URL
-const KEY_ = import.meta.env.VITE_SUPABASE_ANON_KEY
+const KEY_ = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+             import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const hasBackend = Boolean(URL_ && KEY_)
 export const supabase = hasBackend
@@ -451,7 +455,7 @@ export async function signOut() {
 export async function loadAttractions(box, { headlineOnly = false, limit = 4000 } = {}) {
   if (!hasBackend) return null
   let q = supabase.from('attractions')
-    .select('id,name,descr,category,image_file,lng,lat')
+    .select('id,name,descr,category,image_file,lng,lat,extract')
     .gte('lat', box.south).lte('lat', box.north)
     .gte('lng', box.west).lte('lng', box.east)
     .limit(limit)
@@ -461,6 +465,6 @@ export async function loadAttractions(box, { headlineOnly = false, limit = 4000 
   if (error) throw new Error(error.message)
   return data.map(r => ({
     id: r.id, n: r.name, d: r.descr || '', k: r.category,
-    f: r.image_file, x: r.lng, y: r.lat,
+    f: r.image_file, x: r.lng, y: r.lat, t: r.extract || '',
   }))
 }

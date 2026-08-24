@@ -429,6 +429,9 @@ const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun'])
 /* Things geotagged like places that are not places to go. Settlements are the
    big one: every village in Scotland has an article, and a map peppered with
    hamlets tells you nothing about where to spend an afternoon. */
+const IS_A_SETTLEMENT =
+  /^(the )?(capital |former |small |large )*(city|town|village|hamlet|burgh|settlement|community)\b/i
+
 const NOT_AN_ATTRACTION =
   /\b(village|hamlet|human settlement|civil parish|parish|council area|electoral|ward|constituency|suburb|neighbou?rhood|district|locality|county|region of|street|road|railway line|bus route|school|academy|college|university|hospital|company|car park|roundabout|retail park|industrial estate|business park|housing estate|office building|warehouse|petrol station|quarry|landfill|football club|f\.c\.|newspaper|band|album|song|painting|novel|person|politician|footballer|surname|given name)\b/i
 
@@ -487,6 +490,11 @@ export async function attractionsInCell(cell, signal) {
   const items = Object.values(json.query?.pages || {})
     .filter(p => p.coordinates?.length && p.description)
     .filter(p => !NOT_AN_ATTRACTION.test(p.description) && !NOT_A_PLACE.test(p.description))
+    /* A place you are already standing in is not somewhere to go: "Edinburgh"
+       described as the capital city earns a pin in the middle of Edinburgh,
+       which is no use to anyone. Anchored to the start of the description so
+       the City Observatory and the City Chambers keep theirs. */
+    .filter(p => !IS_A_SETTLEMENT.test(p.description))
     .map(p => ({
       id: p.pageid,
       n: p.title.replace(/\s*\([^)]*\)\s*$/, ''),
@@ -519,4 +527,23 @@ export async function articleSummary(pageId, signal) {
     image: page.thumbnail?.source || null,
     source: page.fullurl || null,
   }
+}
+
+/* The opening lines for a batch of articles, for the seeder's second pass.
+
+   Twenty at a time because TextExtracts returns nothing above that — silently,
+   as ever, which is why the number is here rather than a hopeful larger one. */
+export async function extractsFor(pageIds, signal) {
+  const out = new Map()
+  for (let i = 0; i < pageIds.length; i += 20) {
+    const batch = pageIds.slice(i, i + 20)
+    const json = await ask({
+      pageids: batch.join('|'), prop: 'extracts',
+      exintro: '1', explaintext: '1', exsentences: '3', exlimit: 'max',
+    }, signal)
+    for (const page of Object.values(json.query?.pages || {})) {
+      out.set(page.pageid, tidy(page.extract))
+    }
+  }
+  return out
 }
