@@ -217,10 +217,15 @@ export async function enrichStops(stops, { onOne } = {}) {
    replaceable by one of your own photos. */
 export async function imageForPage(pageTitle, signal) {
   if (!pageTitle) return null
-  const list = await fetch(API + '?' + new URLSearchParams({
-    action: 'query', format: 'json', origin: '*',
-    titles: pageTitle, prop: 'images', imlimit: '25',
-  }), { signal }).then(r => r.json()).catch(() => null)
+
+  /* Both calls go through ask(), like everything else here. They used to use
+     fetch directly, which meant no User-Agent — fine in a browser, which sends
+     its own, and fatal in Node, where Wikipedia answers with a page of HTML
+     that .json() rejects and a .catch turned into a quiet null. It looked for
+     all the world like these articles simply had no pictures. */
+  const list = await ask({
+    titles: pageTitle, prop: 'images', imlimit: '40',
+  }, signal).catch(() => null)
   if (!list) return null
 
   const file = Object.values(list.query?.pages || {})
@@ -229,13 +234,13 @@ export async function imageForPage(pageTitle, signal) {
     .find(t => /\.(jpe?g|png)$/i.test(t) && !NOT_A_PHOTO.test(t.replace(/^File:/, '')))
   if (!file) return null
 
-  const info = await fetch(API + '?' + new URLSearchParams({
-    action: 'query', format: 'json', origin: '*',
-    titles: file, prop: 'imageinfo', iiprop: 'url', iiurlwidth: '800',
-  }), { signal }).then(r => r.json()).catch(() => null)
+  const info = await ask({
+    titles: file, prop: 'imageinfo', iiprop: 'url', iiurlwidth: '960',
+  }, signal).catch(() => null)
 
   return Object.values(info?.query?.pages || {})[0]?.imageinfo?.[0]?.thumburl || null
 }
+
 
 
 /* =========================================================================
@@ -453,7 +458,7 @@ const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun'])
    big one: every village in Scotland has an article, and a map peppered with
    hamlets tells you nothing about where to spend an afternoon. */
 const IS_A_SETTLEMENT =
-  /^(the )?(capital |former |small |large )*(city|town|village|hamlet|burgh|settlement|community)\b/i
+  /^(the )?(capital |former |small |large |market |port |county |cathedral |coastal |fishing |mining |new |old )*(city|town|village|hamlet|burgh|settlement|community|suburb)(\s+(in|of|and|near|on)\b|,|$)/i
 
 const NOT_AN_ATTRACTION = new RegExp([
   // administrative and residential
@@ -491,6 +496,13 @@ export function classify(description) {
   if (NOT_SOMEWHERE_YOU_GO.test(d)) return { skip: true, kind: 'place' }
   if (IS_A_SETTLEMENT.test(d)) return { skip: true, kind: 'place' }
   return { skip: false, kind: kindOf(d) }
+}
+
+// A lead image that is a logo, a locator map or a coat of arms is worse than
+// none: it looks like a photograph on a card and tells you nothing.
+export function photoOrNothing(file) {
+  if (!file) return null
+  return NOT_A_PHOTO.test(file.replace(/^File:/, '')) ? null : file
 }
 
 export function attractionThumb(file, width = 480) {
@@ -557,7 +569,9 @@ export async function attractionsInCell(cell, signal) {
       n: p.title.replace(/\s*\([^)]*\)\s*$/, ''),
       d: p.description.slice(0, 90),
       k: classify(p.description).kind,
-      f: p.pageprops?.page_image_free || null,
+      // Filtered here too, not only in the live search: the Van Gogh Museum's
+      // lead image is its logo, and a seeded logo is a logo on the map for ever.
+      f: photoOrNothing(p.pageprops?.page_image_free),
       x: +p.coordinates[0].lon.toFixed(5),
       y: +p.coordinates[0].lat.toFixed(5),
     }))

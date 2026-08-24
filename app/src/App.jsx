@@ -1553,6 +1553,27 @@ function daysBetween(startsOn, endsOn) {
   return days > 0 ? days : null
 }
 
+/* A face, or the next best thing.
+
+   Everybody starts without a picture, and an <img> with an empty src is drawn
+   by every browser as a broken image — so the photo grid was full of them. An
+   SVG data URI rather than a styled <span>, because every place a face appears
+   already has CSS aimed at an img, and this way none of it has to change. */
+function initialAvatar(name) {
+  const label = (name || '?').trim() || '?'
+  const initial = label.charAt(0).toUpperCase()
+  const hue = [...label].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 11)
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+    `<rect width="64" height="64" fill="hsl(${hue} 38% 34%)"/>` +
+    `<text x="32" y="43" text-anchor="middle" fill="#fff" font-weight="700"` +
+    ` font-size="30" font-family="system-ui,-apple-system,sans-serif">${initial}</text></svg>`
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg)
+}
+
+const withFace = person =>
+  (person && person.avatar ? person : { ...person, avatar: initialAvatar(person && person.name) })
+
 function NoTrip({ email, onCreated }) {
   const [making, setMaking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1997,10 +2018,13 @@ function TripApp({ data, session, onReload }) {
   const { tripId, canEdit } = data
   const [trip, setTrip] = useState(data.trip)
   const [route, setRoute] = useState(data.route)
-  const [family, setFamily] = useState(data.family)
+  const [family, setFamily] = useState(() => (data.family || []).map(withFace))
   const [me, setMe] = useState(data.me || data.family[0] || { name: 'You', avatar: '' })
+  /* No falling back to the first person on the trip: a photograph credited to
+     somebody who is not a member belongs to them, not to whoever happens to be
+     listed first. They get their initial instead. */
   const byName = useCallback(
-    n => family.find(f => f.name === n) || family[0] || { name: n, avatar: '' }, [family])
+    n => withFace(family.find(f => f.name === n) || { name: n }), [family])
 
   const [view, setView] = useState(() => ({
     center: data.stops.length
@@ -2019,7 +2043,7 @@ function TripApp({ data, session, onReload }) {
 
   // A reload (realtime, or the retry button) hands down new data; adopt it.
   useEffect(() => {
-    setTrip(data.trip); setRoute(data.route); setFamily(data.family)
+    setTrip(data.trip); setRoute(data.route); setFamily((data.family || []).map(withFace))
     setStops(data.stops); setPhotos(data.photos)
     setComments(data.comments || {}); setLikes(new Set(data.likes || []))
     if (data.me) setMe(data.me)
@@ -2418,7 +2442,7 @@ function TripApp({ data, session, onReload }) {
       if (file) avatarUrl = await uploadAvatar(tripId, me.id, file)
       const saved = await updateMe(tripId, me.id, { name, avatarUrl })
       setMe(m => ({ ...m, ...saved }))
-      setFamily(list => list.map(f => (f.id === me.id ? { ...f, ...saved } : f)))
+      setFamily(list => list.map(f => (f.id === me.id ? withFace({ ...f, ...saved }) : f)))
       toast('Saved')
     } catch (e) { toast(e.message || 'Could not save that') }
   }, [tripId, me.id, toast])

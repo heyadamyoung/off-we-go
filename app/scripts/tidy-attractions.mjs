@@ -18,7 +18,7 @@
      node scripts/tidy-attractions.mjs [--dry-run]
    =========================================================================== */
 import { createClient } from '@supabase/supabase-js'
-import { classify, isHeadline } from '../src/places.js'
+import { classify, isHeadline, photoOrNothing } from '../src/places.js'
 
 const dryRun = process.argv.includes('--dry-run')
 const URL_ = process.env.SUPABASE_URL
@@ -38,7 +38,7 @@ let seen = 0, doomed = [], moved = [], from = 0
 
 for (;;) {
   const { data: rows, error } = await db.from('attractions')
-    .select('id,descr,category,headline')
+    .select('id,descr,category,headline,image_file')
     .order('id').range(from, from + PAGE - 1)
   if (error) throw new Error(error.message)
   if (!rows.length) break
@@ -46,8 +46,11 @@ for (;;) {
   for (const row of rows) {
     const verdict = classify(row.descr)
     if (verdict.skip) { doomed.push(row.id); continue }
-    if (verdict.kind !== row.category || isHeadline(verdict.kind) !== row.headline) {
-      moved.push({ id: row.id, category: verdict.kind, headline: isHeadline(verdict.kind) })
+    const picture = photoOrNothing(row.image_file)
+    if (verdict.kind !== row.category || isHeadline(verdict.kind) !== row.headline ||
+        picture !== row.image_file) {
+      moved.push({ id: row.id, category: verdict.kind, headline: isHeadline(verdict.kind),
+                   image_file: picture })
     }
   }
   seen += rows.length
