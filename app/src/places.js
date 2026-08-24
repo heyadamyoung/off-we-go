@@ -282,7 +282,11 @@ export function setApiHeaders(headers) { apiHeaders = headers || {} }
 /* And it refuses too many of them: about two a second, after which it answers
    429 for a while. A single gate here rather than a delay at each call site,
    because the one that forgets is the one that gets everything else refused. */
-let minGap = 0
+/* Two a second is what the API tolerates, so that is the default everywhere —
+   including the browser fallback, which used to fire a whole viewport's worth
+   of cells at once. Nothing complained, because a refused cell is caught and
+   dropped: the map just quietly held fewer attractions than it should have. */
+let minGap = 450
 let lastCall = 0
 export function setApiThrottle(ms) { minGap = ms || 0 }
 
