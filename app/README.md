@@ -101,8 +101,15 @@ click it; run it again for another. Roles are `viewer` (look and comment) or `ed
 
 Sign-in links go out through Resend, from `trips@send.threadway.ai`. A sending
 subdomain rather than the root domain, so the Microsoft 365 mail on `threadway.ai`
-is untouched by any of it: three records under `send.` carry the DKIM key and the
-bounce path, and nothing above them changes.
+is untouched by any of it: five records under `send.` carry the DKIM key, the bounce
+path, an SPF record for the visible From domain, and a DMARC policy of its own —
+`p=quarantine` with strict DKIM alignment, which this mail satisfies and nothing else
+sends from that subdomain. Inheriting the root's bare `p=none` said nothing about a
+domain nobody had heard of.
+
+The templates are a letter rather than a bare link: who it is from, why it arrived,
+and the address in full as text beside the button. The stock template is an `<h2>` and
+an anchor, which is the shape of a phishing mail and is scored accordingly.
 
 Links last a day rather than the default hour. A link emailed to somebody's mother
 is not clicked within the hour, and an expired one is indistinguishable from a
