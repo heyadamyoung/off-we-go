@@ -1424,10 +1424,16 @@ function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose, toast }) {
   )
 }
 
-function FamilyView({ family, photos, toast, onClose }) {
+function FamilyView({ family, photos, onClose, onInvite }) {
+  const travelling = family.filter(f => f.role === 'Travelling').length
+  const following = family.length - travelling
+  const words = n => ['none', 'one', 'two', 'three', 'four', 'five', 'six'][n] ?? String(n)
+  const sub = following
+    ? `${words(travelling)} on the road, ${words(following)} following from home.`
+    : `${words(travelling)} on the road.`
   return (
-    <Pane title="Family" sub="Three of us on the road, three following from home." onClose={onClose}
-          actions={<button className="wbtn hot" onClick={() => toast('Invite link copied')}>
+    <Pane title="Family" sub={sub[0].toUpperCase() + sub.slice(1)} onClose={onClose}
+          actions={<button className="wbtn hot" onClick={onInvite}>
             <Icon n="share" s={15} c="#0a0c10" w={2.2} />Invite someone</button>}>
       <div className="people">
         {family.map(f => {
@@ -2589,7 +2595,7 @@ function TripApp({ data, session, onReload }) {
         {tab === 'sights' && <SightsView centre={view} stops={stops} canEdit={canEdit}
                                          onAdd={addSight} onShow={showSight}
                                          onClose={backToMap} toast={toast} />}
-        {tab === 'family' && <FamilyView family={family} photos={photos} toast={toast} onClose={backToMap} />}
+        {tab === 'family' && <FamilyView family={family} photos={photos} onClose={backToMap} onInvite={onPeople} />}
       </div>
 
       <Filmstrip stops={dayStops} photos={photos} byName={byName} selected={selected} onSelect={selectStop}

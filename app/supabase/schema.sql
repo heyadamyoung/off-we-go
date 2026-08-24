@@ -47,7 +47,16 @@ create table if not exists trip_invites (
   created_at timestamptz not null default now(),
   claimed_at timestamptz
 );
-create unique index if not exists trip_invites_unique on trip_invites (trip_id, lower(email));
+-- The client upserts on (trip_id, email), and Postgres will only match that
+-- against a plain column index — an expression index on lower(email) makes the
+-- upsert fail with "no unique or exclusion constraint matching the ON CONFLICT
+-- specification". So the address is stored lower-cased, enforced by the check,
+-- and the unique index is on the columns themselves.
+drop index if exists trip_invites_unique;
+update trip_invites set email = lower(email) where email <> lower(email);
+alter table trip_invites drop constraint if exists trip_invites_email_lower;
+alter table trip_invites add constraint trip_invites_email_lower check (email = lower(email));
+create unique index if not exists trip_invites_email_unique on trip_invites (trip_id, email);
 
 create table if not exists stops (
   id         uuid primary key default gen_random_uuid(),
