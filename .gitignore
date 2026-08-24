@@ -10,3 +10,4 @@ test-results/
 app/m-*.png
 app/m2-*.png
 app/live.png
+app/audit*.mjs
