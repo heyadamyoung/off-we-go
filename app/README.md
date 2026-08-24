@@ -80,6 +80,23 @@ Then add the deployed origin to Supabase → Authentication → URL Configuratio
 Localhost is allowed out of the box; a real domain is not, and a magic link sent to
 an unlisted origin quietly comes back to the site url instead.
 
+### Getting people onto the trip
+
+The app invites by email, and email is the part that breaks: a free Supabase project
+sends a handful an hour through a shared sender, and much of that lands in spam.
+`scripts/invite.mjs` skips it — it creates the account, adds the person to the trip and
+prints a link that signs them straight in, to send however you actually talk to them.
+
+```
+SUPABASE_URL=... SUPABASE_SECRET_KEY=... node scripts/invite.mjs gran@example.com
+SUPABASE_URL=... SUPABASE_SECRET_KEY=... node scripts/invite.mjs rob@example.com --role=editor
+SUPABASE_URL=... SUPABASE_SECRET_KEY=... node scripts/invite.mjs --list
+```
+
+Links are single use and last about an hour, so send one when the person is around to
+click it; run it again for another. Roles are `viewer` (look and comment) or `editor`
+(change the itinerary).
+
 Two things about the free tiers are worth knowing before the family relies on it.
 A free Supabase project pauses after about a week of no traffic, which for a trip
 viewer opened once a fortnight means somebody has to wake it from the dashboard.
