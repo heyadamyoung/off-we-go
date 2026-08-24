@@ -55,7 +55,12 @@ img{display:block}
 .tbtn.hot{background:var(--hot);color:#0a0c10;border-color:transparent;font-weight:800}
 .tbtn.hot:hover{background:var(--hot2)}
 .tlive{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;color:var(--ok);
-  letter-spacing:.04em;white-space:nowrap}
+  letter-spacing:.04em;white-space:nowrap;flex:none}
+/* The counter sits in a slot wide enough for its longest value, in figures that
+   are all the same width. Without both, "now" becoming "5s" becoming "12m"
+   resized the pill every second and shoved everything to its right along. */
+.tlive .n{display:inline-block;min-width:3.4ch;text-align:left;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 .tlive .d{position:relative;width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
 .tlive .d::after{content:'';position:absolute;left:50%;top:50%;width:21px;height:21px;
   margin:-10.5px 0 0 -10.5px;border-radius:50%;background:rgba(34,197,94,.45);
@@ -564,11 +569,62 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   color:var(--bg1);padding:11px 18px;border-radius:99px;font-size:13px;font-weight:700;box-shadow:var(--shadow)}
 
 @media (max-width:1080px){ .viewer{grid-template-columns:1fr} .vside{display:none} }
+
+/* ---------------- narrower than a laptop ----------------
+   The header holds a wordmark, a running commentary, five tabs, four actions, a
+   live counter and a labelled button: a laptop's worth of things. Below one they
+   come off in order of how little they do — the commentary first, then
+   decoration, then preferences, and never a tab. */
 @media (max-width:900px){
   .tflow{display:none}
+  .tlogo{padding:0 14px}
+  .tlogo .wm{display:none}
+  .tlive{display:none}
   .editor{left:10px;right:10px;width:auto;top:auto;bottom:10px;max-height:62%}
   .fsearch{min-width:0;flex:1}
   .edithint{display:none}
   .herocard{left:10px;right:10px;width:auto;top:auto;bottom:10px;max-height:56%}
   .fcard{width:168px}
+  .sights{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .paneHd{flex-wrap:wrap;gap:10px}
+  .tbtn.people .lbl{display:none}
+  .tbtn.people{width:34px;padding:0;justify-content:center}
+  .pref.theme{display:none}          /* the map follows daylight without being asked */
+}
+
+@media (max-width:620px){
+  .tlogo{padding:0 12px;border-right:0}
+  .tright{padding:0 8px;gap:6px;border-left:0}
+  .pref.attr{display:none}           /* the layer is on unless somebody turns it off */
+  .tnav{gap:1px;padding:2px}
+  .tnav button{width:32px;height:30px}
+  .tbtn.ghost{width:34px;height:34px}
+  .ticker{height:56px}
+
+  .fcard{width:150px}
+  .fdays{gap:6px}
+  .pane{padding:14px 12px}
+  .paneHd h1{font-size:19px}
+  .paneHd p{display:none}
+  .masonry{column-count:2;column-gap:8px}
+  .acard{left:8px;right:8px;bottom:8px;width:auto}
+  .apic{height:112px}
+  .newtrip .linkrow{flex-direction:column;gap:10px}
+  .sights{grid-template-columns:1fr}
+}
+
+/* A finger rather than a pointer gets a bigger target, where there is room. */
+@media (pointer:coarse) and (min-width:621px){
+  .tnav button{width:36px;height:32px}
+  .tbtn{height:36px}
+  .tbtn.ghost{width:36px}
+}
+
+@media (max-width:380px){
+  .fcard{width:136px}
+  .tnav button{width:29px}
+  .tnav{padding:1px}
+  .tright{gap:4px;padding:0 6px}
+  .tbtn.ghost,.tbtn.people{width:32px}
+  .tlogo{padding:0 9px}
 }

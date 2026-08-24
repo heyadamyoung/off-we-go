@@ -7,3 +7,6 @@ dist/
 node_modules/
 playwright-report/
 test-results/
+app/m-*.png
+app/m2-*.png
+app/live.png

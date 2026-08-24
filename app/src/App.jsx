@@ -1013,8 +1013,12 @@ const LivePill = memo(function LivePill({ resetKey }) {
     const id = setInterval(() => setAgo(a => a + 1), 1000)
     return () => clearInterval(id)
   }, [])
-  const label = ago < 5 ? 'now' : ago < 60 ? `${ago}s` : `${Math.floor(ago / 60)}m`
-  return <div className="tlive"><span className="d" />LIVE {label}</div>
+  /* Capped at 99 minutes and rendered in a fixed-width slot. The label goes
+     "now" then "5s" then "12m", and each is a different width, so every tick
+     nudged the People button sideways. */
+  const mins = Math.min(99, Math.floor(ago / 60))
+  const label = ago < 5 ? 'now' : ago < 60 ? `${ago}s` : `${mins}m`
+  return <div className="tlive"><span className="d" />LIVE<span className="n">{label}</span></div>
 })
 
 const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
@@ -1024,7 +1028,8 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
   const Item = ({ children, hot }) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
   return (
     <header className="ticker">
-      <div className="tlogo"><span className="mk"><Icon n="pin" s={13} c="#0a0c10" w={2.4} /></span>Wayfare</div>
+      <div className="tlogo"><span className="mk"><Icon n="pin" s={13} c="#0a0c10" w={2.4} /></span>
+        <span className="wm">Wayfare</span></div>
       <div className="tflow">
 <span className="crew">{(trip.crew || '').toUpperCase()}</span>
         <Item>{trip.title}</Item>
@@ -1050,19 +1055,19 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
             <Icon n={editing ? 'check' : 'edit'} s={15} />
           </button>
         )}
-        <button className={'tbtn ghost' + (attractionsOn ? ' on' : '')} onClick={onToggleAttractions}
+        <button className={'tbtn ghost pref attr' + (attractionsOn ? ' on' : '')} onClick={onToggleAttractions}
                 title={attractionsOn ? 'Hide attractions on the map' : 'Show attractions on the map'}>
           <Icon n="pin" s={15} />
         </button>
         <button className="tbtn ghost" onClick={onUpload} title="Add a photo"><Icon n="camera" s={15} /></button>
-        <button className="tbtn ghost" onClick={onToggleTheme}
+        <button className="tbtn ghost pref theme" onClick={onToggleTheme}
                 title={sunPhase ? `Theme · the map is following ${sunPhase} where the family is`
                                 : 'Theme'}>
           <Icon n={theme === 'dark' ? 'sun' : 'moon'} s={15} />
         </button>
         <LivePill resetKey={liveKey} />
-        <button className="tbtn hot" onClick={onPeople}>
-          <Icon n="users" s={14} c="#0a0c10" w={2.2} />People
+        <button className="tbtn hot people" onClick={onPeople} title="People">
+          <Icon n="users" s={14} c="#0a0c10" w={2.2} /><span className="lbl">People</span>
         </button>
         {onSignOut && (
           <button className="tbtn ghost" onClick={onSignOut} title={`Signed in as ${me?.name || ''} — sign out`}>
