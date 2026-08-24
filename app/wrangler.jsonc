@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers with static assets — what "Pages" became for new
+  // projects. The whole app is a static build; this uploads dist/ and serves it
+  // from the edge, with no Worker code of our own.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wayfare",
+  "compatibility_date": "2026-08-01",
+
+  "assets": {
+    "directory": "./dist",
+
+    // Every unknown path serves index.html rather than a 404. The magic-link
+    // callback comes back to whatever url it was sent from, and on a static
+    // host there is no file at that path — this is the Workers equivalent of
+    // the _redirects rule that Pages and Netlify read.
+    "not_found_handling": "single-page-application"
+  }
+}
