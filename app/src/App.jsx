@@ -8,7 +8,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // import.meta.url, which no longer points anywhere useful once bundled. Without
 // this the map builds, loads its style and then silently never requests a tile.
 setWorkerUrl(maplibreWorkerUrl)
-import { AHEAD, pic, picFallback } from './data'
+import { pic, picFallback } from './data'
 import { findSights, describePlace, radiusForView, imageForPage, enrichStops,
          cellsCovering, attractionsInCell, attractionThumb, isHeadline,
          articleSummary } from './places'
@@ -2016,7 +2016,6 @@ function TripApp({ data, session, onReload }) {
   const [upload, setUpload] = useState(false)
   const [toastMsg, setToastMsg] = useState(null)
   const [following, setFollowing] = useState(true)
-  const [step, setStep] = useState(0)
 
   // --- editing ---
   const [editing, setEditing] = useState(false)
@@ -2072,16 +2071,19 @@ function TripApp({ data, session, onReload }) {
   }, [])
   useEffect(() => () => window.clearTimeout(toastT.current), [])
 
-  const track = useMemo(() => route.concat(AHEAD.slice(0, step)), [route, step])
-  const live = track[track.length - 1] || [4.876, 52.367]
+  /* Where the family is. The end of the walked route if one has been drawn;
+     failing that, the stop marked "now", then the next one up, then the first.
+     Nothing is simulated: a marker that strolled a demo route on its own timer
+     was fine for a sample and a lie about a real trip. */
+  const track = route
+  const live = useMemo(() => {
+    if (track.length) return track[track.length - 1]
+    const s = stops.find(x => x.status === 'now') || stops.find(x => x.status === 'next') || stops[0]
+    return s ? [s.lng, s.lat] : [4.876, 52.367]
+  }, [track, stops])
   const sun = useDaylight(live)
   const mapTheme = mapOverride || sun.base
   const km = useMemo(() => routeKm(track), [track])
-
-  useEffect(() => {
-    const id = setInterval(() => setStep(s => (s + 1) % (AHEAD.length + 1)), 7000)
-    return () => clearInterval(id)
-  }, [])
 
   // Live updates. Held off while someone is mid-edit, since refetching under an
   // open editor would pull the ground out from under them.
@@ -2523,7 +2525,7 @@ function TripApp({ data, session, onReload }) {
     <div className="app wide">
       <Ticker trip={trip} km={km} doneCount={doneCount} stopCount={stops.length}
         photoCount={photos.length} nowStop={nowStop} nextStop={nextStop}
-        liveKey={step} onPeople={onPeople} tab={tab} setTab={setTab}
+        liveKey={`${live[0]},${live[1]}`} onPeople={onPeople} tab={tab} setTab={setTab}
         onUpload={onUpload} theme={theme} onToggleTheme={toggleTheme}
         attractionsOn={showAttractions} onToggleAttractions={toggleAttractions}
         sunPhase={mapOverride ? null : sun.phase}
