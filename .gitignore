@@ -3,6 +3,8 @@
 .env.*.local
 .env.local
 .playwright-mcp/
+.tmp/
+wayfare-deploy-*.tgz
 dist/
 node_modules/
 playwright-report/
