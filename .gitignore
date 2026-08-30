@@ -1,7 +1,7 @@
 *.png
-.env
-.env.*.local
-.env.local
+.env*
+!.env.example
+!.env.*.example
 .playwright-mcp/
 .tmp/
 wayfare-deploy-*.tgz

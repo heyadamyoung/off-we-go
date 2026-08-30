@@ -12,11 +12,8 @@ EXISTING_ENV=false
 if [[ -f .env ]]; then EXISTING_ENV=true; fi
 
 if ! command -v docker >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y ca-certificates curl
-  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-  sh /tmp/get-docker.sh
-  rm -f /tmp/get-docker.sh
+  echo "Docker Engine and the Compose plugin must be installed from your distribution or Docker's signed package repository before running this installer." >&2
+  exit 1
 fi
 docker compose version >/dev/null
 

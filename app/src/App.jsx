@@ -1732,11 +1732,11 @@ function NoTrip({ email, onCreated }) {
             <p>You will be its owner, and can invite everyone else once it exists.</p>
             <form className="newtrip" onSubmit={create}>
               <label>Where are you going?
-                <input autoFocus required placeholder="Amsterdam Weekend" value={f.title}
+                <input autoFocus required placeholder="City break" value={f.title}
                        onChange={e => set('title', e.target.value)} />
               </label>
               <label>Who is going?
-                <input placeholder="Sample Family" value={f.crew}
+                <input placeholder="Sample family" value={f.crew}
                        onChange={e => set('crew', e.target.value)} />
               </label>
               <div className="linkrow">

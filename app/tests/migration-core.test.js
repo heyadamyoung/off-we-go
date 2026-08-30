@@ -6,11 +6,11 @@ const migration = await import('../scripts/legacyMigrationCore.mjs').catch(() =>
 test('legacy photo storage paths become authenticated Supabase download requests without a runtime dependency', () => {
   assert.ok(migration?.legacyPhotoRequest, 'legacy media migration has not been implemented')
   assert.deepEqual(migration.legacyPhotoRequest({
-    storagePath: 'trip id/Sample travellers.jpg',
+    storagePath: 'trip id/sample-photo.jpg',
     projectUrl: 'https://old-project.supabase.co/',
     serviceKey: 'service-secret',
   }), {
-    url: 'https://old-project.supabase.co/storage/v1/object/authenticated/trip-photos/trip%20id/Anne%20%26%20Adam.jpg',
+    url: 'https://old-project.supabase.co/storage/v1/object/authenticated/trip-photos/trip%20id/sample-photo.jpg',
     headers: { authorization: 'Bearer service-secret', apikey: 'service-secret' },
   })
 })

@@ -31,10 +31,10 @@ export const picFallback = (seed, w = 1200, h = 800) => {
 };
 
 export const FAMILY = [
-  { id: 'u1', name: 'Maya',       role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
+  { id: 'u1', name: 'Maya',        role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
   { id: 'u2', name: 'Alex',        role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/men/46.jpg' },
-  { id: 'u3', name: 'Zoe',       role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/women/85.jpg' },
-  { id: 'u4', name: 'Grandma Jo',role: 'Following',   avatar: 'https://randomuser.me/api/portraits/women/68.jpg' },
+  { id: 'u3', name: 'Zoe',         role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/women/85.jpg' },
+  { id: 'u4', name: 'Grandma Jo',  role: 'Following',   avatar: 'https://randomuser.me/api/portraits/women/68.jpg' },
   { id: 'u5', name: 'Uncle Kai',   role: 'Following',   avatar: 'https://randomuser.me/api/portraits/men/32.jpg' },
   { id: 'u6', name: 'Aunt Nia',    role: 'Following',   avatar: 'https://randomuser.me/api/portraits/women/12.jpg' },
 ];
@@ -102,8 +102,8 @@ export const PHOTOS = [
 export const SEED_COMMENTS = {
   p3: [
     { id:'c1', by:'Grandma Jo', text:'Well spotted, Zoe. You have a good eye.', when:'1 h ago' },
-    { id:'c2', by:'Uncle Kai',    text:'Did you make it to the library bit? Best room in the building.', when:'52 min ago' },
-    { id:'c3', by:'Maya',        text:'We did — photo 2. She was not impressed.', when:'40 min ago' },
+    { id:'c2', by:'Uncle Kai',  text:'Did you make it to the library bit? Best room in the building.', when:'52 min ago' },
+    { id:'c3', by:'Maya',       text:'We did — photo 2. She was not impressed.', when:'40 min ago' },
   ],
   p1: [ { id:'c4', by:'Grandma Jo', text:'Look at the size of it! Give her a squeeze from me.', when:'2 h ago' } ],
   p6: [ { id:'c5', by:'Aunt Nia', text:'I am extremely jealous of that plate.', when:'8 min ago' } ],

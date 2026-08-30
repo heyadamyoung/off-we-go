@@ -13,7 +13,7 @@ Wayfare is a private trip app with its own iPhone client and a fully self-hosted
 
 ## VPS requirements
 
-Use a current Debian or Ubuntu VPS with a public IP, ports 80/443 open, a domain pointing to it, at least 2 GB RAM, sufficient photo storage, and SMTP credentials. SMTP is required because sign-in uses one-time email links.
+Use a current Debian or Ubuntu VPS with Docker Engine and the Compose plugin already installed from a signed package repository. The VPS also needs a public IP, ports 80/443 open, a domain pointing to it, at least 2 GB RAM, sufficient photo storage, and SMTP credentials. SMTP is required because sign-in uses one-time email links.
 
 ## One-command VPS installation
 
