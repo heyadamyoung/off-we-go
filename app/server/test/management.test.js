@@ -33,7 +33,7 @@ test('an owner can update trip details and their trip profile', async () => {
   })
   assert.equal(profile.statusCode, 200)
   assert.equal(profile.json().id, user.id)
-  assert.equal(profile.json().name, 'Adam')
+  assert.equal(profile.json().name, 'Alex')
   await app.close()
 })
 
