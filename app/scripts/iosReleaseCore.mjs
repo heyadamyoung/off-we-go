@@ -1,8 +1,21 @@
 import { pathToFileURL } from 'node:url';
 
-export function createExportOptions({ teamId }) {
+const xmlEscape = value => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&apos;');
+
+export function createExportOptions({ teamId, bundleId, profileName }) {
   if (!/^[A-Z0-9]{10}$/.test(teamId ?? '')) {
     throw new Error('Expected a 10-character Apple team ID');
+  }
+  if (!/^[A-Za-z0-9.-]+$/.test(bundleId ?? '')) {
+    throw new Error('Expected an iOS bundle identifier');
+  }
+  if (!String(profileName ?? '').trim()) {
+    throw new Error('Expected an App Store provisioning profile name');
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -15,8 +28,15 @@ export function createExportOptions({ teamId }) {
   <false/>
   <key>method</key>
   <string>app-store-connect</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>${xmlEscape(bundleId)}</key>
+    <string>${xmlEscape(profileName)}</string>
+  </dict>
+  <key>signingCertificate</key>
+  <string>Apple Distribution</string>
   <key>signingStyle</key>
-  <string>automatic</string>
+  <string>manual</string>
   <key>stripSwiftSymbols</key>
   <true/>
   <key>teamID</key>
@@ -30,7 +50,9 @@ export function createExportOptions({ teamId }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    process.stdout.write(createExportOptions({ teamId: process.argv[2] }));
+    process.stdout.write(createExportOptions({
+      teamId: process.argv[2], bundleId: process.argv[3], profileName: process.argv[4],
+    }));
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 64;
