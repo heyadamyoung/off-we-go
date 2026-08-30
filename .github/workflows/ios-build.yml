@@ -1,0 +1,36 @@
+name: iOS compile
+
+on:
+  pull_request:
+    paths: ['app/**', '.github/workflows/ios-build.yml']
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/ios-build.yml']
+  workflow_dispatch:
+
+jobs:
+  simulator-build:
+    runs-on: macos-15
+    env:
+      WAYFARE_DOMAIN: wayfare.threadway.ai
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.6.5 --activate
+      - name: Install and synchronize iOS
+        run: pnpm install --frozen-lockfile && VITE_API_URL="https://${WAYFARE_DOMAIN}/api" pnpm ios:sync
+      - name: Install CocoaPods
+        run: cd ios/App && pod install
+      - name: Compile for iPhone and iPad simulator
+        run: >-
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug
+          -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO WAYFARE_DOMAIN="$WAYFARE_DOMAIN" build

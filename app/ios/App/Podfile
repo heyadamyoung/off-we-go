@@ -1,0 +1,27 @@
+require_relative '../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios/scripts/pods_helpers'
+
+platform :ios, '14.0'
+use_frameworks!
+
+# workaround to avoid Xcode caching of Pods that requires
+# Product -> Clean Build Folder after new Cordova plugins installed
+# Requires CocoaPods 1.6 or newer
+install! 'cocoapods', :disable_input_output_paths => true
+
+def capacitor_pods
+  pod 'Capacitor', :path => '../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios'
+  pod 'CapacitorCordova', :path => '../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios'
+  pod 'CapacitorCommunityBackgroundGeolocation', :path => '../../node_modules/.pnpm/@capacitor-community+backgr_f337b17035ddcc398d963e47db7facc5/node_modules/@capacitor-community/background-geolocation'
+  pod 'CapacitorApp', :path => '../../node_modules/.pnpm/@capacitor+app@7.1.0_@capacitor+core@7.6.8/node_modules/@capacitor/app'
+  pod 'CapacitorCamera', :path => '../../node_modules/.pnpm/@capacitor+camera@7.0.2_@capacitor+core@7.6.8/node_modules/@capacitor/camera'
+  pod 'CapacitorPreferences', :path => '../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences'
+end
+
+target 'App' do
+  capacitor_pods
+  # Add your Pods here
+end
+
+post_install do |installer|
+  assertDeploymentTarget(installer)
+end

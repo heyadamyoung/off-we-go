@@ -1,0 +1,10 @@
+{
+  "appId": "ai.threadway.wayfare",
+  "appName": "Wayfare",
+  "webDir": "dist",
+  "backgroundColor": "#0a0c10",
+  "ios": {
+    "contentInset": "never",
+    "preferredContentMode": "mobile"
+  }
+}
