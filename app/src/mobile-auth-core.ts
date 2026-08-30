@@ -6,3 +6,5 @@ export function magicTokenFromUrl(value) {
     return token && token.length >= 32 ? token : null
   } catch { return null }
 }
+
+

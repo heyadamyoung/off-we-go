@@ -11,7 +11,7 @@ function payloadFor(location) {
       || Math.abs(location.latitude) > 90 || Math.abs(location.longitude) > 180) return null
 
   const at = finite(location.time) ? location.time : Date.now()
-  const payload = {
+  const payload: any = {
     _type: 'location',
     lat: location.latitude,
     lon: location.longitude,
@@ -38,7 +38,7 @@ function validConfig(value) {
   } catch { return false }
 }
 
-export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Date.now }) {
+export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Date.now }: any) {
   if (!driver || !storage || !fetchFn) throw new Error('A location driver, persistent storage and fetch are required')
 
   let config = null
@@ -46,7 +46,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
   let queue = null
   let flushing = null
   let retryAt = 0
-  const listeners = new Set()
+  const listeners = new Set<(state: any) => void>()
   let state = {
     status: 'stopped', configured: false, deviceId: null, name: null,
     queued: 0, lastSentAt: null, error: null,
@@ -161,7 +161,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
   }
 
   const start = async () => {
-    if (!validConfig(config)) throw new Error('Register this iPhone before starting location sharing')
+    if (!validConfig(config)) throw new Error('Register this phone before starting location sharing')
     if (watcherId) return { ...state }
     if (config.enabled !== true) {
       config = { ...config, enabled: true }
@@ -176,7 +176,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
         stale: false,
         distanceFilter: 10,
       }, receive)
-      publish({ status: 'tracking', configured: true, deviceId: config.deviceId, name: config.name || 'This iPhone' })
+      publish({ status: 'tracking', configured: true, deviceId: config.deviceId, name: config.name || 'This phone' })
       await flush()
       return { ...state }
     } catch (error) {
@@ -194,7 +194,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
       }
       config = {
         endpoint: next.endpoint, token: next.token, deviceId: next.deviceId,
-        name: next.name || 'This iPhone', enabled: true,
+        name: next.name || 'This phone', enabled: true,
       }
       await storage.set({ key: CONFIG_KEY, value: JSON.stringify(config) })
       publish({ configured: true, deviceId: config.deviceId, name: config.name })
@@ -207,7 +207,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
       // Configurations written before the pause flag existed were actively
       // tracking, so preserve that behavior during migration.
       config = { ...saved, enabled: saved.enabled !== false }
-      publish({ configured: true, deviceId: config.deviceId, name: config.name || 'This iPhone' })
+      publish({ configured: true, deviceId: config.deviceId, name: config.name || 'This phone' })
       if (!config.enabled) return true
       await start()
       return true

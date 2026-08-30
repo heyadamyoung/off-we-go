@@ -1,14 +1,17 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { App as NativeApp } from '@capacitor/app'
 import { Camera } from '@capacitor/camera'
+import { LocalNotifications } from '@capacitor/local-notifications'
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage'
-import { createMobileTracker } from './mobileTrackingCore'
-import { galleryPhotosToFiles } from './mobilePhotosCore'
-import { magicTokenFromUrl } from './mobileAuthCore'
+import { createMobileTracker } from './mobile-tracking-core'
+import { galleryPhotosToFiles } from './mobile-photos-core'
+import { magicTokenFromUrl } from './mobile-auth-core'
+import { createNativeLocationDriver, createNativeTrackingFetch } from './mobile-platform-core'
 
 export const isNativeApp = Capacitor.isNativePlatform()
-if (isNativeApp) document.documentElement.classList.add('native-ios')
+export const mobilePlatform = Capacitor.getPlatform()
+if (isNativeApp) document.documentElement.classList.add('native-app', `native-${mobilePlatform}`)
 
 const unavailableState = {
   status: 'unavailable', configured: false, deviceId: null, name: null,
@@ -16,9 +19,9 @@ const unavailableState = {
 }
 
 const webTracker = {
-  async configure() { throw new Error('Background tracking is available in the iPhone app') },
+  async configure() { throw new Error('Background tracking is available in the native app') },
   async restore() { return false },
-  async start() { throw new Error('Background tracking is available in the iPhone app') },
+  async start() { throw new Error('Background tracking is available in the native app') },
   async stop() {},
   async forget() {},
   getState() { return { ...unavailableState } },
@@ -26,6 +29,18 @@ const webTracker = {
 }
 
 const BackgroundGeolocation = isNativeApp ? registerPlugin('BackgroundGeolocation') : null
+const locationDriver = isNativeApp
+  ? createNativeLocationDriver({
+      backgroundGeolocation: BackgroundGeolocation,
+      localNotifications: LocalNotifications,
+      platform: mobilePlatform,
+    })
+  : null
+const trackingFetch = createNativeTrackingFetch({
+  nativeHttp: CapacitorHttp,
+  platform: mobilePlatform,
+  webFetch: globalThis.fetch.bind(globalThis),
+})
 const secureReady = isNativeApp
   ? Promise.all([
       SecureStorage.setSynchronize(false),
@@ -86,7 +101,7 @@ const trackingStorage = isNativeApp ? {
 } : Preferences
 
 export const mobileTracker = isNativeApp
-  ? createMobileTracker({ driver: BackgroundGeolocation, storage: trackingStorage, fetch: globalThis.fetch.bind(globalThis) })
+  ? createMobileTracker({ driver: locationDriver, storage: trackingStorage, fetch: trackingFetch })
   : webTracker
 
 export async function pickNativePhotos() {

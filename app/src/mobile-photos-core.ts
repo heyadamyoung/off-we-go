@@ -33,10 +33,10 @@ function metadataFromExif(exif) {
   return valid || takenAt ? { ...(valid ? { lat, lng } : {}), ...(takenAt ? { takenAt } : {}) } : null
 }
 
-export async function galleryPhotosToFiles(photos, { fetch: fetchFn, stamp = Date.now() } = {}) {
+export async function galleryPhotosToFiles(photos, { fetch: fetchFn, stamp = Date.now() }: any = {}) {
   if (!fetchFn) throw new Error('A file reader is required')
   return Promise.all((photos || []).map(async (photo, index) => {
-    if (!photo?.webPath) throw new Error('Apple Photos did not return an image file')
+    if (!photo?.webPath) throw new Error('The photo picker did not return an image file')
     const response = await fetchFn(photo.webPath)
     if (!response.ok) throw new Error('The selected photo could not be read')
     const blob = await response.blob()
@@ -51,7 +51,7 @@ export async function galleryPhotosToFiles(photos, { fetch: fetchFn, stamp = Dat
 }
 
 export function photoUploadMetadata(input, { by, nextSequence }) {
-  const metadata = {
+  const metadata: any = {
     caption: input.caption,
     stopId: input.stopId ?? null,
     when: input.when,

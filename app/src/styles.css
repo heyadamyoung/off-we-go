@@ -31,7 +31,7 @@ img{display:block}
 ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:9px}
 ::-webkit-scrollbar-track{background:transparent}
 .app{height:100%;display:flex;flex-direction:column;overflow:hidden}
-.native-ios .app{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.native-app .app{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
 
 /* ---------------- ticker ---------------- */
 .ticker{height:52px;flex:none;display:flex;align-items:stretch;border-bottom:1px solid var(--line);

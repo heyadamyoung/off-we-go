@@ -1,6 +1,8 @@
+import type { ApiRequestOptions, AsyncStorage, AuthSession } from './shared/model/types'
+
 const SESSION_KEY = 'wayfare-session'
 
-export function safeOAuthContinuation(value, origin) {
+export function safeOAuthContinuation(value: unknown, origin: string) {
   if (typeof value !== 'string') return null
   try {
     const destination = new URL(value, origin)
@@ -9,21 +11,27 @@ export function safeOAuthContinuation(value, origin) {
   } catch { return null }
 }
 
-export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
-  let session = null
+interface ApiClientOptions {
+  baseUrl: string
+  storage: AsyncStorage
+  fetch: typeof fetch
+}
+
+export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientOptions) {
+  let session: AuthSession | null = null
   let hydrated = false
-  let hydration = null
-  const listeners = new Set()
+  let hydration: Promise<AuthSession | null> | null = null
+  const listeners = new Set<(session: AuthSession | null) => void>()
   try {
     const initial = storage.getItem(SESSION_KEY)
-    if (initial && typeof initial.then === 'function') {
+    if (initial && typeof initial !== 'string') {
       hydration = Promise.resolve(initial).then(value => {
-        try { session = JSON.parse(value || 'null') } catch { session = null }
+        try { session = JSON.parse(value || 'null') as AuthSession | null } catch { session = null }
         hydrated = true
         return session
       })
     } else {
-      session = JSON.parse(initial || 'null')
+      session = JSON.parse((initial as string | null) || 'null') as AuthSession | null
       hydrated = true
     }
   } catch { session = null; hydrated = true }
@@ -34,7 +42,7 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
     if (hydration) await hydration
     return session
   }
-  const save = async value => {
+  const save = async (value: AuthSession | null) => {
     session = value
     if (value) await storage.setItem(SESSION_KEY, JSON.stringify(value))
     else await storage.removeItem(SESSION_KEY)
@@ -42,16 +50,16 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
     return session
   }
 
-  const request = async (path, options = {}) => {
+  const request = async <T = any>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
     await hydrate()
-    const headers = { ...(options.headers || {}) }
+    const headers: Record<string, string> = { ...Object.fromEntries(new Headers(options.headers).entries()) }
     if (session?.accessToken) headers.authorization = `Bearer ${session.accessToken}`
     let body = options.body
     if (body != null && !(body instanceof FormData) && typeof body !== 'string' && !(body instanceof Blob)) {
       headers['content-type'] ||= 'application/json'
       body = JSON.stringify(body)
     }
-    const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, { ...options, headers, body })
+    const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, { ...options, headers, body: body as BodyInit | null | undefined })
     if (response.status === 401 && !path.startsWith('/auth/')) await save(null)
     if (!response.ok) {
       let message = `Request failed (${response.status})`
@@ -59,28 +67,28 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
         const payload = await response.json()
         message = payload.error || message
       } catch { const text = await response.text(); if (text) message = text }
-      const error = new Error(message)
+      const error: Error & { status?: number } = new Error(message)
       error.status = response.status
       throw error
     }
-    if (response.status === 204) return null
+    if (response.status === 204) return null as T
     const contentType = response.headers.get('content-type') || ''
-    return contentType.includes('json') ? response.json() : response.text()
+    return (contentType.includes('json') ? response.json() : response.text()) as Promise<T>
   }
 
   return {
     request,
     getSession() { return session },
-    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
-    async exchangeMagicToken(token) {
-      const result = await request('/auth/exchange', { method: 'POST', body: { token } })
+    subscribe(listener: (session: AuthSession | null) => void) { listeners.add(listener); return () => listeners.delete(listener) },
+    async exchangeMagicToken(token: string) {
+      const result = await request<AuthSession>('/auth/exchange', { method: 'POST', body: { token } })
       return await save({ accessToken: result.accessToken, user: result.user })
     },
     async restore() {
       await hydrate()
       if (!session?.accessToken) return null
       try {
-        const result = await request('/auth/session')
+        const result = await request<{ user: AuthSession['user'] }>('/auth/session')
         return await save({ ...session, user: result.user })
       } catch { return await save(null) }
     },
