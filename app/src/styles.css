@@ -594,8 +594,8 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   .fcard{width:168px}
   .sights{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
   .paneHd{flex-wrap:wrap;gap:10px}
-  .tbtn.people .lbl{display:none}
-  .tbtn.people{width:34px;padding:0;justify-content:center}
+  .tbtn.people-action .lbl{display:none}
+  .tbtn.people-action{width:34px;padding:0;justify-content:center}
   .pref.theme{display:none}          /* the map follows daylight without being asked */
 }
 
@@ -632,7 +632,7 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   .tnav button{width:29px}
   .tnav{padding:1px}
   .tright{gap:4px;padding:0 6px}
-  .tbtn.ghost,.tbtn.people{width:32px}
+  .tbtn.ghost,.tbtn.people-action{width:32px}
   .tlogo{padding:0 9px}
 }
 

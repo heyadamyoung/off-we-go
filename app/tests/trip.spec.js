@@ -75,6 +75,14 @@ test('loads the trip with map, markers and filmstrip', async ({ page }) => {
   await expect(page.locator('.tflow')).toContainText('km walked')
 })
 
+test('the header People action stays compact at tablet widths', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 })
+  await open(page)
+
+  const people = await page.getByRole('button', { name: 'People' }).boundingBox()
+  expect(people.width).toBeLessThanOrEqual(100)
+})
+
 test('a pin selects its stop, a drag does not', async ({ page }) => {
   await open(page)
   const pin = await centreOnStop(page, PHOTOLESS)

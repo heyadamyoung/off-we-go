@@ -63,7 +63,7 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
           <Icon n={theme === 'dark' ? 'sun' : 'moon'} s={15} />
         </button>
         <LivePill resetKey={liveKey} />
-        <button className="tbtn hot people" onClick={onPeople} title="People">
+        <button className="tbtn hot people-action" onClick={onPeople} title="People">
           <Icon n="users" s={14} c="#0a0c10" w={2.2} /><span className="lbl">People</span>
         </button>
         {onSignOut && (
