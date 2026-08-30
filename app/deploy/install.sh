@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "Run this installer as root: sudo bash deploy/install.sh" >&2
+  exit 1
+fi
+if [[ -f .env && "${1:-}" != "--force" ]]; then
+  echo ".env already exists. Refusing to overwrite it. Use --force only if you intend to replace it." >&2
+  exit 1
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y ca-certificates curl
+  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  sh /tmp/get-docker.sh
+  rm -f /tmp/get-docker.sh
+fi
+docker compose version >/dev/null
+
+read -rp "Wayfare domain [wayfare.threadway.ai]: " WAYFARE_DOMAIN
+WAYFARE_DOMAIN="${WAYFARE_DOMAIN:-wayfare.threadway.ai}"
+read -rp "Initial owner email: " WAYFARE_ADMIN_EMAIL
+read -rp "Apple Developer Team ID (10 characters): " APPLE_TEAM_ID
+if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+  echo "Apple Team ID must be 10 uppercase letters/numbers." >&2
+  exit 1
+fi
+read -rp "SMTP host: " SMTP_HOST
+read -rp "SMTP port [587]: " SMTP_PORT
+SMTP_PORT="${SMTP_PORT:-587}"
+read -rp "Use implicit SMTP TLS? [y/N]: " SMTP_TLS
+[[ "$SMTP_TLS" =~ ^[Yy]$ ]] && SMTP_SECURE=true || SMTP_SECURE=false
+read -rp "SMTP username (blank if none): " SMTP_USER
+read -rsp "SMTP password (blank if none): " SMTP_PASS
+echo
+read -rp "From address [Wayfare <$WAYFARE_ADMIN_EMAIL>]: " SMTP_FROM
+SMTP_FROM="${SMTP_FROM:-Wayfare <$WAYFARE_ADMIN_EMAIL>}"
+
+POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+WAYFARE_SESSION_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+SMTP_PASS_B64="$(printf '%s' "$SMTP_PASS" | base64 | tr -d '\n')"
+unset SMTP_PASS
+
+install -d -m 750 data/uploads backups
+chown -R 1000:1000 data/uploads
+umask 077
+{
+  printf 'WAYFARE_DOMAIN=%s\n' "$WAYFARE_DOMAIN"
+  printf 'WAYFARE_ADMIN_EMAIL=%s\n' "$WAYFARE_ADMIN_EMAIL"
+  printf 'APPLE_TEAM_ID=%s\n' "$APPLE_TEAM_ID"
+  printf 'APPLE_BUNDLE_ID=ai.threadway.wayfare\n'
+  printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+  printf 'WAYFARE_SESSION_SECRET=%s\n' "$WAYFARE_SESSION_SECRET"
+  printf 'SMTP_HOST=%s\n' "$SMTP_HOST"
+  printf 'SMTP_PORT=%s\n' "$SMTP_PORT"
+  printf 'SMTP_SECURE=%s\n' "$SMTP_SECURE"
+  printf 'SMTP_USER=%s\n' "$SMTP_USER"
+  printf 'SMTP_PASS_B64=%s\n' "$SMTP_PASS_B64"
+  printf 'SMTP_FROM=%s\n' "$SMTP_FROM"
+} > .env
+chmod 600 .env
+
+docker compose up -d --build
+for _ in $(seq 1 60); do
+  if curl -fsS "https://${WAYFARE_DOMAIN}/api/health" >/dev/null 2>&1; then break; fi
+  sleep 2
+done
+curl -fsS "https://${WAYFARE_DOMAIN}/api/health" >/dev/null
+
+cat > /etc/cron.d/wayfare-backup <<EOF
+17 3 * * * root cd $ROOT_DIR && /bin/bash deploy/backup.sh >/var/log/wayfare-backup.log 2>&1
+47 3 * * * root cd $ROOT_DIR && docker compose exec -T db psql -U wayfare -d wayfare -c "select wayfare_prune_positions(interval '30 days');" >/var/log/wayfare-gps-prune.log 2>&1
+EOF
+chmod 644 /etc/cron.d/wayfare-backup
+
+echo "Wayfare is running at https://${WAYFARE_DOMAIN}"
+echo "Sign in with ${WAYFARE_ADMIN_EMAIL}; the first login link will create the owner account."

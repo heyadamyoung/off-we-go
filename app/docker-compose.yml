@@ -1,0 +1,75 @@
+name: wayfare
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wayfare
+      POSTGRES_USER: wayfare
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfare -d wayfare"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://wayfare:${POSTGRES_PASSWORD}@db:5432/wayfare
+      UPLOAD_DIR: /data/uploads
+      WAYFARE_ADMIN_EMAIL: ${WAYFARE_ADMIN_EMAIL}
+      WAYFARE_PUBLIC_URL: https://${WAYFARE_DOMAIN}
+      WAYFARE_SESSION_SECRET: ${WAYFARE_SESSION_SECRET}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS_B64: ${SMTP_PASS_B64:-}
+      SMTP_FROM: ${SMTP_FROM}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID}
+      APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-ai.threadway.wayfare}
+    volumes:
+      - ./data/uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: /api
+    restart: unless-stopped
+    environment:
+      WAYFARE_DOMAIN: ${WAYFARE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

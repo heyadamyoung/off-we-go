@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.env
+.env.*
+data
+backups
+playwright-report
+test-results
+.tmp
+ios
