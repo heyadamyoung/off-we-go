@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { App as NativeApp } from '@capacitor/app'
 import { Camera } from '@capacitor/camera'
+import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage'
 import { createMobileTracker } from './mobileTrackingCore'
 import { galleryPhotosToFiles } from './mobilePhotosCore'
 import { magicTokenFromUrl } from './mobileAuthCore'
@@ -25,14 +26,68 @@ const webTracker = {
 }
 
 const BackgroundGeolocation = isNativeApp ? registerPlugin('BackgroundGeolocation') : null
+const secureReady = isNativeApp
+  ? Promise.all([
+      SecureStorage.setSynchronize(false),
+      SecureStorage.setDefaultKeychainAccess(KeychainAccess.afterFirstUnlockThisDeviceOnly),
+    ])
+  : Promise.resolve()
+
+export const sessionStorage = isNativeApp ? {
+  async getItem(key) {
+    await secureReady
+    const secure = await SecureStorage.getItem(key)
+    if (secure != null) return secure
+    const legacy = globalThis.localStorage?.getItem(key) || null
+    if (legacy != null) {
+      await SecureStorage.setItem(key, legacy)
+      globalThis.localStorage?.removeItem(key)
+    }
+    return legacy
+  },
+  async setItem(key, value) {
+    await secureReady
+    await SecureStorage.setItem(key, value)
+    globalThis.localStorage?.removeItem(key)
+  },
+  async removeItem(key) {
+    await secureReady
+    await SecureStorage.removeItem(key)
+    globalThis.localStorage?.removeItem(key)
+  },
+} : (typeof localStorage === 'undefined'
+  ? { getItem() { return null }, setItem() {}, removeItem() {} }
+  : localStorage)
+
+const trackingStorage = isNativeApp ? {
+  async get({ key }) {
+    if (!key.endsWith('.config.v1')) return Preferences.get({ key })
+    await secureReady
+    let value = await SecureStorage.getItem(key)
+    if (value == null) {
+      value = (await Preferences.get({ key })).value
+      if (value != null) {
+        await SecureStorage.setItem(key, value)
+        await Preferences.remove({ key })
+      }
+    }
+    return { value }
+  },
+  async set({ key, value }) {
+    if (!key.endsWith('.config.v1')) return Preferences.set({ key, value })
+    await secureReady
+    await SecureStorage.setItem(key, value)
+  },
+  async remove({ key }) {
+    if (!key.endsWith('.config.v1')) return Preferences.remove({ key })
+    await secureReady
+    await Promise.all([SecureStorage.removeItem(key), Preferences.remove({ key })])
+  },
+} : Preferences
 
 export const mobileTracker = isNativeApp
-  ? createMobileTracker({ driver: BackgroundGeolocation, storage: Preferences, fetch: globalThis.fetch.bind(globalThis) })
+  ? createMobileTracker({ driver: BackgroundGeolocation, storage: trackingStorage, fetch: globalThis.fetch.bind(globalThis) })
   : webTracker
-
-export const authRedirectUrl = () => isNativeApp
-  ? 'wayfare://auth'
-  : window.location.origin + window.location.pathname
 
 export async function pickNativePhotos() {
   if (!isNativeApp) return null

@@ -89,6 +89,93 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return result.rows[0] || null
     },
     async deleteSession(hash) { await pool.query('delete from sessions where token_hash=$1', [hash]) },
+    async registerMcpClient(client) {
+      const result = await pool.query(`insert into mcp_oauth_clients
+        (client_id,client_name,redirect_uris,client_uri,logo_uri,scopes)
+        values($1,$2,$3,$4,$5,$6) returning *`, [
+        client.id, client.clientName, client.redirectUris, client.clientUri,
+        client.logoUri, client.scopes,
+      ])
+      const value = result.rows[0]
+      return {
+        id: value.client_id, clientName: value.client_name,
+        redirectUris: value.redirect_uris, clientUri: value.client_uri,
+        logoUri: value.logo_uri, scopes: value.scopes,
+      }
+    },
+    async findMcpClient(id) {
+      const result = await pool.query('select * from mcp_oauth_clients where client_id=$1', [id])
+      const value = result.rows[0]
+      return value ? {
+        id: value.client_id, clientName: value.client_name,
+        redirectUris: value.redirect_uris, clientUri: value.client_uri,
+        logoUri: value.logo_uri, scopes: value.scopes,
+      } : null
+    },
+    async createMcpAuthorizationCode(code) {
+      await pool.query('delete from mcp_oauth_codes where expires_at <= now()')
+      await pool.query(`insert into mcp_oauth_codes
+        (code_hash,user_id,client_id,redirect_uri,scopes,resource,code_challenge,expires_at)
+        values($1,$2,$3,$4,$5,$6,$7,$8)`, [
+        code.hash, code.userId, code.clientId, code.redirectUri, code.scopes,
+        code.resource, code.codeChallenge, code.expiresAt,
+      ])
+    },
+    async redeemMcpAuthorizationCode(grant) {
+      const result = await pool.query(`with consumed as (
+          delete from mcp_oauth_codes where code_hash=$1 and expires_at>$2
+            and client_id=$3 and redirect_uri=$4 and resource=$5 and code_challenge=$6
+          returning user_id,client_id,scopes,resource
+        )
+        insert into mcp_oauth_tokens
+          (access_hash,refresh_hash,user_id,client_id,scopes,resource,access_expires_at,refresh_expires_at)
+        select $7,$8,user_id,client_id,scopes,resource,$9,$10 from consumed
+        returning user_id,client_id,scopes,resource`, [
+        grant.codeHash, grant.now, grant.clientId, grant.redirectUri, grant.resource,
+        grant.codeChallenge, grant.accessHash, grant.refreshHash,
+        grant.accessExpiresAt, grant.refreshExpiresAt,
+      ])
+      const value = result.rows[0]
+      return value ? {
+        userId: value.user_id, clientId: value.client_id,
+        scopes: value.scopes, resource: value.resource,
+      } : null
+    },
+    async findMcpAccessToken(hash, now) {
+      const result = await pool.query(`select t.*,u.email from mcp_oauth_tokens t
+        join users u on u.id=t.user_id where t.access_hash=$1 and t.access_expires_at>$2`, [hash, now])
+      const value = result.rows[0]
+      return value ? {
+        accessHash: value.access_hash, refreshHash: value.refresh_hash,
+        userId: value.user_id, clientId: value.client_id, scopes: value.scopes,
+        resource: value.resource, accessExpiresAt: value.access_expires_at,
+        refreshExpiresAt: value.refresh_expires_at,
+        user: { id: value.user_id, email: value.email },
+      } : null
+    },
+    async rotateMcpRefreshToken(grant) {
+      const result = await pool.query(`with consumed as (
+          delete from mcp_oauth_tokens where refresh_hash=$1 and refresh_expires_at>$2
+            and client_id=$3 and resource=$4
+          returning user_id,client_id,scopes,resource
+        )
+        insert into mcp_oauth_tokens
+          (access_hash,refresh_hash,user_id,client_id,scopes,resource,access_expires_at,refresh_expires_at)
+        select $5,$6,user_id,client_id,scopes,resource,$7,$8 from consumed
+        returning user_id,client_id,scopes,resource`, [
+        grant.refreshHash, grant.now, grant.clientId, grant.resource,
+        grant.accessHash, grant.replacementRefreshHash,
+        grant.accessExpiresAt, grant.refreshExpiresAt,
+      ])
+      const value = result.rows[0]
+      return value ? {
+        userId: value.user_id, clientId: value.client_id,
+        scopes: value.scopes, resource: value.resource,
+      } : null
+    },
+    async revokeMcpToken(hash) {
+      await pool.query('delete from mcp_oauth_tokens where access_hash=$1 or refresh_hash=$1', [hash])
+    },
 
     async createTrip(user, input) {
       const client = await pool.connect()
@@ -302,6 +389,24 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       } catch (error) { await client.query('rollback'); throw error }
       finally { client.release() }
     },
+    async removeMember(user, tripId, memberUserId) {
+      if (!await this.canManageTrip(user.id, tripId)) return null
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const result = await client.query(`select m.role,u.email from trip_members m join users u on u.id=m.user_id
+          where m.trip_id=$1 and m.user_id=$2 for update`, [tripId, memberUserId])
+        const member = result.rows[0]
+        if (!member) { await client.query('rollback'); return null }
+        if (member.role === 'owner') { await client.query('rollback'); return 'owner' }
+        await client.query('delete from devices where trip_id=$1 and user_id=$2', [tripId, memberUserId])
+        await client.query('delete from trip_invites where trip_id=$1 and email=$2', [tripId, member.email])
+        await client.query('delete from trip_members where trip_id=$1 and user_id=$2', [tripId, memberUserId])
+        await client.query('commit')
+        return 'removed'
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
+    },
     async addComment(user, tripId, photoId, body) {
       if (!await this.canReadTrip(user.id, tripId)) return null
       const result = await pool.query(`insert into comments(trip_id,photo_id,user_id,body)
@@ -340,10 +445,10 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const member = await pool.query(`select coalesce(display_name,split_part($3,'@',1)) as name
         from trip_members where trip_id=$1 and user_id=$2`, [tripId, user.id, user.email])
       const result = await pool.query(`insert into photos
-        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,thumb_path,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,(select count(*) from photos where trip_id=$1)) returning *`, [
+        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,thumb_path,client_key,seq)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,(select count(*) from photos where trip_id=$1)) returning *`, [
         tripId, input.stopId, user.id, input.lng, input.lat, input.caption, member.rows[0]?.name,
-        input.takenAt, input.locationSource, input.storagePath, input.thumbPath,
+        input.takenAt, input.locationSource, input.storagePath, input.thumbPath, input.clientKey || null,
       ])
       const value = result.rows[0]
       return {
@@ -353,6 +458,19 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         locationSource: value.location_source, storagePath: value.storage_path,
         thumbPath: value.thumb_path, seq: value.seq,
       }
+    },
+    async findPhotoByClientKey(user, tripId, clientKey) {
+      if (!clientKey || !await this.canEditTrip(user.id, tripId)) return null
+      const result = await pool.query(`select * from photos where trip_id=$1 and user_id=$2 and client_key=$3`,
+        [tripId, user.id, clientKey])
+      const value = result.rows[0]
+      return value ? {
+        id: value.id, stopId: value.stop_id, lng: value.lng, lat: value.lat,
+        caption: value.caption, by: value.taken_by,
+        when: value.taken_at?.toISOString?.() || value.taken_at,
+        locationSource: value.location_source, storagePath: value.storage_path,
+        thumbPath: value.thumb_path, seq: value.seq,
+      } : null
     },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!await this.canEditTrip(user.id, tripId)) return null

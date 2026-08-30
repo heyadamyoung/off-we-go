@@ -49,6 +49,38 @@ test('API errors expose their HTTP status so the app can distinguish an empty ac
   })
 })
 
+test('magic-link continuation only returns to the same-origin OAuth authorization page', () => {
+  assert.equal(
+    moduleUnderTest.safeOAuthContinuation('/oauth/authorize?client_id=abc', 'https://wayfare.example.com'),
+    '/oauth/authorize?client_id=abc',
+  )
+  assert.equal(moduleUnderTest.safeOAuthContinuation('https://evil.example/oauth/authorize', 'https://wayfare.example.com'), null)
+  assert.equal(moduleUnderTest.safeOAuthContinuation('/account', 'https://wayfare.example.com'), null)
+})
+
+test('the API client restores a session from asynchronous iOS secure storage', async () => {
+  const stored = JSON.stringify({ accessToken: 'keychain-token', user: { id: 'old', email: 'owner@example.com' } })
+  const client = moduleUnderTest.createApiClient({
+    baseUrl: '/api',
+    storage: {
+      async getItem(key) { return key === 'wayfare-session' ? stored : null },
+      async setItem() {},
+      async removeItem() {},
+    },
+    fetch: async (_url, options) => {
+      assert.equal(options.headers.authorization, 'Bearer keychain-token')
+      return new Response(JSON.stringify({ user: { id: 'fresh', email: 'owner@example.com' } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    },
+  })
+
+  const restored = await client.restore()
+
+  assert.equal(restored.accessToken, 'keychain-token')
+  assert.equal(restored.user.id, 'fresh')
+})
+
 test('live GPS retention is bounded independently for every phone and removes duplicate fixes', () => {
   assert.ok(liveModule?.mergeLiveFixes, 'the per-device live GPS buffer has not been implemented')
   const at = value => new Date(`2027-01-01T00:00:0${value}.000Z`)

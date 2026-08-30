@@ -27,8 +27,13 @@ const app = await buildServer({
   }),
   publicUrl: required('WAYFARE_PUBLIC_URL'),
   sessionSecret: required('WAYFARE_SESSION_SECRET'),
+  oauthSecret: required('WAYFARE_OAUTH_SECRET'),
   appleTeamId: required('APPLE_TEAM_ID'),
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
+  logger: {
+    level: process.env.LOG_LEVEL || 'info',
+    redact: ['req.headers.authorization', 'req.headers.cookie'],
+  },
 })
 
 const port = Number(process.env.PORT || 3000)

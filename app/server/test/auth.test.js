@@ -69,3 +69,20 @@ test('magic-link requests are throttled per email before they can spam SMTP or i
   assert.equal(sent.length, 2)
   await app.close()
 })
+
+test('a malformed OAuth continuation cannot break or redirect a magic link', async () => {
+  const sent = []
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    mailer: { async send(message) { sent.push(message) } },
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const requested = await app.inject({
+    method: 'POST', url: '/api/auth/magic-link',
+    payload: { email: 'owner@example.com', continue: 'http://[' },
+  })
+  assert.equal(requested.statusCode, 202)
+  assert.equal(sent.length, 1)
+  assert.equal(new URL(sent[0].webUrl).searchParams.has('continue'), false)
+  await app.close()
+})

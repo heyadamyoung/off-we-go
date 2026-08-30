@@ -1,7 +1,9 @@
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import cors from '@fastify/cors'
+import formbody from '@fastify/formbody'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { registerMcpRoutes } from './mcp.js'
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase()
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
@@ -15,13 +17,16 @@ function bearer(request) {
 export async function buildServer({ repository, fileStore = null, mailer, publicUrl, sessionSecret,
   clock = () => new Date(), ingestRateLimit = { max: 180, windowMs: 60_000 },
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
-  appleTeamId = null, appleBundleId = 'ai.threadway.wayfare' }) {
+  appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
+  trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
   if (!repository) throw new Error('A repository is required')
   if (!mailer) throw new Error('A mailer is required')
   if (!publicUrl) throw new Error('WAYFARE_PUBLIC_URL is required')
   if (!sessionSecret || sessionSecret.length < 16) throw new Error('WAYFARE_SESSION_SECRET must be at least 16 characters')
+  oauthSecret ||= sessionSecret
+  if (oauthSecret.length < 16) throw new Error('WAYFARE_OAUTH_SECRET must be at least 16 characters')
 
-  const app = Fastify({ logger: false, bodyLimit: 30 * 1024 * 1024 })
+  const app = Fastify({ logger, bodyLimit: 30 * 1024 * 1024, trustProxy })
   const ingestWindows = new Map()
   const authEmailWindows = new Map(), authIpWindows = new Map()
   const rateWindow = (windows, key, max, windowMs) => {
@@ -43,6 +48,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['content-type', 'authorization'], maxAge: 86400,
   })
+  await app.register(formbody)
   await app.register(multipart, {
     limits: { files: 1, fileSize: 25 * 1024 * 1024, fields: 20 },
   })
@@ -81,7 +87,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return Number.isNaN(date.getTime()) ? null : date
   }
 
-  const issueMagicLink = async email => {
+  const issueMagicLink = async (email, continuation = null) => {
     const token = newToken()
     const now = clock()
     await repository.createMagicToken({
@@ -89,7 +95,17 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       expiresAt: new Date(now.getTime() + 15 * 60_000),
     })
     const root = publicUrl.replace(/\/$/, '')
-    const universalUrl = `${root}/auth/callback?token=${encodeURIComponent(token)}`
+    const callback = new URL('/auth/callback', root)
+    callback.searchParams.set('token', token)
+    if (typeof continuation === 'string') {
+      try {
+        const destination = new URL(continuation, root)
+        if (destination.origin === root && destination.pathname === '/oauth/authorize') {
+          callback.searchParams.set('continue', destination.pathname + destination.search)
+        }
+      } catch {}
+    }
+    const universalUrl = callback.href
     const message = {
       to: email,
       webUrl: universalUrl,
@@ -107,7 +123,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     )
     if (retryAfter) return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
     if (email && await repository.emailAllowed(email)) {
-      await issueMagicLink(email)
+      await issueMagicLink(email, request.body?.continue)
     }
     return reply.code(202).send({ ok: true })
   })
@@ -149,6 +165,11 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!user) reply.code(401).send({ error: 'Sign in required' })
     return user
   }
+
+  await registerMcpRoutes(app, {
+    repository, fileStore, publicUrl, oauthSecret, clock,
+    authenticate: authenticated, sendInvite: issueMagicLink,
+  })
 
   app.delete('/api/account', async (request, reply) => {
     const user = await authenticated(request, reply)
@@ -268,6 +289,17 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       } else fields[part.fieldname] = part.value
     }
     if (!bytes?.length) return reply.code(400).send({ error: 'Choose a photo to upload' })
+    const clientKey = String(fields.uploadKey || '').trim() || null
+    if (clientKey && (clientKey.length < 16 || clientKey.length > 100)) {
+      return reply.code(400).send({ error: 'The photo upload key is invalid' })
+    }
+    if (clientKey && repository.findPhotoByClientKey) {
+      const existing = await repository.findPhotoByClientKey(user, request.params.tripId, clientKey)
+      if (existing) return {
+        ...existing, src: mediaUrl(existing.storagePath),
+        thumbSrc: existing.thumbPath ? mediaUrl(existing.thumbPath) : null,
+      }
+    }
 
     let stored
     try { stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes }) }
@@ -290,7 +322,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         ...stored,
         stopId: fields.stopId || null,
         caption: String(fields.caption || '').trim() || null,
-        lng, lat, takenAt, locationSource,
+        lng, lat, takenAt, locationSource, clientKey,
       })
       if (!photo) throw new Error('Trip not found')
       return reply.code(201).send({
@@ -527,6 +559,15 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!user) return
     const removed = await repository.revokeInvite(user, request.params.tripId, request.params.inviteId)
     if (!removed) return reply.code(404).send({ error: 'Invitation not found' })
+    return reply.code(204).send()
+  })
+
+  app.delete('/api/trips/:tripId/members/:userId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const result = await repository.removeMember(user, request.params.tripId, request.params.userId)
+    if (result === 'owner') return reply.code(409).send({ error: 'A trip owner cannot be removed' })
+    if (result !== 'removed') return reply.code(404).send({ error: 'Trip member not found' })
     return reply.code(204).send()
   })
 

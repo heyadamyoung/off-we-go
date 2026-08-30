@@ -29,6 +29,7 @@ services:
       WAYFARE_ADMIN_EMAIL: ${WAYFARE_ADMIN_EMAIL}
       WAYFARE_PUBLIC_URL: https://${WAYFARE_DOMAIN}
       WAYFARE_SESSION_SECRET: ${WAYFARE_SESSION_SECRET}
+      WAYFARE_OAUTH_SECRET: ${WAYFARE_OAUTH_SECRET}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -37,6 +38,7 @@ services:
       SMTP_FROM: ${SMTP_FROM}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID}
       APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-ai.threadway.wayfare}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - ./data/uploads:/data/uploads
     depends_on:

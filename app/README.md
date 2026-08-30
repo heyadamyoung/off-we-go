@@ -23,7 +23,7 @@ Copy this `app` directory to the VPS, point your domain at it, and run from the 
 sudo bash deploy/install.sh
 ```
 
-The installer refuses to replace an existing `.env` unless explicitly run with `--force`. It installs Docker when needed, asks for the domain/owner/SMTP values, generates secrets, creates storage directories, builds the containers, runs database migrations, waits for HTTPS health, and installs the nightly backup job.
+On its first run the installer asks for the domain/owner/SMTP values, generates secrets, creates storage directories, builds the containers, runs database migrations, waits for HTTPS health, and installs the nightly backup job. Later runs preserve existing `.env` values; an upgrade from a pre-MCP installation adds the missing OAuth secret once without rotating the database, session, or SMTP secrets.
 
 Afterward, open `https://your-domain`, enter the owner email supplied to the installer, and use the emailed link. That address is the initial administrator and can create the first trip.
 
@@ -39,6 +39,8 @@ sudo bash deploy/restore.sh backups/20260830T031700Z
 
 Backups stored only on the VPS do not protect against losing the VPS. Copy `backups/` to a second machine or object-storage provider.
 
+Backups briefly pause API writes so the database and upload archive describe the same instant. Restore validates both archives, restores into staged database/storage locations, swaps only after validation, and automatically rolls back if the restored API fails its readiness check.
+
 ## Configuration
 
 The installer writes a root-readable `.env`. [.env.vps.example](.env.vps.example) lists every variable. Never expose `.env`, database/session secrets, or SMTP credentials to the browser.
@@ -50,6 +52,49 @@ VITE_API_URL=https://wayfare.threadway.ai/api pnpm ios:sync
 ```
 
 The native app uses the regular Apple Photos picker and sends background Core Location fixes to `/api/ingest/track`. iOS still requires photo access and Always Location permission.
+
+Public release pages are served at [privacy.html](https://wayfare.threadway.ai/privacy.html) and [support.html](https://wayfare.threadway.ai/support.html). App Store copy, privacy answers, review notes, and the release checklist are in `docs/app-store/`.
+
+## Remote MCP server and OAuth consent
+
+The VPS also exposes a private remote MCP server at `https://your-domain/mcp`. It is protected by the same Wayfare users and trip membership rules as the web and iPhone apps. No Cloudflare service or third-party identity provider is involved.
+
+When an MCP client connects, Wayfare publishes OAuth discovery metadata, dynamically registers the public client, requires OAuth 2.1 authorization code flow with S256 PKCE, and opens a branded consent page. The user can grant either read-only access or trip editing. Access tokens last one hour; rotated refresh tokens last 30 days and can be revoked through the OAuth revocation endpoint.
+
+The MCP tools can read trips; create and update trips; create, update, or delete stops; replace routes; update or delete photo metadata; manage comments and likes; and manage invitations. Photo uploads remain in the Wayfare app because they require an image file.
+
+To connect, give a Streamable HTTP-capable MCP client this server URL:
+
+```text
+https://your-domain/mcp
+```
+
+The client should discover the OAuth endpoints automatically. If the browser is not already signed into Wayfare, the consent page can send the normal one-time email link and return to the pending authorization request afterward. `WAYFARE_OAUTH_SECRET` signs pending consent requests and must remain server-side; the installer generates it automatically for both new and existing VPS installations.
+
+## One-time migration from the previous Supabase project
+
+The production runtime has no Supabase dependency. If the previous project contains real data, run the resumable one-time importer before inviting people to the VPS version. It copies users, trips, membership, invitations, stops, routes, photos, comments, and likes; private photo objects are downloaded with the legacy service-role key, resized into Wayfare's current display/thumbnail format, and recorded in a checksum manifest.
+
+First check row counts without writing anything:
+
+```bash
+LEGACY_DATABASE_URL='postgresql://...' \
+DATABASE_URL='postgresql://wayfare:...@127.0.0.1:5432/wayfare' \
+DRY_RUN=true pnpm migrate:supabase
+```
+
+Then perform the migration from the VPS application directory:
+
+```bash
+LEGACY_DATABASE_URL='postgresql://...' \
+LEGACY_SUPABASE_URL='https://old-project.supabase.co' \
+LEGACY_SUPABASE_SERVICE_ROLE_KEY='...' \
+DATABASE_URL='postgresql://wayfare:...@127.0.0.1:5432/wayfare' \
+UPLOAD_DIR='./data/uploads' \
+pnpm migrate:supabase
+```
+
+The importer is safe to rerun because it preserves legacy IDs and uses conflict updates. It stops on a missing/corrupt image by default so a migration cannot silently lose media. Set `SKIP_MISSING_MEDIA=true` only after reviewing the skipped entries that will be written to `legacy-migration-manifest.json`. Delete the legacy service-role key from shell history and revoke it when migration is complete.
 
 ## Local development
 
@@ -92,4 +137,4 @@ pnpm ios:sync
 docker compose config
 ```
 
-The iOS project is in `ios/`. Compiling, signing, and running it still requires Xcode on macOS (local Mac, rented Mac, or macOS CI); the VPS replaces the backend, not Apple’s signing requirement.
+The iOS project is in `ios/`. `.github/workflows/ios-build.yml` performs an unsigned iPhone/iPad simulator compile on macOS CI, while `ios/App/ci_scripts/ci_post_clone.sh` prepares Xcode Cloud archives. Signing and TestFlight still require your Apple Team selection and credentials; see `docs/app-store/release-checklist.md`.

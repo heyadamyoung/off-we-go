@@ -79,3 +79,34 @@ test('only owners manage invitations and revoking a claimed invitation removes t
   assert.equal(noLongerMember.statusCode, 404)
   await app.close()
 })
+
+test('an owner can remove a claimed member but cannot remove the trip owner', async () => {
+  const sent = []
+  const app = await buildServer({
+    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    mailer: { async send(message) { sent.push(message) } },
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const owner = await exchange(app, sent, 'owner@example.com')
+  const trip = (await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization: owner }, payload: { title: 'Private trip' },
+  })).json()
+  await app.inject({
+    method: 'POST', url: `/api/trips/${trip.id}/invites`, headers: { authorization: owner },
+    payload: { email: 'friend@example.com', name: 'Friend', role: 'viewer' },
+  })
+  const friend = await exchange(app, sent, 'friend@example.com')
+  const friendProfile = (await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: friend } })).json().me
+  const ownerProfile = (await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: owner } })).json().me
+
+  const selfRemoval = await app.inject({
+    method: 'DELETE', url: `/api/trips/${trip.id}/members/${ownerProfile.id}`, headers: { authorization: owner },
+  })
+  assert.equal(selfRemoval.statusCode, 409)
+  const removed = await app.inject({
+    method: 'DELETE', url: `/api/trips/${trip.id}/members/${friendProfile.id}`, headers: { authorization: owner },
+  })
+  assert.equal(removed.statusCode, 204)
+  assert.equal((await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: friend } })).statusCode, 404)
+  await app.close()
+})

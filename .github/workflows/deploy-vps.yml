@@ -1,0 +1,117 @@
+name: Deploy Wayfare to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/deploy-vps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wayfare-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test production release
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: wayfare_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wayfare_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.6.5 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm test:unit
+
+      - name: Test the restricted deployment entrypoint
+        run: node --test tests/deployment-guard.test.js
+
+      - name: Run server tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/wayfare_test
+        run: pnpm test:server
+
+      - name: Build the web app
+        env:
+          VITE_API_URL: /api
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run browser tests
+        run: pnpm test
+
+  deploy:
+    name: Deploy production
+    needs: test
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: https://wayfare.threadway.ai
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure deployment SSH key
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Stream release to the VPS
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          tar -czf - \
+            app/.dockerignore \
+            app/.env.vps.example \
+            app/Dockerfile.web \
+            app/docker-compose.yml \
+            app/index.html \
+            app/package.json \
+            app/pnpm-lock.yaml \
+            app/vite.config.js \
+            app/public \
+            app/src \
+            app/server \
+            app/deploy \
+          | ssh -i ~/.ssh/id_ed25519 \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              root@"$VPS_HOST" "deploy $GITHUB_SHA"

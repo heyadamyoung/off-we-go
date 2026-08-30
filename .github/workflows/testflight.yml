@@ -1,0 +1,86 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wayfare-testflight
+  cancel-in-progress: false
+
+jobs:
+  archive-and-upload:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      WAYFARE_DOMAIN: wayfare.threadway.ai
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install and synchronize iOS
+        run: pnpm install --frozen-lockfile && pnpm ios:sync
+
+      - name: Install CocoaPods
+        run: cd ios/App && pod install
+
+      - name: Install the App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          KEY_DIRECTORY="$RUNNER_TEMP/appstore-connect-private-keys"
+          KEY_PATH="$KEY_DIRECTORY/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          mkdir -p "$KEY_DIRECTORY"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_P8" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APP_STORE_CONNECT_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Create export configuration
+        run: node scripts/iosReleaseCore.mjs "$APPLE_TEAM_ID" > "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Archive Wayfare
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Wayfare.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$APP_STORE_CONNECT_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            WAYFARE_DOMAIN="$WAYFARE_DOMAIN" \
+            clean archive
+
+      - name: Upload to App Store Connect
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/Wayfare.xcarchive" \
+            -exportPath "$RUNNER_TEMP/WayfareExport" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$APP_STORE_CONNECT_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"

@@ -1,20 +1,49 @@
 const SESSION_KEY = 'wayfare-session'
 
+export function safeOAuthContinuation(value, origin) {
+  if (typeof value !== 'string') return null
+  try {
+    const destination = new URL(value, origin)
+    return destination.origin === origin && destination.pathname === '/oauth/authorize'
+      ? destination.pathname + destination.search : null
+  } catch { return null }
+}
+
 export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
   let session = null
+  let hydrated = false
+  let hydration = null
   const listeners = new Set()
-  try { session = JSON.parse(storage.getItem(SESSION_KEY) || 'null') } catch { session = null }
+  try {
+    const initial = storage.getItem(SESSION_KEY)
+    if (initial && typeof initial.then === 'function') {
+      hydration = Promise.resolve(initial).then(value => {
+        try { session = JSON.parse(value || 'null') } catch { session = null }
+        hydrated = true
+        return session
+      })
+    } else {
+      session = JSON.parse(initial || 'null')
+      hydrated = true
+    }
+  } catch { session = null; hydrated = true }
 
   const emit = () => listeners.forEach(listener => listener(session))
-  const save = value => {
+  const hydrate = async () => {
+    if (hydrated) return session
+    if (hydration) await hydration
+    return session
+  }
+  const save = async value => {
     session = value
-    if (value) storage.setItem(SESSION_KEY, JSON.stringify(value))
-    else storage.removeItem(SESSION_KEY)
+    if (value) await storage.setItem(SESSION_KEY, JSON.stringify(value))
+    else await storage.removeItem(SESSION_KEY)
     emit()
     return session
   }
 
   const request = async (path, options = {}) => {
+    await hydrate()
     const headers = { ...(options.headers || {}) }
     if (session?.accessToken) headers.authorization = `Bearer ${session.accessToken}`
     let body = options.body
@@ -23,7 +52,7 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
       body = JSON.stringify(body)
     }
     const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, { ...options, headers, body })
-    if (response.status === 401 && !path.startsWith('/auth/')) save(null)
+    if (response.status === 401 && !path.startsWith('/auth/')) await save(null)
     if (!response.ok) {
       let message = `Request failed (${response.status})`
       try {
@@ -45,17 +74,18 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }) {
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
     async exchangeMagicToken(token) {
       const result = await request('/auth/exchange', { method: 'POST', body: { token } })
-      return save({ accessToken: result.accessToken, user: result.user })
+      return await save({ accessToken: result.accessToken, user: result.user })
     },
     async restore() {
+      await hydrate()
       if (!session?.accessToken) return null
       try {
         const result = await request('/auth/session')
-        return save({ ...session, user: result.user })
-      } catch { return save(null) }
+        return await save({ ...session, user: result.user })
+      } catch { return await save(null) }
     },
     async signOut() {
-      try { if (session) await request('/auth/logout', { method: 'POST' }) } finally { save(null) }
+      try { if (session) await request('/auth/logout', { method: 'POST' }) } finally { await save(null) }
     },
   }
 }

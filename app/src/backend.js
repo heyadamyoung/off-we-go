@@ -1,14 +1,14 @@
 import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
-import { createApiClient } from './apiClientCore'
+import { createApiClient, safeOAuthContinuation } from './apiClientCore'
+import { sessionStorage } from './mobile'
 
 const API_URL = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 export const hasBackend = Boolean(API_URL)
 export const functionsUrl = hasBackend ? `${API_URL}/ingest` : null
 
-const memoryStorage = { getItem() { return null }, setItem() {}, removeItem() {} }
 export const authClient = createApiClient({
   baseUrl: API_URL || '/api',
-  storage: typeof localStorage === 'undefined' ? memoryStorage : localStorage,
+  storage: sessionStorage,
   fetch: globalThis.fetch.bind(globalThis),
 })
 
@@ -19,8 +19,14 @@ export function completeBrowserLogin() {
   const url = new URL(window.location.href)
   const token = url.searchParams.get('token')
   if (!token || token.length < 32) return Promise.resolve(authClient.getSession())
-  browserLogin = authClient.exchangeMagicToken(token).finally(() => {
+  const continuation = safeOAuthContinuation(url.searchParams.get('continue'), url.origin)
+  browserLogin = authClient.exchangeMagicToken(token).then(session => {
+    if (continuation) window.location.replace(continuation)
+    return session
+  }).finally(() => {
     url.searchParams.delete('token')
+    url.searchParams.delete('continue')
+    if (continuation) return
     window.history.replaceState({}, '', url.pathname + url.search + url.hash)
   })
   return browserLogin
@@ -31,7 +37,9 @@ const sampleTrip = () => {
   if (!sample) sample = {
     trip: { ...TRIP, id: 'sample' }, stops: STOPS.map(value => ({ ...value })),
     photos: PHOTOS.map(value => ({ ...value })), route: ROUTE.map(value => [...value]),
-    family: FAMILY.map(value => ({ ...value, memberRole: value.role === 'Travelling' ? 'editor' : 'viewer' })),
+    family: FAMILY.map((value, index) => ({
+      ...value, memberRole: index === 1 ? 'owner' : value.role === 'Travelling' ? 'editor' : 'viewer',
+    })),
     comments: JSON.parse(JSON.stringify(SEED_COMMENTS)), likes: ['p8'], invites: [],
   }
   return sample
@@ -114,6 +122,10 @@ export async function revokeInvite(tripId, id) {
   if (isSample(tripId)) { sampleTrip().invites = sampleTrip().invites.filter(item => item.id !== id); return }
   return authClient.request(`${tripPath(tripId)}/invites/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
+export async function removeMember(tripId, userId) {
+  if (isSample(tripId)) return
+  return authClient.request(`${tripPath(tripId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+}
 
 export async function uploadPhoto(tripId, file, meta = {}) {
   if (isSample(tripId)) {
@@ -122,7 +134,7 @@ export async function uploadPhoto(tripId, file, meta = {}) {
   }
   const form = new FormData(); form.append('photo', file, file.name)
   const values = { stopId: meta.stopId, lng: meta.lng, lat: meta.lat, caption: meta.caption,
-    takenAt: meta.when || meta.takenAt, locationSource: meta.locationSource }
+    takenAt: meta.when || meta.takenAt, locationSource: meta.locationSource, uploadKey: meta.uploadKey }
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
   return authClient.request(`${tripPath(tripId)}/photos`, { method: 'POST', body: form })
 }

@@ -3,8 +3,10 @@ import { afterEach, test } from 'node:test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { createMobileTracker } from '../src/mobileTrackingCore.js'
-import { galleryPhotosToFiles } from '../src/mobilePhotosCore.js'
+import * as mobilePhotos from '../src/mobilePhotosCore.js'
 import { magicTokenFromUrl } from '../src/mobileAuthCore.js'
+
+const { galleryPhotosToFiles } = mobilePhotos
 
 const servers = []
 
@@ -240,6 +242,24 @@ test('Apple Photos selections become uploadable JPEG files in selection order', 
     lat: 52.370216,
     lng: 4.895168,
     takenAt: new Date(2026, 7, 30, 14, 20, 0).toISOString(),
+  })
+})
+
+test('an older photo without EXIF coordinates reaches the backend without the current live position', () => {
+  assert.ok(mobilePhotos.photoUploadMetadata, 'photo upload metadata forwarding has not been implemented')
+  assert.deepEqual(mobilePhotos.photoUploadMetadata({
+    caption: 'Old bridge', stopId: null, when: '2026-08-01T12:00:00.000Z', order: 2,
+  }, { by: 'Maya', nextSequence: 10 }), {
+    caption: 'Old bridge', stopId: null, when: '2026-08-01T12:00:00.000Z',
+    by: 'Maya', seq: 12,
+  })
+  assert.deepEqual(mobilePhotos.photoUploadMetadata({
+    caption: 'Harbour', stopId: 'stop-1', lng: 4.9, lat: 52.3,
+    locationSource: 'exif', uploadKey: 'photo-retry-key-1234', when: '2026-08-01T12:01:00.000Z', order: 0,
+  }, { by: 'Maya', nextSequence: 10 }), {
+    caption: 'Harbour', stopId: 'stop-1', lng: 4.9, lat: 52.3,
+    locationSource: 'exif', uploadKey: 'photo-retry-key-1234',
+    when: '2026-08-01T12:01:00.000Z', by: 'Maya', seq: 10,
   })
 })
 

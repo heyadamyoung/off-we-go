@@ -6,6 +6,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const trips = new Map()
   const devices = new Map()
   const positions = new Map()
+  const mcpClients = new Map()
+  const mcpCodes = new Map()
+  const mcpTokens = new Map()
   let nextUser = 1
   let nextTrip = 1
   let nextPhoto = 1
@@ -62,6 +65,56 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return [...users.values()].find(user => user.id === row.userId) || null
     },
     async deleteSession(hash) { sessions.delete(hash) },
+    async registerMcpClient(client) {
+      mcpClients.set(client.id, { ...client })
+      return { ...client }
+    },
+    async findMcpClient(id) {
+      const client = mcpClients.get(id)
+      return client ? { ...client } : null
+    },
+    async createMcpAuthorizationCode(code) {
+      mcpCodes.set(code.hash, { ...code })
+    },
+    async redeemMcpAuthorizationCode(grant) {
+      const code = mcpCodes.get(grant.codeHash)
+      if (!code || code.expiresAt <= grant.now || code.clientId !== grant.clientId ||
+        code.redirectUri !== grant.redirectUri || code.resource !== grant.resource ||
+        code.codeChallenge !== grant.codeChallenge) return null
+      mcpCodes.delete(grant.codeHash)
+      const token = {
+        accessHash: grant.accessHash, refreshHash: grant.refreshHash,
+        userId: code.userId, clientId: code.clientId, scopes: code.scopes, resource: code.resource,
+        accessExpiresAt: grant.accessExpiresAt, refreshExpiresAt: grant.refreshExpiresAt,
+      }
+      mcpTokens.set(token.accessHash, token)
+      return { userId: code.userId, clientId: code.clientId, scopes: code.scopes, resource: code.resource }
+    },
+    async findMcpAccessToken(hash, now) {
+      const token = mcpTokens.get(hash)
+      if (!token || token.accessExpiresAt <= now) return null
+      const user = [...users.values()].find(value => value.id === token.userId)
+      return user ? { ...token, user } : null
+    },
+    async rotateMcpRefreshToken(grant) {
+      const entry = [...mcpTokens.entries()].find(([, value]) => value.refreshHash === grant.refreshHash)
+      if (!entry) return null
+      const [accessHash, token] = entry
+      if (token.refreshExpiresAt <= grant.now || token.clientId !== grant.clientId ||
+        token.resource !== grant.resource) return null
+      mcpTokens.delete(accessHash)
+      const replacement = {
+        ...token, accessHash: grant.accessHash, refreshHash: grant.replacementRefreshHash,
+        accessExpiresAt: grant.accessExpiresAt, refreshExpiresAt: grant.refreshExpiresAt,
+      }
+      mcpTokens.set(replacement.accessHash, replacement)
+      return { userId: token.userId, clientId: token.clientId, scopes: token.scopes, resource: token.resource }
+    },
+    async revokeMcpToken(hash) {
+      for (const [accessHash, token] of mcpTokens) {
+        if (accessHash === hash || token.refreshHash === hash) mcpTokens.delete(accessHash)
+      }
+    },
     async createTrip(user, input) {
       const id = `trip-${nextTrip++}`
       const base = (input.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -112,11 +165,15 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         lng: input.lng, lat: input.lat, caption: input.caption || null,
         by: member.displayName, when: input.takenAt || null,
         locationSource: input.locationSource || null,
-        storagePath: input.storagePath, thumbPath: input.thumbPath, userId: user.id,
+        storagePath: input.storagePath, thumbPath: input.thumbPath, userId: user.id, clientKey: input.clientKey || null,
         seq: trip.photos.length,
       }
       trip.photos.push(photo)
       return photo
+    },
+    async findPhotoByClientKey(user, tripId, clientKey) {
+      if (!clientKey || !await this.canEditTrip(user.id, tripId)) return null
+      return trips.get(tripId)?.photos.find(value => value.userId === user.id && value.clientKey === clientKey) || null
     },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!await this.canEditTrip(user.id, tripId)) return null
@@ -193,6 +250,20 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const before = trip.invites.length
       trip.invites = trip.invites.filter(value => value.id !== inviteId)
       return before !== trip.invites.length
+    },
+    async removeMember(user, tripId, memberUserId) {
+      if (!await this.canManageTrip(user.id, tripId)) return null
+      const trip = trips.get(tripId)
+      const member = trip.members.find(value => value.userId === memberUserId)
+      if (!member) return null
+      if (member.role === 'owner') return 'owner'
+      trip.members = trip.members.filter(value => value.userId !== memberUserId)
+      trip.invites = trip.invites.filter(value => value.email !== member.email)
+      const removedDevices = [...devices.values()]
+        .filter(value => value.tripId === tripId && value.userId === memberUserId).map(value => value.id)
+      removedDevices.forEach(id => devices.delete(id))
+      for (const [key, fix] of positions) if (removedDevices.includes(fix.deviceId)) positions.delete(key)
+      return 'removed'
     },
     async addComment(user, tripId, photoId, body) {
       if (!await this.canReadTrip(user.id, tripId)) return null

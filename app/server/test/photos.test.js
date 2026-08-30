@@ -51,6 +51,7 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   form.set('lat', '55.9533')
   form.set('takenAt', '2027-06-04T13:20:00.000Z')
   form.set('locationSource', 'exif')
+  form.set('uploadKey', '01J8PHOTOUPLOADKEY000000000001')
 
   const uploaded = await fetch(`${origin}/api/trips/${trip.id}/photos`, {
     method: 'POST', headers: { authorization: `Bearer ${accessToken}` }, body: form,
@@ -72,4 +73,14 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   const stored = await readFile(join(directory, photo.storagePath))
   assert.ok(stored.length < source.length)
   assert.ok(photo.thumbSrc)
+
+  const retryForm = new FormData()
+  retryForm.set('file', new Blob([source], { type: 'image/jpeg' }), 'IMG_0001.jpg')
+  retryForm.set('caption', 'On the ridge')
+  retryForm.set('uploadKey', '01J8PHOTOUPLOADKEY000000000001')
+  const retried = await fetch(`${origin}/api/trips/${trip.id}/photos`, {
+    method: 'POST', headers: { authorization: `Bearer ${accessToken}` }, body: retryForm,
+  })
+  assert.equal(retried.status, 200)
+  assert.equal((await retried.json()).id, photo.id)
 })

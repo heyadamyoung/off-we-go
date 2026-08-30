@@ -14,7 +14,7 @@ import { findSights, describePlace, radiusForView, imageForPage, enrichStops,
          articleSummary } from './places'
 import {
   hasBackend, authClient, completeBrowserLogin, loadTrip, createStop, updateStop, deleteStop,
-  addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
+  addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite, removeMember,
   uploadPhoto, updatePhoto, deletePhoto, replaceRoute, createTrip, updateTrip,
   updateMe, uploadAvatar, deleteComment, subscribeToTrip,
   sendMagicLink, signOut, deleteAccount, loadAttractions,
@@ -23,6 +23,7 @@ import {
 } from './backend'
 import { isNativeApp, initializeNativeServices, mobileTracker, pickNativePhotos } from './mobile'
 import { mergeLiveFixes } from './livePositionsCore'
+import { photoUploadMetadata } from './mobilePhotosCore'
 
 /* =========================================================================
    Icons
@@ -1020,7 +1021,10 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
   const setPicked = selected => {
     fileUrls.current.forEach(URL.revokeObjectURL)
     fileUrls.current = selected.map(URL.createObjectURL)
-    setFiles(selected.map((file, i) => ({ file, url: fileUrls.current[i] })))
+    setFiles(selected.map((file, i) => ({
+      file, url: fileUrls.current[i],
+      uploadKey: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${i}-${Math.random().toString(36).slice(2)}`,
+    })))
   }
   const pick = e => {
     const selected = [...(e.target.files || [])]
@@ -1054,6 +1058,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
         })
         await onAdd({
           file: files[i].file, caption: caption.trim() || 'Untitled',
+          uploadKey: files[i].uploadKey,
           stopId: photoStop?.id || null, lng: point?.[0], lat: point?.[1],
           locationSource: exifPoint ? 'exif' : point ? 'live' : undefined,
           when: meta?.takenAt || new Date().toISOString(), order: i,
@@ -1996,11 +2001,12 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
   const [name, setName] = useState('')
   const [role, setRole] = useState('viewer')
   const [busy, setBusy] = useState(false)
+  const canManage = me?.memberRole === 'owner'
 
   useEffect(() => {
-    if (!canEdit) return
+    if (!canManage) return
     listInvites(tripId).then(setInvites).catch(() => {})
-  }, [tripId, canEdit])
+  }, [tripId, canManage])
 
   const pending = invites.filter(i => !i.claimedAt && !i.claimed_at)
 
@@ -2027,6 +2033,15 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
       await revokeInvite(tripId, id)
       setInvites(list => list.filter(i => i.id !== id))
     } catch (e2) { toast(e2.message || 'Could not remove that invite') }
+  }
+
+  const removePerson = async person => {
+    if (!window.confirm(`Remove ${person.name} from this trip? Their registered phones will stop reporting.`)) return
+    try {
+      await removeMember(tripId, person.id)
+      toast(`${person.name} removed from the trip`)
+      window.location.reload()
+    } catch (error) { toast(error.message || 'Could not remove that person') }
   }
 
   const removeMyAccount = async () => {
@@ -2060,19 +2075,26 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
               {f.avatar ? <img src={f.avatar} alt="" /> : <span className="ini">{(f.name || '?')[0]}</span>}
               <div><b>{f.name}</b><span>{f.role}</span></div>
               <em>{f.memberRole === 'owner' ? 'Owner' : f.memberRole === 'editor' ? 'Editor' : 'Viewer'}</em>
+              {canManage && f.id !== me.id && (
+                <button className="wbtn sm" onClick={() => removePerson(f)}>Remove</button>
+              )}
             </div>
           ))}
           {pending.map(i => (
             <div className="rperson pend" key={i.id}>
               <span className="ini">{(i.name || i.email || '?')[0]}</span>
               <div><b>{i.name || i.email}</b><span>Invited — not signed in yet</span></div>
-              {canEdit && <button className="rm" onClick={() => revoke(i.id)} title="Cancel invite">
+              {canManage && <button className="rm" onClick={() => revoke(i.id)} title="Cancel invite">
                 <Icon n="x" s={13} w={2} /></button>}
             </div>
           ))}
         </div>
 
-        {canEdit ? (
+        <a className="btn" href={`mailto:safety@threadway.ai?subject=${encodeURIComponent('Wayfare safety concern')}&body=${encodeURIComponent(`Trip: ${trip?.title || tripId}\nPlease describe the member or content and what happened:\n`)}`}>
+          Report a safety concern
+        </a>
+
+        {canManage ? (
           <>
             <p>Everyone signs in, including people just following along. Invite them by the
                email address they will use — that is what grants access.</p>
@@ -2501,14 +2523,12 @@ function TripApp({ data, session, onReload }) {
     }
   }, [likes, tripId, session, toast])
 
-  const addPhoto = useCallback(async ({ file, caption, stopId, lng = live[0], lat = live[1], when = 'Just now', order = 0 }) => {
-    const saved = await uploadPhoto(tripId, file, {
-      stopId, lng, lat, by: me.name, when,
-      caption, seq: photos.length + order,
-    })
+  const addPhoto = useCallback(async input => {
+    const saved = await uploadPhoto(tripId, input.file,
+      photoUploadMetadata(input, { by: me.name, nextSequence: photos.length }))
     setPhotos(list => [...list, saved])
-    if (stopId) setSelected(stopId)
-  }, [tripId, live, me.name, photos.length])
+    if (input.stopId) setSelected(input.stopId)
+  }, [tripId, me.name, photos.length])
 
   const changePhoto = useCallback(async (id, fields) => {
     const before = photos.find(p => p.id === id)

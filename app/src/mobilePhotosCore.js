@@ -49,3 +49,20 @@ export async function galleryPhotosToFiles(photos, { fetch: fetchFn, stamp = Dat
     return file
   }))
 }
+
+export function photoUploadMetadata(input, { by, nextSequence }) {
+  const metadata = {
+    caption: input.caption,
+    stopId: input.stopId ?? null,
+    when: input.when,
+    by,
+    seq: nextSequence + (input.order || 0),
+  }
+  if (number(input.lng) != null && number(input.lat) != null) {
+    metadata.lng = number(input.lng)
+    metadata.lat = number(input.lat)
+  }
+  if (input.locationSource) metadata.locationSource = input.locationSource
+  if (input.uploadKey) metadata.uploadKey = input.uploadKey
+  return metadata
+}

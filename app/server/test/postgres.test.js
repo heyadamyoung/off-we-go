@@ -29,6 +29,52 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   assert.equal(await repository.consumeMagicToken('magic-hash', new Date('2027-01-01T00:02:00.000Z')), null)
 
   const user = await repository.ensureUser('owner@example.com')
+  const oauthClient = await repository.registerMcpClient({
+    id: 'client-postgres-test', clientName: 'Postgres MCP client',
+    redirectUris: ['http://127.0.0.1:3210/callback'], clientUri: null, logoUri: null,
+    scopes: ['trips:read', 'trips:write'],
+  })
+  assert.deepEqual(await repository.findMcpClient(oauthClient.id), oauthClient)
+  await repository.createMcpAuthorizationCode({
+    hash: 'oauth-code-hash', userId: user.id, clientId: oauthClient.id,
+    redirectUri: oauthClient.redirectUris[0], scopes: ['trips:read'],
+    resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge', expiresAt,
+  })
+  const oauthCode = await repository.redeemMcpAuthorizationCode({
+    codeHash: 'oauth-code-hash', now: new Date('2027-01-01T00:01:00Z'),
+    clientId: oauthClient.id, redirectUri: oauthClient.redirectUris[0],
+    resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge',
+    accessHash: 'oauth-access-hash', refreshHash: 'oauth-refresh-hash',
+    accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+  })
+  assert.equal(oauthCode.clientId, oauthClient.id)
+  assert.deepEqual(oauthCode.scopes, ['trips:read'])
+  assert.equal(await repository.redeemMcpAuthorizationCode({
+    codeHash: 'oauth-code-hash', now: new Date('2027-01-01T00:02:00Z'),
+    clientId: oauthClient.id, redirectUri: oauthClient.redirectUris[0],
+    resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge',
+    accessHash: 'unused-access', refreshHash: 'unused-refresh',
+    accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+  }), null)
+  assert.equal(
+    (await repository.findMcpAccessToken('oauth-access-hash', new Date('2027-01-01T00:01:00Z'))).user.email,
+    user.email,
+  )
+  assert.equal(
+    (await repository.rotateMcpRefreshToken({
+      refreshHash: 'oauth-refresh-hash', now: new Date('2027-01-01T00:01:00Z'),
+      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      accessHash: 'oauth-access-rotated', replacementRefreshHash: 'oauth-refresh-rotated',
+      accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+    })).clientId,
+    oauthClient.id,
+  )
+  assert.equal(await repository.findMcpAccessToken('oauth-access-hash', new Date('2027-01-01T00:02:00Z')), null)
+  assert.equal(
+    (await repository.findMcpAccessToken('oauth-access-rotated', new Date('2027-01-01T00:02:00Z'))).clientId,
+    oauthClient.id,
+  )
+
   const trip = await repository.createTrip(user, { title: 'Persistent trip', dayCount: 3 })
   const loaded = await repository.loadCurrentTrip(user, trip.slug)
   assert.equal(loaded.title, 'Persistent trip')
@@ -76,6 +122,25 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   const delta = await repository.loadLive(user, trip.id, new Date('2027-01-01T00:00:00.000Z'), { afterId: large.cursor })
   assert.equal(delta.fixes.length, 1)
   assert.equal(delta.fixes[0].lat, 50.5)
+
+  const invitation = await repository.upsertInvite(user, trip.id, {
+    email: 'friend@example.com', name: 'Friend', role: 'editor',
+  })
+  const friend = await repository.ensureUser('friend@example.com')
+  assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.userId === friend.id).role, 'editor')
+  await repository.upsertInvite(user, trip.id, { email: 'friend@example.com', name: 'Friend', role: 'viewer' })
+  assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.userId === friend.id).role, 'viewer')
+  assert.equal(await repository.revokeInvite(user, trip.id, invitation.id), true)
+  assert.equal(await repository.loadCurrentTrip(friend, trip.slug), null)
+
+  const otherTrip = await repository.createTrip(user, { title: 'Other trip', dayCount: 1 })
+  const otherStop = await repository.createStop(user, otherTrip.id, {
+    name: 'Wrong trip', lng: -104.7, lat: 50.4, icon: 'pin', status: 'planned', seq: 0,
+  })
+  await assert.rejects(repository.createPhoto(user, trip.id, {
+    stopId: otherStop.id, lng: -104.6, lat: 50.4, caption: 'Cross trip', takenAt: new Date('2027-01-02T01:00:00Z'),
+    locationSource: 'manual', storagePath: `${trip.id}/cross.jpg`, thumbPath: `${trip.id}/cross.thumb.jpg`,
+  }), error => error.code === '23503')
 
   await repository.createPhoto(user, trip.id, {
     stopId: null, lng: -104.6, lat: 50.4, caption: 'Mine', takenAt: new Date('2027-01-02T01:00:00Z'),
