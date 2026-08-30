@@ -8,6 +8,18 @@ const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
 
 const rows = result => result.rows || []
+const sha256 = value => createHash('sha256').update(value).digest('hex')
+
+export function migrationChecksumStatus(sql, storedChecksum) {
+  const normalizedSql = sql.replaceAll('\r\n', '\n')
+  const canonicalChecksum = sha256(normalizedSql)
+  const windowsChecksum = sha256(normalizedSql.replaceAll('\n', '\r\n'))
+  return {
+    matches: storedChecksum === canonicalChecksum || storedChecksum === windowsChecksum,
+    canonicalChecksum,
+  }
+}
+
 const camelTrip = value => ({
   id: value.id, slug: value.slug, title: value.title, crew: value.crew,
   dates: value.dates, dayCount: value.day_count,
@@ -36,10 +48,14 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         const files = (await readdir(migrationsDirectory)).filter(name => name.endsWith('.sql')).sort()
         for (const name of files) {
           const sql = await readFile(join(migrationsDirectory, name), 'utf8')
-          const checksum = createHash('sha256').update(sql).digest('hex')
+          const { canonicalChecksum: checksum } = migrationChecksumStatus(sql)
           const existing = await client.query('select checksum from schema_migrations where name=$1', [name])
           if (existing.rows[0]) {
-            if (existing.rows[0].checksum !== checksum) throw new Error(`Migration ${name} changed after it was applied`)
+            const status = migrationChecksumStatus(sql, existing.rows[0].checksum)
+            if (!status.matches) throw new Error(`Migration ${name} changed after it was applied`)
+            if (existing.rows[0].checksum !== status.canonicalChecksum) {
+              await client.query('update schema_migrations set checksum=$2 where name=$1', [name, status.canonicalChecksum])
+            }
             continue
           }
           await client.query('begin')
