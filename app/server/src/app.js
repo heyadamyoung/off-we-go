@@ -47,7 +47,15 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     limits: { files: 1, fileSize: 25 * 1024 * 1024, fields: 20 },
   })
 
-  app.get('/api/health', async () => ({ ok: true }))
+  app.get('/api/health', async (_request, reply) => {
+    try {
+      await Promise.all([repository.ready?.(), fileStore?.ready?.()])
+      return { ok: true }
+    } catch (error) {
+      app.log.warn({ err: error }, 'readiness check failed')
+      return reply.code(503).send({ ok: false })
+    }
+  })
   app.get('/.well-known/apple-app-site-association', async (_request, reply) => {
     if (!appleTeamId) return reply.code(404).send({ error: 'Apple universal links are not configured' })
     return reply.type('application/json').send({

@@ -25,6 +25,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   }
 
   const repository = {
+    async ready() { await pool.query('select 1') },
     async migrate() {
       const client = await pool.connect()
       try {

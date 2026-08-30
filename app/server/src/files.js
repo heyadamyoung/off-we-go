@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { dirname, join, normalize, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
@@ -22,6 +23,10 @@ export function createDiskFileStore({ directory }) {
   }
 
   return {
+    async ready() {
+      await mkdir(root, { recursive: true })
+      await access(root, constants.R_OK | constants.W_OK)
+    },
     async storePhoto({ tripId, bytes }) {
       const id = randomUUID()
       const storagePath = `${tripId}/${id}.jpg`
