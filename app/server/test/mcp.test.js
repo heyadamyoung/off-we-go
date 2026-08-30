@@ -57,6 +57,8 @@ async function authorize(app, authorization, clientId, scopes = 'trips:read trip
   assert.equal(page.statusCode, 200)
   assert.match(page.headers['content-security-policy'], /default-src 'none'/)
   assert.match(page.body, /Codex Desktop/)
+  assert.match(page.body, /Unverified client/)
+  assert.match(page.body, /Redirect destination: <strong>http:\/\/127\.0\.0\.1:3210<\/strong>/)
   assert.match(page.body, /View your trips/)
   if (scopes.includes('trips:write')) assert.match(page.body, /Create and edit trip details/)
   const requestToken = page.body.match(/name="request_token" value="([^"]+)"/)?.[1]
@@ -239,6 +241,25 @@ test('runs authorization code with PKCE and rotates refresh tokens', async () =>
   })
   assert.equal(reusedRefresh.statusCode, 400)
   assert.equal(reusedRefresh.json().error, 'invalid_grant')
+
+  const replacementAfterReplay = await app.inject({
+    method: 'POST', url: '/oauth/token',
+    ...form({
+      grant_type: 'refresh_token', client_id: client.client_id,
+      refresh_token: refreshed.json().refresh_token, resource: `${root}/mcp`,
+    }),
+  })
+  assert.equal(replacementAfterReplay.statusCode, 400)
+  assert.equal(replacementAfterReplay.json().error, 'invalid_grant')
+  await app.close()
+})
+
+test('treats edit scope as including the required read scope', async () => {
+  const { app, authorization } = await fixture()
+  const client = await registerClient(app)
+  const grant = await authorize(app, authorization, client.client_id, 'trips:write')
+  const tokens = await exchangeCode(app, client.client_id, grant.code, grant.verifier)
+  assert.equal(tokens.scope, 'trips:read trips:write')
   await app.close()
 })
 
@@ -300,7 +321,20 @@ test('requires a scoped OAuth token and can manipulate a trip through MCP tools'
   })
   assert.equal(listed.statusCode, 200)
   assert.match(listed.body, /get_trip/)
+  assert.match(listed.body, /list_trips/)
   assert.match(listed.body, /update_trip/)
+
+  const another = await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'Iceland 2028' },
+  })
+  assert.equal(another.statusCode, 201)
+  const tripList = await app.inject({
+    method: 'POST', url: '/mcp', headers: mcpHeaders,
+    payload: { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'list_trips', arguments: {} } },
+  })
+  assert.equal(tripList.statusCode, 200)
+  assert.match(tripList.body, /Scotland 2027/)
+  assert.match(tripList.body, /Iceland 2028/)
 
   const tripView = await app.inject({
     method: 'POST', url: '/mcp', headers: mcpHeaders,

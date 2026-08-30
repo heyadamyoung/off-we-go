@@ -1,6 +1,6 @@
 import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
 import { createApiClient, safeOAuthContinuation } from './apiClientCore'
-import { sessionStorage } from './mobile'
+import { mobileTracker, sessionStorage } from './mobile'
 
 const API_URL = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 export const hasBackend = Boolean(API_URL)
@@ -216,11 +216,15 @@ export async function sendMagicLink(email) {
   if (!hasBackend) throw new Error('No backend configured')
   return authClient.request('/auth/magic-link', { method: 'POST', body: { email: email.trim().toLowerCase() } })
 }
-export async function signOut() { if (hasBackend) await authClient.signOut() }
+export async function signOut() {
+  try { if (hasBackend) await authClient.signOut() }
+  finally { await mobileTracker.forget() }
+}
 export async function deleteAccount() {
   if (!hasBackend) throw new Error('No backend configured')
   await authClient.request('/account', { method: 'DELETE', body: { confirm: 'DELETE' } })
-  await authClient.signOut()
+  try { await authClient.signOut() }
+  finally { await mobileTracker.forget() }
 }
 
 export async function loadAttractions(box, { headlineOnly = false, limit = 1000 } = {}) {

@@ -4,6 +4,7 @@ import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { registerMcpRoutes } from './mcp.js'
+import { createWindowRateLimiter } from './rateLimit.js'
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase()
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
@@ -17,6 +18,7 @@ function bearer(request) {
 export async function buildServer({ repository, fileStore = null, mailer, publicUrl, sessionSecret,
   clock = () => new Date(), ingestRateLimit = { max: 180, windowMs: 60_000 },
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
+  deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 }, maxDevicesPerTrip = 20,
   appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
   trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
   if (!repository) throw new Error('A repository is required')
@@ -26,20 +28,13 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   oauthSecret ||= sessionSecret
   if (oauthSecret.length < 16) throw new Error('WAYFARE_OAUTH_SECRET must be at least 16 characters')
 
-  const app = Fastify({ logger, bodyLimit: 30 * 1024 * 1024, trustProxy })
-  const ingestWindows = new Map()
-  const authEmailWindows = new Map(), authIpWindows = new Map()
-  const rateWindow = (windows, key, max, windowMs) => {
-    const now = clock().getTime()
-    let value = windows.get(key)
-    if (!value || now - value.startedAt >= windowMs) {
-      value = { startedAt: now, count: 0 }
-      windows.set(key, value)
-    }
-    value.count++
-    return value.count > max
-      ? Math.max(1, Math.ceil((value.startedAt + windowMs - now) / 1000)) : 0
-  }
+  // Ordinary JSON contracts are tiny. Large payloads are allowed only on the
+  // two authenticated multipart image routes below.
+  const app = Fastify({ logger, bodyLimit: 64 * 1024, trustProxy })
+  const ingestLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const deviceRegistrationLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const authEmailLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const authIpLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const allowedOrigins = new Set([
     publicUrl.replace(/\/$/, ''), 'capacitor://localhost', 'ionic://localhost',
   ])
@@ -73,7 +68,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     .update(`${storagePath}:${expires}`).digest('base64url')
   const mediaUrl = storagePath => {
     const expires = Math.floor(clock().getTime() / 1000) + 3600
-    return `/api/media/${storagePath}?expires=${expires}&signature=${mediaSignature(storagePath, expires)}`
+    return `${publicUrl.replace(/\/$/, '')}/api/media/${storagePath}?expires=${expires}&signature=${mediaSignature(storagePath, expires)}`
   }
   const finite = value => {
     const parsed = Number(value)
@@ -115,12 +110,16 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return message
   }
 
-  app.post('/api/auth/magic-link', async (request, reply) => {
+  app.post('/api/auth/magic-link', { bodyLimit: 16 * 1024 }, async (request, reply) => {
     const email = normalizeEmail(request.body?.email)
-    const retryAfter = Math.max(
-      rateWindow(authEmailWindows, email || '<empty>', authRateLimit.maxPerEmail, authRateLimit.windowMs),
-      rateWindow(authIpWindows, request.ip, authRateLimit.maxPerIp, authRateLimit.windowMs),
-    )
+    // Stop at the IP bucket first. Once an address is blocked, attacker-made
+    // email strings never allocate additional per-email buckets.
+    let retryAfter = authIpLimiter.hit(request.ip, {
+      max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
+    })
+    if (!retryAfter) retryAfter = authEmailLimiter.hit(email || '<empty>', {
+      max: authRateLimit.maxPerEmail, windowMs: authRateLimit.windowMs,
+    })
     if (retryAfter) return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
     if (email && await repository.emailAllowed(email)) {
       await issueMagicLink(email, request.body?.continue)
@@ -166,6 +165,32 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return user
   }
 
+  const removeQueuedFile = async path => {
+    try {
+      await fileStore.remove(path)
+      await repository.completeFileDeletion(path)
+      return true
+    } catch (error) {
+      await repository.failFileDeletion(path, error.message, clock())
+      app.log.error({ err: error, path }, 'queued file deletion failed')
+      return false
+    }
+  }
+  const processFileDeletionQueue = async () => {
+    if (!fileStore || !repository.listPendingFileDeletions) return
+    const paths = await repository.listPendingFileDeletions(clock(), 50)
+    for (const path of paths) await removeQueuedFile(path)
+  }
+  let fileDeletionTimer = null
+  if (fileStore && repository.listPendingFileDeletions) {
+    await processFileDeletionQueue().catch(error => app.log.error({ err: error }, 'file deletion queue failed'))
+    fileDeletionTimer = setInterval(() => {
+      processFileDeletionQueue().catch(error => app.log.error({ err: error }, 'file deletion queue failed'))
+    }, 60_000)
+    fileDeletionTimer.unref?.()
+    app.addHook('onClose', async () => clearInterval(fileDeletionTimer))
+  }
+
   await registerMcpRoutes(app, {
     repository, fileStore, publicUrl, oauthSecret, clock,
     authenticate: authenticated, sendInvite: issueMagicLink,
@@ -178,7 +203,9 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       return reply.code(400).send({ error: 'Type DELETE to confirm account deletion' })
     }
     const paths = await repository.deleteAccount(user)
-    if (fileStore) for (const path of paths) await fileStore.remove(path).catch(() => {})
+    if (fileStore && repository.completeFileDeletion) {
+      for (const path of paths) await removeQueuedFile(path)
+    }
     return reply.code(204).send()
   })
 
@@ -247,7 +274,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
   })
 
-  app.post('/api/trips/:tripId/members/me/avatar', async (request, reply) => {
+  app.post('/api/trips/:tripId/members/me/avatar', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     if (!fileStore?.storeAvatar) return reply.code(503).send({ error: 'Avatar storage is not configured' })
@@ -269,10 +296,13 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       await fileStore.remove(stored.avatarPath).catch(() => {})
       return reply.code(404).send({ error: 'Trip membership not found' })
     }
+    if (member.oldAvatarUrl && member.oldAvatarUrl !== stored.avatarPath) {
+      await fileStore.remove(member.oldAvatarUrl).catch(() => {})
+    }
     return reply.code(201).send({ avatarPath: stored.avatarPath, avatar: mediaUrl(stored.avatarPath) })
   })
 
-  app.post('/api/trips/:tripId/photos', async (request, reply) => {
+  app.post('/api/trips/:tripId/photos', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     if (!fileStore) return reply.code(503).send({ error: 'Photo storage is not configured' })
@@ -353,8 +383,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const removed = await repository.deletePhoto(user, request.params.tripId, request.params.photoId)
     if (!removed) return reply.code(404).send({ error: 'Photo not found' })
     if (fileStore) {
-      await fileStore.remove(removed.storagePath).catch(() => {})
-      if (removed.thumbPath) await fileStore.remove(removed.thumbPath).catch(() => {})
+      for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean)) await removeQueuedFile(path)
     }
     return reply.code(204).send()
   })
@@ -374,13 +403,21 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     } catch { return reply.code(404).send({ error: 'Photo not found' }) }
   })
 
-  app.post('/api/trips/:tripId/devices', async (request, reply) => {
+  app.post('/api/trips/:tripId/devices', { bodyLimit: 16 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     const name = String(request.body?.name || '').trim()
     if (!name) return reply.code(400).send({ error: 'A phone needs a name' })
     if (!await repository.canEditTrip(user.id, request.params.tripId)) {
       return reply.code(403).send({ error: 'You cannot add a phone to this trip' })
+    }
+    const retryAfter = deviceRegistrationLimiter.hit(user.id, deviceRegistrationRateLimit)
+    if (retryAfter) {
+      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Too many phone registrations' })
+    }
+    const currentDevices = await repository.listDevices(user, request.params.tripId)
+    if (currentDevices?.length >= maxDevicesPerTrip) {
+      return reply.code(409).send({ error: `A trip can have at most ${maxDevicesPerTrip} registered phones` })
     }
     const token = newToken()
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'phone'
@@ -420,16 +457,9 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const device = accessToken ? await repository.findDeviceByTokenHash(tokenHash(accessToken)) : null
     if (!device) return reply.code(401).send({ error: 'Unknown phone' })
 
-    const nowMs = clock().getTime()
-    let window = ingestWindows.get(device.id)
-    if (!window || nowMs - window.startedAt >= ingestRateLimit.windowMs) {
-      window = { startedAt: nowMs, count: 0 }
-      ingestWindows.set(device.id, window)
-    }
-    window.count++
-    if (window.count > ingestRateLimit.max) {
-      const retrySeconds = Math.max(1, Math.ceil((window.startedAt + ingestRateLimit.windowMs - nowMs) / 1000))
-      return reply.header('retry-after', String(retrySeconds)).code(429).send({ error: 'Too many position updates' })
+    const retryAfter = ingestLimiter.hit(device.id, ingestRateLimit)
+    if (retryAfter) {
+      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Too many position updates' })
     }
 
     const body = request.body && typeof request.body === 'object' ? request.body : {}

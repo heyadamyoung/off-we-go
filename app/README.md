@@ -59,9 +59,9 @@ Public release pages are served at [privacy.html](https://wayfare.threadway.ai/p
 
 The VPS also exposes a private remote MCP server at `https://your-domain/mcp`. It is protected by the same Wayfare users and trip membership rules as the web and iPhone apps. No Cloudflare service or third-party identity provider is involved.
 
-When an MCP client connects, Wayfare publishes OAuth discovery metadata, dynamically registers the public client, requires OAuth 2.1 authorization code flow with S256 PKCE, and opens a branded consent page. The user can grant either read-only access or trip editing. Access tokens last one hour; rotated refresh tokens last 30 days and can be revoked through the OAuth revocation endpoint.
+When an MCP client connects, Wayfare publishes OAuth discovery metadata, dynamically registers the public client, requires OAuth authorization code flow with S256 PKCE, and opens a branded consent page. The user can grant either read-only access or trip editing. Access tokens last one hour; rotated refresh tokens last 30 days, detect replay, and can be revoked through the OAuth revocation endpoint.
 
-The MCP tools can read trips; create and update trips; create, update, or delete stops; replace routes; update or delete photo metadata; manage comments and likes; and manage invitations. Photo uploads remain in the Wayfare app because they require an image file.
+The MCP tools can list and read trips; create and update trips; create, update, or delete stops; replace routes; update or delete photo metadata; manage comments and likes; and manage invitations. Photo uploads remain in the Wayfare app because they require an image file.
 
 To connect, give a Streamable HTTP-capable MCP client this server URL:
 
@@ -137,4 +137,4 @@ pnpm ios:sync
 docker compose config
 ```
 
-The iOS project is in `ios/`. `.github/workflows/ios-build.yml` performs an unsigned iPhone/iPad simulator compile on macOS CI, while `ios/App/ci_scripts/ci_post_clone.sh` prepares Xcode Cloud archives. Signing and TestFlight still require your Apple Team selection and credentials; see `docs/app-store/release-checklist.md`.
+The iOS project is in `ios/`. `.github/workflows/ios-build.yml` performs an unsigned iPhone/iPad simulator compile, while `.github/workflows/testflight.yml` creates an automatically signed archive and uploads it to App Store Connect from a GitHub-hosted Mac. Apple credentials remain in GitHub Actions secrets; see `docs/app-store/release-checklist.md`.

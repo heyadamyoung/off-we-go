@@ -79,6 +79,7 @@ function safeMetadataUrl(value) {
 function requestedScopes(value) {
   const values = String(value || 'trips:read').split(/\s+/).filter(Boolean)
   if (!values.length || values.some(scope => !SCOPES.includes(scope))) return null
+  if (values.includes('trips:write') && !values.includes('trips:read')) values.push('trips:read')
   return SCOPES.filter(scope => values.includes(scope))
 }
 
@@ -88,10 +89,11 @@ const authRedirect = (request, values) => {
   return redirect.href
 }
 
-function consentPage({ client, requestToken, scopes, root }) {
+function consentPage({ client, requestToken, scopes, root, redirectUri }) {
   const nonce = randomBytes(18).toString('base64url')
   const name = escapeHtml(client.clientName)
   const clientUri = safeMetadataUrl(client.clientUri)
+  const redirectOrigin = escapeHtml(new URL(redirectUri).origin)
   const writeRequested = scopes.includes('trips:write')
   const html = `<!doctype html>
 <html lang="en">
@@ -105,7 +107,7 @@ function consentPage({ client, requestToken, scopes, root }) {
     main{width:min(100%,560px)}.brand{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:22px;font-weight:760;letter-spacing:.02em}.mark{width:32px;height:32px;border:1px solid rgba(200,244,107,.45);border-radius:10px;display:grid;place-items:center;color:var(--green);background:rgba(200,244,107,.08)}
     .card{background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:0 30px 90px rgba(0,0,0,.42);overflow:hidden;backdrop-filter:blur(18px)}.top{padding:30px 30px 24px;text-align:center;border-bottom:1px solid var(--line)}
     .apps{display:flex;align-items:center;justify-content:center;gap:13px;margin-bottom:20px}.app{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;font-size:20px;font-weight:800;background:#242724;border:1px solid var(--line)}.app.w{background:var(--green);color:#17200d}.arrow{color:#777b73;font-size:20px}
-    h1{font-size:24px;line-height:1.2;margin:0 0 9px}.sub{margin:0;color:var(--muted)}.client-link{color:var(--ink)}
+    h1{font-size:24px;line-height:1.2;margin:0 0 9px}.sub{margin:0;color:var(--muted)}.client-link{color:var(--muted)}.unverified{display:inline-block;margin:0 0 10px;padding:4px 9px;border:1px solid rgba(255,157,102,.42);border-radius:999px;color:var(--orange);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.client-details{margin-top:13px;color:#85877f;font-size:12px;overflow-wrap:anywhere}
     .body{padding:25px 30px}.label{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#85877f;margin-bottom:10px}.permission{display:flex;gap:13px;padding:13px 0}.permission+.permission{border-top:1px solid var(--line)}.icon{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.06);display:grid;place-items:center;flex:none}.permission strong{display:block}.permission span{display:block;color:var(--muted);font-size:13px;margin-top:2px}.permission input{margin-left:auto;accent-color:var(--green);width:18px}
     .identity{margin-top:18px;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.045);color:var(--muted);font-size:13px}.identity.good{color:#dcebc0}.actions{display:grid;grid-template-columns:1fr 1.55fr;gap:10px;margin-top:18px}button{border-radius:12px;border:1px solid var(--line);padding:12px 15px;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}.deny{background:#222422;color:var(--ink)}.approve{background:var(--green);border-color:transparent;color:#17200d}
     .login{display:none;margin-top:17px;padding-top:17px;border-top:1px solid var(--line)}.login.show{display:block}.login form{display:flex;gap:9px}.login input{min-width:0;flex:1;border:1px solid var(--line);border-radius:12px;background:#121412;color:var(--ink);padding:12px}.login button{background:#eee9dc;color:#171817}.message{min-height:20px;margin:10px 0 0;color:var(--orange);font-size:13px}.fine{padding:0 30px 25px;color:#777b73;font-size:12px;text-align:center}
@@ -118,8 +120,10 @@ function consentPage({ client, requestToken, scopes, root }) {
   <section class="card">
     <div class="top">
       <div class="apps"><span class="app">${escapeHtml(client.clientName.slice(0, 1).toUpperCase())}</span><span class="arrow">→</span><span class="app w">W</span></div>
-      <h1>Connect ${clientUri ? `<a class="client-link" href="${escapeHtml(clientUri)}" rel="noreferrer">${name}</a>` : name} to Wayfare?</h1>
+      <div class="unverified">Unverified client</div>
+      <h1>Connect ${name} to Wayfare?</h1>
       <p class="sub">This lets the MCP client act on your trips with the permissions below.</p>
+      <div class="client-details">Redirect destination: <strong>${redirectOrigin}</strong><br>Client ID: ${escapeHtml(client.id)}${clientUri ? `<br>Self-reported website: <a class="client-link" href="${escapeHtml(clientUri)}" rel="noreferrer">${escapeHtml(clientUri)}</a>` : ''}</div>
     </div>
     <div class="body">
       <div class="label">Requested access</div>
@@ -134,7 +138,7 @@ function consentPage({ client, requestToken, scopes, root }) {
       <div class="actions"><button id="deny" class="deny" type="button">Cancel</button><button id="approve" class="approve" type="button" disabled>Allow access</button></div>
       <p id="message" class="message" role="status"></p>
     </div>
-    <div class="fine">You can revoke this connection by revoking its OAuth token. Wayfare never shares your password.</div>
+    <div class="fine">Your MCP client can revoke this connection through Wayfare’s OAuth revocation endpoint. Wayfare never shares your password.</div>
   </section>
 </main>
 <script nonce="${nonce}">
@@ -159,6 +163,11 @@ function consentPage({ client, requestToken, scopes, root }) {
 
 const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] })
 const toolFailure = message => ({ isError: true, content: [{ type: 'text', text: message }] })
+const entityId = z.uuid()
+const pgInteger = z.number().int().min(0).max(2_147_483_647)
+const externalUrl = z.url().max(2048).refine(value => ['http:', 'https:'].includes(new URL(value).protocol), {
+  message: 'Use an HTTP or HTTPS URL',
+})
 
 function tripForMcp(row) {
   return {
@@ -173,13 +182,18 @@ function tripForMcp(row) {
   }
 }
 
-function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
+function buildMcpServer({ repository, user, scopes, fileStore, sendInvite, logger, clock }) {
   const server = new McpServer({ name: 'Wayfare Trips', version: '1.0.0' }, {
     instructions: 'Use these tools to read and maintain the authenticated user’s Wayfare trips. IDs returned by get_trip are required by mutation tools.',
   })
+  server.registerTool('list_trips', {
+    description: 'List every trip accessible to the authenticated user, including IDs, slugs and the user’s role.',
+    inputSchema: z.object({}),
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, async () => result(await repository.listTrips(user)))
   server.registerTool('get_trip', {
     description: 'Get the authenticated user’s current trip, or a trip selected by slug.',
-    inputSchema: z.object({ slug: z.string().min(1).optional() }),
+    inputSchema: z.object({ slug: z.string().trim().min(1).max(200).regex(/^[a-z0-9-]+$/).optional() }),
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ slug }) => {
     const trip = await repository.loadCurrentTrip(user, slug || null)
@@ -199,7 +213,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
   server.registerTool('update_trip', {
     description: 'Update the title, crew, dates or date range of an editable trip.',
     inputSchema: z.object({
-      tripId: z.string().min(1), title: z.string().trim().min(1).max(160).optional(),
+      tripId: entityId, title: z.string().trim().min(1).max(160).optional(),
       crew: z.string().max(240).nullable().optional(), dates: z.string().max(160).nullable().optional(),
       dayCount: z.number().int().min(1).max(1000).optional(), startsOn: z.iso.date().nullable().optional(),
       endsOn: z.iso.date().nullable().optional(),
@@ -212,11 +226,11 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
   server.registerTool('create_stop', {
     description: 'Add a stop with valid longitude and latitude to an editable trip.',
     inputSchema: z.object({
-      tripId: z.string().min(1), name: z.string().trim().min(1).max(200),
+      tripId: entityId, name: z.string().trim().min(1).max(200),
       lng: z.number().min(-180).max(180), lat: z.number().min(-90).max(90),
-      kind: z.string().nullable().optional(), icon: z.string().optional(), day: z.number().int().nullable().optional(),
-      time: z.string().nullable().optional(), status: z.enum(['done', 'now', 'next', 'planned']).optional(), note: z.string().nullable().optional(),
-      src: z.string().nullable().optional(), sourceUrl: z.string().nullable().optional(), seq: z.number().int().optional(),
+      kind: z.string().max(80).nullable().optional(), icon: z.string().max(80).optional(), day: pgInteger.max(10_000).nullable().optional(),
+      time: z.string().max(80).nullable().optional(), status: z.enum(['done', 'now', 'next', 'planned']).optional(), note: z.string().max(5000).nullable().optional(),
+      src: externalUrl.nullable().optional(), sourceUrl: externalUrl.nullable().optional(), seq: pgInteger.optional(),
     }), annotations: { destructiveHint: false, openWorldHint: false },
   }, async ({ tripId, ...input }) => {
     const stop = await repository.createStop(user, tripId, {
@@ -229,11 +243,11 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
   server.registerTool('update_stop', {
     description: 'Update fields on an existing trip stop.',
     inputSchema: z.object({
-      tripId: z.string().min(1), stopId: z.string().min(1), name: z.string().trim().min(1).max(200).optional(),
+      tripId: entityId, stopId: entityId, name: z.string().trim().min(1).max(200).optional(),
       lng: z.number().min(-180).max(180).optional(), lat: z.number().min(-90).max(90).optional(),
-      kind: z.string().nullable().optional(), icon: z.string().optional(), day: z.number().int().nullable().optional(),
-      time: z.string().nullable().optional(), status: z.enum(['done', 'now', 'next', 'planned']).optional(), note: z.string().nullable().optional(),
-      src: z.string().nullable().optional(), sourceUrl: z.string().nullable().optional(), seq: z.number().int().optional(),
+      kind: z.string().max(80).nullable().optional(), icon: z.string().max(80).optional(), day: pgInteger.max(10_000).nullable().optional(),
+      time: z.string().max(80).nullable().optional(), status: z.enum(['done', 'now', 'next', 'planned']).optional(), note: z.string().max(5000).nullable().optional(),
+      src: externalUrl.nullable().optional(), sourceUrl: externalUrl.nullable().optional(), seq: pgInteger.optional(),
     }), annotations: { destructiveHint: false, openWorldHint: false },
   }, async ({ tripId, stopId, ...changes }) => {
     const stop = await repository.updateStop(user, tripId, stopId, changes)
@@ -242,7 +256,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
 
   server.registerTool('delete_stop', {
     description: 'Delete a stop from an editable trip. Photos at that stop remain but become unassigned.',
-    inputSchema: z.object({ tripId: z.string().min(1), stopId: z.string().min(1) }),
+    inputSchema: z.object({ tripId: entityId, stopId: entityId }),
     annotations: { destructiveHint: true, openWorldHint: false },
   }, async ({ tripId, stopId }) => await repository.deleteStop(user, tripId, stopId)
     ? result({ deleted: true, stopId }) : toolFailure('The stop was not found or is not editable by this user.'))
@@ -250,7 +264,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
   server.registerTool('replace_route', {
     description: 'Replace all route points for an editable trip with ordered [longitude, latitude] pairs.',
     inputSchema: z.object({
-      tripId: z.string().min(1), points: z.array(z.tuple([
+      tripId: entityId, points: z.array(z.tuple([
         z.number().min(-180).max(180), z.number().min(-90).max(90),
       ])).max(10000),
     }), annotations: { destructiveHint: true, openWorldHint: false },
@@ -260,8 +274,8 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
   server.registerTool('update_photo', {
     description: 'Update a photo caption or assign it to a stop.',
     inputSchema: z.object({
-      tripId: z.string().min(1), photoId: z.string().min(1),
-      caption: z.string().max(2000).optional(), stopId: z.string().nullable().optional(),
+      tripId: entityId, photoId: entityId,
+      caption: z.string().max(2000).optional(), stopId: entityId.nullable().optional(),
     }), annotations: { destructiveHint: false, openWorldHint: false },
   }, async ({ tripId, photoId, ...changes }) => {
     const photo = await repository.updatePhoto(user, tripId, photoId, changes)
@@ -271,21 +285,33 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
 
   server.registerTool('delete_photo', {
     description: 'Permanently delete a trip photo and its stored resized copies.',
-    inputSchema: z.object({ tripId: z.string().min(1), photoId: z.string().min(1) }),
+    inputSchema: z.object({ tripId: entityId, photoId: entityId }),
     annotations: { destructiveHint: true, openWorldHint: false },
   }, async ({ tripId, photoId }) => {
     const removed = await repository.deletePhoto(user, tripId, photoId)
     if (!removed) return toolFailure('The photo was not found or is not editable by this user.')
     if (fileStore) {
-      await fileStore.remove(removed.storagePath).catch(() => {})
-      if (removed.thumbPath) await fileStore.remove(removed.thumbPath).catch(() => {})
+      const failures = []
+      for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean)) {
+        try {
+          await fileStore.remove(path)
+          await repository.completeFileDeletion?.(path)
+        } catch (error) {
+          failures.push({ path, error })
+          await repository.failFileDeletion?.(path, error.message, clock())
+        }
+      }
+      if (failures.length) {
+        logger?.error({ failures, tripId, photoId }, 'MCP photo record deleted but stored file cleanup failed')
+        return toolFailure('The photo record was deleted, but stored-file cleanup failed and requires administrator reconciliation.')
+      }
     }
     return result({ deleted: true, photoId })
   })
 
   server.registerTool('add_comment', {
     description: 'Add a comment to a photo in an accessible trip.',
-    inputSchema: z.object({ tripId: z.string().min(1), photoId: z.string().min(1), body: z.string().trim().min(1).max(4000) }),
+    inputSchema: z.object({ tripId: entityId, photoId: entityId, body: z.string().trim().min(1).max(4000) }),
     annotations: { destructiveHint: false, openWorldHint: false },
   }, async ({ tripId, photoId, body }) => {
     const comment = await repository.addComment(user, tripId, photoId, body)
@@ -294,21 +320,21 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
 
   server.registerTool('delete_comment', {
     description: 'Delete the user’s comment, or any comment when the user can edit the trip.',
-    inputSchema: z.object({ tripId: z.string().min(1), commentId: z.string().min(1) }),
+    inputSchema: z.object({ tripId: entityId, commentId: entityId }),
     annotations: { destructiveHint: true, openWorldHint: false },
   }, async ({ tripId, commentId }) => await repository.deleteComment(user, tripId, commentId)
     ? result({ deleted: true, commentId }) : toolFailure('The comment was not found or cannot be deleted by this user.'))
 
   server.registerTool('set_photo_like', {
     description: 'Like or unlike a photo in an accessible trip.',
-    inputSchema: z.object({ tripId: z.string().min(1), photoId: z.string().min(1), liked: z.boolean() }),
+    inputSchema: z.object({ tripId: entityId, photoId: entityId, liked: z.boolean() }),
     annotations: { destructiveHint: false, openWorldHint: false },
   }, async ({ tripId, photoId, liked }) => await repository.setLike(user, tripId, photoId, liked)
     ? result({ photoId, liked }) : toolFailure('The trip or photo was not found.'))
 
   server.registerTool('list_invitations', {
     description: 'List invitations for a trip owned by the authenticated user.',
-    inputSchema: z.object({ tripId: z.string().min(1) }),
+    inputSchema: z.object({ tripId: entityId }),
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ tripId }) => {
     const invitations = await repository.listInvites(user, tripId)
@@ -318,7 +344,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
   server.registerTool('invite_person', {
     description: 'Invite a person to a trip as an editor or viewer. This sends a Wayfare sign-in email.',
     inputSchema: z.object({
-      tripId: z.string().min(1), email: z.string().email(), name: z.string().trim().max(160).nullable().optional(),
+      tripId: entityId, email: z.string().email(), name: z.string().trim().max(160).nullable().optional(),
       role: z.enum(['editor', 'viewer']).default('viewer'),
     }), annotations: { destructiveHint: false, openWorldHint: true },
   }, async ({ tripId, email, name, role }) => {
@@ -331,7 +357,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite }) {
 
   server.registerTool('revoke_invitation', {
     description: 'Revoke an invitation and remove that invited member from the trip.',
-    inputSchema: z.object({ tripId: z.string().min(1), invitationId: z.string().min(1) }),
+    inputSchema: z.object({ tripId: entityId, invitationId: entityId }),
     annotations: { destructiveHint: true, openWorldHint: false },
   }, async ({ tripId, invitationId }) => await repository.revokeInvite(user, tripId, invitationId)
     ? result({ revoked: true, invitationId }) : toolFailure('The invitation was not found or cannot be revoked by this user.'))
@@ -363,6 +389,12 @@ export async function registerMcpRoutes(app, {
     if (!window || now - window.startedAt >= windowMs) {
       window = { startedAt: now, count: 0 }
       oauthWindows.set(key, window)
+      if (oauthWindows.size > 10_000) {
+        for (const [candidate, value] of oauthWindows) {
+          if (now - value.startedAt >= windowMs) oauthWindows.delete(candidate)
+        }
+        while (oauthWindows.size > 10_000) oauthWindows.delete(oauthWindows.keys().next().value)
+      }
     }
     window.count++
     return window.count > max
@@ -432,7 +464,7 @@ export async function registerMcpRoutes(app, {
       state: String(query.state || ''), codeChallenge: String(query.code_challenge), resource,
     }
     const requestToken = signAuthorizationRequest(authorizationRequest, oauthSecret)
-    const page = consentPage({ client, requestToken, scopes, root })
+    const page = consentPage({ client, requestToken, scopes, root, redirectUri })
     return reply.header('content-type', 'text/html; charset=utf-8')
       .header('cache-control', 'no-store')
       .header('content-security-policy', `default-src 'none'; script-src 'nonce-${page.nonce}'; style-src 'nonce-${page.nonce}'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`)
@@ -530,15 +562,26 @@ export async function registerMcpRoutes(app, {
   })
 
   const mcpHandler = createMcpHandler(({ authInfo }) => buildMcpServer({
-    repository, user: authInfo.user, scopes: authInfo.scopes, fileStore,
+    repository, user: authInfo.user, scopes: authInfo.scopes, fileStore, logger: app.log, clock,
     sendInvite: async email => {
-      const now = clock().getTime(), key = `${authInfo.user.id}:${email}`
-      let window = inviteWindows.get(key)
-      if (!window || now - window.startedAt >= 60 * 60_000) {
-        window = { startedAt: now, count: 0 }
-        inviteWindows.set(key, window)
+      const now = clock().getTime()
+      const increment = (key, max) => {
+        let window = inviteWindows.get(key)
+        if (!window || now - window.startedAt >= 60 * 60_000) {
+          window = { startedAt: now, count: 0 }
+          inviteWindows.set(key, window)
+          if (inviteWindows.size > 10_000) {
+            for (const [candidate, value] of inviteWindows) {
+              if (now - value.startedAt >= 60 * 60_000) inviteWindows.delete(candidate)
+            }
+            while (inviteWindows.size > 10_000) inviteWindows.delete(inviteWindows.keys().next().value)
+          }
+        }
+        return ++window.count > max
       }
-      if (++window.count > 3) throw new Error('Invitation email rate limit exceeded')
+      if (increment(`user:${authInfo.user.id}`, 10) || increment(`target:${authInfo.user.id}:${email}`, 3)) {
+        throw new Error('Invitation email rate limit exceeded')
+      }
       return sendInvite(email)
     },
   }), { legacy: 'stateless' })
@@ -548,7 +591,7 @@ export async function registerMcpRoutes(app, {
   app.addHook('onClose', async () => { await mcpHandler.close() })
 
   app.route({
-    method: ['GET', 'POST', 'DELETE'], url: '/mcp',
+    method: ['GET', 'POST', 'DELETE'], url: '/mcp', bodyLimit: 1024 * 1024,
     async handler(request, reply) {
       if (request.headers.origin && request.headers.origin !== root) {
         return reply.code(403).send({ error: 'Origin is not allowed' })

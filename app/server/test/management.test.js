@@ -37,6 +37,18 @@ test('an owner can update trip details and their trip profile', async () => {
   await app.close()
 })
 
+test('a trip cannot accumulate an unbounded number of registered phones', async () => {
+  const { app, authorization, trip } = await setup()
+  const statuses = []
+  for (let index = 0; index < 21; index++) statuses.push((await app.inject({
+    method: 'POST', url: `/api/trips/${trip.id}/devices`, headers: { authorization },
+    payload: { name: `Phone ${index + 1}` },
+  })).statusCode)
+  assert.deepEqual(statuses.slice(0, 20), Array(20).fill(201))
+  assert.equal(statuses[20], 409)
+  await app.close()
+})
+
 test('an owner can list and revoke a phone', async () => {
   const { app, authorization, trip } = await setup()
   const device = (await app.inject({
@@ -73,8 +85,14 @@ test('an owner can edit and delete a photo record', async () => {
 
 test('an owner can upload a private avatar and attach it to their trip profile', async () => {
   const stored = []
+  const removed = []
   const { app, authorization, trip } = await setup({
-    async storeAvatar(input) { stored.push(input); return { avatarPath: `${input.tripId}/avatars/user.jpg` } },
+    async storeAvatar(input) {
+      stored.push(input)
+      const suffix = stored.length === 1 ? `${input.userId}-legacy.jpg` : `${input.userId}.jpg`
+      return { avatarPath: `${input.tripId}/avatars/${suffix}` }
+    },
+    async remove(path) { removed.push(path) },
   })
   const form = new FormData()
   form.append('avatar', new Blob([Buffer.from('image-bytes')], { type: 'image/jpeg' }), 'me.jpg')
@@ -83,9 +101,18 @@ test('an owner can upload a private avatar and attach it to their trip profile',
     payload: form,
   })
   assert.equal(response.statusCode, 201)
-  assert.equal(response.json().avatarPath, `${trip.id}/avatars/user.jpg`)
+  const firstPath = response.json().avatarPath
   assert.equal(stored.length, 1)
+
+  const replacement = new FormData()
+  replacement.append('avatar', new Blob([Buffer.from('replacement-image')], { type: 'image/jpeg' }), 'me-again.jpg')
+  const replaced = await app.inject({
+    method: 'POST', url: `/api/trips/${trip.id}/members/me/avatar`, headers: { authorization },
+    payload: replacement,
+  })
+  assert.equal(replaced.statusCode, 201)
+  assert.deepEqual(removed, [firstPath])
   const loaded = await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization } })
-  assert.match(loaded.json().me.avatar, /^\/api\/media\//)
+  assert.match(loaded.json().me.avatar, /^https:\/\/wayfare\.example\.com\/api\/media\//)
   await app.close()
 })

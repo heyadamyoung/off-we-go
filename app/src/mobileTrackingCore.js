@@ -77,6 +77,18 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
     return queue
   }
 
+  const forget = async (error = null) => {
+    if (watcherId) await driver.removeWatcher({ id: watcherId })
+    watcherId = null
+    config = null
+    queue = []
+    await Promise.all([storage.remove({ key: CONFIG_KEY }), storage.remove({ key: QUEUE_KEY })])
+    publish({
+      status: 'stopped', configured: false, deviceId: null, name: null,
+      queued: 0, error,
+    })
+  }
+
   const flush = async () => {
     if (flushing) return flushing
     flushing = (async () => {
@@ -105,6 +117,10 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
               ? now() + Math.max(1, seconds) * 1000
               : Number.isFinite(date) ? Math.max(now() + 1000, date) : now() + 60_000
             throw new Error('Location service rate limited')
+          }
+          if (response.status === 401) {
+            await forget('This phone registration was revoked. Set up location sharing again to resume.')
+            return
           }
           if (!response.ok && DISCARDABLE_STATUSES.has(response.status)) {
             queue.shift()
@@ -147,6 +163,10 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
   const start = async () => {
     if (!validConfig(config)) throw new Error('Register this iPhone before starting location sharing')
     if (watcherId) return { ...state }
+    if (config.enabled !== true) {
+      config = { ...config, enabled: true }
+      await storage.set({ key: CONFIG_KEY, value: JSON.stringify(config) })
+    }
     publish({ status: 'starting', error: null })
     try {
       watcherId = await driver.addWatcher({
@@ -172,7 +192,10 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
         await driver.removeWatcher({ id: watcherId })
         watcherId = null
       }
-      config = { endpoint: next.endpoint, token: next.token, deviceId: next.deviceId, name: next.name || 'This iPhone' }
+      config = {
+        endpoint: next.endpoint, token: next.token, deviceId: next.deviceId,
+        name: next.name || 'This iPhone', enabled: true,
+      }
       await storage.set({ key: CONFIG_KEY, value: JSON.stringify(config) })
       publish({ configured: true, deviceId: config.deviceId, name: config.name })
       return start()
@@ -181,8 +204,11 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
       const { value } = await storage.get({ key: CONFIG_KEY })
       const saved = readJson(value, null)
       if (!validConfig(saved)) return false
-      config = saved
+      // Configurations written before the pause flag existed were actively
+      // tracking, so preserve that behavior during migration.
+      config = { ...saved, enabled: saved.enabled !== false }
       publish({ configured: true, deviceId: config.deviceId, name: config.name || 'This iPhone' })
+      if (!config.enabled) return true
       await start()
       return true
     },
@@ -190,16 +216,13 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
     async stop() {
       if (watcherId) await driver.removeWatcher({ id: watcherId })
       watcherId = null
+      if (validConfig(config)) {
+        config = { ...config, enabled: false }
+        await storage.set({ key: CONFIG_KEY, value: JSON.stringify(config) })
+      }
       publish({ status: 'stopped', error: null })
     },
-    async forget() {
-      if (watcherId) await driver.removeWatcher({ id: watcherId })
-      watcherId = null
-      config = null
-      queue = []
-      await Promise.all([storage.remove({ key: CONFIG_KEY }), storage.remove({ key: QUEUE_KEY })])
-      publish({ status: 'stopped', configured: false, deviceId: null, name: null, queued: 0, error: null })
-    },
+    forget,
     getState() { return { ...state } },
     subscribe(listener) {
       listeners.add(listener)

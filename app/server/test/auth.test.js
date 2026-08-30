@@ -42,6 +42,11 @@ test('an invited email can exchange a one-time link for an authenticated session
   })
   assert.equal(replay.statusCode, 401)
 
+  const oversizedExchange = await app.inject({
+    method: 'POST', url: '/api/auth/exchange', payload: { token: 'x'.repeat(100_000) },
+  })
+  assert.equal(oversizedExchange.statusCode, 413)
+
   const current = await app.inject({
     method: 'GET', url: '/api/auth/session',
     headers: { authorization: `Bearer ${session.accessToken}` },
@@ -67,6 +72,12 @@ test('magic-link requests are throttled per email before they can spam SMTP or i
   })).statusCode)
   assert.deepEqual(statuses, [202, 202, 429])
   assert.equal(sent.length, 2)
+
+  const oversized = await app.inject({
+    method: 'POST', url: '/api/auth/magic-link',
+    payload: { email: `${'x'.repeat(20_000)}@example.com` },
+  })
+  assert.equal(oversized.statusCode, 413)
   await app.close()
 })
 

@@ -74,6 +74,61 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
     (await repository.findMcpAccessToken('oauth-access-rotated', new Date('2027-01-01T00:02:00Z'))).clientId,
     oauthClient.id,
   )
+  assert.equal(await repository.rotateMcpRefreshToken({
+    refreshHash: 'oauth-refresh-hash', now: new Date('2027-01-01T00:03:00Z'),
+    clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+    accessHash: 'unused-access-replay', replacementRefreshHash: 'unused-refresh-replay',
+    accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+  }), null)
+  assert.equal(await repository.findMcpAccessToken('oauth-access-rotated', new Date('2027-01-01T00:04:00Z')), null)
+
+  const issueGrant = async suffix => {
+    await repository.createMcpAuthorizationCode({
+      hash: `code-${suffix}`, userId: user.id, clientId: oauthClient.id,
+      redirectUri: oauthClient.redirectUris[0], scopes: ['trips:read'],
+      resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge', expiresAt,
+    })
+    return repository.redeemMcpAuthorizationCode({
+      codeHash: `code-${suffix}`, now: new Date('2027-01-01T00:01:00Z'), clientId: oauthClient.id,
+      redirectUri: oauthClient.redirectUris[0], resource: 'https://wayfare.example.com/mcp',
+      codeChallenge: 'challenge', accessHash: `access-${suffix}`, refreshHash: `refresh-${suffix}`,
+      accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+    })
+  }
+  await issueGrant('concurrent-replay')
+  await repository.rotateMcpRefreshToken({
+    refreshHash: 'refresh-concurrent-replay', now: new Date('2027-01-01T00:02:00Z'),
+    clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+    accessHash: 'access-descendant', replacementRefreshHash: 'refresh-descendant',
+    accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+  })
+  await Promise.all([
+    repository.rotateMcpRefreshToken({
+      refreshHash: 'refresh-descendant', now: new Date('2027-01-01T00:03:00Z'),
+      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      accessHash: 'access-grandchild', replacementRefreshHash: 'refresh-grandchild',
+      accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+    }),
+    repository.rotateMcpRefreshToken({
+      refreshHash: 'refresh-concurrent-replay', now: new Date('2027-01-01T00:03:00Z'),
+      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      accessHash: 'unused-replay', replacementRefreshHash: 'unused-replay-refresh',
+      accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+    }),
+  ])
+  assert.equal(await repository.findMcpAccessToken('access-grandchild', new Date('2027-01-01T00:04:00Z')), null)
+
+  await issueGrant('concurrent-revoke')
+  await Promise.all([
+    repository.rotateMcpRefreshToken({
+      refreshHash: 'refresh-concurrent-revoke', now: new Date('2027-01-01T00:03:00Z'),
+      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      accessHash: 'access-after-revoke-race', replacementRefreshHash: 'refresh-after-revoke-race',
+      accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
+    }),
+    repository.revokeMcpToken('refresh-concurrent-revoke'),
+  ])
+  assert.equal(await repository.findMcpAccessToken('access-after-revoke-race', new Date('2027-01-01T00:04:00Z')), null)
 
   const trip = await repository.createTrip(user, { title: 'Persistent trip', dayCount: 3 })
   const loaded = await repository.loadCurrentTrip(user, trip.slug)
@@ -141,6 +196,19 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
     stopId: otherStop.id, lng: -104.6, lat: 50.4, caption: 'Cross trip', takenAt: new Date('2027-01-02T01:00:00Z'),
     locationSource: 'manual', storagePath: `${trip.id}/cross.jpg`, thumbPath: `${trip.id}/cross.thumb.jpg`,
   }), error => error.code === '23503')
+
+  const queuedPhoto = await repository.createPhoto(user, trip.id, {
+    stopId: null, lng: -104.6, lat: 50.4, caption: 'Queued delete', takenAt: new Date('2027-01-02T01:00:00Z'),
+    locationSource: 'trail', storagePath: `${trip.id}/queued.jpg`, thumbPath: `${trip.id}/queued.thumb.jpg`,
+  })
+  await repository.deletePhoto(user, trip.id, queuedPhoto.id)
+  assert.deepEqual((await repository.listPendingFileDeletions(new Date('2027-01-01T00:01:00Z'))).sort(),
+    [`${trip.id}/queued.jpg`, `${trip.id}/queued.thumb.jpg`].sort())
+  await repository.completeFileDeletion(`${trip.id}/queued.jpg`)
+  await repository.failFileDeletion(`${trip.id}/queued.thumb.jpg`, 'disk busy', new Date('2027-01-01T00:01:00Z'))
+  assert.deepEqual(await repository.listPendingFileDeletions(new Date('2027-01-01T00:01:30Z')), [])
+  assert.deepEqual(await repository.listPendingFileDeletions(new Date('2027-01-01T00:02:01Z')),
+    [`${trip.id}/queued.thumb.jpg`])
 
   await repository.createPhoto(user, trip.id, {
     stopId: null, lng: -104.6, lat: 50.4, caption: 'Mine', takenAt: new Date('2027-01-02T01:00:00Z'),

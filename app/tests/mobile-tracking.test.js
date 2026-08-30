@@ -50,6 +50,26 @@ test('a permanently rejected fix is discarded so a later fix can be delivered', 
   assert.equal(tracker.getState().status, 'tracking')
 })
 
+test('a revoked device token stops location services and clears saved fixes', async () => {
+  const url = await endpoint((_request, response) => {
+    response.writeHead(401)
+    response.end('revoked')
+  })
+  const storage = memoryStorage()
+  const driver = locationDriver()
+  const tracker = createMobileTracker({ driver, storage, fetch })
+  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+
+  await driver.emit({ latitude: 51, longitude: -1, time: 1_788_000_000_000 })
+
+  assert.deepEqual(driver.removed, ['watch-1'])
+  assert.equal(tracker.getState().status, 'stopped')
+  assert.equal(tracker.getState().configured, false)
+  assert.equal(tracker.getState().queued, 0)
+  const relaunched = createMobileTracker({ driver: locationDriver(), storage, fetch })
+  assert.equal(await relaunched.restore(), false)
+})
+
 test('offline fixes older than the server retention window are removed without transmission', async () => {
   let requests = 0
   const url = await endpoint((_request, response) => {
@@ -205,7 +225,7 @@ test('an offline fix is queued and delivered before the next live fix', async ()
   assert.equal(tracker.getState().status, 'tracking')
 })
 
-test('saved tracking configuration restarts on the next app launch and can be stopped', async () => {
+test('saved tracking configuration restarts until the user pauses it', async () => {
   const url = await endpoint((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end('[]')
@@ -223,6 +243,17 @@ test('saved tracking configuration restarts on the next app launch and can be st
   await relaunched.stop()
   assert.deepEqual(relaunchedDriver.removed, ['watch-1'])
   assert.equal(relaunched.getState().status, 'stopped')
+
+  const pausedRelaunchDriver = locationDriver()
+  const pausedRelaunch = createMobileTracker({ driver: pausedRelaunchDriver, storage, fetch })
+  assert.equal(await pausedRelaunch.restore(), true)
+  assert.equal(pausedRelaunch.getState().configured, true)
+  assert.equal(pausedRelaunch.getState().status, 'stopped')
+  assert.equal(pausedRelaunchDriver.options, null)
+
+  await pausedRelaunch.forget()
+  const signedOutRelaunch = createMobileTracker({ driver: locationDriver(), storage, fetch })
+  assert.equal(await signedOutRelaunch.restore(), false)
 })
 
 test('Apple Photos selections become uploadable JPEG files in selection order', async () => {

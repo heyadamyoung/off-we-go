@@ -62,9 +62,12 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   assert.equal(photo.lng, -3.1883)
   assert.equal(photo.lat, 55.9533)
   assert.equal(photo.locationSource, 'exif')
-  assert.match(photo.src, /^\/api\/media\//)
+  assert.match(photo.src, /^https:\/\/wayfare\.example\.com\/api\/media\//)
 
-  const served = await fetch(origin + photo.src)
+  // The signed URL must also work inside Capacitor, where a root-relative URL
+  // would incorrectly resolve to capacitor://localhost.
+  const servedPath = new URL(photo.src).pathname + new URL(photo.src).search
+  const served = await fetch(origin + servedPath)
   assert.equal(served.status, 200)
   const metadata = await sharp(Buffer.from(await served.arrayBuffer())).metadata()
   assert.equal(metadata.width, 2048)

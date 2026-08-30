@@ -1,4 +1,5 @@
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
+  const fakeUuid = (namespace, value) => `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
   const magicTokens = new Map()
   const sessions = new Map()
@@ -9,6 +10,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const mcpClients = new Map()
   const mcpCodes = new Map()
   const mcpTokens = new Map()
+  const mcpUsedRefreshTokens = new Map()
+  const fileDeletionQueue = new Map()
   let nextUser = 1
   let nextTrip = 1
   let nextPhoto = 1
@@ -21,7 +24,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     seedPhoto(tripId) {
       const trip = trips.get(tripId)
       const photo = {
-        id: `photo-${nextPhoto++}`, stopId: null, lng: 0, lat: 0,
+        id: fakeUuid(3, nextPhoto++), stopId: null, lng: 0, lat: 0,
         caption: 'Seed photo', by: 'owner', when: null, locationSource: 'manual',
         storagePath: `${tripId}/seed.jpg`, thumbPath: null, seq: trip.photos.length,
         userId: trip.ownerId,
@@ -42,7 +45,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return row && row.expiresAt > now ? row.email : null
     },
     async ensureUser(email) {
-      if (!users.has(email)) users.set(email, { id: `user-${nextUser++}`, email })
+      if (!users.has(email)) users.set(email, { id: fakeUuid(1, nextUser++), email })
       const user = users.get(email)
       for (const trip of trips.values()) {
         const invite = trip.invites.find(value => value.email === email)
@@ -86,6 +89,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         accessHash: grant.accessHash, refreshHash: grant.refreshHash,
         userId: code.userId, clientId: code.clientId, scopes: code.scopes, resource: code.resource,
         accessExpiresAt: grant.accessExpiresAt, refreshExpiresAt: grant.refreshExpiresAt,
+        grantId: grant.codeHash,
       }
       mcpTokens.set(token.accessHash, token)
       return { userId: code.userId, clientId: code.clientId, scopes: code.scopes, resource: code.resource }
@@ -97,12 +101,23 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return user ? { ...token, user } : null
     },
     async rotateMcpRefreshToken(grant) {
+      const used = mcpUsedRefreshTokens.get(grant.refreshHash)
+      if (used && used.expiresAt > grant.now && used.clientId === grant.clientId && used.resource === grant.resource) {
+        for (const [accessHash, token] of mcpTokens) {
+          if (token.grantId === used.grantId) mcpTokens.delete(accessHash)
+        }
+        return null
+      }
       const entry = [...mcpTokens.entries()].find(([, value]) => value.refreshHash === grant.refreshHash)
       if (!entry) return null
       const [accessHash, token] = entry
       if (token.refreshExpiresAt <= grant.now || token.clientId !== grant.clientId ||
         token.resource !== grant.resource) return null
       mcpTokens.delete(accessHash)
+      mcpUsedRefreshTokens.set(token.refreshHash, {
+        grantId: token.grantId, clientId: token.clientId,
+        resource: token.resource, expiresAt: token.refreshExpiresAt,
+      })
       const replacement = {
         ...token, accessHash: grant.accessHash, refreshHash: grant.replacementRefreshHash,
         accessExpiresAt: grant.accessExpiresAt, refreshExpiresAt: grant.refreshExpiresAt,
@@ -111,12 +126,16 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return { userId: token.userId, clientId: token.clientId, scopes: token.scopes, resource: token.resource }
     },
     async revokeMcpToken(hash) {
+      const matched = [...mcpTokens.values()].find(token => token.accessHash === hash || token.refreshHash === hash)
+        || mcpUsedRefreshTokens.get(hash)
       for (const [accessHash, token] of mcpTokens) {
-        if (accessHash === hash || token.refreshHash === hash) mcpTokens.delete(accessHash)
+        if ((matched && token.grantId === matched.grantId) || accessHash === hash || token.refreshHash === hash) {
+          mcpTokens.delete(accessHash)
+        }
       }
     },
     async createTrip(user, input) {
-      const id = `trip-${nextTrip++}`
+      const id = fakeUuid(2, nextTrip++)
       const base = (input.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       const trip = {
         id, slug: `${base || 'trip'}-${id.slice(-1)}`, ownerId: user.id,
@@ -127,6 +146,14 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       }
       trips.set(id, trip)
       return { id, slug: trip.slug, ownerId: user.id, title: trip.title }
+    },
+    async listTrips(user) {
+      return [...trips.values()].filter(trip => trip.members.some(member => member.userId === user.id))
+        .map(trip => ({
+          id: trip.id, slug: trip.slug, title: trip.title, crew: trip.crew, dates: trip.dates,
+          dayCount: trip.dayCount, startsOn: trip.startsOn, endsOn: trip.endsOn,
+          role: trip.members.find(member => member.userId === user.id).role,
+        }))
     },
     async loadCurrentTrip(user, slug) {
       return [...trips.values()].find(trip =>
@@ -142,9 +169,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const trip = trips.get(tripId)
       const member = trip?.members.find(value => value.userId === user.id)
       if (!member) return null
+      const oldAvatarUrl = member.avatarUrl
       if (changes.name !== undefined) member.displayName = changes.name
       if (changes.avatarPath !== undefined) member.avatarUrl = changes.avatarPath
-      return member
+      return { ...member, oldAvatarUrl }
     },
     async canEditTrip(userId, tripId) {
       const trip = trips.get(tripId)
@@ -161,7 +189,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const member = trip?.members.find(value => value.userId === user.id)
       if (!trip || !member || !['owner', 'editor'].includes(member.role)) return null
       const photo = {
-        id: `photo-${nextPhoto++}`, stopId: input.stopId || null,
+        id: fakeUuid(3, nextPhoto++), stopId: input.stopId || null,
         lng: input.lng, lat: input.lat, caption: input.caption || null,
         by: member.displayName, when: input.takenAt || null,
         locationSource: input.locationSource || null,
@@ -177,7 +205,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!await this.canEditTrip(user.id, tripId)) return null
-      const photo = trips.get(tripId)?.photos.find(value => value.id === photoId)
+      const trip = trips.get(tripId)
+      if (changes.stopId != null && !trip?.stops.some(value => value.id === changes.stopId)) return null
+      const photo = trip?.photos.find(value => value.id === photoId)
       if (!photo) return null
       Object.assign(photo, changes)
       return photo
@@ -190,11 +220,17 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       trip.photos = trip.photos.filter(value => value.id !== photoId)
       delete trip.comments[photoId]
       trip.likes = trip.likes.filter(value => value !== photoId)
+      for (const path of [photo.storagePath, photo.thumbPath].filter(Boolean)) fileDeletionQueue.set(path, new Date(0))
       return { storagePath: photo.storagePath, thumbPath: photo.thumbPath }
     },
+    async listPendingFileDeletions(now, limit = 50) {
+      return [...fileDeletionQueue].filter(([, next]) => next <= now).slice(0, limit).map(([path]) => path)
+    },
+    async completeFileDeletion(path) { fileDeletionQueue.delete(path) },
+    async failFileDeletion(path, _error, now) { fileDeletionQueue.set(path, new Date(now.getTime() + 60_000)) },
     async createStop(user, tripId, input) {
       if (!await this.canEditTrip(user.id, tripId)) return null
-      const stop = { id: `stop-${nextStop++}`, ...input }
+      const stop = { id: fakeUuid(4, nextStop++), ...input }
       trips.get(tripId).stops.push(stop)
       return stop
     },
@@ -229,7 +265,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (member && member.role !== 'owner') member.role = input.role
       }
       else {
-        invite = { id: `invite-${trip.invites.length + 1}`, ...input, claimedAt: null }
+        invite = { id: fakeUuid(5, trip.invites.length + 1), ...input, claimedAt: null }
         trip.invites.push(invite)
       }
       return invite
@@ -271,7 +307,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!trip.photos.some(photo => photo.id === photoId)) return null
       const member = trip.members.find(value => value.userId === user.id)
       const comment = {
-        id: `comment-${nextComment++}`, by: member.displayName, text: body,
+        id: fakeUuid(6, nextComment++), by: member.displayName, text: body,
         userId: user.id, when: 'just now',
       }
       ;(trip.comments[photoId] ||= []).push(comment)
@@ -374,7 +410,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       for (const [hash, session] of sessions) if (session.userId === user.id) sessions.delete(hash)
       for (const [id, device] of devices) if (device.userId === user.id) devices.delete(id)
       users.delete(user.email)
-      return [...new Set(paths.filter(Boolean))]
+      const uniquePaths = [...new Set(paths.filter(Boolean))]
+      for (const path of uniquePaths) fileDeletionQueue.set(path, new Date(0))
+      return uniquePaths
     },
   }
 }

@@ -90,6 +90,14 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async deleteSession(hash) { await pool.query('delete from sessions where token_hash=$1', [hash]) },
     async registerMcpClient(client) {
+      await pool.query('delete from mcp_oauth_tokens where refresh_expires_at <= now()')
+      await pool.query('delete from mcp_oauth_used_refresh_tokens where expires_at <= now()')
+      await pool.query(`delete from mcp_oauth_grants g where
+        (g.revoked_at is not null or g.created_at < now() - interval '90 days')
+        and not exists (select 1 from mcp_oauth_tokens where grant_id=g.grant_id)`)
+      await pool.query(`delete from mcp_oauth_clients c where c.created_at < now() - interval '90 days'
+        and not exists (select 1 from mcp_oauth_codes where client_id=c.client_id)
+        and not exists (select 1 from mcp_oauth_grants where client_id=c.client_id)`)
       const result = await pool.query(`insert into mcp_oauth_clients
         (client_id,client_name,redirect_uris,client_uri,logo_uri,scopes)
         values($1,$2,$3,$4,$5,$6) returning *`, [
@@ -122,14 +130,20 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       ])
     },
     async redeemMcpAuthorizationCode(grant) {
+      await pool.query('delete from mcp_oauth_tokens where refresh_expires_at <= $1', [grant.now])
+      await pool.query('delete from mcp_oauth_used_refresh_tokens where expires_at <= $1', [grant.now])
       const result = await pool.query(`with consumed as (
           delete from mcp_oauth_codes where code_hash=$1 and expires_at>$2
             and client_id=$3 and redirect_uri=$4 and resource=$5 and code_challenge=$6
           returning user_id,client_id,scopes,resource
+        ), created_grant as (
+          insert into mcp_oauth_grants(user_id,client_id,scopes,resource)
+          select user_id,client_id,scopes,resource from consumed
+          returning grant_id,user_id,client_id,scopes,resource
         )
         insert into mcp_oauth_tokens
-          (access_hash,refresh_hash,user_id,client_id,scopes,resource,access_expires_at,refresh_expires_at)
-        select $7,$8,user_id,client_id,scopes,resource,$9,$10 from consumed
+          (access_hash,refresh_hash,user_id,client_id,scopes,resource,access_expires_at,refresh_expires_at,grant_id)
+        select $7,$8,user_id,client_id,scopes,resource,$9,$10,grant_id from created_grant
         returning user_id,client_id,scopes,resource`, [
         grant.codeHash, grant.now, grant.clientId, grant.redirectUri, grant.resource,
         grant.codeChallenge, grant.accessHash, grant.refreshHash,
@@ -143,7 +157,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async findMcpAccessToken(hash, now) {
       const result = await pool.query(`select t.*,u.email from mcp_oauth_tokens t
-        join users u on u.id=t.user_id where t.access_hash=$1 and t.access_expires_at>$2`, [hash, now])
+        join users u on u.id=t.user_id join mcp_oauth_grants g on g.grant_id=t.grant_id
+        where t.access_hash=$1 and t.access_expires_at>$2 and g.revoked_at is null`, [hash, now])
       const value = result.rows[0]
       return value ? {
         accessHash: value.access_hash, refreshHash: value.refresh_hash,
@@ -154,27 +169,72 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       } : null
     },
     async rotateMcpRefreshToken(grant) {
-      const result = await pool.query(`with consumed as (
-          delete from mcp_oauth_tokens where refresh_hash=$1 and refresh_expires_at>$2
-            and client_id=$3 and resource=$4
-          returning user_id,client_id,scopes,resource
-        )
-        insert into mcp_oauth_tokens
-          (access_hash,refresh_hash,user_id,client_id,scopes,resource,access_expires_at,refresh_expires_at)
-        select $5,$6,user_id,client_id,scopes,resource,$7,$8 from consumed
-        returning user_id,client_id,scopes,resource`, [
-        grant.refreshHash, grant.now, grant.clientId, grant.resource,
-        grant.accessHash, grant.replacementRefreshHash,
-        grant.accessExpiresAt, grant.refreshExpiresAt,
-      ])
-      const value = result.rows[0]
-      return value ? {
-        userId: value.user_id, clientId: value.client_id,
-        scopes: value.scopes, resource: value.resource,
-      } : null
+      await pool.query('delete from mcp_oauth_tokens where refresh_expires_at <= $1', [grant.now])
+      await pool.query('delete from mcp_oauth_used_refresh_tokens where expires_at <= $1', [grant.now])
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const family = await client.query(`select grant_id from mcp_oauth_tokens
+            where refresh_hash=$1 and client_id=$2 and resource=$3
+          union select grant_id from mcp_oauth_used_refresh_tokens
+            where refresh_hash=$1 and client_id=$2 and resource=$3`,
+        [grant.refreshHash, grant.clientId, grant.resource])
+        if (!family.rows[0]) { await client.query('rollback'); return null }
+        const locked = await client.query(`select grant_id,revoked_at from mcp_oauth_grants
+          where grant_id=$1 for update`, [family.rows[0].grant_id])
+        if (!locked.rows[0] || locked.rows[0].revoked_at) { await client.query('rollback'); return null }
+        const replay = await client.query(`select 1 from mcp_oauth_used_refresh_tokens
+          where refresh_hash=$1 and grant_id=$2 and expires_at>$3`,
+        [grant.refreshHash, family.rows[0].grant_id, grant.now])
+        if (replay.rows[0]) {
+          await client.query('update mcp_oauth_grants set revoked_at=$2 where grant_id=$1',
+            [family.rows[0].grant_id, grant.now])
+          await client.query('delete from mcp_oauth_tokens where grant_id=$1', [family.rows[0].grant_id])
+          await client.query('commit')
+          return null
+        }
+        const consumed = await client.query(`delete from mcp_oauth_tokens
+          where refresh_hash=$1 and refresh_expires_at>$2 and client_id=$3 and resource=$4
+          returning user_id,client_id,scopes,resource,grant_id,refresh_hash,refresh_expires_at`,
+        [grant.refreshHash, grant.now, grant.clientId, grant.resource])
+        const value = consumed.rows[0]
+        if (!value) { await client.query('rollback'); return null }
+        await client.query('update mcp_oauth_used_refresh_tokens set expires_at=$2 where grant_id=$1',
+          [value.grant_id, grant.refreshExpiresAt])
+        await client.query(`insert into mcp_oauth_used_refresh_tokens
+          (refresh_hash,grant_id,client_id,resource,expires_at) values($1,$2,$3,$4,$5)`,
+        [value.refresh_hash, value.grant_id, value.client_id, value.resource, value.refresh_expires_at])
+        await client.query(`insert into mcp_oauth_tokens
+          (access_hash,refresh_hash,user_id,client_id,scopes,resource,access_expires_at,refresh_expires_at,grant_id)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [
+          grant.accessHash, grant.replacementRefreshHash, value.user_id, value.client_id,
+          value.scopes, value.resource, grant.accessExpiresAt, grant.refreshExpiresAt, value.grant_id,
+        ])
+        await client.query('commit')
+        return {
+          userId: value.user_id, clientId: value.client_id,
+          scopes: value.scopes, resource: value.resource,
+        }
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
     },
     async revokeMcpToken(hash) {
-      await pool.query('delete from mcp_oauth_tokens where access_hash=$1 or refresh_hash=$1', [hash])
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const family = await client.query(`select grant_id from mcp_oauth_tokens
+            where access_hash=$1 or refresh_hash=$1
+          union select grant_id from mcp_oauth_used_refresh_tokens where refresh_hash=$1`, [hash])
+        if (family.rows[0]) {
+          await client.query('select grant_id from mcp_oauth_grants where grant_id=$1 for update',
+            [family.rows[0].grant_id])
+          await client.query('update mcp_oauth_grants set revoked_at=now() where grant_id=$1',
+            [family.rows[0].grant_id])
+          await client.query('delete from mcp_oauth_tokens where grant_id=$1', [family.rows[0].grant_id])
+        }
+        await client.query('commit')
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
     },
 
     async createTrip(user, input) {
@@ -194,6 +254,12 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         return { ...camelTrip(result.rows[0]), ownerId: user.id }
       } catch (error) { await client.query('rollback'); throw error }
       finally { client.release() }
+    },
+
+    async listTrips(user) {
+      const result = await pool.query(`select t.*,m.role from trips t
+        join trip_members m on m.trip_id=t.id where m.user_id=$1 order by t.created_at`, [user.id])
+      return result.rows.map(value => ({ ...camelTrip(value), role: value.role }))
     },
 
     async loadCurrentTrip(user, slug) {
@@ -261,6 +327,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return result.rows[0] ? camelTrip(result.rows[0]) : null
     },
     async updateProfile(user, tripId, changes) {
+      const previous = changes.avatarPath !== undefined
+        ? await pool.query('select avatar_path from trip_members where trip_id=$1 and user_id=$2', [tripId, user.id])
+        : null
       const entries = []
       if (changes.name !== undefined) entries.push(['display_name', changes.name])
       if (changes.avatarPath !== undefined) entries.push(['avatar_path', changes.avatarPath])
@@ -275,6 +344,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return value ? {
         userId: value.user_id, email: value.email, role: value.role,
         displayName: value.display_name, avatarUrl: value.avatar_path,
+        oldAvatarUrl: previous?.rows[0]?.avatar_path || null,
       } : null
     },
     async canEditTrip(userId, tripId) {
@@ -474,6 +544,10 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!await this.canEditTrip(user.id, tripId)) return null
+      if (changes.stopId != null) {
+        const stop = await pool.query('select 1 from stops where id=$1 and trip_id=$2', [changes.stopId, tripId])
+        if (!stop.rows[0]) return null
+      }
       const entries = []
       if (changes.caption !== undefined) entries.push(['caption', changes.caption])
       if (changes.stopId !== undefined) entries.push(['stop_id', changes.stopId])
@@ -491,9 +565,34 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async deletePhoto(user, tripId, photoId) {
       if (!await this.canEditTrip(user.id, tripId)) return null
-      const result = await pool.query('delete from photos where id=$1 and trip_id=$2 returning storage_path,thumb_path', [photoId, tripId])
-      const value = result.rows[0]
-      return value ? { storagePath: value.storage_path, thumbPath: value.thumb_path } : null
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const result = await client.query(`delete from photos where id=$1 and trip_id=$2
+          returning storage_path,thumb_path`, [photoId, tripId])
+        const value = result.rows[0]
+        if (!value) { await client.query('rollback'); return null }
+        for (const path of [value.storage_path, value.thumb_path].filter(Boolean)) {
+          await client.query(`insert into file_deletion_queue(path) values($1)
+            on conflict(path) do update set next_attempt_at=now()`, [path])
+        }
+        await client.query('commit')
+        return { storagePath: value.storage_path, thumbPath: value.thumb_path }
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
+    },
+    async listPendingFileDeletions(now, limit = 50) {
+      const result = await pool.query(`select path from file_deletion_queue
+        where next_attempt_at <= $1 order by next_attempt_at limit $2`, [now, limit])
+      return result.rows.map(value => value.path)
+    },
+    async completeFileDeletion(path) {
+      await pool.query('delete from file_deletion_queue where path=$1', [path])
+    },
+    async failFileDeletion(path, error, now) {
+      await pool.query(`update file_deletion_queue set attempts=attempts+1,last_error=$2,
+        next_attempt_at=$3::timestamptz + make_interval(secs => least(3600, (power(2,least(attempts,6))*60)::int))
+        where path=$1`, [path, String(error || 'File deletion failed').slice(0, 2000), now])
     },
     async registerDevice(user, tripId, input) {
       if (!await this.canEditTrip(user.id, tripId)) return null
@@ -588,6 +687,10 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           union select thumb_path from photos where thumb_path is not null and (user_id=$1 or trip_id=any($2::uuid[]))
           union select avatar_path from trip_members where avatar_path is not null and (user_id=$1 or trip_id=any($2::uuid[]))`,
         [user.id, tripIds])
+        for (const { path } of files.rows.filter(value => value.path)) {
+          await client.query(`insert into file_deletion_queue(path) values($1)
+            on conflict(path) do update set next_attempt_at=now()`, [path])
+        }
         if (tripIds.length) await client.query('delete from trips where id=any($1::uuid[])', [tripIds])
         await client.query('delete from photos where user_id=$1', [user.id])
         await client.query('delete from trip_invites where email=$1', [user.email])

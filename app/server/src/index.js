@@ -2,6 +2,7 @@ import { createPostgresRepository } from './postgres.js'
 import { createDiskFileStore } from './files.js'
 import { createSmtpMailer } from './mailer.js'
 import { buildServer } from './app.js'
+import { productionLoggerOptions } from './logging.js'
 
 const required = name => {
   const value = process.env[name]
@@ -30,10 +31,7 @@ const app = await buildServer({
   oauthSecret: required('WAYFARE_OAUTH_SECRET'),
   appleTeamId: required('APPLE_TEAM_ID'),
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
-  logger: {
-    level: process.env.LOG_LEVEL || 'info',
-    redact: ['req.headers.authorization', 'req.headers.cookie'],
-  },
+  logger: productionLoggerOptions(process.env.LOG_LEVEL || 'info'),
 })
 
 const port = Number(process.env.PORT || 3000)
