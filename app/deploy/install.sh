@@ -64,6 +64,8 @@ else
     printf 'WAYFARE_ADMIN_EMAIL=%s\n' "$WAYFARE_ADMIN_EMAIL"
     printf 'APPLE_TEAM_ID=%s\n' "$APPLE_TEAM_ID"
     printf 'APPLE_BUNDLE_ID=ai.threadway.wayfare\n'
+    printf 'ANDROID_PACKAGE_NAME=ai.threadway.wayfare\n'
+    printf 'ANDROID_SHA256_CERT_FINGERPRINTS=\n'
     printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
     printf 'WAYFARE_SESSION_SECRET=%s\n' "$WAYFARE_SESSION_SECRET"
     printf 'WAYFARE_OAUTH_SECRET=%s\n' "$WAYFARE_OAUTH_SECRET"

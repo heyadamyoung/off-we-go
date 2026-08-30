@@ -1,6 +1,6 @@
 # Wayfare
 
-Wayfare is a private trip app with its own iPhone client and a fully self-hosted backend. The VPS owns the PostgreSQL database, resized photo copies, authentication, invitations, GPS history, and web app. No third-party backend-as-a-service is used.
+Wayfare is a private trip app with native iPhone and Android clients and a fully self-hosted backend. The VPS owns the PostgreSQL database, resized photo copies, authentication, invitations, GPS history, and web app. No third-party backend-as-a-service is used.
 
 ## What runs on the VPS
 
@@ -45,13 +45,16 @@ Backups briefly pause API writes so the database and upload archive describe the
 
 The installer writes a root-readable `.env`. [.env.vps.example](.env.vps.example) lists every variable. Never expose `.env`, database/session secrets, or SMTP credentials to the browser.
 
-The web build uses `VITE_API_URL=/api`. For an iPhone build, set the public absolute API URL before syncing:
+The web build uses `VITE_API_URL=/api`. For a native build, set the public absolute API URL before syncing:
 
 ```bash
 VITE_API_URL=https://wayfare.threadway.ai/api pnpm ios:sync
+VITE_API_URL=https://wayfare.threadway.ai/api pnpm android:sync
 ```
 
-The native app uses the regular Apple Photos picker and sends background Core Location fixes to `/api/ingest/track`. iOS still requires photo access and Always Location permission.
+Both native apps use the system photo picker and send background location fixes to `/api/ingest/track`. iOS requires Always Location permission. Android requires precise location and notification permission because it keeps a visible foreground-service notification active while sharing location.
+
+Android HTTPS sign-in links also require the SHA-256 certificate fingerprint used by Google Play App Signing. Add it to `ANDROID_SHA256_CERT_FINGERPRINTS` in the VPS `.env` (comma-separate multiple signing certificates), redeploy, and verify `/.well-known/assetlinks.json` before release.
 
 Public release pages are served at [privacy.html](https://wayfare.threadway.ai/privacy.html) and [support.html](https://wayfare.threadway.ai/support.html). App Store copy, privacy answers, review notes, and the release checklist are in `docs/app-store/`.
 
@@ -134,7 +137,11 @@ pnpm test:server
 pnpm build
 pnpm test
 pnpm ios:sync
+pnpm android:sync
+./android/gradlew -p android testDebugUnitTest assembleDebug
 docker compose config
 ```
 
 The iOS project is in `ios/`. `.github/workflows/ios-build.yml` performs an unsigned iPhone/iPad simulator compile, while `.github/workflows/testflight.yml` creates an automatically signed archive and uploads it to App Store Connect from a GitHub-hosted Mac. Apple credentials remain in GitHub Actions secrets; see `docs/app-store/release-checklist.md`.
+
+The Kotlin Android project is in `android/`. `.github/workflows/android-build.yml` compiles and tests a debug APK with JDK 21 and Android SDK 35. Open it with `pnpm android:open`; release and App Links setup are documented in `docs/google-play/release-checklist.md`.

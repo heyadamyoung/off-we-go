@@ -27,3 +27,21 @@ test('the iOS WKWebView origin can preflight authenticated VPS requests but arbi
   assert.equal(rejected.headers['access-control-allow-origin'], undefined)
   await app.close()
 })
+
+test('the Android WebView origin can preflight authenticated VPS requests', async () => {
+  const app = await buildServer({
+    repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const response = await app.inject({
+    method: 'OPTIONS', url: '/api/trips',
+    headers: {
+      origin: 'https://localhost',
+      'access-control-request-method': 'GET',
+      'access-control-request-headers': 'authorization',
+    },
+  })
+  assert.equal(response.statusCode, 204)
+  assert.equal(response.headers['access-control-allow-origin'], 'https://localhost')
+  await app.close()
+})

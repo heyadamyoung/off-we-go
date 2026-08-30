@@ -20,6 +20,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
   deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 }, maxDevicesPerTrip = 20,
   appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
+  androidPackageName = 'ai.threadway.wayfare', androidCertFingerprints = [],
   trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
   if (!repository) throw new Error('A repository is required')
   if (!mailer) throw new Error('A mailer is required')
@@ -36,7 +37,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   const authEmailLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authIpLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const allowedOrigins = new Set([
-    publicUrl.replace(/\/$/, ''), 'capacitor://localhost', 'ionic://localhost',
+    publicUrl.replace(/\/$/, ''), 'capacitor://localhost', 'ionic://localhost', 'https://localhost',
   ])
   await app.register(cors, {
     origin(origin, callback) { callback(null, !origin || allowedOrigins.has(origin)) },
@@ -62,6 +63,19 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return reply.type('application/json').send({
       applinks: { apps: [], details: [{ appID: `${appleTeamId}.${appleBundleId}`, paths: ['/auth/callback*'] }] },
     })
+  })
+  app.get('/.well-known/assetlinks.json', async (_request, reply) => {
+    if (!androidCertFingerprints.length) {
+      return reply.code(404).send({ error: 'Android app links are not configured' })
+    }
+    return reply.type('application/json').send([{
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: androidPackageName,
+        sha256_cert_fingerprints: androidCertFingerprints,
+      },
+    }])
   })
 
   const mediaSignature = (storagePath, expires) => createHmac('sha256', sessionSecret)

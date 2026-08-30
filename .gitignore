@@ -1,4 +1,5 @@
 *.png
+!app/android/app/src/main/res/**/*.png
 .env*
 !.env.example
 !.env.*.example

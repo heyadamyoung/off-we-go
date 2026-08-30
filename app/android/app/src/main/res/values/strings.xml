@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Wayfare</string>
+    <string name="title_activity_main">Wayfare</string>
+    <string name="package_name">ai.threadway.wayfare</string>
+    <string name="custom_url_scheme">ai.threadway.wayfare</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Trip location sharing</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_wayfare_tracking</string>
+    <string name="capacitor_background_geolocation_notification_color">#E9B968</string>
+</resources>

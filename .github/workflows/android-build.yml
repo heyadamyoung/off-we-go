@@ -1,0 +1,38 @@
+name: Android compile
+
+on:
+  pull_request:
+    paths: ['app/**', '.github/workflows/android-build.yml']
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/android-build.yml']
+  workflow_dispatch:
+
+jobs:
+  debug-build:
+    runs-on: ubuntu-latest
+    env:
+      WAYFARE_DOMAIN: wayfare.threadway.ai
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.6.5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install and synchronize Android
+        run: pnpm install --frozen-lockfile && VITE_API_URL="https://${WAYFARE_DOMAIN}/api" pnpm android:sync
+      - name: Test and compile the Kotlin app
+        run: chmod +x android/gradlew && ./android/gradlew -p android testDebugUnitTest lintDebug assembleDebug

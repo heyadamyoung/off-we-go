@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-const moduleUnderTest = await import('../src/apiClientCore.js').catch(() => null)
-const liveModule = await import('../src/livePositionsCore.js').catch(() => null)
+const moduleUnderTest = await import('../src/api-client-core.ts').catch(() => null)
+const liveModule = await import('../src/live-positions-core.ts').catch(() => null)
 
 test('the VPS client exchanges a magic token, persists the session and authenticates requests', async () => {
   assert.ok(moduleUnderTest?.createApiClient, 'the self-hosted API client has not been implemented')
@@ -58,7 +58,7 @@ test('magic-link continuation only returns to the same-origin OAuth authorizatio
   assert.equal(moduleUnderTest.safeOAuthContinuation('/account', 'https://wayfare.example.com'), null)
 })
 
-test('the API client restores a session from asynchronous iOS secure storage', async () => {
+test('the API client restores a session from asynchronous native secure storage', async () => {
   const stored = JSON.stringify({ accessToken: 'keychain-token', user: { id: 'old', email: 'owner@example.com' } })
   const client = moduleUnderTest.createApiClient({
     baseUrl: '/api',

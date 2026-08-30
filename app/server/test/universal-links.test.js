@@ -20,3 +20,28 @@ test('the VPS publishes the Apple association for secure auth universal links', 
   })
   await app.close()
 })
+
+test('the VPS publishes the Android association for secure auth app links', async () => {
+  const app = await buildServer({
+    repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    androidPackageName: 'ai.threadway.wayfare',
+    androidCertFingerprints: [
+      '12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF',
+    ],
+  })
+  const response = await app.inject({ method: 'GET', url: '/.well-known/assetlinks.json' })
+  assert.equal(response.statusCode, 200)
+  assert.match(response.headers['content-type'], /^application\/json/)
+  assert.deepEqual(response.json(), [{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: 'ai.threadway.wayfare',
+      sha256_cert_fingerprints: [
+        '12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF',
+      ],
+    },
+  }])
+  await app.close()
+})

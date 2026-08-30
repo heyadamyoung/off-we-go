@@ -5,6 +5,10 @@
     reverse_proxy api:3000
   }
 
+  handle /.well-known/assetlinks.json {
+    reverse_proxy api:3000
+  }
+
   handle /.well-known/oauth-authorization-server {
     reverse_proxy api:3000
   }

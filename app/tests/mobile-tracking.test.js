@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { createMobileTracker } from '../src/mobileTrackingCore.js'
-import * as mobilePhotos from '../src/mobilePhotosCore.js'
-import { magicTokenFromUrl } from '../src/mobileAuthCore.js'
+import { createMobileTracker } from '../src/mobile-tracking-core.ts'
+import * as mobilePhotos from '../src/mobile-photos-core.ts'
+import { magicTokenFromUrl } from '../src/mobile-auth-core.ts'
 
 const { galleryPhotosToFiles } = mobilePhotos
 
@@ -254,6 +254,90 @@ test('saved tracking configuration restarts until the user pauses it', async () 
   await pausedRelaunch.forget()
   const signedOutRelaunch = createMobileTracker({ driver: locationDriver(), storage, fetch })
   assert.equal(await signedOutRelaunch.restore(), false)
+})
+
+test('Android requests notification access before starting background location', async () => {
+  const platformCore = await import('../src/mobile-platform-core.ts').catch(() => null)
+  assert.ok(platformCore?.createNativeLocationDriver, 'the Android location driver is missing')
+  const events = []
+  const backgroundGeolocation = {
+    async addWatcher(options, listener) {
+      events.push('location')
+      assert.equal(options.backgroundTitle, 'Wayfare location sharing')
+      assert.equal(typeof listener, 'function')
+      return 'watch-1'
+    },
+    async removeWatcher() {},
+  }
+  const localNotifications = {
+    async checkPermissions() {
+      events.push('check-notifications')
+      return { display: 'prompt' }
+    },
+    async requestPermissions() {
+      events.push('request-notifications')
+      return { display: 'granted' }
+    },
+  }
+  const driver = platformCore.createNativeLocationDriver({
+    backgroundGeolocation, localNotifications, platform: 'android',
+  })
+
+  assert.equal(await driver.addWatcher({ backgroundTitle: 'Wayfare location sharing' }, () => {}), 'watch-1')
+  assert.deepEqual(events, ['check-notifications', 'request-notifications', 'location'])
+})
+
+test('Android does not start background location when its tracking notification is denied', async () => {
+  const { createNativeLocationDriver } = await import('../src/mobile-platform-core.ts')
+  let started = false
+  const driver = createNativeLocationDriver({
+    platform: 'android',
+    backgroundGeolocation: {
+      async addWatcher() { started = true },
+      async removeWatcher() {},
+    },
+    localNotifications: {
+      async checkPermissions() { return { display: 'denied' } },
+      async requestPermissions() { return { display: 'denied' } },
+    },
+  })
+
+  await assert.rejects(
+    driver.addWatcher({}, () => {}),
+    /allow notifications/i,
+  )
+  assert.equal(started, false)
+})
+
+test('Android sends background fixes through native HTTP after the WebView is throttled', async () => {
+  const platformCore = await import('../src/mobile-platform-core.ts')
+  assert.ok(platformCore.createNativeTrackingFetch, 'the Android native HTTP adapter is missing')
+  let request = null
+  const nativeHttp = {
+    async request(options) {
+      request = options
+      return { status: 429, headers: { 'Retry-After': '60' }, data: 'slow down', url: options.url }
+    },
+  }
+  const backgroundFetch = platformCore.createNativeTrackingFetch({
+    nativeHttp, platform: 'android', webFetch: async () => { throw new Error('WebView fetch used') },
+  })
+
+  const response = await backgroundFetch('https://wayfare.example.com/api/ingest/track', {
+    method: 'POST',
+    headers: { authorization: 'Bearer device-token', 'content-type': 'application/json' },
+    body: JSON.stringify({ _type: 'location', lat: 51, lon: -1, tst: 1_800_000_000 }),
+  })
+
+  assert.deepEqual(request, {
+    url: 'https://wayfare.example.com/api/ingest/track',
+    method: 'POST',
+    headers: { authorization: 'Bearer device-token', 'content-type': 'application/json' },
+    data: { _type: 'location', lat: 51, lon: -1, tst: 1_800_000_000 },
+  })
+  assert.equal(response.status, 429)
+  assert.equal(response.ok, false)
+  assert.equal(response.headers.get('retry-after'), '60')
 })
 
 test('Apple Photos selections become uploadable JPEG files in selection order', async () => {

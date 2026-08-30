@@ -6,5 +6,8 @@
   "ios": {
     "contentInset": "never",
     "preferredContentMode": "mobile"
+  },
+  "android": {
+    "useLegacyBridge": true
   }
 }

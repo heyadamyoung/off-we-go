@@ -31,6 +31,9 @@ const app = await buildServer({
   oauthSecret: required('WAYFARE_OAUTH_SECRET'),
   appleTeamId: required('APPLE_TEAM_ID'),
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
+  androidPackageName: process.env.ANDROID_PACKAGE_NAME || 'ai.threadway.wayfare',
+  androidCertFingerprints: (process.env.ANDROID_SHA256_CERT_FINGERPRINTS || '')
+    .split(',').map(value => value.trim()).filter(Boolean),
   logger: productionLoggerOptions(process.env.LOG_LEVEL || 'info'),
 })
 

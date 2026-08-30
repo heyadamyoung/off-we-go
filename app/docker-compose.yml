@@ -38,6 +38,8 @@ services:
       SMTP_FROM: ${SMTP_FROM}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID}
       APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-ai.threadway.wayfare}
+      ANDROID_PACKAGE_NAME: ${ANDROID_PACKAGE_NAME:-ai.threadway.wayfare}
+      ANDROID_SHA256_CERT_FINGERPRINTS: ${ANDROID_SHA256_CERT_FINGERPRINTS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - ./data/uploads:/data/uploads
