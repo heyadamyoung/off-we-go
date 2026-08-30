@@ -23,6 +23,14 @@ const privateText = [
   join('Tivoli', 'Vredenburg'),
   join('Faside ', 'Estate'),
   join('Westlea ', 'House'),
+  join('Anne', ' & Adam'),
+  join('Adam', "'s iPhone"),
+  join('Anne', "'s iPhone"),
+  join("by: '", "Anne'"),
+  join("name: '", "Adam'"),
+  join("by:'", "Adam'"),
+  join("by: '", "Adam'"),
+  join("name:'", "Adam'"),
 ];
 
 const revealingSubjects = [

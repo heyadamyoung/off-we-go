@@ -50,3 +50,28 @@ test('repository privacy scan catches removed files, private text, and revealing
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('repository privacy scan catches identifying demo fixtures', () => {
+  const cwd = fixture();
+  try {
+    const markers = [
+      ['Anne', ' & Adam'].join(''),
+      ['Adam', "'s iPhone"].join(''),
+      ['Anne', "'s iPhone"].join(''),
+      ["by: '", "Anne'"].join(''),
+      ["name: '", "Adam'"].join(''),
+      ["by:'", "Adam'"].join(''),
+      ["by: '", "Adam'"].join(''),
+      ["name:'", "Adam'"].join(''),
+    ];
+    writeFileSync(path.join(cwd, 'fixtures.txt'), markers.join('\n'));
+    commit(cwd, 'Add test fixtures');
+
+    const findings = scanRepository(cwd);
+    for (const marker of markers) {
+      assert.ok(findings.some(({ kind, value }) => kind === 'private-text' && value === marker), marker);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
