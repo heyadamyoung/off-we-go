@@ -68,6 +68,15 @@ img{display:block}
 .tlive .d::after{content:'';position:absolute;left:50%;top:50%;width:21px;height:21px;
   margin:-10.5px 0 0 -10.5px;border-radius:50%;background:rgba(34,197,94,.45);
   animation:ping 2s ease-out infinite;will-change:transform,opacity}
+.tpresence{display:flex;align-items:center;padding-left:7px;isolation:isolate;flex:none}
+.tpresence img,.tpresence .ini,.tpresence .more{width:25px;height:25px;margin-left:-7px;border-radius:50%;
+  border:2px solid var(--bg1);object-fit:cover;background:var(--bg3);display:grid;place-items:center;
+  color:var(--ink2);font-size:9px;font-weight:800;text-transform:uppercase}
+.tpresence .more{font-size:9px;background:var(--line2);color:var(--ink)}
+.people-action{position:relative}
+.people-action .pcnt{position:absolute;right:-5px;top:-6px;min-width:16px;height:16px;padding:0 4px;
+  border-radius:99px;display:grid;place-items:center;background:var(--ink);color:var(--bg1);
+  border:2px solid var(--bg1);font-size:9px;line-height:1;font-weight:900}
 /* transform+opacity only: this runs forever, so it must stay off the main thread.
    Animating box-shadow instead repainted the ticker on every single frame. */
 @keyframes ping{from{transform:scale(.34);opacity:.55}to{transform:scale(1);opacity:0}}
@@ -258,6 +267,7 @@ img{display:block}
   font-weight:800;font-size:14px;text-transform:uppercase}
 .rperson b{display:block;font-size:13.5px;font-weight:700}
 .rperson span{font-size:11.5px;color:var(--ink3)}
+.rperson .viewing-now{font-style:normal;color:var(--ok);font-weight:700}
 .rperson em{margin-left:auto;font-style:normal;font-size:11px;color:var(--ink3);
   border:1px solid var(--line2);border-radius:99px;padding:2px 8px}
 .rperson.pend{opacity:.72}
@@ -606,6 +616,7 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   .tnav{gap:1px;padding:2px}
   .tnav button{width:32px;height:30px}
   .tbtn.ghost{width:34px;height:34px}
+  .tpresence{display:none}
   .ticker{height:56px}
 
   .fcard{width:150px}

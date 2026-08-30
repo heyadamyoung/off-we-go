@@ -36,6 +36,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   const deviceRegistrationLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authEmailLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authIpLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const presenceByTrip = new Map()
+  const presenceTtlMs = 45_000
   const allowedOrigins = new Set([
     publicUrl.replace(/\/$/, ''), 'capacitor://localhost', 'ionic://localhost', 'https://localhost',
   ])
@@ -179,6 +181,23 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return user
   }
 
+  const activePresence = tripId => {
+    const byUser = presenceByTrip.get(tripId)
+    if (!byUser) return []
+    const cutoff = clock().getTime() - presenceTtlMs
+    for (const [userId, clients] of byUser) {
+      for (const [clientId, seenAt] of clients) if (seenAt < cutoff) clients.delete(clientId)
+      if (!clients.size) byUser.delete(userId)
+    }
+    if (!byUser.size) presenceByTrip.delete(tripId)
+    return [...byUser.keys()]
+  }
+
+  const presenceClientId = request => {
+    const value = typeof request.body?.clientId === 'string' ? request.body.clientId.trim() : ''
+    return value && value.length <= 100 ? value : null
+  }
+
   const removeQueuedFile = async path => {
     try {
       await fileStore.remove(path)
@@ -263,6 +282,41 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       canEdit: ['owner', 'editor'].includes(row.members.find(value => value.userId === user.id)?.role),
       me,
     }
+  })
+
+  app.put('/api/trips/:tripId/presence', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const tripId = request.params.tripId
+    if (!await repository.canReadTrip(user.id, tripId)) {
+      return reply.code(403).send({ error: 'You cannot view this trip' })
+    }
+    const clientId = presenceClientId(request)
+    if (!clientId) return reply.code(400).send({ error: 'A presence client id is required' })
+    activePresence(tripId)
+    let byUser = presenceByTrip.get(tripId)
+    if (!byUser) presenceByTrip.set(tripId, byUser = new Map())
+    let clients = byUser.get(user.id)
+    if (!clients) byUser.set(user.id, clients = new Map())
+    clients.set(clientId, clock().getTime())
+    return { userIds: activePresence(tripId) }
+  })
+
+  app.delete('/api/trips/:tripId/presence', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const tripId = request.params.tripId
+    if (!await repository.canReadTrip(user.id, tripId)) {
+      return reply.code(403).send({ error: 'You cannot view this trip' })
+    }
+    const clientId = presenceClientId(request)
+    if (!clientId) return reply.code(400).send({ error: 'A presence client id is required' })
+    const byUser = presenceByTrip.get(tripId)
+    const clients = byUser?.get(user.id)
+    clients?.delete(clientId)
+    if (clients && !clients.size) byUser.delete(user.id)
+    if (byUser && !byUser.size) presenceByTrip.delete(tripId)
+    return reply.code(204).send()
   })
 
   app.patch('/api/trips/:tripId', async (request, reply) => {

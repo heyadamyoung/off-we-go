@@ -187,6 +187,21 @@ export function subscribeToTrip(tripId: Id, onChange: () => void) {
   return () => clearInterval(timer)
 }
 
+export async function updateTripPresence(tripId: Id, clientId: string): Promise<Id[]> {
+  if (isSample(tripId)) return [sampleResult().me.id].filter(Boolean) as Id[]
+  const result = await authClient.request(`${tripPath(tripId)}/presence`, {
+    method: 'PUT', body: { clientId },
+  })
+  return Array.isArray(result.userIds) ? result.userIds : []
+}
+
+export async function leaveTripPresence(tripId: Id, clientId: string): Promise<void> {
+  if (isSample(tripId)) return
+  await authClient.request(`${tripPath(tripId)}/presence`, {
+    method: 'DELETE', body: { clientId }, keepalive: true,
+  })
+}
+
 export async function listDevices(tripId: Id): Promise<Device[]> {
   if (isSample(tripId)) return []
   const values = await authClient.request(`${tripPath(tripId)}/devices`)

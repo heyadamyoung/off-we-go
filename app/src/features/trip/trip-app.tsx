@@ -14,6 +14,7 @@ import { ALL_DAYS } from '../../shared/constants/trip'
 import { PhotosView, TimelineView } from './ui/trip-views'
 import { withFace } from './onboarding'
 import useLiveTrip from './model/use-live-trip'
+import useTripPresence from './model/use-trip-presence'
 import type { MapView, Person, TripData } from '../../shared/model/types'
 
 interface TripAppProps {
@@ -41,6 +42,7 @@ export default function TripApp({ data, onReload }: TripAppProps) {
   const [route, setRoute] = useState(data.route)
   const [family, setFamily] = useState(() => (data.family || []).map(withFace))
   const [me, setMe] = useState(data.me || data.family[0] || { name: 'You', avatar: '' })
+  const viewers = useTripPresence(tripId, family)
   /* No falling back to the first person on the trip: a photograph credited to
      somebody who is not a member belongs to them, not to whoever happens to be
      listed first. They get their initial instead. */
@@ -220,7 +222,8 @@ export default function TripApp({ data, onReload }: TripAppProps) {
         attractionsOn={showAttractions} onToggleAttractions={toggleAttractions}
         sunPhase={mapOverride ? null : sun.phase}
         canEdit={canEdit} editing={editing} onToggleEdit={startEditing}
-        me={me} onSignOut={hasBackend ? () => signOut().then(() => window.location.reload()) : null} />
+        me={me} viewers={viewers}
+        onSignOut={hasBackend ? () => signOut().then(() => window.location.reload()) : null} />
 
       <div className="stagewrap">
         <MapCanvas theme={mapTheme} tint={sun} view={view} onView={handleView}
@@ -313,6 +316,7 @@ export default function TripApp({ data, onReload }: TripAppProps) {
       {share && <PeopleModal onClose={() => setShare(false)} toast={toast} tripId={tripId}
                              family={family} canEdit={canEdit} trip={trip} onSaveTrip={saveTrip}
                              me={me} onSaveMe={saveMe} phones={phones} onPhonesChange={setPhones}
+                             viewers={viewers}
                              appLink={window.location.origin + window.location.pathname
                                       + (trip.slug ? `?t=${trip.slug}` : '')} />}
       {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhoto} live={live} stops={stops} toast={toast} />}

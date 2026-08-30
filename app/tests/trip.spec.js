@@ -83,6 +83,15 @@ test('the header People action stays compact at tablet widths', async ({ page })
   expect(people.width).toBeLessThanOrEqual(100)
 })
 
+test('shows who is currently viewing in the header and roster', async ({ page }) => {
+  await open(page)
+  await expect(page.getByLabel('Viewing now: Alex')).toBeVisible()
+
+  await page.getByRole('button', { name: 'People' }).click()
+  const alex = page.locator('.rperson', { hasText: 'Alex' })
+  await expect(alex).toContainText('Viewing now')
+})
+
 test('a pin selects its stop, a drag does not', async ({ page }) => {
   await open(page)
   const pin = await centreOnStop(page, PHOTOLESS)

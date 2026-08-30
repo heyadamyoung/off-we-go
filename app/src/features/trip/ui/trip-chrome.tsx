@@ -18,10 +18,26 @@ const LivePill = memo(function LivePill({ resetKey }: any) {
   return <div className="tlive"><span className="d" />LIVE<span className="n">{label}</span></div>
 })
 
+const PresenceFaces = memo(function PresenceFaces({ viewers = [] }: any) {
+  if (!viewers.length) return null
+  const shown = viewers.slice(0, 3)
+  const names = viewers.map(person => person.name).join(', ')
+  return (
+    <div className="tpresence" aria-label={`Viewing now: ${names}`}>
+      {shown.map(person => person.avatar
+        ? <img key={person.id || person.name} src={person.avatar} alt=""
+               title={`${person.name} is viewing now`} />
+        : <span key={person.id || person.name} className="ini"
+                title={`${person.name} is viewing now`}>{(person.name || '?')[0]}</span>)}
+      {viewers.length > shown.length && <span className="more">+{viewers.length - shown.length}</span>}
+    </div>
+  )
+})
+
 const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
                                      liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
                                      sunPhase, canEdit, editing, onToggleEdit, me, onSignOut,
-                                     attractionsOn, onToggleAttractions }: any) {
+                                     attractionsOn, onToggleAttractions, viewers }: any) {
   const Item = ({ children, hot = false }: any) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
   return (
     <header className="ticker">
@@ -63,8 +79,10 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
           <Icon n={theme === 'dark' ? 'sun' : 'moon'} s={15} />
         </button>
         <LivePill resetKey={liveKey} />
-        <button className="tbtn hot people-action" onClick={onPeople} title="People">
+        <PresenceFaces viewers={viewers} />
+        <button className="tbtn hot people-action" onClick={onPeople} title="People" aria-label="People">
           <Icon n="users" s={14} c="#0a0c10" w={2.2} /><span className="lbl">People</span>
+          {viewers?.length ? <span className="pcnt" aria-hidden="true">{viewers.length}</span> : null}
         </button>
         {onSignOut && (
           <button className="tbtn ghost" onClick={onSignOut} title={`Signed in as ${me?.name || ''} — sign out`}>

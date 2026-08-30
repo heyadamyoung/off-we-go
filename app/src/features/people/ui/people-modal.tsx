@@ -230,13 +230,14 @@ function SetupCard({ card, onClose, toast, tracking, onEnableTracking }: any) {
 }
 
 function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, onSaveTrip, me, onSaveMe,
-                       phones = [], onPhonesChange }: any) {
+                       phones = [], onPhonesChange, viewers = [] }: any) {
   const [invites, setInvites] = useState([])
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [role, setRole] = useState('viewer')
   const [busy, setBusy] = useState(false)
   const canManage = me?.memberRole === 'owner'
+  const viewingIds = new Set(viewers.map(person => person.id))
 
   useEffect(() => {
     if (!canManage) return
@@ -308,7 +309,9 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
           {family.map(f => (
             <div className="rperson" key={f.id}>
               {f.avatar ? <img src={f.avatar} alt="" /> : <span className="ini">{(f.name || '?')[0]}</span>}
-              <div><b>{f.name}</b><span>{f.role}</span></div>
+              <div><b>{f.name}</b><span>{f.role}
+                {viewingIds.has(f.id) && <i className="viewing-now"> · Viewing now</i>}
+              </span></div>
               <em>{f.memberRole === 'owner' ? 'Owner' : f.memberRole === 'editor' ? 'Editor' : 'Viewer'}</em>
               {canManage && f.id !== me.id && (
                 <button className="wbtn sm" onClick={() => removePerson(f)}>Remove</button>
