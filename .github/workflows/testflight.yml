@@ -107,7 +107,6 @@ jobs:
             -archivePath "$RUNNER_TEMP/Wayfare.xcarchive" \
             -exportPath "$RUNNER_TEMP/WayfareExport" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -allowProvisioningUpdates \
             -authenticationKeyPath "$APP_STORE_CONNECT_KEY_PATH" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"

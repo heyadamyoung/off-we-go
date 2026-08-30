@@ -46,6 +46,14 @@ test('the export configuration CLI emits the plist used by the release workflow'
   assert.match(result.stdout, /<string>Wayfare App Store CI<\/string>/);
 });
 
+test('the manual-signing workflow does not request automatic provisioning updates', async () => {
+  const workflow = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, '..', '.github', 'workflows', 'testflight.yml'), 'utf8'),
+  );
+
+  assert.doesNotMatch(workflow, /-allowProvisioningUpdates/);
+});
+
 test('the iOS app declares that it does not use non-exempt encryption', async () => {
   const infoPlist = await import('node:fs/promises').then(({ readFile }) =>
     readFile(path.join(appRoot, 'ios/App/App/Info.plist'), 'utf8'),
