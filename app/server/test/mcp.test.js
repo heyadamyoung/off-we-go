@@ -56,9 +56,12 @@ async function authorize(app, authorization, clientId, scopes = 'trips:read trip
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
   assert.equal(page.statusCode, 200)
   assert.match(page.headers['content-security-policy'], /default-src 'none'/)
+  assert.match(page.headers['content-security-policy'], /img-src 'self'/)
   assert.match(page.body, /Codex Desktop/)
   assert.match(page.body, /Unverified client/)
-  assert.match(page.body, /Redirect destination: <strong>http:\/\/127\.0\.0\.1:3210<\/strong>/)
+  assert.match(page.body, /Returns to Codex Desktop on this device/)
+  assert.match(page.body, /<code>http:\/\/127\.0\.0\.1:3210<\/code>/)
+  assert.match(page.body, /<details class="technical-details">/)
   assert.match(page.body, /View your trips/)
   if (scopes.includes('trips:write')) assert.match(page.body, /Create and edit trip details/)
   const requestToken = page.body.match(/name="request_token" value="([^"]+)"/)?.[1]
@@ -132,6 +135,32 @@ test('registers only public clients with safe exact redirect URIs', async () => 
   })
   assert.equal(unsafe.statusCode, 400)
   assert.equal(unsafe.json().error, 'invalid_redirect_uri')
+  await app.close()
+})
+
+test('describes an unverified redirect without upgrading the client identity', async () => {
+  const { app } = await fixture()
+  const registration = await app.inject({
+    method: 'POST', url: '/oauth/register',
+    payload: {
+      client_name: 'Not Codex',
+      redirect_uris: ['https://client.example/callback'],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    },
+  })
+  const query = new URLSearchParams({
+    response_type: 'code', client_id: registration.json().client_id,
+    redirect_uri: 'https://client.example/callback', scope: 'trips:read', state: 'client-state',
+    code_challenge: pkce('wayfare-test-pkce-verifier-that-is-more-than-forty-three-characters'),
+    code_challenge_method: 'S256', resource: `${root}/mcp`,
+  })
+  const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
+  assert.equal(page.statusCode, 200)
+  assert.match(page.body, /Returns to Not Codex/)
+  assert.doesNotMatch(page.body, /Returns to Not Codex on this device/)
+  assert.match(page.body, /<code>https:\/\/client\.example<\/code>/)
   await app.close()
 })
 
