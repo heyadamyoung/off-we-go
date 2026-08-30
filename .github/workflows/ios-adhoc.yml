@@ -48,17 +48,20 @@ jobs:
         env:
           IOS_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
           IOS_ADHOC_PROVISIONING_PROFILE: ${{ secrets.IOS_ADHOC_PROVISIONING_PROFILE }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/wayfare-adhoc-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           CERTIFICATE_PATH="$RUNNER_TEMP/wayfare-distribution.p12"
           PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
-          PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_iPad_Ad_Hoc.mobileprovision"
+          APP_STORE_PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_App_Store_CI.mobileprovision"
+          ADHOC_PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_iPad_Ad_Hoc.mobileprovision"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
           mkdir -p "$PROFILE_DIRECTORY"
-          printf '%s' "$IOS_ADHOC_PROVISIONING_PROFILE" | base64 -D > "$PROFILE_PATH"
+          printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 -D > "$APP_STORE_PROFILE_PATH"
+          printf '%s' "$IOS_ADHOC_PROVISIONING_PROFILE" | base64 -D > "$ADHOC_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -120,4 +123,3 @@ jobs:
               --prerelease
           fi
           gh release upload "$TAG" "$RUNNER_TEMP/Wayfare.ipa" --clobber
-
