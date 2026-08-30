@@ -19,6 +19,33 @@ async function open(page) {
 const stopNames = page =>
   page.locator('.fcard .t b').allTextContents()
 
+test('the sign-in screen gives the Wayfare icon enough room to be legible', async ({ page }) => {
+  await page.goto('/')
+  const size = await page.evaluate(() => {
+    const screen = document.createElement('div')
+    screen.className = 'bootIn'
+    screen.innerHTML = '<span class="mk brand"><img src="/wayfare-icon.png" alt=""></span>'
+    document.body.append(screen)
+    const box = screen.querySelector('.mk').getBoundingClientRect()
+    screen.remove()
+    return { width: box.width, height: box.height }
+  })
+
+  expect(size).toEqual({ width: 64, height: 64 })
+})
+
+test('publishes the Wayfare mark as a multi-size favicon', async ({ page, request }) => {
+  await page.goto('/')
+  const href = await page.locator('link[rel="icon"]').getAttribute('href')
+  expect(href).toBe('/favicon.ico')
+
+  const response = await request.get(href)
+  expect(response.ok()).toBe(true)
+  const icon = await response.body()
+  expect([...icon.subarray(0, 4)]).toEqual([0, 0, 1, 0])
+  expect(icon.readUInt16LE(4)).toBe(4)
+})
+
 /* Getting a reliably clickable pin needs care: photo stacks are drawn above and
    to the right of their stop's pin, so at some zooms they cover neighbours. Fly
    to a stop that has no photos and it lands centred and uncovered every time.
