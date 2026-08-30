@@ -1,0 +1,49 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { buildServer } from '../src/app.js'
+import { createMemoryRepository } from './memory-repository.js'
+
+const jsonPost = (url, body, token) => fetch(url, {
+  method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+  body: JSON.stringify(body),
+})
+
+test('a photo without EXIF coordinates is placed from the uploader GPS trail by capture time', async t => {
+  const sent = []
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
+  const app = await buildServer({
+    repository,
+    fileStore: {
+      async storePhoto({ tripId }) { return { storagePath: `${tripId}/photo.jpg`, thumbPath: `${tripId}/photo.thumb.jpg` } },
+      async remove() {}, async read() { return Buffer.from('image') },
+    },
+    mailer: { async send(message) { sent.push(message) } },
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    clock: () => new Date('2027-06-04T13:25:00.000Z'),
+  })
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  t.after(() => app.close())
+  const origin = `http://127.0.0.1:${app.server.address().port}`
+
+  await jsonPost(`${origin}/api/auth/magic-link`, { email: 'owner@example.com' })
+  const magic = new URL(sent[0].webUrl).searchParams.get('token')
+  const login = await jsonPost(`${origin}/api/auth/exchange`, { token: magic })
+  const accessToken = (await login.json()).accessToken
+  const trip = await (await jsonPost(`${origin}/api/trips`, { title: 'Photo trail' }, accessToken)).json()
+  const device = await (await jsonPost(`${origin}/api/trips/${trip.id}/devices`, { name: 'iPhone' }, accessToken)).json()
+  await jsonPost(`${origin}/api/ingest/track`, {
+    _type: 'location', lat: 55.9533, lon: -3.1883, tst: Date.parse('2027-06-04T13:20:00Z') / 1000, acc: 8,
+  }, device.token)
+
+  const form = new FormData()
+  form.set('photo', new Blob([Buffer.from('jpeg')], { type: 'image/jpeg' }), 'photo.jpg')
+  form.set('takenAt', '2027-06-04T13:22:00.000Z')
+  const uploaded = await fetch(`${origin}/api/trips/${trip.id}/photos`, {
+    method: 'POST', headers: { authorization: `Bearer ${accessToken}` }, body: form,
+  })
+  assert.equal(uploaded.status, 201)
+  const photo = await uploaded.json()
+  assert.equal(photo.lng, -3.1883)
+  assert.equal(photo.lat, 55.9533)
+  assert.equal(photo.locationSource, 'trail')
+})
