@@ -2,22 +2,39 @@
   "name": "wayfare-studio",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "pnpm@10.6.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:unit": "node --test tests/mobile-tracking.test.js tests/vps-api-client.test.js",
+    "test:server": "node --test server/test/*.test.js",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
+    "ios:sync": "pnpm build && cap sync ios",
+    "ios:open": "cap open ios",
     "seed:attractions": "node scripts/seed-attractions.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
+    "@capacitor-community/background-geolocation": "1.2.26",
+    "@capacitor/app": "7.1.0",
+    "@capacitor/camera": "7.0.2",
+    "@capacitor/core": "7.6.8",
+    "@capacitor/ios": "7.6.8",
+    "@capacitor/preferences": "7.0.4",
+    "@fastify/cors": "11",
+    "@fastify/multipart": "9",
+    "fastify": "5",
     "maplibre-gl": "^6.5.0",
+    "nodemailer": "7",
+    "pg": "8",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "sharp": "0.34"
   },
   "devDependencies": {
+    "@capacitor/cli": "7.6.8",
     "@playwright/test": "^1.62.1",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.2"
