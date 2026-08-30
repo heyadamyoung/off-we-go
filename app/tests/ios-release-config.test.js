@@ -6,6 +6,27 @@ import test from 'node:test';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+test('archive arguments leave dependency bundle identifiers untouched', async () => {
+  const { createArchiveArguments } = await import('../scripts/iosArchive.mjs');
+
+  assert.deepEqual(createArchiveArguments({
+    archivePath: '/tmp/Wayfare.xcarchive',
+    teamId: 'R65UN25Q64',
+    buildNumber: '42',
+    domain: 'wayfare.threadway.ai',
+  }), [
+    '-workspace', 'ios/App/App.xcworkspace',
+    '-scheme', 'App',
+    '-configuration', 'Release',
+    '-destination', 'generic/platform=iOS',
+    '-archivePath', '/tmp/Wayfare.xcarchive',
+    'DEVELOPMENT_TEAM=R65UN25Q64',
+    'CURRENT_PROJECT_VERSION=42',
+    'WAYFARE_DOMAIN=wayfare.threadway.ai',
+    'clean', 'archive',
+  ]);
+});
+
 test('the TestFlight export configuration uploads a manually signed App Store build', async () => {
   const { createExportOptions } = await import('../scripts/iosReleaseCore.mjs');
 
