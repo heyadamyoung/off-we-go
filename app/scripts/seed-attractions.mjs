@@ -3,14 +3,13 @@
    Seed the attractions table.
 
    Walks a region in ten-kilometre cells — the largest circle Wikipedia's
-   geosearch will answer — and upserts everything worth a pin into Supabase.
+   geosearch will answer — and upserts everything worth a pin into PostgreSQL.
 
    Run it once per region, from a machine, never from the browser: it needs the
    service_role key, which bypasses row level security and must never be shipped
    to a client.
 
-     SUPABASE_URL=https://xxxx.supabase.co \
-     SUPABASE_SERVICE_ROLE=eyJhbGci... \
+     DATABASE_URL=postgresql://wayfare:password@localhost:5432/wayfare \
      node scripts/seed-attractions.mjs
 
    By default it seeds the Netherlands and Scotland, this trip's two halves.
@@ -26,7 +25,7 @@
    pass refreshes rather than duplicates, and a run that dies halfway can simply
    be started again.
    =========================================================================== */
-import { createClient } from '@supabase/supabase-js'
+import pg from 'pg'
 import { cellsCovering, attractionsInCell, isHeadline, setApiHeaders,
          setApiThrottle, extractsFor } from '../src/places.js'
 
@@ -37,21 +36,12 @@ setApiThrottle(500)
 
 const dryRun = process.argv.includes('--dry-run')
 
-const URL_ = process.env.SUPABASE_URL
-// Supabase calls it the secret key now and called it service_role before.
-const KEY_ = process.env.SUPABASE_SECRET_KEY ||
-             process.env.SUPABASE_SERVICE_ROLE ||
-             process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!dryRun && (!URL_ || !KEY_)) {
+const DATABASE_URL = process.env.DATABASE_URL
+if (!dryRun && !DATABASE_URL) {
   console.error(`
 Missing credentials.
 
-  SUPABASE_URL            your project url, from Settings -> API
-  SUPABASE_SECRET_KEY     the secret key on that same page (sb_secret_...)
-
-The secret key bypasses row level security entirely. Keep it out of .env.local,
-out of the repository, and out of anything the browser can read.
+  DATABASE_URL  PostgreSQL connection string for the Wayfare database
 `)
   process.exit(1)
 }
@@ -86,7 +76,8 @@ if (boxArg) {
   regions = Object.values(REGIONS)
 }
 
-const db = dryRun ? null : createClient(URL_, KEY_, { auth: { persistSession: false } })
+const db = dryRun ? null : new pg.Client({ connectionString: DATABASE_URL })
+if (db) await db.connect()
 
 const pause = ms => new Promise(r => setTimeout(r, ms))
 const rows = new Map()          // page id -> row, deduplicated across overlapping cells
@@ -97,12 +88,19 @@ async function flush() {
   rows.clear()
   if (dryRun) return all.length
   let written = 0
-  for (let i = 0; i < all.length; i += 500) {
-    const chunk = all.slice(i, i + 500)
-    const { error } = await db.from('attractions').upsert(chunk, { onConflict: 'id' })
-    if (error) throw new Error(`upsert failed: ${error.message}`)
-    written += chunk.length
-  }
+  await db.query('begin')
+  try {
+    for (const row of all) {
+      await db.query(`insert into attractions(id,name,descr,category,image_file,lng,lat,headline)
+        values($1,$2,$3,$4,$5,$6,$7,$8) on conflict(id) do update set
+        name=excluded.name,descr=excluded.descr,category=excluded.category,
+        image_file=excluded.image_file,lng=excluded.lng,lat=excluded.lat,
+        headline=excluded.headline,updated_at=now()`,
+      [row.id, row.name, row.descr, row.category, row.image_file, row.lng, row.lat, row.headline])
+    }
+    await db.query('commit')
+    written = all.length
+  } catch (error) { await db.query('rollback'); throw error }
   return written
 }
 
@@ -157,9 +155,7 @@ async function fillExtracts() {
   const COLUMNS = 'id,name,descr,category,image_file,lng,lat,headline'
   let filled = 0
   for (;;) {
-    const { data: rows, error } = await db.from('attractions')
-      .select(COLUMNS).is('extract', null).limit(200)
-    if (error) throw new Error(`select failed: ${error.message}`)
+    const rows = (await db.query(`select ${COLUMNS} from attractions where extract is null order by id limit 200`)).rows
     if (!rows.length) break
 
     // A whole batch failing is a rate limit, not a dead end: wait longer and
@@ -170,9 +166,8 @@ async function fillExtracts() {
       catch { await pause(5000 * (attempt + 1)) }
     }
     if (!text) { console.log('  Wikipedia is refusing; stopping here, run again to carry on'); break }
-    const { error: wrote } = await db.from('attractions')
-      .upsert(rows.map(r => ({ ...r, extract: text.get(r.id) ?? '' })), { onConflict: 'id' })
-    if (wrote) throw new Error(`upsert failed: ${wrote.message}`)
+    for (const row of rows) await db.query('update attractions set extract=$2,updated_at=now() where id=$1',
+      [row.id, text.get(row.id) ?? ''])
 
     filled += rows.length
     if (filled % 2000 === 0) console.log(`  ${filled} paragraphs so far`)
@@ -193,6 +188,7 @@ if (dryRun) {
 
 Dry run: ${total} attractions found. Nothing was written anywhere.`)
 } else {
-  const { count } = await db.from('attractions').select('id', { count: 'exact', head: true })
+  const count = (await db.query('select count(*)::int count from attractions')).rows[0].count
   console.log(`\nDone. ${total} rows written this run; ${count} attractions in the table.`)
+  await db.end()
 }
