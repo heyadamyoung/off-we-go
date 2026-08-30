@@ -2,10 +2,11 @@ import { defineConfig, devices } from '@playwright/test'
 
 /* The suite runs against the production build in sample mode — no credentials,
    no database — so it exercises the real bundle and needs nothing set up.
-   With VITE_SUPABASE_* present the app would show a sign-in gate instead, which
+   With VITE_API_URL present the app would show a sign-in gate instead, which
    is why the web server is started with them explicitly cleared. */
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.js',
   fullyParallel: false,
   workers: 1,
   timeout: 90_000,
@@ -22,6 +23,6 @@ export default defineConfig({
     url: 'http://localhost:4180',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
+    env: { VITE_API_URL: '' },
   },
 })

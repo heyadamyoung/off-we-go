@@ -127,6 +127,19 @@ test('search matches a stop by its photo caption', async ({ page }) => {
   expect((await stopNames(page)).length).toBeGreaterThan(1)
 })
 
+test('photo upload previews multiple Apple Photos selections and lets them be replaced', async ({ page }) => {
+  await open(page)
+  await page.locator('button[title="Add a photo"]').click()
+  await page.locator('.modal input[type="file"]').setInputFiles([
+    { name: 'camera-one.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) },
+    { name: 'camera-two.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) },
+  ])
+
+  await expect(page.locator('.previews .preview')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: 'Choose different photos' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add 2 to the map' })).toBeEnabled()
+})
+
 test('editing a caption shows immediately in the open viewer', async ({ page }) => {
   await open(page)
   await page.locator('.tnav button[title="photos"]').click()

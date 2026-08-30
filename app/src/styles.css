@@ -31,6 +31,7 @@ img{display:block}
 ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:9px}
 ::-webkit-scrollbar-track{background:transparent}
 .app{height:100%;display:flex;flex-direction:column;overflow:hidden}
+.native-ios .app{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
 
 /* ---------------- ticker ---------------- */
 .ticker{height:52px;flex:none;display:flex;align-items:stretch;border-bottom:1px solid var(--line);
@@ -38,6 +39,8 @@ img{display:block}
 .tlogo{display:flex;align-items:center;gap:9px;padding:0 18px;font-weight:800;font-size:14px;
   letter-spacing:-.01em;border-right:1px solid var(--line);flex:none}
 .tlogo .mk{width:22px;height:22px;border-radius:6px;background:var(--hot);display:grid;place-items:center}
+.mk.brand{overflow:hidden;background:transparent}
+.mk.brand img{display:block;width:100%;height:100%;object-fit:cover}
 .tflow{flex:1;display:flex;align-items:center;gap:0;padding:0 18px;font-size:12.5px;overflow:hidden;
   white-space:nowrap;min-width:0;color:var(--ink2)}
 .tflow .crew{font-weight:800;letter-spacing:.06em;color:var(--ink);flex:none}
@@ -241,6 +244,8 @@ img{display:block}
 .bootIn.wide{max-width:420px}
 .bootIn.wide form{width:100%;margin-top:4px}
 .bootIn .warn{color:#ff8b6b}
+.btn.danger{border-color:#8e3b33;color:#ff9b87}
+.btn.danger:hover{background:#401f1b;border-color:#c75a49}
 .bootIn strong{color:var(--ink)}
 
 /* roster */
@@ -266,6 +271,7 @@ img{display:block}
 
 .bootIn{display:flex;flex-direction:column;align-items:center;gap:11px;text-align:center;padding:24px}
 .bootIn .mk{width:30px;height:30px;border-radius:9px;background:var(--hot);display:grid;place-items:center}
+.bootIn .mk.brand{background:transparent}
 .bootIn b{font-size:16px;font-weight:800}
 .bootIn p{margin:0;font-size:13px;color:var(--ink3);max-width:380px;line-height:1.55}
 
@@ -559,7 +565,8 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 .drop:hover{border-color:var(--hot);color:var(--ink2)}
 .drop b{font-size:13.5px;color:var(--ink)}
 .drop span{font-size:12px}
-.preview{width:100%;height:180px;object-fit:cover;border-radius:10px}
+.previews{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-height:260px;overflow:auto}
+.preview{width:100%;height:112px;object-fit:cover;border-radius:10px}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label{font-size:12px;font-weight:700;color:var(--ink3)}
 .field input{height:38px;border-radius:9px;background:var(--bg3);border:1px solid var(--line2);padding:0 12px;
@@ -628,3 +635,29 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   .tbtn.ghost,.tbtn.people{width:32px}
   .tlogo{padding:0 9px}
 }
+
+
+/* ---- phones: initials on a live marker, and the set-up card ---------------- */
+.mme .ini{position:absolute;inset:8px;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;
+  background:var(--bg3);color:var(--ink);font-weight:800;font-size:17px;border:2px solid var(--bg1)}
+.setup{display:flex;flex-direction:column;gap:9px;padding:14px;border:1px solid var(--line2);border-radius:12px;
+  background:var(--bg2)}
+.setup>b{font-size:14px;font-weight:800;letter-spacing:-.01em}
+.setup em{font-style:normal;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--hot);margin-top:4px}
+.setup .kv{display:grid;grid-template-columns:118px 1fr 38px;gap:8px;align-items:center}
+.setup .kv span{font-size:11.5px;color:var(--ink3)}
+.setup code,.setup .fine code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;
+  color:var(--ink);background:var(--bg3);border:1px solid var(--line2);border-radius:7px;padding:6px 8px;
+  word-break:break-all;line-height:1.35;cursor:copy}
+.setup .fine code{padding:1px 5px;cursor:text}
+.setup .btn{align-self:flex-start;margin-top:4px}
+.tracking{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:12px;
+  border:1px solid var(--line2);border-radius:12px;background:var(--bg2)}
+.tracking .trackdot{width:10px;height:10px;border-radius:50%;background:var(--ink3);box-shadow:0 0 0 4px var(--bg3)}
+.tracking.tracking .trackdot{background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft)}
+.tracking.waiting .trackdot,.tracking.starting .trackdot{background:var(--hot);box-shadow:0 0 0 4px var(--hot-soft)}
+.tracking>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tracking>div b{font-size:13px}
+.tracking>div span{font-size:11.5px;line-height:1.4;color:var(--ink3)}
+.tracking .btn{height:32px}

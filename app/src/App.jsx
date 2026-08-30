@@ -13,12 +13,15 @@ import { findSights, describePlace, radiusForView, imageForPage, enrichStops,
          cellsCovering, attractionsInCell, attractionThumb, isHeadline,
          articleSummary } from './places'
 import {
-  hasBackend, supabase, loadTrip, createStop, updateStop, deleteStop,
+  hasBackend, authClient, completeBrowserLogin, loadTrip, createStop, updateStop, deleteStop,
   addComment as saveComment, setLike, listInvites, invitePerson, revokeInvite,
   uploadPhoto, updatePhoto, deletePhoto, replaceRoute, createTrip, updateTrip,
   updateMe, uploadAvatar, deleteComment, subscribeToTrip,
-  sendMagicLink, signOut, loadAttractions,
+  sendMagicLink, signOut, deleteAccount, loadAttractions,
+  loadLive, subscribeToPositions, listDevices, registerDevice, removeDevice,
+  functionsUrl,
 } from './backend'
+import { isNativeApp, initializeNativeServices, mobileTracker, pickNativePhotos } from './mobile'
 
 /* =========================================================================
    Icons
@@ -204,6 +207,7 @@ function useDaylight(lngLat, everyMs = 60000) {
    and repainted. CARTO publish these styles openly — no key, no account.
    ========================================================================= */
 const ACCENT = '#ff7a3d'
+const TRAIL = '#3ecf8e'    // where the phones actually went, as distinct from the route drawn by hand
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
 const STYLE = {
@@ -227,6 +231,40 @@ function routeKm(coords) {
     if (m < 50000) d += m
   }
   return d / 1000
+}
+
+/* Ground covered on foot from the phones' fixes: each phone's trail in turn,
+   keeping only the steps that were clearly a step (GPS drifts a few metres
+   standing still) and clearly not a vehicle. The longest of the phones'
+   totals, since two phones in one pocket walked the same distance once. */
+function trailKm(fixes) {
+  const by = new Map()
+  for (const f of fixes) {
+    if (f.accuracy != null && f.accuracy > 80) continue
+    if (!by.has(f.deviceId)) by.set(f.deviceId, [])
+    by.get(f.deviceId).push(f)
+  }
+  let best = 0
+  for (const list of by.values()) {
+    let d = 0
+    for (let i = 1; i < list.length; i++) {
+      const m = metres([list[i - 1].lng, list[i - 1].lat], [list[i].lng, list[i].lat])
+      const dt = (list[i].at - list[i - 1].at) / 1000
+      if (m < 12 || dt <= 0) continue
+      if (m / dt > 40 / 3.6) continue      // faster than 40 km/h is a bus, a train or a plane
+      d += m
+    }
+    best = Math.max(best, d)
+  }
+  return best / 1000
+}
+
+function agoLabel(d) {
+  const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000))
+  if (s < 45) return 'just now'
+  if (s < 3600) return `${Math.round(s / 60)} min ago`
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`
+  return `${Math.round(s / 86400)} d ago`
 }
 
 const lineOf = coords => ({
@@ -288,6 +326,29 @@ function useGliding(target, ms = 800) {
     return () => cancelAnimationFrame(raf.current)
   }, [target, ms])
   return pt || target
+}
+
+const linesOf = lines => ({
+  type: 'FeatureCollection',
+  features: lines.map(c => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: c } })),
+})
+
+// One phone on the map — or, with no phone reporting, the family's best-known
+// position. Eased between fixes so it walks rather than teleports.
+function LiveMarker({ map, lng, lat, avatar, name, title, onClick, movedRef }) {
+  const target = useMemo(() => [lng, lat], [lng, lat])
+  const pt = useGliding(target, 800)
+  return (
+    <MapMarker map={map} lng={pt[0]} lat={pt[1]}>
+      <div className="mme" title={title}
+           onClick={e => { e.stopPropagation(); if (!movedRef.current) onClick?.() }}>
+        <span className="halo" />
+        {avatar ? <img src={avatar} alt="" draggable={false} />
+                : <span className="ini">{(name || '?')[0]}</span>}
+        <span className="dot" />
+      </div>
+    </MapMarker>
+  )
 }
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] }
@@ -419,9 +480,10 @@ function useAttractions(view, enabled) {
 }
 
 const MapCanvas = memo(function MapCanvas({
-  view, onView, theme, tint, interactive = true, route = [], stops = [], photos = [], live = null,
+  view, onView, theme, tint, interactive = true, route = [], stops = [], photos = [],
+  markers = [], trail = [],
   selectedStop, onStop, onPhoto, onLive, labels = false, highlight = null,
-  editing = false, onMapClick, onStopMove, liveAvatar, places = [], onPickPlace,
+  editing = false, onMapClick, onStopMove, places = [], onPickPlace,
   attractions = null, onPickAttraction, children,
 }) {
   const holder = useRef(null)
@@ -431,6 +493,7 @@ const MapCanvas = memo(function MapCanvas({
 
   const oref = useRef(onView); oref.current = onView
   const routeRef = useRef(route); routeRef.current = route
+  const trailRef = useRef(trail); trailRef.current = trail
   const themeRef = useRef(theme); themeRef.current = theme
   const tintRef = useRef(tint); tintRef.current = tint
   const viewRef = useRef(view); viewRef.current = view
@@ -499,6 +562,13 @@ const MapCanvas = memo(function MapCanvas({
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ACCENT, 'line-width': 3.5 },
       })
+      // Where the phones actually went, over the route that was drawn by hand.
+      map.addSource('trail', { type: 'geojson', data: linesOf(trailRef.current) })
+      map.addLayer({
+        id: 'trail-line', type: 'line', source: 'trail',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': TRAIL, 'line-width': 2.6, 'line-opacity': 0.9, 'line-dasharray': [1.6, 1.4] },
+      })
     }
     if (map.isStyleLoaded()) addRoute()
     map.on('style.load', addRoute)
@@ -510,6 +580,12 @@ const MapCanvas = memo(function MapCanvas({
     const src = map.getSource('route')
     if (src) src.setData(lineOf(route))
   }, [map, route])
+
+  useEffect(() => {
+    if (!map) return
+    const src = map.getSource('trail')
+    if (src) src.setData(linesOf(trail))
+  }, [map, trail])
 
   /* Attractions are drawn by the map itself rather than as DOM markers. There
      can be thousands of them across a country, and a thousand absolutely
@@ -677,8 +753,6 @@ const MapCanvas = memo(function MapCanvas({
     return out
   }, [photos, stops])
 
-  const livePt = useGliding(live, 800)
-
   return (
     <div className={'mapcanvas' + (moving ? ' busy' : '') + (dragging ? ' drag' : '')
                      + (editing ? ' editing' : '')} ref={holder}>
@@ -722,16 +796,10 @@ const MapCanvas = memo(function MapCanvas({
         </MapMarker>
       ))}
 
-      {map && livePt && (
-        <MapMarker map={map} lng={livePt[0]} lat={livePt[1]}>
-          <div className="mme" onClick={e => { e.stopPropagation(); if (!moved.current) onLive?.() }}
-               title="The family is here">
-            <span className="halo" />
-            <img src={liveAvatar} alt="" draggable={false} />
-            <span className="dot" />
-          </div>
-        </MapMarker>
-      )}
+      {map && markers.map(m => (
+        <LiveMarker key={m.key} map={map} lng={m.lng} lat={m.lat} avatar={m.avatar} name={m.name}
+                    title={m.title} onClick={onLive} movedRef={moved} />
+      ))}
 
       {children}
       <div className="attrib">© OpenStreetMap · CARTO</div>
@@ -850,7 +918,7 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
       <div className="vside">
         <div className="vminimap">
           <MapCanvas theme={theme} tint={tint} interactive={false} view={mini} onView={noop}
-            route={[]} stops={stop ? [stop] : []} photos={here} highlight={photo.id} live={null} />
+            route={[]} stops={stop ? [stop] : []} photos={here} highlight={photo.id} />
           <div className="cap">
             <b>Taken here</b>
             <span>{stop ? stop.name : 'On the move'} · {here.length} photo{here.length === 1 ? '' : 's'}</span>
@@ -938,8 +1006,8 @@ function Modal({ title, onClose, children }) {
 }
 
 function UploadModal({ onClose, onAdd, live, stops, toast }) {
-  const [file, setFile] = useState(null)
-  const fileUrl = useRef(null)
+  const [files, setFiles] = useState([])
+  const fileUrls = useRef([])
   const [caption, setCaption] = useState('')
   const fileRef = useRef(null)
   const near = useMemo(() => {
@@ -948,19 +1016,50 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
     return best
   }, [live, stops])
 
+  const setPicked = selected => {
+    fileUrls.current.forEach(URL.revokeObjectURL)
+    fileUrls.current = selected.map(URL.createObjectURL)
+    setFiles(selected.map((file, i) => ({ file, url: fileUrls.current[i] })))
+  }
   const pick = e => {
-    const f = e.target.files?.[0]; if (!f) return
-    if (fileUrl.current) URL.revokeObjectURL(fileUrl.current)
-    fileUrl.current = URL.createObjectURL(f)
-    setFile({ file: f, url: fileUrl.current })
+    const selected = [...(e.target.files || [])]
+    if (selected.length) setPicked(selected)
+  }
+  const choose = async () => {
+    try {
+      const selected = await pickNativePhotos()
+      if (selected) { if (selected.length) setPicked(selected); return }
+      fileRef.current?.click()
+    } catch (e) {
+      if (!/cancel/i.test(e?.message || '')) toast(e.message || 'Could not open Photos')
+    }
   }
   const [busy, setBusy] = useState(false)
   const submit = async () => {
-    if (!file || busy) return
+    if (!files.length || busy) return
     setBusy(true)
     try {
-      await onAdd({ file: file.file, caption: caption.trim() || 'Untitled', stopId: near?.id || null })
-      toast(near ? `Photo added at ${near.name}` : 'Photo added at your current location')
+      for (let i = 0; i < files.length; i++) {
+        const meta = files[i].file.wayfareMetadata
+        const exifPoint = meta?.lat != null && meta?.lng != null ? [meta.lng, meta.lat] : null
+        // A captured-at timestamp with no EXIF position is deliberately sent
+        // without today's live position: the VPS can then match it to the
+        // uploader's historical GPS trail at the moment the picture was taken.
+        const point = exifPoint || (!meta?.takenAt ? live : null)
+        let photoStop = null, best = 400
+        if (point) stops.forEach(stop => {
+          const distance = metres([stop.lng, stop.lat], point)
+          if (distance < best) { best = distance; photoStop = stop }
+        })
+        await onAdd({
+          file: files[i].file, caption: caption.trim() || 'Untitled',
+          stopId: photoStop?.id || null, lng: point?.[0], lat: point?.[1],
+          locationSource: exifPoint ? 'exif' : point ? 'live' : undefined,
+          when: meta?.takenAt || new Date().toISOString(), order: i,
+        })
+      }
+      const what = `${files.length} photo${files.length === 1 ? '' : 's'} added`
+      toast(`${what} to the map`)
       onClose()
     } catch (e) {
       toast(e.message || 'Could not upload that photo')
@@ -968,19 +1067,22 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
       setBusy(false)
     }
   }
-  useEffect(() => () => { if (fileUrl.current) URL.revokeObjectURL(fileUrl.current) }, [])
+  useEffect(() => () => fileUrls.current.forEach(URL.revokeObjectURL), [])
 
   return (
     <Modal title="Add a photo" onClose={onClose}>
       <div className="mb">
-        {!file ? (
-          <div className="drop" onClick={() => fileRef.current?.click()}>
+        {!files.length ? (
+          <div className="drop" onClick={choose}>
             <Icon n="upload" s={26} c="var(--ink3)" />
-            <b>Choose a photo from this device</b>
-            <span>It will be pinned where you are right now</span>
+            <b>{isNativeApp ? 'Choose photos from Apple Photos' : 'Choose photos from this device'}</b>
+            <span>Select up to 20; they will be pinned where you are right now</span>
           </div>
-        ) : <img className="preview" src={file.url} alt="" />}
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={pick} />
+        ) : <>
+          <div className="previews">{files.map((file, i) => <img key={file.url} className="preview" src={file.url} alt={`Selected ${i + 1}`} />)}</div>
+          <button className="btn choosephotos" onClick={choose}>Choose different photos</button>
+        </>}
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pick} />
         <div className="field">
           <label>Caption</label>
           <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="What is happening here?" />
@@ -991,8 +1093,8 @@ function UploadModal({ onClose, onAdd, live, stops, toast }) {
         </p>
         <div className="linkrow">
           <button className="btn" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
-          <button className="btn pri" style={{ flex: 1 }} disabled={!file || busy} onClick={submit}>
-            {busy ? 'Uploading…' : 'Add to the map'}
+          <button className="btn pri" style={{ flex: 1 }} disabled={!files.length || busy} onClick={submit}>
+            {busy ? `Uploading ${files.length}…` : `Add ${files.length || ''} to the map`}
           </button>
         </div>
       </div>
@@ -1028,7 +1130,7 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
   const Item = ({ children, hot }) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
   return (
     <header className="ticker">
-      <div className="tlogo"><span className="mk"><Icon n="pin" s={13} c="#0a0c10" w={2.4} /></span>
+      <div className="tlogo"><span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         <span className="wm">Wayfare</span></div>
       <div className="tflow">
 <span className="crew">{(trip.crew || '').toUpperCase()}</span>
@@ -1469,13 +1571,13 @@ function useSession() {
   useEffect(() => {
     if (!hasBackend) return
     let alive = true
-    supabase.auth.getSession().then(({ data }) => {
+    initializeNativeServices(authClient).then(() => completeBrowserLogin()).then(() => authClient.restore()).then(() => {
       if (!alive) return
-      setSession(data.session)
+      setSession(authClient.getSession())
       setReady(true)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => { alive = false; sub.subscription.unsubscribe() }
+    }).catch(() => { if (alive) setReady(true) })
+    const unsubscribe = authClient.subscribe(setSession)
+    return () => { alive = false; unsubscribe() }
   }, [])
 
   return { session, ready }
@@ -1499,7 +1601,7 @@ function SignInScreen() {
   return (
     <div className="boot">
       <div className="bootIn wide">
-        <span className="mk"><Icon n="pin" s={15} c="#0a0c10" w={2.4} /></span>
+        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         {sent ? (
           <>
             <b>Check your inbox</b>
@@ -1608,11 +1710,16 @@ function NoTrip({ email, onCreated }) {
     }
     catch (e2) { setErr(e2.message || 'Could not create that trip'); setBusy(false) }
   }
+  const removeAccount = async () => {
+    if (window.prompt('Permanently delete this Wayfare account? Type DELETE to continue.') !== 'DELETE') return
+    try { await deleteAccount(); window.location.reload() }
+    catch (error) { setErr(error.message || 'Could not delete your account') }
+  }
 
   return (
     <div className="boot">
       <div className="bootIn wide">
-        <span className="mk"><Icon n="pin" s={15} c="#0a0c10" w={2.4} /></span>
+        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         {making ? (
           <>
             <b>Start a trip</b>
@@ -1657,6 +1764,8 @@ function NoTrip({ email, onCreated }) {
               </button>
               <button className="btn pri" onClick={() => setMaking(true)}>Start a trip</button>
             </div>
+            <button className="btn danger" onClick={removeAccount}>Delete my account</button>
+            {err && <p className="warn">{err}</p>}
           </>
         )}
       </div>
@@ -1727,7 +1836,160 @@ function MyProfile({ me, onSave }) {
   )
 }
 
-function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, onSaveTrip, me, onSaveMe }) {
+/* =========================================================================
+   Phones — live position and automatic photos
+
+   A phone is registered here and gets a token, shown once. The native iPhone
+   app stores that device-scoped token and posts Core Location fixes itself;
+   the web app keeps the external tracker/uploader instructions for Android.
+   ========================================================================= */
+function Phones({ tripId, family, canEdit, me, toast, phones, onChange }) {
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [card, setCard] = useState(null)        // the token, on screen exactly once
+  const [tracking, setTracking] = useState(() => mobileTracker.getState())
+  const suggested = `${me?.name || 'My'}'s phone`
+
+  useEffect(() => mobileTracker.subscribe(setTracking), [])
+
+  const enableTracking = async phone => {
+    try {
+      await mobileTracker.configure({
+        endpoint: `${functionsUrl}/track`, token: phone.token,
+        deviceId: phone.id, name: phone.name,
+      })
+      toast('Location sharing is on')
+    } catch (e) {
+      toast(e.message || 'Allow Always location access to start sharing')
+      throw e
+    }
+  }
+
+  const add = async e => {
+    e.preventDefault()
+    if (busy) return
+    setBusy(true)
+    try {
+      const made = await registerDevice(tripId, name.trim() || suggested)
+      setCard(made); setName('')
+      onChange?.(await listDevices(tripId))
+      if (isNativeApp) await enableTracking(made).catch(() => {})
+    } catch (e2) { toast(e2.message || 'Could not add that phone') }
+    finally { setBusy(false) }
+  }
+
+  const remove = async id => {
+    try {
+      await removeDevice(tripId, id)
+      if (tracking.deviceId === id) await mobileTracker.forget()
+      onChange?.(phones.filter(p => p.id !== id))
+      if (card?.id === id) setCard(null)
+    } catch (e2) { toast(e2.message || 'Could not remove that phone') }
+  }
+
+  if (!hasBackend) return <p>Phones report to the database, and this is the sample trip.</p>
+
+  return (
+    <>
+      {isNativeApp && (
+        <div className={`tracking ${tracking.status}`}>
+          <span className="trackdot" />
+          <div><b>{tracking.status === 'tracking' ? 'Location sharing is on'
+                  : tracking.status === 'waiting' ? 'Waiting to send location'
+                  : tracking.status === 'starting' ? 'Starting location sharing…'
+                  : tracking.configured ? 'Location sharing is off' : 'Set up this iPhone below'}</b>
+            <span>{tracking.error || (tracking.queued ? `${tracking.queued} fix${tracking.queued === 1 ? '' : 'es'} queued for retry`
+              : 'Wayfare sends a fix after you move about 10 metres, including while the screen is locked.')}</span></div>
+          {tracking.configured && ['tracking', 'waiting', 'starting'].includes(tracking.status)
+            ? <button className="btn" disabled={tracking.status === 'starting'} onClick={() => mobileTracker.stop()}>Pause</button>
+            : tracking.configured && <button className="btn" onClick={() => mobileTracker.stop().then(() => mobileTracker.start()).catch(e => toast(e.message))}>Resume</button>}
+        </div>
+      )}
+      {phones.length ? (
+        <div className="roster">
+          {phones.map(p => {
+            const who = family.find(f => f.id === p.userId)
+            return (
+              <div className="rperson" key={p.id}>
+                {who?.avatar ? <img src={who.avatar} alt="" /> : <span className="ini">{(p.name || '?')[0]}</span>}
+                <div><b>{p.name}</b>
+                  <span>{p.lastSeen ? `Last fix ${agoLabel(p.lastSeen)}` : 'No fixes yet'}{who ? ` · ${who.name}` : ''}</span></div>
+                {canEdit && <button className="rm" onClick={() => remove(p.id)} title="Remove this phone">
+                  <Icon n="x" s={13} w={2} /></button>}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p>No phones yet.{canEdit ? ' Add one and it reports where it is and hands over every picture it takes, with nobody opening the app.' : ''}</p>
+      )}
+
+      {canEdit && (
+        <>
+          <form onSubmit={add} className="linkrow">
+            <input placeholder={suggested} value={name} onChange={e => setName(e.target.value)} />
+            <button className="btn pri" type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add a phone'}</button>
+          </form>
+        </>
+      )}
+
+      {card && <SetupCard card={card} tripId={tripId} onClose={() => setCard(null)} toast={toast}
+                          tracking={tracking} onEnableTracking={enableTracking} />}
+    </>
+  )
+}
+
+function SetupCard({ card, tripId, onClose, toast, tracking, onEnableTracking }) {
+  const copy = (label, v) => navigator.clipboard?.writeText(v)
+    .then(() => toast(`${label} copied`)).catch(() => toast('Copy failed'))
+  const trackUrl = `${functionsUrl}/track`
+  const Row = ({ k, v }) => (
+    <div className="kv">
+      <span>{k}</span>
+      <code onClick={() => copy(k, v)} title="Click to copy">{v}</code>
+      <button className="btn sq" title={`Copy ${k}`} onClick={() => copy(k, v)}><Icon n="copy" s={14} /></button>
+    </div>
+  )
+  return (
+    <div className="setup">
+      <b>{card.name} — set-up card</b>
+      <p>The token below is shown once and never again. If it is lost, remove the phone and add it back.</p>
+
+      {isNativeApp ? <>
+        <em>Location sharing</em>
+        <p className="fine">Wayfare tracks this iPhone itself. Choose <b>Allow While Using App</b>, then
+          approve <b>Always Allow</b> when iOS asks so fixes continue while the screen is locked. A blue
+          location indicator may appear while tracking.</p>
+        <button className="btn pri" disabled={tracking?.status === 'starting'}
+                onClick={() => onEnableTracking(card).catch(() => {})}>
+          {tracking?.deviceId === card.id && tracking.status === 'tracking' ? 'Tracking is on' : 'Enable location sharing'}
+        </button>
+        <em>Photos</em>
+        <p className="fine">Take pictures normally in Apple Camera. In Wayfare, press the camera button,
+          choose <b>Apple Photos</b>, select up to 20 pictures, and upload them together. iPhone converts
+          HEIC selections to browser-ready JPEG automatically.</p>
+      </> : <>
+
+      <em>1 · Where it is — Traccar Client (free, Play Store)</em>
+      <Row k="Device identifier" v={card.token} />
+      <Row k="Server URL" v={trackUrl} />
+      <p className="fine">Frequency 30 s, accuracy high, then start the service. Let it ignore battery
+         optimisation when Android asks. OwnTracks or GPSLogger work too: post to
+         <code>{trackUrl}?id=</code>token.</p>
+
+      <em>2 · Its pictures</em>
+      <p className="fine">Open Wayfare on the phone and use the camera button to select pictures.
+         Wayfare uploads private, web-sized copies directly to your VPS; the originals stay in the
+         phone's photo library and iCloud.</p>
+      </>}
+
+      <button className="btn" onClick={onClose}>Done</button>
+    </div>
+  )
+}
+
+function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, onSaveTrip, me, onSaveMe,
+                       phones = [], onPhonesChange }) {
   const [invites, setInvites] = useState([])
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -1739,7 +2001,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
     listInvites(tripId).then(setInvites).catch(() => {})
   }, [tripId, canEdit])
 
-  const pending = invites.filter(i => !i.claimed_at)
+  const pending = invites.filter(i => !i.claimedAt && !i.claimed_at)
 
   const add = async e => {
     e.preventDefault()
@@ -1766,6 +2028,13 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
     } catch (e2) { toast(e2.message || 'Could not remove that invite') }
   }
 
+  const removeMyAccount = async () => {
+    const confirmation = window.prompt('This permanently deletes your account, your uploads, and any trip you solely own. Type DELETE to continue.')
+    if (confirmation !== 'DELETE') return
+    try { await deleteAccount(); window.location.reload() }
+    catch (error) { toast(error.message || 'Could not delete your account') }
+  }
+
   return (
     <Modal title="Who is on this trip" onClose={onClose}>
       <div className="mb">
@@ -1778,6 +2047,10 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
             <TripSettings trip={trip} onSave={onSaveTrip} />
           </>
         )}
+
+        <div className="sect">Phones</div>
+        <Phones tripId={tripId} family={family} canEdit={canEdit} me={me} toast={toast}
+                phones={phones} onChange={onPhonesChange} />
 
         <div className="sect">Everyone</div>
         <div className="roster">
@@ -1831,6 +2104,13 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
         ) : (
           <p>Only the people running this trip can invite others.</p>
         )}
+
+        {hasBackend && <>
+          <div className="sect">Account</div>
+          <p className="fine">Deleting your account removes your profile, comments, likes, phones,
+            GPS history, and uploaded photos. A trip disappears too if you are its only owner.</p>
+          <button className="btn danger" onClick={removeMyAccount}>Delete my account</button>
+        </>}
       </div>
     </Modal>
   )
@@ -1959,7 +2239,7 @@ function Boot({ error, onRetry }) {
   return (
     <div className="boot">
       <div className="bootIn">
-        <span className="mk"><Icon n="pin" s={15} c="#0a0c10" w={2.4} /></span>
+        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         {error ? (
           <>
             <b>That trip would not load</b>
@@ -2071,19 +2351,77 @@ function TripApp({ data, session, onReload }) {
   }, [])
   useEffect(() => () => window.clearTimeout(toastT.current), [])
 
-  /* Where the family is. The end of the walked route if one has been drawn;
-     failing that, the stop marked "now", then the next one up, then the first.
-     Nothing is simulated: a marker that strolled a demo route on its own timer
-     was fine for a sample and a lie about a real trip. */
+  /* Where the phones are. Fixes arrive on their own channel and move only the
+     markers; nothing else is refetched for them. */
+  const [phones, setPhones] = useState([])
+  const [fixes, setFixes] = useState([])
+  useEffect(() => {
+    let alive = true
+    loadLive(tripId)
+      .then(r => { if (alive) { setPhones(r.devices); setFixes(r.fixes) } })
+      .catch(() => {})
+    const stop = subscribeToPositions(tripId, f => setFixes(list => {
+      const next = [...list, f]
+      return next.length > 8000 ? next.slice(-6000) : next
+    }))
+    return () => { alive = false; stop() }
+  }, [tripId])
+
+  const latestByPhone = useMemo(() => {
+    const m = new Map()
+    for (const f of fixes) { const cur = m.get(f.deviceId); if (!cur || f.at > cur.at) m.set(f.deviceId, f) }
+    return m
+  }, [fixes])
+  const latestFix = useMemo(() => {
+    let best = null
+    for (const f of latestByPhone.values()) if (!best || f.at > best.at) best = f
+    return best
+  }, [latestByPhone])
+
+  /* Where the family is. The most recent fix from any phone; with none, the
+     end of the walked route if one has been drawn; failing that, the stop
+     marked "now", then the next one up, then the first. Nothing is simulated:
+     a marker that strolled a demo route on its own timer was fine for a sample
+     and a lie about a real trip. */
   const track = route
   const live = useMemo(() => {
+    if (latestFix) return [latestFix.lng, latestFix.lat]
     if (track.length) return track[track.length - 1]
     const s = stops.find(x => x.status === 'now') || stops.find(x => x.status === 'next') || stops[0]
     return s ? [s.lng, s.lat] : [4.876, 52.367]
-  }, [track, stops])
+  }, [latestFix, track, stops])
   const sun = useDaylight(live)
   const mapTheme = mapOverride || sun.base
-  const km = useMemo(() => routeKm(track), [track])
+
+  // Kilometres from the phones when they have reported today, else the drawn route.
+  const km = useMemo(() => trailKm(fixes) || routeKm(track), [fixes, track])
+
+  // One marker per phone heard from in the last day; none reporting, one for the family.
+  const markers = useMemo(() => {
+    const fresh = [...latestByPhone.values()].filter(f => Date.now() - f.at.getTime() < 24 * 3600_000)
+    if (!fresh.length) {
+      return [{ key: 'family', lng: live[0], lat: live[1], avatar: family[0]?.avatar || null,
+                name: family[0]?.name, title: 'The family is here' }]
+    }
+    return fresh.map(f => {
+      const phone = phones.find(p => p.id === f.deviceId)
+      const who = phone && family.find(p => p.id === phone.userId)
+      const name = who?.name || phone?.name || 'Phone'
+      return { key: f.deviceId, lng: f.lng, lat: f.lat, avatar: who?.avatar || null, name,
+               title: `${name} · ${agoLabel(f.at)}` }
+    })
+  }, [latestByPhone, phones, family, live])
+
+  // Each phone's path over the last day, poor fixes left out so the line does not spike.
+  const trail = useMemo(() => {
+    const by = new Map()
+    for (const f of fixes) {
+      if (f.accuracy != null && f.accuracy > 80) continue
+      if (!by.has(f.deviceId)) by.set(f.deviceId, [])
+      by.get(f.deviceId).push([f.lng, f.lat])
+    }
+    return [...by.values()].filter(l => l.length > 1)
+  }, [fixes])
 
   // Live updates. Held off while someone is mid-edit, since refetching under an
   // open editor would pull the ground out from under them.
@@ -2161,10 +2499,10 @@ function TripApp({ data, session, onReload }) {
     }
   }, [likes, tripId, session, toast])
 
-  const addPhoto = useCallback(async ({ file, caption, stopId }) => {
+  const addPhoto = useCallback(async ({ file, caption, stopId, lng = live[0], lat = live[1], when = 'Just now', order = 0 }) => {
     const saved = await uploadPhoto(tripId, file, {
-      stopId, lng: live[0], lat: live[1], by: me.name, when: 'Just now',
-      caption, seq: photos.length,
+      stopId, lng, lat, by: me.name, when,
+      caption, seq: photos.length + order,
     })
     setPhotos(list => [...list, saved])
     if (stopId) setSelected(stopId)
@@ -2534,9 +2872,9 @@ function TripApp({ data, session, onReload }) {
 
       <div className="stagewrap">
         <MapCanvas theme={mapTheme} tint={sun} view={view} onView={handleView}
-          route={routeDraft || track} stops={stops} photos={photos} live={live} selectedStop={selected}
-          labels={view.zoom > 13} onStop={pickStop}
-          onPhoto={openViewer} onLive={onLive} liveAvatar={family[0]?.avatar}
+          route={routeDraft || track} stops={stops} photos={photos} markers={markers} trail={trail}
+          selectedStop={selected} labels={view.zoom > 13} onStop={pickStop}
+          onPhoto={openViewer} onLive={onLive}
           editing={editing} onMapClick={onMapClick} onStopMove={onStopMove}
           places={editing && !routeDraft ? places : []} onPickPlace={pickPlace}
           attractions={attractions} onPickAttraction={setAttraction} />
@@ -2622,7 +2960,7 @@ function TripApp({ data, session, onReload }) {
       )}
       {share && <PeopleModal onClose={() => setShare(false)} toast={toast} tripId={tripId}
                              family={family} canEdit={canEdit} trip={trip} onSaveTrip={saveTrip}
-                             me={me} onSaveMe={saveMe}
+                             me={me} onSaveMe={saveMe} phones={phones} onPhonesChange={setPhones}
                              appLink={window.location.origin + window.location.pathname
                                       + (trip.slug ? `?t=${trip.slug}` : '')} />}
       {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhoto} live={live} stops={stops} toast={toast} />}

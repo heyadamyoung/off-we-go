@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Mock trip data. Every coordinate is a real place in Amsterdam.
-// Swap these arrays for your Supabase rows and nothing else has to change.
+// Bundled sample data used when no VPS API URL is configured.
 // ---------------------------------------------------------------------------
 
 // Topical Creative-Commons photography, with a guaranteed-available fallback.
