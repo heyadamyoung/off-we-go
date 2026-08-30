@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   archive-and-upload:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 45
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
