@@ -45,6 +45,23 @@ test('the TestFlight export configuration uploads a manually signed App Store bu
   assert.match(plist, /<key>manageAppVersionAndBuildNumber<\/key>\s*<false\/>/);
 });
 
+test('the Ad Hoc export configuration creates a device-installable release', async () => {
+  const { createExportOptions } = await import('../scripts/iosReleaseCore.mjs');
+
+  const plist = createExportOptions({
+    teamId: 'R65UN25Q64',
+    bundleId: 'ai.threadway.wayfare',
+    profileName: 'Wayfare iPad Ad Hoc',
+    distribution: 'ad-hoc',
+  });
+
+  assert.match(plist, /<key>method<\/key>\s*<string>release-testing<\/string>/);
+  assert.match(plist, /<key>destination<\/key>\s*<string>export<\/string>/);
+  assert.match(plist, /<key>ai\.threadway\.wayfare<\/key>\s*<string>Wayfare iPad Ad Hoc<\/string>/);
+  assert.match(plist, /<key>signingStyle<\/key>\s*<string>manual<\/string>/);
+  assert.match(plist, /<key>signingCertificate<\/key>\s*<string>Apple Distribution<\/string>/);
+});
+
 test('the TestFlight export configuration rejects an invalid Apple team ID', async () => {
   const { createExportOptions } = await import('../scripts/iosReleaseCore.mjs');
 

@@ -7,7 +7,9 @@ const xmlEscape = value => String(value)
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&apos;');
 
-export function createExportOptions({ teamId, bundleId, profileName }) {
+export function createExportOptions({
+  teamId, bundleId, profileName, distribution = 'app-store',
+}) {
   if (!/^[A-Z0-9]{10}$/.test(teamId ?? '')) {
     throw new Error('Expected a 10-character Apple team ID');
   }
@@ -17,17 +19,23 @@ export function createExportOptions({ teamId, bundleId, profileName }) {
   if (!String(profileName ?? '').trim()) {
     throw new Error('Expected an App Store provisioning profile name');
   }
+  if (!['app-store', 'ad-hoc'].includes(distribution)) {
+    throw new Error('Expected app-store or ad-hoc distribution');
+  }
+
+  const destination = distribution === 'ad-hoc' ? 'export' : 'upload';
+  const method = distribution === 'ad-hoc' ? 'release-testing' : 'app-store-connect';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>destination</key>
-  <string>upload</string>
+  <string>${destination}</string>
   <key>manageAppVersionAndBuildNumber</key>
   <false/>
   <key>method</key>
-  <string>app-store-connect</string>
+  <string>${method}</string>
   <key>provisioningProfiles</key>
   <dict>
     <key>${xmlEscape(bundleId)}</key>
@@ -52,6 +60,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     process.stdout.write(createExportOptions({
       teamId: process.argv[2], bundleId: process.argv[3], profileName: process.argv[4],
+      distribution: process.argv[5],
     }));
   } catch (error) {
     process.stderr.write(`${error.message}\n`);

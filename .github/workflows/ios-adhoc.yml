@@ -1,0 +1,123 @@
+name: iOS Ad Hoc
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wayfare-ios-adhoc
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+      IOS_ADHOC_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ADHOC_PROVISIONING_PROFILE_NAME }}
+      IOS_ADHOC_DEVICE_UDID: ${{ secrets.IOS_ADHOC_DEVICE_UDID }}
+      WAYFARE_DOMAIN: wayfare.threadway.ai
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.6.5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install and synchronize iOS
+        run: pnpm install --frozen-lockfile && VITE_API_URL="https://${WAYFARE_DOMAIN}/api" pnpm ios:sync
+
+      - name: Install CocoaPods
+        run: cd ios/App && pod install
+
+      - name: Install Ad Hoc signing materials
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_ADHOC_PROVISIONING_PROFILE: ${{ secrets.IOS_ADHOC_PROVISIONING_PROFILE }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/wayfare-adhoc-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          CERTIFICATE_PATH="$RUNNER_TEMP/wayfare-distribution.p12"
+          PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_iPad_Ad_Hoc.mobileprovision"
+
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
+          mkdir -p "$PROFILE_DIRECTORY"
+          printf '%s' "$IOS_ADHOC_PROVISIONING_PROFILE" | base64 -D > "$PROFILE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Create Ad Hoc export configuration
+        run: >-
+          node scripts/iosReleaseCore.mjs "$APPLE_TEAM_ID" "$IOS_BUNDLE_ID"
+          "$IOS_ADHOC_PROVISIONING_PROFILE_NAME" ad-hoc > "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Archive Wayfare
+        run: >-
+          node scripts/iosArchive.mjs "$RUNNER_TEMP/Wayfare.xcarchive"
+          "$APPLE_TEAM_ID" 1 "$WAYFARE_DOMAIN"
+
+      - name: Export the signed IPA
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/Wayfare.xcarchive" \
+            -exportPath "$RUNNER_TEMP/WayfareAdHoc" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Verify the iPad is authorized
+        run: |
+          IPA_PATH="$(find "$RUNNER_TEMP/WayfareAdHoc" -type f -name '*.ipa' -print -quit)"
+          test -n "$IPA_PATH"
+          mkdir -p "$RUNNER_TEMP/WayfareVerify"
+          unzip -q "$IPA_PATH" -d "$RUNNER_TEMP/WayfareVerify"
+          APP_PATH="$(find "$RUNNER_TEMP/WayfareVerify/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP_PATH"
+          security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/EmbeddedProfile.plist"
+          /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$RUNNER_TEMP/EmbeddedProfile.plist" \
+            | grep -Fq -- "$IOS_ADHOC_DEVICE_UDID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" \
+            = "$IOS_BUNDLE_ID"
+          codesign --verify --deep --strict "$APP_PATH"
+          cp "$IPA_PATH" "$RUNNER_TEMP/Wayfare.ipa"
+
+      - name: Publish the iPad build
+        working-directory: .
+        run: |
+          TAG="wayfare-ipad-adhoc"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Wayfare iPad Ad Hoc" \
+              --notes "Signed Ad Hoc build for registered Wayfare test devices." \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --title "Wayfare iPad Ad Hoc" \
+              --notes "Signed Ad Hoc build for registered Wayfare test devices." \
+              --prerelease
+          fi
+          gh release upload "$TAG" "$RUNNER_TEMP/Wayfare.ipa" --clobber
+
