@@ -422,12 +422,17 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const value = result.rows[0]
       return value ? { lng: value.lng, lat: value.lat, at: value.recorded_at } : null
     },
-    async loadLive(user, tripId, since) {
+    async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 6000 } = {}) {
       if (!await this.canReadTrip(user.id, tripId)) return null
-      const [devices, fixes] = await Promise.all([
+      const [devices, fixes, cursor] = await Promise.all([
         pool.query('select * from devices where trip_id=$1 order by created_at', [tripId]),
-        pool.query(`select device_id,lng,lat,accuracy,speed,recorded_at from positions
-          where trip_id=$1 and recorded_at >= $2 order by recorded_at`, [tripId, since]),
+        pool.query(`with ranked as (
+          select id,device_id,lng,lat,accuracy,speed,recorded_at,
+            row_number() over(partition by device_id order by id desc) as device_rank
+          from positions where trip_id=$1 and recorded_at >= $2 and id>$3
+        ) select id,device_id,lng,lat,accuracy,speed,recorded_at from ranked
+          where device_rank <= $4 order by id`, [tripId, since, afterId, maxPerDevice]),
+        pool.query('select coalesce(max(id),$2::bigint) cursor from positions where trip_id=$1', [tripId, afterId]),
       ])
       return {
         devices: rows(devices).map(value => ({
@@ -438,6 +443,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           deviceId: value.device_id, lng: value.lng, lat: value.lat,
           accuracy: value.accuracy, speed: value.speed, at: value.recorded_at,
         })),
+        cursor: Number(cursor.rows[0].cursor),
       }
     },
     async loadAttractions(bounds, { headlineOnly = false, limit = 1000 } = {}) {

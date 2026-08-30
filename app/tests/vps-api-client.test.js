@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const moduleUnderTest = await import('../src/apiClientCore.js').catch(() => null)
+const liveModule = await import('../src/livePositionsCore.js').catch(() => null)
 
 test('the VPS client exchanges a magic token, persists the session and authenticates requests', async () => {
   assert.ok(moduleUnderTest?.createApiClient, 'the self-hosted API client has not been implemented')
@@ -45,5 +46,28 @@ test('API errors expose their HTTP status so the app can distinguish an empty ac
     assert.equal(error.message, 'No trip found')
     assert.equal(error.status, 404)
     return true
+  })
+})
+
+test('live GPS retention is bounded independently for every phone and removes duplicate fixes', () => {
+  assert.ok(liveModule?.mergeLiveFixes, 'the per-device live GPS buffer has not been implemented')
+  const at = value => new Date(`2027-01-01T00:00:0${value}.000Z`)
+  const existing = [
+    { deviceId: 'a', at: at(1), lat: 1 }, { deviceId: 'a', at: at(2), lat: 2 },
+    { deviceId: 'b', at: at(1), lat: 3 }, { deviceId: 'c', at: at(1), lat: 4 },
+  ]
+  const incoming = [
+    { deviceId: 'a', at: at(2), lat: 2 }, { deviceId: 'a', at: at(3), lat: 5 },
+    { deviceId: 'b', at: at(2), lat: 6 }, { deviceId: 'b', at: at(3), lat: 7 },
+    { deviceId: 'c', at: at(2), lat: 8 }, { deviceId: 'c', at: at(3), lat: 9 },
+  ]
+
+  const result = liveModule.mergeLiveFixes(existing, incoming, 2)
+
+  assert.equal(result.length, 6)
+  assert.deepEqual(Object.fromEntries(Object.entries(Object.groupBy(result, value => value.deviceId))), {
+    a: [{ deviceId: 'a', at: at(2), lat: 2 }, { deviceId: 'a', at: at(3), lat: 5 }],
+    b: [{ deviceId: 'b', at: at(2), lat: 6 }, { deviceId: 'b', at: at(3), lat: 7 }],
+    c: [{ deviceId: 'c', at: at(2), lat: 8 }, { deviceId: 'c', at: at(3), lat: 9 }],
   })
 })

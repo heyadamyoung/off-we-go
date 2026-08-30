@@ -10,6 +10,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   let nextTrip = 1
   let nextPhoto = 1
   let nextDevice = 1
+  let nextPosition = 1
   let nextStop = 1
   let nextComment = 1
 
@@ -256,7 +257,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async insertPosition(device, fix) {
       const key = `${device.id}:${fix.at.toISOString()}`
       if (positions.has(key)) return false
-      positions.set(key, { ...fix, deviceId: device.id, tripId: device.tripId })
+      positions.set(key, { ...fix, id: nextPosition++, deviceId: device.id, tripId: device.tripId })
       device.lastSeen = fix.at
       return true
     },
@@ -268,13 +269,19 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         .sort((a, b) => a.distance - b.distance)[0]
       return nearest ? { lng: nearest.lng, lat: nearest.lat, at: nearest.at } : null
     },
-    async loadLive(user, tripId, since) {
+    async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 6000 } = {}) {
       if (!await this.canReadTrip(user.id, tripId)) return null
+      const tripPositions = [...positions.values()].filter(fix => fix.tripId === tripId)
+      const byDevice = new Map()
+      for (const fix of tripPositions.filter(fix => fix.at >= since && fix.id > afterId)) {
+        if (!byDevice.has(fix.deviceId)) byDevice.set(fix.deviceId, [])
+        byDevice.get(fix.deviceId).push(fix)
+      }
       return {
         devices: [...devices.values()].filter(device => device.tripId === tripId),
-        fixes: [...positions.values()]
-          .filter(fix => fix.tripId === tripId && fix.at >= since)
-          .sort((a, b) => a.at - b.at),
+        fixes: [...byDevice.values()].flatMap(values => values.sort((a, b) => a.id - b.id).slice(-maxPerDevice))
+          .sort((a, b) => a.id - b.id),
+        cursor: Math.max(afterId, ...tripPositions.map(fix => fix.id), 0),
       }
     },
     async deleteAccount(user) {

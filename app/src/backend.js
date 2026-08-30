@@ -175,19 +175,24 @@ export async function removeDevice(tripId, id) {
   return authClient.request(`${tripPath(tripId)}/devices/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 const asFix = value => ({ ...value, at: new Date(value.at) })
-export async function loadLive(tripId, { hours = 24 } = {}) {
-  if (isSample(tripId)) return { devices: [], fixes: [] }
-  const result = await authClient.request(`${tripPath(tripId)}/live?hours=${encodeURIComponent(hours)}`)
-  return { devices: result.devices.map(value => ({ ...value, lastSeen: value.lastSeen ? new Date(value.lastSeen) : null })), fixes: result.fixes.map(asFix) }
+export async function loadLive(tripId, { hours = 24, cursor = null } = {}) {
+  if (isSample(tripId)) return { devices: [], fixes: [], cursor: 0 }
+  const query = new URLSearchParams({ hours: String(hours) })
+  if (Number.isInteger(cursor) && cursor >= 0) query.set('cursor', String(cursor))
+  const result = await authClient.request(`${tripPath(tripId)}/live?${query}`)
+  return {
+    devices: result.devices.map(value => ({ ...value, lastSeen: value.lastSeen ? new Date(value.lastSeen) : null })),
+    fixes: result.fixes.map(asFix), cursor: result.cursor,
+  }
 }
-export function subscribeToPositions(tripId, onFix) {
+export function subscribeToPositions(tripId, onFix, initialCursor = 0) {
   if (isSample(tripId)) return () => {}
-  let stopped = false, latest = Date.now()
+  let stopped = false, cursor = initialCursor
   const poll = async () => {
     try {
-      const { fixes } = await loadLive(tripId, { hours: 1 })
-      for (const fix of fixes) if (fix.at.getTime() > latest) onFix(fix)
-      latest = Math.max(latest, ...fixes.map(fix => fix.at.getTime()), 0)
+      const result = await loadLive(tripId, { hours: 24, cursor })
+      for (const fix of result.fixes) onFix(fix)
+      cursor = result.cursor
     } catch {}
   }
   const timer = setInterval(() => { if (!stopped) poll() }, 10_000)

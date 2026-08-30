@@ -22,6 +22,7 @@ import {
   functionsUrl,
 } from './backend'
 import { isNativeApp, initializeNativeServices, mobileTracker, pickNativePhotos } from './mobile'
+import { mergeLiveFixes } from './livePositionsCore'
 
 /* =========================================================================
    Icons
@@ -2356,14 +2357,15 @@ function TripApp({ data, session, onReload }) {
   const [phones, setPhones] = useState([])
   const [fixes, setFixes] = useState([])
   useEffect(() => {
-    let alive = true
+    let alive = true, stop = () => {}
     loadLive(tripId)
-      .then(r => { if (alive) { setPhones(r.devices); setFixes(r.fixes) } })
+      .then(r => {
+        if (!alive) return
+        setPhones(r.devices)
+        setFixes(r.fixes)
+        stop = subscribeToPositions(tripId, fix => setFixes(list => mergeLiveFixes(list, [fix])), r.cursor)
+      })
       .catch(() => {})
-    const stop = subscribeToPositions(tripId, f => setFixes(list => {
-      const next = [...list, f]
-      return next.length > 8000 ? next.slice(-6000) : next
-    }))
     return () => { alive = false; stop() }
   }, [tripId])
 

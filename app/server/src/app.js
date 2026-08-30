@@ -422,7 +422,11 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await authenticated(request, reply)
     if (!user) return
     const hours = Math.min(Math.max(finite(request.query?.hours) || 24, 1), 168)
-    const result = await repository.loadLive(user, request.params.tripId, new Date(clock().getTime() - hours * 3600_000))
+    const rawCursor = finite(request.query?.cursor)
+    const cursor = rawCursor == null ? 0 : Math.max(0, Math.floor(rawCursor))
+    const result = await repository.loadLive(
+      user, request.params.tripId, new Date(clock().getTime() - hours * 3600_000), { afterId: cursor },
+    )
     if (!result) return reply.code(403).send({ error: 'You cannot view this trip' })
     return {
       devices: result.devices.map(device => ({
@@ -434,6 +438,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         accuracy: fix.accuracy, speed: fix.speed,
         at: fix.at.toISOString(),
       })),
+      cursor: result.cursor,
     }
   })
 
