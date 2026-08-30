@@ -34,6 +34,36 @@ test('the VPS client exchanges a magic token, persists the session and authentic
   assert.equal(calls[1].options.headers.authorization, 'Bearer session-token')
 })
 
+test('native login becomes authenticated before slow keychain persistence finishes', async () => {
+  let releaseKeychain
+  let keychainWriteStarted
+  const writeStarted = new Promise(resolve => { keychainWriteStarted = resolve })
+  const keychainReleased = new Promise(resolve => { releaseKeychain = resolve })
+  const client = moduleUnderTest.createApiClient({
+    baseUrl: '/api',
+    storage: {
+      getItem() { return null },
+      async setItem() {
+        keychainWriteStarted()
+        await keychainReleased
+      },
+      removeItem() {},
+    },
+    fetch: async () => new Response(JSON.stringify({
+      accessToken: 'native-session-token', user: { id: 'user-1', email: 'owner@example.com' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }),
+  })
+  let observed = null
+  client.subscribe(session => { observed = session })
+
+  const exchange = client.exchangeMagicToken('one-time-token')
+  await writeStarted
+
+  assert.equal(observed?.accessToken, 'native-session-token')
+  releaseKeychain()
+  await exchange
+})
+
 test('API errors expose their HTTP status so the app can distinguish an empty account', async () => {
   const client = moduleUnderTest.createApiClient({
     baseUrl: '/api',

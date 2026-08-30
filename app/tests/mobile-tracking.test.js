@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { createMobileTracker } from '../src/mobile-tracking-core.ts'
 import * as mobilePhotos from '../src/mobile-photos-core.ts'
-import { magicTokenFromUrl } from '../src/mobile-auth-core.ts'
+import { completeNativeLogin, magicTokenFromUrl } from '../src/mobile-auth-core.ts'
 
 const { galleryPhotosToFiles } = mobilePhotos
 
@@ -384,4 +384,19 @@ test('a Wayfare magic-link callback exposes the one-time VPS login token', () =>
   ), 'one-time-login-token-at-least-thirty-two-characters')
   assert.equal(magicTokenFromUrl('https://example.com/not-a-login'), null)
   assert.equal(magicTokenFromUrl('wayfare://auth?token=one-time-login-token-at-least-thirty-two-characters'), null)
+})
+
+test('native magic-link handling reports progress and contains exchange failures', async () => {
+  const states = []
+  const handled = await completeNativeLogin(
+    'https://wayfare.example.com/auth/callback?token=one-time-login-token-at-least-thirty-two-characters',
+    { async exchangeMagicToken() { throw new Error('The sign-in link expired') } },
+    state => states.push(state),
+  )
+
+  assert.equal(handled, false)
+  assert.deepEqual(states, [
+    { status: 'exchanging', error: null },
+    { status: 'error', error: 'The sign-in link expired' },
+  ])
 })

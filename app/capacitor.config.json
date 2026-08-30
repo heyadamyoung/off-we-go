@@ -7,6 +7,11 @@
     "contentInset": "never",
     "preferredContentMode": "mobile"
   },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
   "android": {
     "useLegacyBridge": true
   }

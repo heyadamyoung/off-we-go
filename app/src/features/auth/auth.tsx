@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authClient, completeBrowserLogin, hasBackend, sendMagicLink } from '../../backend'
-import { initializeNativeServices } from '../../mobile'
+import { initializeNativeServices, subscribeToNativeLogin } from '../../mobile'
 
 function useSession() {
   const [session, setSession] = useState(null)
@@ -25,14 +25,29 @@ function SignInScreen() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [finishing, setFinishing] = useState(false)
   const [err, setErr] = useState(null)
+
+  useEffect(() => subscribeToNativeLogin(state => {
+    if (state.status === 'exchanging') {
+      setFinishing(true)
+      setSent(true)
+      setErr(null)
+    } else if (state.status === 'error') {
+      setFinishing(false)
+      setSent(false)
+      setErr(state.error)
+    } else if (state.status === 'complete') {
+      setFinishing(false)
+    }
+  }), [])
 
   const submit = async e => {
     e.preventDefault()
     if (!email.trim() || busy) return
-    setBusy(true); setErr(null)
-    try { await sendMagicLink(email); setSent(true) }
-    catch (e2) { setErr(e2.message || 'Could not send the link') }
+    setBusy(true); setSent(true); setErr(null)
+    try { await sendMagicLink(email) }
+    catch (e2) { setSent(false); setErr(e2.message || 'Could not send the link') }
     finally { setBusy(false) }
   }
 
@@ -42,10 +57,11 @@ function SignInScreen() {
         <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         {sent ? (
           <>
-            <b>Check your inbox</b>
-            <p>We sent a link to <strong>{email}</strong>. Opening it on this device signs
-               you in — and creates your account if this is your first time.</p>
-            <button className="btn" onClick={() => setSent(false)}>Use a different address</button>
+            <b>{finishing ? 'Signing you in…' : 'Check your inbox'}</b>
+            <p>{finishing ? 'Finishing the secure sign-in on this device.' : <>
+              We sent a link to <strong>{email}</strong>. Opening it on this device signs
+              you in — and creates your account if this is your first time.</>}</p>
+            {!busy && !finishing && <button className="btn" onClick={() => setSent(false)}>Use a different address</button>}
           </>
         ) : (
           <>

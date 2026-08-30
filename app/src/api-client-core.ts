@@ -44,9 +44,12 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
   }
   const save = async (value: AuthSession | null) => {
     session = value
+    // Publish the authenticated in-memory session before waiting on the native
+    // keychain. iOS may delay plugin work while the app is resuming from Mail;
+    // that must not keep the sign-in screen mounted after a successful exchange.
+    emit()
     if (value) await storage.setItem(SESSION_KEY, JSON.stringify(value))
     else await storage.removeItem(SESSION_KEY)
-    emit()
     return session
   }
 

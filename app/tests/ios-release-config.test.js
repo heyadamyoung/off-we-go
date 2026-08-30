@@ -102,3 +102,11 @@ test('the iOS app declares that it does not use non-exempt encryption', async ()
     /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/,
   );
 });
+
+test('the native app uses Capacitor HTTP so authentication survives WebView suspension', async () => {
+  const config = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, 'capacitor.config.json'), 'utf8'),
+  );
+
+  assert.equal(JSON.parse(config).plugins?.CapacitorHttp?.enabled, true);
+});

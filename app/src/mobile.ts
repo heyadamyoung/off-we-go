@@ -6,7 +6,7 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage'
 import { createMobileTracker } from './mobile-tracking-core'
 import { galleryPhotosToFiles } from './mobile-photos-core'
-import { magicTokenFromUrl } from './mobile-auth-core'
+import { completeNativeLogin, type NativeLoginState } from './mobile-auth-core'
 import { createNativeLocationDriver, createNativeTrackingFetch } from './mobile-platform-core'
 
 export const isNativeApp = Capacitor.isNativePlatform()
@@ -111,18 +111,28 @@ export async function pickNativePhotos() {
 }
 
 let appUrlListener = null
+let nativeLoginState: NativeLoginState | null = null
+const nativeLoginListeners = new Set<(state: NativeLoginState) => void>()
 
-async function completeNativeLogin(url, authClient) {
-  const token = magicTokenFromUrl(url)
-  if (token) await authClient?.exchangeMagicToken(token)
+function publishNativeLogin(state: NativeLoginState) {
+  nativeLoginState = state
+  nativeLoginListeners.forEach(listener => listener(state))
+}
+
+export function subscribeToNativeLogin(listener: (state: NativeLoginState) => void) {
+  nativeLoginListeners.add(listener)
+  if (nativeLoginState) listener(nativeLoginState)
+  return () => { nativeLoginListeners.delete(listener) }
 }
 
 export async function initializeNativeServices(authClient) {
   if (!isNativeApp) return
   if (!appUrlListener) {
-    appUrlListener = NativeApp.addListener('appUrlOpen', ({ url }) => completeNativeLogin(url, authClient))
+    appUrlListener = NativeApp.addListener('appUrlOpen', ({ url }) => {
+      void completeNativeLogin(url, authClient, publishNativeLogin)
+    })
     const launch = await NativeApp.getLaunchUrl()
-    if (launch?.url) await completeNativeLogin(launch.url, authClient)
+    if (launch?.url) await completeNativeLogin(launch.url, authClient, publishNativeLogin)
   }
   await mobileTracker.restore().catch(() => {})
 }
