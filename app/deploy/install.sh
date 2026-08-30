@@ -8,10 +8,8 @@ if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this installer as root: sudo bash deploy/install.sh" >&2
   exit 1
 fi
-if [[ -f .env && "${1:-}" != "--force" ]]; then
-  echo ".env already exists. Refusing to overwrite it. Use --force only if you intend to replace it." >&2
-  exit 1
-fi
+EXISTING_ENV=false
+if [[ -f .env ]]; then EXISTING_ENV=true; fi
 
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update
@@ -22,48 +20,58 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 docker compose version >/dev/null
 
-read -rp "Wayfare domain [wayfare.threadway.ai]: " WAYFARE_DOMAIN
-WAYFARE_DOMAIN="${WAYFARE_DOMAIN:-wayfare.threadway.ai}"
-read -rp "Initial owner email: " WAYFARE_ADMIN_EMAIL
-read -rp "Apple Developer Team ID (10 characters): " APPLE_TEAM_ID
-if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
-  echo "Apple Team ID must be 10 uppercase letters/numbers." >&2
-  exit 1
-fi
-read -rp "SMTP host: " SMTP_HOST
-read -rp "SMTP port [587]: " SMTP_PORT
-SMTP_PORT="${SMTP_PORT:-587}"
-read -rp "Use implicit SMTP TLS? [y/N]: " SMTP_TLS
-[[ "$SMTP_TLS" =~ ^[Yy]$ ]] && SMTP_SECURE=true || SMTP_SECURE=false
-read -rp "SMTP username (blank if none): " SMTP_USER
-read -rsp "SMTP password (blank if none): " SMTP_PASS
-echo
-read -rp "From address [Wayfare <$WAYFARE_ADMIN_EMAIL>]: " SMTP_FROM
-SMTP_FROM="${SMTP_FROM:-Wayfare <$WAYFARE_ADMIN_EMAIL>}"
-
-POSTGRES_PASSWORD="$(openssl rand -hex 32)"
-WAYFARE_SESSION_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
-SMTP_PASS_B64="$(printf '%s' "$SMTP_PASS" | base64 | tr -d '\n')"
-unset SMTP_PASS
-
 install -d -m 750 data/uploads backups
 chown -R 1000:1000 data/uploads
-umask 077
-{
-  printf 'WAYFARE_DOMAIN=%s\n' "$WAYFARE_DOMAIN"
-  printf 'WAYFARE_ADMIN_EMAIL=%s\n' "$WAYFARE_ADMIN_EMAIL"
-  printf 'APPLE_TEAM_ID=%s\n' "$APPLE_TEAM_ID"
-  printf 'APPLE_BUNDLE_ID=ai.threadway.wayfare\n'
-  printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
-  printf 'WAYFARE_SESSION_SECRET=%s\n' "$WAYFARE_SESSION_SECRET"
-  printf 'SMTP_HOST=%s\n' "$SMTP_HOST"
-  printf 'SMTP_PORT=%s\n' "$SMTP_PORT"
-  printf 'SMTP_SECURE=%s\n' "$SMTP_SECURE"
-  printf 'SMTP_USER=%s\n' "$SMTP_USER"
-  printf 'SMTP_PASS_B64=%s\n' "$SMTP_PASS_B64"
-  printf 'SMTP_FROM=%s\n' "$SMTP_FROM"
-} > .env
-chmod 600 .env
+
+if [[ "$EXISTING_ENV" == true ]]; then
+  WAYFARE_DOMAIN="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
+  WAYFARE_ADMIN_EMAIL="$(sed -n 's/^WAYFARE_ADMIN_EMAIL=//p' .env | tail -n 1)"
+  for required in WAYFARE_DOMAIN WAYFARE_ADMIN_EMAIL APPLE_TEAM_ID POSTGRES_PASSWORD WAYFARE_SESSION_SECRET SMTP_HOST SMTP_FROM; do
+    grep -q "^${required}=." .env || { echo ".env is missing ${required}; add it before rerunning." >&2; exit 1; }
+  done
+  echo "Reusing the existing .env and preserving its database, session, and SMTP secrets."
+else
+  read -rp "Wayfare domain [wayfare.threadway.ai]: " WAYFARE_DOMAIN
+  WAYFARE_DOMAIN="${WAYFARE_DOMAIN:-wayfare.threadway.ai}"
+  read -rp "Initial owner email: " WAYFARE_ADMIN_EMAIL
+  read -rp "Apple Developer Team ID (10 characters): " APPLE_TEAM_ID
+  if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+    echo "Apple Team ID must be 10 uppercase letters/numbers." >&2
+    exit 1
+  fi
+  read -rp "SMTP host: " SMTP_HOST
+  read -rp "SMTP port [587]: " SMTP_PORT
+  SMTP_PORT="${SMTP_PORT:-587}"
+  read -rp "Use implicit SMTP TLS? [y/N]: " SMTP_TLS
+  [[ "$SMTP_TLS" =~ ^[Yy]$ ]] && SMTP_SECURE=true || SMTP_SECURE=false
+  read -rp "SMTP username (blank if none): " SMTP_USER
+  read -rsp "SMTP password (blank if none): " SMTP_PASS
+  echo
+  read -rp "From address [Wayfare <$WAYFARE_ADMIN_EMAIL>]: " SMTP_FROM
+  SMTP_FROM="${SMTP_FROM:-Wayfare <$WAYFARE_ADMIN_EMAIL>}"
+
+  POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+  WAYFARE_SESSION_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+  SMTP_PASS_B64="$(printf '%s' "$SMTP_PASS" | base64 | tr -d '\n')"
+  unset SMTP_PASS
+
+  umask 077
+  {
+    printf 'WAYFARE_DOMAIN=%s\n' "$WAYFARE_DOMAIN"
+    printf 'WAYFARE_ADMIN_EMAIL=%s\n' "$WAYFARE_ADMIN_EMAIL"
+    printf 'APPLE_TEAM_ID=%s\n' "$APPLE_TEAM_ID"
+    printf 'APPLE_BUNDLE_ID=ai.threadway.wayfare\n'
+    printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+    printf 'WAYFARE_SESSION_SECRET=%s\n' "$WAYFARE_SESSION_SECRET"
+    printf 'SMTP_HOST=%s\n' "$SMTP_HOST"
+    printf 'SMTP_PORT=%s\n' "$SMTP_PORT"
+    printf 'SMTP_SECURE=%s\n' "$SMTP_SECURE"
+    printf 'SMTP_USER=%s\n' "$SMTP_USER"
+    printf 'SMTP_PASS_B64=%s\n' "$SMTP_PASS_B64"
+    printf 'SMTP_FROM=%s\n' "$SMTP_FROM"
+  } > .env
+  chmod 600 .env
+fi
 
 docker compose up -d --build
 for _ in $(seq 1 60); do
