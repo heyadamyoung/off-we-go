@@ -31,6 +31,7 @@ const PATHS: Record<string, string> = {
   edit:'M4 20h4l10-10-4-4L4 16z|M13.5 6.5l4 4',
   star:'M12 3.2l2.6 5.6 6 .8-4.4 4.3 1.1 6.1-5.3-3-5.3 3 1.1-6.1L3.4 9.6l6-.8z',
   download:'M12 4v12M7 11l5 5 5-5M5 20h14',
+  logout:'M10 5H5v14h5M14 8l4 4-4 4M18 12H9',
 }
 // Icons re-render on every map frame; split the path data once, not 50x per frame.
 const SEGS: Record<string, string[]> = {}

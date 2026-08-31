@@ -114,6 +114,43 @@ test('the header People action stays compact at tablet widths', async ({ page })
   expect(people.width).toBeLessThanOrEqual(100)
 })
 
+test('the Wayfare mark is legible in the phone header', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 })
+  await open(page)
+
+  const mark = await page.locator('.tlogo .mk').boundingBox()
+  expect(mark.width).toBeGreaterThanOrEqual(28)
+  expect(mark.height).toBeGreaterThanOrEqual(28)
+})
+
+test('the phone header controls reach the right edge', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 })
+  await open(page)
+
+  const gap = await page.evaluate(() => {
+    const header = document.querySelector('.ticker').getBoundingClientRect()
+    const controls = document.querySelector('.tright').getBoundingClientRect()
+    return Math.round(header.right - controls.right)
+  })
+  expect(gap).toBeLessThanOrEqual(1)
+})
+
+test('the Wayfare mark opens the app menu', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 })
+  await open(page)
+
+  const trigger = page.getByRole('button', { name: 'Open menu' })
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await trigger.click()
+
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('menu', { name: 'Wayfare menu' })).toBeVisible()
+
+  await page.getByRole('menuitem', { name: 'People' }).click()
+  await expect(page.getByRole('menu', { name: 'Wayfare menu' })).toHaveCount(0)
+  await expect(page.locator('.modal')).toBeVisible()
+})
+
 test('shows who is currently viewing in the header and roster', async ({ page }) => {
   await open(page)
   await expect(page.getByLabel('Viewing now: Alex')).toBeVisible()

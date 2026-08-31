@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { ALL_DAYS } from '../../../shared/constants/trip'
@@ -38,11 +38,60 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
                                      liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
                                      sunPhase, canEdit, editing, onToggleEdit, me, onSignOut,
                                      attractionsOn, onToggleAttractions, viewers }: any) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeFromOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const closeFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeFromOutside)
+    document.addEventListener('keydown', closeFromKeyboard)
+    return () => {
+      document.removeEventListener('pointerdown', closeFromOutside)
+      document.removeEventListener('keydown', closeFromKeyboard)
+    }
+  }, [menuOpen])
+
+  const chooseMenuAction = (action: () => void) => {
+    setMenuOpen(false)
+    action()
+  }
   const Item = ({ children, hot = false }: any) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
   return (
     <header className="ticker">
-      <div className="tlogo"><span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
-        <span className="wm">Wayfare</span></div>
+      <div className="tmenu" ref={menuRef}>
+        <button className="tlogo" type="button" aria-label="Open menu" aria-haspopup="menu"
+                aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}>
+          <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+          <span className="wm">Wayfare</span>
+        </button>
+        {menuOpen && (
+          <div className="tmenu-pop" role="menu" aria-label="Wayfare menu">
+            <div className="tmenu-account">
+              <span>{me?.avatar
+                ? <img src={me.avatar} alt="" />
+                : (me?.name || 'You').slice(0, 1).toUpperCase()}</span>
+              <div><small>Signed in as</small><b>{me?.name || 'You'}</b></div>
+            </div>
+            <button type="button" role="menuitem" onClick={() => chooseMenuAction(onPeople)}>
+              <Icon n="users" s={16} />People
+            </button>
+            <button type="button" role="menuitem" onClick={() => chooseMenuAction(onUpload)}>
+              <Icon n="camera" s={16} />Add a photo
+            </button>
+            {onSignOut && (
+              <button className="signout" type="button" role="menuitem"
+                      onClick={() => chooseMenuAction(onSignOut)}>
+                <Icon n="logout" s={16} />Sign out
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       <div className="tflow">
 <span className="crew">{(trip.crew || '').toUpperCase()}</span>
         <Item>{trip.title}</Item>
@@ -84,11 +133,6 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
           <Icon n="users" s={14} c="#0a0c10" w={2.2} /><span className="lbl">People</span>
           {viewers?.length ? <span className="pcnt" aria-hidden="true">{viewers.length}</span> : null}
         </button>
-        {onSignOut && (
-          <button className="tbtn ghost" onClick={onSignOut} title={`Signed in as ${me?.name || ''} — sign out`}>
-            <Icon n="x" s={14} w={2} />
-          </button>
-        )}
       </div>
     </header>
   )
