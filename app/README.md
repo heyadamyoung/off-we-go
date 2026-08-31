@@ -1,11 +1,11 @@
 # Wayfare
 
-Wayfare is a private trip app with native iPhone and Android clients and a fully self-hosted backend. The VPS owns the PostgreSQL database, resized photo copies, authentication, invitations, GPS history, and web app. No third-party backend-as-a-service is used.
+Wayfare is a private trip app with native iPhone and Android clients and a fully self-hosted backend. The VPS owns the PostgreSQL database, resized photo copies, authorization, invitations, GPS history, and web app. User authentication is delegated to an OpenID Connect provider such as the same self-hosted Logto instance used by Threadway.
 
 ## What runs on the VPS
 
-- PostgreSQL 17 stores users, one-time login tokens, sessions, trips, members, invitations, stops, route points, comments, likes, phones, GPS positions, photo metadata, and attractions.
-- The Fastify API performs authorization, receives uploads and GPS fixes, sends login email, and signs private media URLs.
+- PostgreSQL 17 stores users, linked OIDC identities, replay-safe login attempts and handoffs, sessions, trips, members, invitations, stops, route points, comments, likes, phones, GPS positions, photo metadata, and attractions.
+- The Fastify API runs OIDC authorization code flow with S256 PKCE, performs authorization, receives uploads and GPS fixes, sends invitations, and signs private media URLs.
 - Photo uploads are auto-rotated and stored as a maximum 2048 px JPEG plus a 480 px thumbnail. The Apple Photos/iCloud original remains untouched.
 - Caddy serves the React app, proxies `/api`, and automatically provisions HTTPS.
 - Docker Compose keeps the database, API, and web server isolated and restartable.
@@ -13,7 +13,7 @@ Wayfare is a private trip app with native iPhone and Android clients and a fully
 
 ## VPS requirements
 
-Use a current Debian or Ubuntu VPS with Docker Engine and the Compose plugin already installed from a signed package repository. The VPS also needs a public IP, ports 80/443 open, a domain pointing to it, at least 2 GB RAM, sufficient photo storage, and SMTP credentials. SMTP is required because sign-in uses one-time email links.
+Use a current Debian or Ubuntu VPS with Docker Engine and the Compose plugin already installed from a signed package repository. The VPS also needs a public IP, ports 80/443 open, a domain pointing to it, at least 2 GB RAM, sufficient photo storage, an OIDC provider, and SMTP credentials for invitations.
 
 ## One-command VPS installation
 
@@ -23,9 +23,9 @@ Copy this `app` directory to the VPS, point your domain at it, and run from the 
 sudo bash deploy/install.sh
 ```
 
-On its first run the installer asks for the domain/owner/SMTP values, generates secrets, creates storage directories, builds the containers, runs database migrations, waits for HTTPS health, and installs the nightly backup job. Later runs preserve existing `.env` values; an upgrade from a pre-MCP installation adds the missing OAuth secret once without rotating the database, session, or SMTP secrets.
+On its first run the installer asks for the domain, owner, Logto client, and SMTP values; generates Wayfare secrets; creates storage directories; builds the containers; runs database migrations; waits for HTTPS health; and installs the nightly backup job. Later runs preserve existing `.env` values.
 
-Afterward, open `https://your-domain`, enter the owner email supplied to the installer, and use the emailed link. That address is the initial administrator and can create the first trip.
+Afterward, open `https://your-domain` and continue to the configured identity provider. A provider-verified login with the owner email supplied to the installer creates the initial administrator, who can create the first trip.
 
 Useful commands:
 
@@ -45,6 +45,29 @@ Backups briefly pause API writes so the database and upload archive describe the
 
 The installer writes a root-readable `.env`. [.env.vps.example](.env.vps.example) lists every variable. Never expose `.env`, database/session secrets, or SMTP credentials to the browser.
 
+### Logto / OIDC setup
+
+Wayfare uses the same browser-BFF shape as Threadway: the API is a confidential OIDC client, starts authorization code flow with PKCE, validates state, nonce, issuer, signature, and token claims on the callback, then links the stable `(issuer, subject)` identity to a Wayfare user. Provider access, ID, and refresh tokens are never sent to the app and are not persisted by Wayfare.
+
+In Logto, create a **Traditional Web** application for Wayfare and register this exact redirect URI:
+
+```text
+https://your-domain/api/auth/oidc/callback
+```
+
+Register these post sign-out redirect URIs as well, so signing out clears both the Wayfare session and the hosted Logto session:
+
+```text
+https://your-domain/
+https://your-domain/auth/native?logout=1
+```
+
+Copy its issuer, application ID, and application secret into `WAYFARE_OIDC_ISSUER`, `WAYFARE_OIDC_CLIENT_ID`, and `WAYFARE_OIDC_CLIENT_SECRET`. The issuer is the OIDC issuer, including `/oidc` for self-hosted Logto—not merely the console origin.
+
+When upgrading an older installation, `sudo bash deploy/install.sh` prompts only for missing OIDC values and appends them to the existing `.env`; database, session, OAuth, and SMTP secrets are preserved.
+
+Configure the real sign-in methods in Logto under **Sign-in & account**. Email/password can be the primary identifier; Google, Apple, Microsoft, or other social connectors can be enabled on the same hosted sign-in page. Wayfare requires the resulting identity to carry a provider-verified email matching the owner, an existing user, or a pending trip invitation. If Google or another social provider is available in the iOS app, configure Sign in with Apple as well for App Store compliance.
+
 The web build uses `VITE_API_URL=/api`. For a native build, set the public absolute API URL before syncing:
 
 ```bash
@@ -54,13 +77,13 @@ VITE_API_URL=https://wayfare.threadway.ai/api pnpm android:sync
 
 Both native apps use the system photo picker and send background location fixes to `/api/ingest/track`. iOS requires Always Location permission. Android requires precise location and notification permission because it keeps a visible foreground-service notification active while sharing location.
 
-Android HTTPS sign-in links also require the SHA-256 certificate fingerprint used by Google Play App Signing. Add it to `ANDROID_SHA256_CERT_FINGERPRINTS` in the VPS `.env` (comma-separate multiple signing certificates), redeploy, and verify `/.well-known/assetlinks.json` before release.
+Native sign-in opens the system browser and returns through `/auth/native`; provider tokens never enter the Capacitor webview. Android HTTPS login handoffs require the SHA-256 certificate fingerprint used by Google Play App Signing. Add it to `ANDROID_SHA256_CERT_FINGERPRINTS` in the VPS `.env` (comma-separate multiple signing certificates), redeploy, and verify `/.well-known/assetlinks.json` before release.
 
 Public release pages are served at [privacy.html](https://wayfare.threadway.ai/privacy.html) and [support.html](https://wayfare.threadway.ai/support.html). App Store copy, privacy answers, review notes, and the release checklist are in `docs/app-store/`.
 
 ## Remote MCP server and OAuth consent
 
-The VPS also exposes a private remote MCP server at `https://your-domain/mcp`. It is protected by the same Wayfare users and trip membership rules as the web and iPhone apps. No Cloudflare service or third-party identity provider is involved.
+The VPS also exposes a private remote MCP server at `https://your-domain/mcp`. It is protected by the same Wayfare users and trip membership rules as the web and native apps.
 
 When an MCP client connects, Wayfare publishes OAuth discovery metadata, dynamically registers the public client, requires OAuth authorization code flow with S256 PKCE, and opens a branded consent page. The user can grant either read-only access or trip editing. Access tokens last one hour; rotated refresh tokens last 30 days, detect replay, and can be revoked through the OAuth revocation endpoint.
 
@@ -72,7 +95,7 @@ To connect, give a Streamable HTTP-capable MCP client this server URL:
 https://your-domain/mcp
 ```
 
-The client should discover the OAuth endpoints automatically. If the browser is not already signed into Wayfare, the consent page can send the normal one-time email link and return to the pending authorization request afterward. `WAYFARE_OAUTH_SECRET` signs pending consent requests and must remain server-side; the installer generates it automatically for both new and existing VPS installations.
+The client should discover the OAuth endpoints automatically. If the browser is not already signed into Wayfare, the consent page starts the normal OIDC login and returns to the pending authorization request afterward. `WAYFARE_OAUTH_SECRET` signs pending MCP consent requests and must remain server-side.
 
 ## One-time migration from the previous Supabase project
 

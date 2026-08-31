@@ -20,6 +20,9 @@ importers:
       '@capacitor/app':
         specifier: 7.1.0
         version: 7.1.0(@capacitor/core@7.6.8)
+      '@capacitor/browser':
+        specifier: 7.0.5
+        version: 7.0.5(@capacitor/core@7.6.8)
       '@capacitor/camera':
         specifier: 7.0.2
         version: 7.0.2(@capacitor/core@7.6.8)
@@ -59,6 +62,9 @@ importers:
       nodemailer:
         specifier: ^9.0.6
         version: 9.0.6
+      openid-client:
+        specifier: 6.8.7
+        version: 6.8.7
       pg:
         specifier: '8'
         version: 8.23.0
@@ -204,6 +210,11 @@ packages:
 
   '@capacitor/app@7.1.0':
     resolution: {integrity: sha512-W7m09IWrUjZbo7AKeq+rc/KyucxrJekTBg0l4QCm/yDtCejE3hebxp/W2esU26KKCzMc7H3ClkUw32E9lZkwRA==}
+    peerDependencies:
+      '@capacitor/core': '>=7.0.0'
+
+  '@capacitor/browser@7.0.5':
+    resolution: {integrity: sha512-YF/kC1m1e6c81X/agtAnYItVlqiQ/nXLG+Q3QXNDuiMoRynqa3Guu8ZaV9kWvqQcHoE2w18xz7WGpPOuh+R1fA==}
     peerDependencies:
       '@capacitor/core': '>=7.0.0'
 
@@ -1406,6 +1417,9 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
+  jose@6.2.10:
+    resolution: {integrity: sha512-iiW7J9qRFlGxvCOIBDBDxFePQSn7ZMAnrYGhrrOo6siO/MIqwfyilLR27pkfDgUk+raLuzADS8A3S/KLBisc0g==}
+
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -1499,6 +1513,9 @@ packages:
     resolution: {integrity: sha512-IQUGFdhdGwI9+AWX+FpUt4DLmvFaOjTMEoneTIWX/RXxuy1TdenPwWrvFMSfLkPKl+HQEXWuSAxEMMbPYXtBmg==}
     engines: {node: '>=6.0.0'}
 
+  oauth4webapi@3.8.7:
+    resolution: {integrity: sha512-4RxcKxXjuItDFZ20RRPf4YTw3kpeXJyCgJFxVzJ068A7PNJ18st2Dg90tlC1LkSDS0GecroagCLHYEIVUhCAkw==}
+
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
     engines: {node: '>=14.0.0'}
@@ -1506,6 +1523,9 @@ packages:
   open@8.4.2:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
+
+  openid-client@6.8.7:
+    resolution: {integrity: sha512-gtKthNu7evSBvTdrrlHb4F3Fi9dcwlb5QaITlCs+9mfpvuOi0Q3qtBf5+iY4sEP8hy1qCoAdxBNPDcmZeVSDzQ==}
 
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
@@ -2036,6 +2056,10 @@ snapshots:
       '@capacitor/core': 7.6.8
 
   '@capacitor/app@7.1.0(@capacitor/core@7.6.8)':
+    dependencies:
+      '@capacitor/core': 7.6.8
+
+  '@capacitor/browser@7.0.5(@capacitor/core@7.6.8)':
     dependencies:
       '@capacitor/core': 7.6.8
 
@@ -3027,6 +3051,8 @@ snapshots:
 
   isexe@2.0.0: {}
 
+  jose@6.2.10: {}
+
   js-tokens@4.0.0: {}
 
   jsesc@3.1.0: {}
@@ -3127,6 +3153,8 @@ snapshots:
 
   nodemailer@9.0.6: {}
 
+  oauth4webapi@3.8.7: {}
+
   on-exit-leak-free@2.1.2: {}
 
   open@8.4.2:
@@ -3134,6 +3162,11 @@ snapshots:
       define-lazy-prop: 2.0.0
       is-docker: 2.2.1
       is-wsl: 2.2.0
+
+  openid-client@6.8.7:
+    dependencies:
+      jose: 6.2.10
+      oauth4webapi: 3.8.7
 
   package-json-from-dist@1.0.1: {}
 

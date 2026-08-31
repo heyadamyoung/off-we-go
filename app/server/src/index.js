@@ -3,6 +3,7 @@ import { createDiskFileStore } from './files.js'
 import { createSmtpMailer } from './mailer.js'
 import { buildServer } from './app.js'
 import { productionLoggerOptions } from './logging.js'
+import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
 
 const required = name => {
   const value = process.env[name]
@@ -14,6 +15,7 @@ const repository = await createPostgresRepository({
   databaseUrl: required('DATABASE_URL'), adminEmail: required('WAYFARE_ADMIN_EMAIL'),
 })
 await repository.migrate()
+const oidcConfig = readOidcConfig(process.env)
 
 const app = await buildServer({
   repository,
@@ -29,6 +31,7 @@ const app = await buildServer({
   publicUrl: required('WAYFARE_PUBLIC_URL'),
   sessionSecret: required('WAYFARE_SESSION_SECRET'),
   oauthSecret: required('WAYFARE_OAUTH_SECRET'),
+  identityProvider: createOidcIdentityProvider(oidcConfig),
   appleTeamId: required('APPLE_TEAM_ID'),
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
   androidPackageName: process.env.ANDROID_PACKAGE_NAME || 'ai.threadway.wayfare',

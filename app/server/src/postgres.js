@@ -31,6 +31,17 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
   const admin = String(adminEmail || '').trim().toLowerCase()
 
+  const ensureUser = async (client, email) => {
+    const result = await client.query(`insert into users(email) values($1)
+      on conflict(email) do update set email=excluded.email returning id,email`, [email])
+    const user = result.rows[0]
+    await client.query(`insert into trip_members(trip_id,user_id,role,display_name)
+      select trip_id,$1,role,coalesce(name,split_part($2,'@',1)) from trip_invites
+      where email=$2 on conflict(trip_id,user_id) do nothing`, [user.id, email])
+    await client.query('update trip_invites set claimed_at=coalesce(claimed_at,now()) where email=$1', [email])
+    return user
+  }
+
   const memberRole = async (client, userId, tripId) => {
     const result = await client.query('select role from trip_members where trip_id=$1 and user_id=$2', [tripId, userId])
     return result.rows[0]?.role || null
@@ -85,15 +96,60 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const result = await pool.query('delete from login_tokens where token_hash=$1 and expires_at>$2 returning email', [hash, now])
       return result.rows[0]?.email || null
     },
-    async ensureUser(email) {
-      const result = await pool.query(`insert into users(email) values($1)
-        on conflict(email) do update set email=excluded.email returning id,email`, [email])
-      const user = result.rows[0]
-      await pool.query(`insert into trip_members(trip_id,user_id,role,display_name)
-        select trip_id,$1,role,coalesce(name,split_part($2,'@',1)) from trip_invites
-        where email=$2 on conflict(trip_id,user_id) do nothing`, [user.id, email])
-      await pool.query('update trip_invites set claimed_at=coalesce(claimed_at,now()) where email=$1', [email])
-      return user
+    async createOidcLogin({ stateHash, codeVerifier, nonce, client, bindingHash, continuation, expiresAt }) {
+      await pool.query('delete from oidc_login_attempts where expires_at <= now()')
+      await pool.query(`insert into oidc_login_attempts
+        (state_hash,code_verifier,nonce,client_kind,binding_hash,continuation,expires_at)
+        values($1,$2,$3,$4,$5,$6,$7)`, [stateHash, codeVerifier, nonce, client, bindingHash, continuation, expiresAt])
+    },
+    async consumeOidcLogin(stateHash, now) {
+      const result = await pool.query(`delete from oidc_login_attempts
+        where state_hash=$1 and expires_at>$2
+        returning code_verifier,nonce,client_kind,binding_hash,continuation,expires_at`, [stateHash, now])
+      const value = result.rows[0]
+      return value ? {
+        codeVerifier: value.code_verifier, nonce: value.nonce, client: value.client_kind,
+        bindingHash: value.binding_hash, continuation: value.continuation, expiresAt: value.expires_at,
+      } : null
+    },
+    async ensureUser(email) { return ensureUser(pool, email) },
+    async resolveOidcUser({ issuer, subject, email }) {
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const linked = await client.query(`select u.id,u.email from oidc_identities i
+          join users u on u.id=i.user_id where i.issuer=$1 and i.subject=$2`, [issuer, subject])
+        if (linked.rows[0]) { await client.query('commit'); return linked.rows[0] }
+        const allowed = email === admin || (await client.query(`select 1 from users where email=$1
+          union all select 1 from trip_invites where email=$1 limit 1`, [email])).rowCount > 0
+        if (!allowed) { await client.query('rollback'); return null }
+        const user = await ensureUser(client, email)
+        const inserted = await client.query(`insert into oidc_identities(issuer,subject,user_id)
+          values($1,$2,$3) on conflict(issuer,subject) do nothing returning user_id`, [issuer, subject, user.id])
+        if (!inserted.rowCount) {
+          const raced = await client.query(`select u.id,u.email from oidc_identities i
+            join users u on u.id=i.user_id where i.issuer=$1 and i.subject=$2`, [issuer, subject])
+          await client.query('commit')
+          return raced.rows[0] || null
+        }
+        await client.query('commit')
+        return user
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
+    },
+    async createLoginHandoff({ hash, userId, client, bindingHash, expiresAt }) {
+      await pool.query('delete from login_handoffs where expires_at <= now()')
+      await pool.query(`insert into login_handoffs
+        (token_hash,user_id,client_kind,binding_hash,expires_at) values($1,$2,$3,$4,$5)`,
+        [hash, userId, client, bindingHash, expiresAt])
+    },
+    async consumeLoginHandoff({ hash, now, client, bindingHash }) {
+      const result = await pool.query(`with consumed as (
+          delete from login_handoffs where token_hash=$1 and expires_at>$2
+            and client_kind=$3 and binding_hash=$4 returning user_id
+        ) select u.id,u.email from consumed c join users u on u.id=c.user_id`,
+        [hash, now, client, bindingHash])
+      return result.rows[0] || null
     },
     async createSession({ hash, userId, expiresAt }) {
       await pool.query('delete from sessions where expires_at <= now()')

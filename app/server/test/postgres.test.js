@@ -28,7 +28,46 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   )
   assert.equal(await repository.consumeMagicToken('magic-hash', new Date('2027-01-01T00:02:00.000Z')), null)
 
-  const user = await repository.ensureUser('owner@example.com')
+  await repository.createOidcLogin({
+    stateHash: 'oidc-state-hash', codeVerifier: 'oidc-code-verifier', nonce: 'oidc-nonce',
+    client: 'native', bindingHash: 'native-binding-hash',
+    continuation: '/oauth/authorize?client_id=test', expiresAt,
+  })
+  assert.deepEqual(
+    await repository.consumeOidcLogin('oidc-state-hash', new Date('2027-01-01T00:01:00.000Z')),
+    {
+      codeVerifier: 'oidc-code-verifier', nonce: 'oidc-nonce', client: 'native',
+      bindingHash: 'native-binding-hash',
+      continuation: '/oauth/authorize?client_id=test', expiresAt,
+    },
+  )
+  assert.equal(await repository.consumeOidcLogin('oidc-state-hash', new Date('2027-01-01T00:02:00.000Z')), null)
+
+  const user = await repository.resolveOidcUser({
+    issuer: 'https://identity.example.com/oidc', subject: 'identity-user-1', email: 'owner@example.com',
+  })
+  assert.deepEqual(await repository.resolveOidcUser({
+    issuer: 'https://identity.example.com/oidc', subject: 'identity-user-1', email: 'renamed@example.com',
+  }), user)
+  await repository.createLoginHandoff({
+    hash: 'handoff-hash', userId: user.id, client: 'native', bindingHash: 'native-binding-hash', expiresAt,
+  })
+  assert.equal(await repository.consumeLoginHandoff({
+    hash: 'handoff-hash', now: new Date('2027-01-01T00:01:00.000Z'),
+    client: 'native', bindingHash: 'wrong-device',
+  }), null)
+  assert.deepEqual(
+    await repository.consumeLoginHandoff({
+      hash: 'handoff-hash', now: new Date('2027-01-01T00:01:00.000Z'),
+      client: 'native', bindingHash: 'native-binding-hash',
+    }),
+    user,
+  )
+  assert.equal(await repository.consumeLoginHandoff({
+    hash: 'handoff-hash', now: new Date('2027-01-01T00:02:00.000Z'),
+    client: 'native', bindingHash: 'native-binding-hash',
+  }), null)
+
   const oauthClient = await repository.registerMcpClient({
     id: 'client-postgres-test', clientName: 'Postgres MCP client',
     redirectUris: ['http://127.0.0.1:3210/callback'], clientUri: null, logoUri: null,

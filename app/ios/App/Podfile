@@ -14,6 +14,7 @@ def capacitor_pods
   pod 'AparajitaCapacitorSecureStorage', :path => '../../node_modules/.pnpm/@aparajita+capacitor-secure-storage@7.1.6/node_modules/@aparajita/capacitor-secure-storage'
   pod 'CapacitorCommunityBackgroundGeolocation', :path => '../../node_modules/.pnpm/@capacitor-community+backgr_f337b17035ddcc398d963e47db7facc5/node_modules/@capacitor-community/background-geolocation'
   pod 'CapacitorApp', :path => '../../node_modules/.pnpm/@capacitor+app@7.1.0_@capacitor+core@7.6.8/node_modules/@capacitor/app'
+  pod 'CapacitorBrowser', :path => '../../node_modules/.pnpm/@capacitor+browser@7.0.5_@capacitor+core@7.6.8/node_modules/@capacitor/browser'
   pod 'CapacitorCamera', :path => '../../node_modules/.pnpm/@capacitor+camera@7.0.2_@capacitor+core@7.6.8/node_modules/@capacitor/camera'
   pod 'CapacitorLocalNotifications', :path => '../../node_modules/.pnpm/@capacitor+local-notifications@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/local-notifications'
   pod 'CapacitorPreferences', :path => '../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences'

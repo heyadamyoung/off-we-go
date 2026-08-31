@@ -2,6 +2,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const fakeUuid = (namespace, value) => `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
   const magicTokens = new Map()
+  const oidcLogins = new Map()
+  const oidcIdentities = new Map()
+  const loginHandoffs = new Map()
   const sessions = new Map()
   const users = new Map()
   const trips = new Map()
@@ -37,12 +40,23 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async findUserByEmail(email) { return users.get(email) || null },
     async createMagicToken({ hash, email, expiresAt }) {
+      for (const [existingHash, value] of magicTokens) {
+        if (value.email === email) magicTokens.delete(existingHash)
+      }
       magicTokens.set(hash, { email, expiresAt })
     },
     async consumeMagicToken(hash, now) {
       const row = magicTokens.get(hash)
       magicTokens.delete(hash)
       return row && row.expiresAt > now ? row.email : null
+    },
+    async createOidcLogin({ stateHash, ...login }) {
+      oidcLogins.set(stateHash, login)
+    },
+    async consumeOidcLogin(stateHash, now) {
+      const row = oidcLogins.get(stateHash)
+      oidcLogins.delete(stateHash)
+      return row && row.expiresAt > now ? row : null
     },
     async ensureUser(email) {
       if (!users.has(email)) users.set(email, { id: fakeUuid(1, nextUser++), email })
@@ -58,6 +72,24 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         }
       }
       return user
+    },
+    async resolveOidcUser({ issuer, subject, email }) {
+      const key = `${issuer}\u0000${subject}`
+      const existingId = oidcIdentities.get(key)
+      if (existingId) return [...users.values()].find(user => user.id === existingId) || null
+      if (!await this.emailAllowed(email)) return null
+      const user = await this.ensureUser(email)
+      oidcIdentities.set(key, user.id)
+      return user
+    },
+    async createLoginHandoff({ hash, userId, client, bindingHash, expiresAt }) {
+      loginHandoffs.set(hash, { userId, client, bindingHash, expiresAt })
+    },
+    async consumeLoginHandoff({ hash, now, client, bindingHash }) {
+      const row = loginHandoffs.get(hash)
+      if (!row || row.expiresAt <= now || row.client !== client || row.bindingHash !== bindingHash) return null
+      loginHandoffs.delete(hash)
+      return [...users.values()].find(user => user.id === row.userId) || null
     },
     async createSession({ hash, userId, expiresAt }) {
       sessions.set(hash, { userId, expiresAt })

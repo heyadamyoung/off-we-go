@@ -16,6 +16,35 @@ services:
       timeout: 5s
       retries: 20
 
+  logto-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: logto
+      POSTGRES_USER: logto
+      POSTGRES_PASSWORD: ${LOGTO_POSTGRES_PASSWORD:?set LOGTO_POSTGRES_PASSWORD in .env}
+    volumes:
+      - logto_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logto -d logto"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  logto:
+    image: ghcr.io/logto-io/logto:1.41.0
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    environment:
+      TRUST_PROXY_HEADER: "1"
+      ENDPOINT: https://${LOGTO_DOMAIN:?set LOGTO_DOMAIN in .env}
+      ADMIN_ENDPOINT: https://${LOGTO_ADMIN_DOMAIN:?set LOGTO_ADMIN_DOMAIN in .env}
+      DB_URL: postgresql://logto:${LOGTO_POSTGRES_PASSWORD}@logto-db:5432/logto
+      SECRET_VAULT_KEK: ${LOGTO_SECRET_VAULT_KEK:?set LOGTO_SECRET_VAULT_KEK in .env}
+    depends_on:
+      logto-db:
+        condition: service_healthy
+
   api:
     build:
       context: .
@@ -30,6 +59,9 @@ services:
       WAYFARE_PUBLIC_URL: https://${WAYFARE_DOMAIN}
       WAYFARE_SESSION_SECRET: ${WAYFARE_SESSION_SECRET}
       WAYFARE_OAUTH_SECRET: ${WAYFARE_OAUTH_SECRET}
+      WAYFARE_OIDC_ISSUER: ${WAYFARE_OIDC_ISSUER:?set WAYFARE_OIDC_ISSUER in .env}
+      WAYFARE_OIDC_CLIENT_ID: ${WAYFARE_OIDC_CLIENT_ID:?set WAYFARE_OIDC_CLIENT_ID in .env}
+      WAYFARE_OIDC_CLIENT_SECRET: ${WAYFARE_OIDC_CLIENT_SECRET:?set WAYFARE_OIDC_CLIENT_SECRET in .env}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -61,6 +93,8 @@ services:
     restart: unless-stopped
     environment:
       WAYFARE_DOMAIN: ${WAYFARE_DOMAIN}
+      LOGTO_DOMAIN: ${LOGTO_DOMAIN}
+      LOGTO_ADMIN_DOMAIN: ${LOGTO_ADMIN_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
@@ -75,5 +109,6 @@ services:
 
 volumes:
   postgres_data:
+  logto_postgres_data:
   caddy_data:
   caddy_config:

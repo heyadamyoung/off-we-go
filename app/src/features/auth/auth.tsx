@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { authClient, completeBrowserLogin, hasBackend, sendMagicLink } from '../../backend'
+import { authClient, completeBrowserLogin, hasBackend, signInWithOidc } from '../../backend'
 import { initializeNativeServices, subscribeToNativeLogin } from '../../mobile'
 import { magicTokenFromUrl, nativeAppUrlFromUrl } from '../../mobile-auth-core'
 
@@ -23,62 +23,43 @@ function useSession() {
 }
 
 function SignInScreen() {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [finishing, setFinishing] = useState(false)
-  const [err, setErr] = useState(null)
+  const [err, setErr] = useState(() => {
+    if (typeof window === 'undefined') return null
+    return String(new URL(window.location.href).searchParams.get('error') || '').slice(0, 200) || null
+  })
 
   useEffect(() => subscribeToNativeLogin(state => {
     if (state.status === 'exchanging') {
-      setFinishing(true)
-      setSent(true)
+      setBusy(true)
       setErr(null)
     } else if (state.status === 'error') {
-      setFinishing(false)
-      setSent(false)
+      setBusy(false)
       setErr(state.error)
-    } else if (state.status === 'complete') {
-      setFinishing(false)
     }
   }), [])
 
-  const submit = async e => {
-    e.preventDefault()
-    if (!email.trim() || busy) return
-    setBusy(true); setSent(true); setErr(null)
-    try { await sendMagicLink(email) }
-    catch (e2) { setSent(false); setErr(e2.message || 'Could not send the link') }
-    finally { setBusy(false) }
+  const signIn = async () => {
+    if (busy) return
+    setBusy(true); setErr(null)
+    try { await signInWithOidc() }
+    catch (e2) {
+      setBusy(false)
+      setErr(e2.message || 'Could not start sign-in')
+    }
   }
 
   return (
     <div className="boot">
       <div className="bootIn wide">
         <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
-        {sent ? (
-          <>
-            <b>{finishing ? 'Signing you in…' : 'Check your inbox'}</b>
-            <p>{finishing ? 'Finishing the secure sign-in on this device.' : <>
-              We sent a link to <strong>{email}</strong>. Opening it on this device signs
-              you in — and creates your account if this is your first time.</>}</p>
-            {!busy && !finishing && <button className="btn" onClick={() => setSent(false)}>Use a different address</button>}
-          </>
-        ) : (
-          <>
-            <b>Sign in to Wayfare</b>
-            <p>Use the address the trip was shared with. No password to remember — we
-               email you a link.</p>
-            <form className="linkrow" onSubmit={submit}>
-              <input type="email" required autoFocus value={email} placeholder="you@example.com"
-                     onChange={e => setEmail(e.target.value)} />
-              <button className="btn pri" type="submit" disabled={busy || !email.trim()}>
-                {busy ? 'Sending…' : 'Email me a link'}
-              </button>
-            </form>
-            {err && <p className="warn">{err}</p>}
-          </>
-        )}
+        <b>{busy ? 'Signing you in…' : 'Sign in to Wayfare'}</b>
+        <p>Continue to Wayfare ID to sign in with your password, Google, Apple, or another
+           method configured for your family.</p>
+        <button className="btn pri" type="button" disabled={busy} onClick={signIn}>
+          {busy ? 'Opening secure sign-in…' : 'Continue to sign in'}
+        </button>
+        {err && <p className="warn">{err}</p>}
       </div>
     </div>
   )
@@ -88,16 +69,17 @@ function NativeLoginHandoff() {
   const current = window.location.href
   const appUrl = nativeAppUrlFromUrl(current)
   const token = appUrl ? magicTokenFromUrl(appUrl) : null
+  const error = String(new URL(current).searchParams.get('error') || '').slice(0, 200) || null
   const webUrl = token ? `/auth/callback?token=${encodeURIComponent(token)}` : '/'
 
   return (
     <div className="boot">
       <div className="bootIn wide">
         <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
-        <b>{appUrl ? 'Open Wayfare' : 'That sign-in link is invalid'}</b>
-        <p>{appUrl
-          ? 'Outlook opened your sign-in link in a browser. Tap below to finish signing in securely in the Wayfare app.'
-          : 'Request a fresh sign-in email from the Wayfare app and try again.'}</p>
+        <b>{error ? 'Sign-in did not finish' : appUrl ? 'Open Wayfare' : 'That sign-in link is invalid'}</b>
+        <p>{error || (appUrl
+          ? 'Your secure sign-in returned in this browser. Tap below to finish in the Wayfare app.'
+          : 'Start a fresh secure sign-in from the Wayfare app and try again.')}</p>
         {appUrl && <a className="btn pri" href={appUrl}>Open Wayfare app</a>}
         <a className="btn" href={webUrl}>{appUrl ? 'Sign in on the website instead' : 'Go to Wayfare'}</a>
       </div>

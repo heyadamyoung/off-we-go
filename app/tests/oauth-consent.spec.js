@@ -110,9 +110,10 @@ test('uses Wayfare styling and keeps permission controls aligned', async ({ page
     expect(await disclosureContrast(page, '.message', '.card')).toBeGreaterThanOrEqual(4.5)
     await page.locator('.identity').evaluate(element => element.classList.add('good'))
     expect(await disclosureContrast(page, '.identity.good', '.identity.good')).toBeGreaterThanOrEqual(4.5)
-    const loginButton = page.locator('.login button')
+    const loginButton = page.getByRole('link', { name: 'Continue to sign in' })
+    await expect(loginButton).toHaveAttribute('href', /\/api\/auth\/oidc\/start\?client=web&continue=/)
     await loginButton.hover()
-    expect(await disclosureContrast(page, '.login button', '.login button')).toBeGreaterThanOrEqual(4.5)
+    expect(await disclosureContrast(page, '.login a', '.login a')).toBeGreaterThanOrEqual(4.5)
 
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

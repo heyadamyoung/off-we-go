@@ -89,7 +89,7 @@ const authRedirect = (request, values) => {
   return redirect.href
 }
 
-function consentPage({ client, requestToken, scopes, root, redirectUri }) {
+function consentPage({ client, requestToken, scopes, root, redirectUri, continuation }) {
   const nonce = randomBytes(18).toString('base64url')
   const name = escapeHtml(client.clientName)
   const clientUri = safeMetadataUrl(client.clientUri)
@@ -98,6 +98,7 @@ function consentPage({ client, requestToken, scopes, root, redirectUri }) {
   const returnsToThisDevice = redirect.protocol === 'http:'
     && ['127.0.0.1', 'localhost', '[::1]'].includes(redirect.hostname)
   const writeRequested = scopes.includes('trips:write')
+  const signInHref = escapeHtml(`/api/auth/oidc/start?client=web&continue=${encodeURIComponent(continuation)}`)
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -116,8 +117,8 @@ function consentPage({ client, requestToken, scopes, root, redirectUri }) {
     .technical-details{max-width:440px;margin:8px auto 0;color:var(--disclosure);font-size:11.5px;text-align:left}.technical-details summary{width:max-content;margin:auto;cursor:pointer;user-select:none}.technical-copy{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;margin-top:9px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);overflow-wrap:anywhere}.technical-copy code{font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink2)}
     .body{padding:23px 30px}.label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--disclosure);margin-bottom:7px}.permission{display:grid;grid-template-columns:38px minmax(0,1fr) 24px;align-items:center;gap:13px;padding:14px 0}.permission+.permission{border-top:1px solid var(--line)}.permission-icon{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--bg3);color:var(--disclosure);display:grid;place-items:center}.permission-icon svg{display:block}.permission-copy{min-width:0}.permission-copy strong{display:block;font-size:13.5px}.permission-copy span{display:block;color:var(--ink2);font-size:12.5px;margin-top:2px}.permission input{appearance:none;-webkit-appearance:none;width:24px;height:24px;margin:0;border:1px solid var(--line2);border-radius:6px;background:var(--bg3);display:grid;place-items:center}.permission input::after{content:'';width:10px;height:6px;border:solid #0a0c10;border-width:0 0 2px 2px;transform:translateY(-1px) rotate(-45deg);opacity:0}.permission input:checked{background:var(--hot);border-color:var(--hot)}.permission input:checked::after{opacity:1}.permission input:not(:disabled){cursor:pointer}.permission input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}.permission input:disabled{opacity:.62}
     .identity{margin-top:17px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);color:var(--ink2);font-size:12.5px}.identity.good{border-color:rgba(34,197,94,.2);background:var(--ok-soft);color:var(--success)}.actions{display:grid;grid-template-columns:1fr 1.55fr;gap:9px;margin-top:17px}button{height:42px;border-radius:9px;border:1px solid var(--line2);padding:0 14px;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}.deny{background:var(--bg2);color:var(--ink)}.deny:hover{border-color:var(--ink3)}.approve{background:var(--hot);border-color:transparent;color:#0a0c10;font-weight:800}.approve:hover{background:var(--hot2)}
-    .login{display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}.login.show{display:block}.login form{display:flex;gap:8px}.login input{min-width:0;flex:1;height:42px;border:1px solid var(--line2);border-radius:9px;background:var(--bg3);color:var(--ink);padding:0 12px;font:inherit;outline:none}.login input:focus{border-color:var(--hot)}.login button{background:var(--hot);border-color:transparent;color:#0a0c10;font-weight:800}.login button:hover{background:var(--hot2)}:root[data-theme="light"] .approve:hover,:root[data-theme="light"] .login button:hover{color:#fff}.message{min-height:20px;margin:9px 0 0;color:var(--warning);font-size:12.5px}.fine{padding:0 30px 23px;color:var(--disclosure);font-size:11.5px;text-align:center}
-    @media(max-width:520px){body{padding:12px}.brand{margin-bottom:14px}.top,.body{padding-left:18px;padding-right:18px}.top{padding-top:23px}.actions{grid-template-columns:1fr}.login form{display:grid}.permission{grid-template-columns:38px minmax(0,1fr) 24px;gap:10px}.technical-copy{grid-template-columns:1fr}.fine{padding-left:18px;padding-right:18px}}
+    .login{display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}.login.show{display:block}.login a{height:42px;border-radius:9px;padding:0 14px;background:var(--hot);color:#0a0c10;font-weight:800;text-decoration:none;display:flex;align-items:center;justify-content:center}.login a:hover{background:var(--hot2)}:root[data-theme="light"] .approve:hover,:root[data-theme="light"] .login a:hover{color:#fff}.message{min-height:20px;margin:9px 0 0;color:var(--warning);font-size:12.5px}.fine{padding:0 30px 23px;color:var(--disclosure);font-size:11.5px;text-align:center}
+    @media(max-width:520px){body{padding:12px}.brand{margin-bottom:14px}.top,.body{padding-left:18px;padding-right:18px}.top{padding-top:23px}.actions{grid-template-columns:1fr}.permission{grid-template-columns:38px minmax(0,1fr) 24px;gap:10px}.technical-copy{grid-template-columns:1fr}.fine{padding-left:18px;padding-right:18px}}
   </style>
   <script nonce="${nonce}">try{document.documentElement.dataset.theme=localStorage.getItem('wf-theme')||'dark'}catch{document.documentElement.dataset.theme='dark'}</script>
 </head>
@@ -140,7 +141,7 @@ function consentPage({ client, requestToken, scopes, root, redirectUri }) {
       <div id="identity" class="identity">Checking your Wayfare sign-in…</div>
       <div id="login" class="login">
         <div class="label">Sign in to continue</div>
-        <form id="login-form"><input id="email" type="email" autocomplete="email" placeholder="you@example.com" required><button type="submit">Email link</button></form>
+        <a href="${signInHref}">Continue to sign in</a>
       </div>
       <input type="hidden" name="request_token" value="${escapeHtml(requestToken)}">
       <div class="actions"><button id="deny" class="deny" type="button">Cancel</button><button id="approve" class="approve" type="button" disabled>Allow access</button></div>
@@ -159,7 +160,6 @@ function consentPage({ client, requestToken, scopes, root, redirectUri }) {
     try{const response=await fetch('/api/auth/session',{headers:{authorization:'Bearer '+accessToken}});if(!response.ok)throw new Error();const data=await response.json();identity.textContent='Signed in as '+data.user.email;identity.classList.add('good');approve.disabled=false}
     catch{accessToken=null;localStorage.removeItem(sessionKey);identity.textContent='Your Wayfare sign-in has expired.';login.classList.add('show')}
   };
-  document.querySelector('#login-form').addEventListener('submit',async event=>{event.preventDefault();message.textContent='';const email=document.querySelector('#email').value;const response=await fetch('/api/auth/magic-link',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,continue:location.pathname+location.search})});message.textContent=response.ok?'Check your email, then return here if this page stays open.':'Could not send a sign-in link.'});
   const decide=async approveValue=>{message.textContent='';const scopes=['trips:read'];if(document.querySelector('#write-scope')?.checked)scopes.push('trips:write');const response=await fetch('/api/oauth/consent',{method:'POST',headers:{authorization:'Bearer '+accessToken,'content-type':'application/json'},body:JSON.stringify({requestToken,approve:approveValue,scope:scopes.join(' ')})});const data=await response.json();if(!response.ok){message.textContent=data.error||'Authorization failed.';return}location.assign(data.redirectTo)};
   approve.addEventListener('click',()=>decide(true));document.querySelector('#deny').addEventListener('click',()=>decide(false));check();
 })();
@@ -472,7 +472,10 @@ export async function registerMcpRoutes(app, {
       state: String(query.state || ''), codeChallenge: String(query.code_challenge), resource,
     }
     const requestToken = signAuthorizationRequest(authorizationRequest, oauthSecret)
-    const page = consentPage({ client, requestToken, scopes, root, redirectUri })
+    const page = consentPage({
+      client, requestToken, scopes, root, redirectUri,
+      continuation: request.raw.url,
+    })
     return reply.header('content-type', 'text/html; charset=utf-8')
       .header('cache-control', 'no-store')
       .header('content-security-policy', `default-src 'none'; img-src 'self'; script-src 'nonce-${page.nonce}'; style-src 'nonce-${page.nonce}'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`)

@@ -27,7 +27,34 @@ if [[ "$EXISTING_ENV" == true ]]; then
     printf 'WAYFARE_OAUTH_SECRET=%s\n' "$(openssl rand -base64 48 | tr -d '\n')" >> .env
     chmod 600 .env
   fi
-  for required in WAYFARE_DOMAIN WAYFARE_ADMIN_EMAIL APPLE_TEAM_ID POSTGRES_PASSWORD WAYFARE_SESSION_SECRET WAYFARE_OAUTH_SECRET SMTP_HOST SMTP_FROM; do
+  if ! grep -q '^LOGTO_DOMAIN=.' .env; then
+    printf 'LOGTO_DOMAIN=auth.threadway.ai\n' >> .env
+  fi
+  if ! grep -q '^LOGTO_ADMIN_DOMAIN=.' .env; then
+    printf 'LOGTO_ADMIN_DOMAIN=auth-admin.threadway.ai\n' >> .env
+  fi
+  if ! grep -q '^LOGTO_POSTGRES_PASSWORD=.' .env; then
+    printf 'LOGTO_POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
+  fi
+  if ! grep -q '^LOGTO_SECRET_VAULT_KEK=.' .env; then
+    printf 'LOGTO_SECRET_VAULT_KEK=%s\n' "$(openssl rand -base64 32 | tr -d '\n')" >> .env
+  fi
+  if ! grep -q '^WAYFARE_OIDC_ISSUER=.' .env; then
+    read -rp "Logto OIDC issuer [https://auth.threadway.ai/oidc]: " WAYFARE_OIDC_ISSUER
+    WAYFARE_OIDC_ISSUER="${WAYFARE_OIDC_ISSUER:-https://auth.threadway.ai/oidc}"
+    printf 'WAYFARE_OIDC_ISSUER=%s\n' "$WAYFARE_OIDC_ISSUER" >> .env
+  fi
+  if ! grep -q '^WAYFARE_OIDC_CLIENT_ID=.' .env; then
+    read -rp "Logto Wayfare client ID: " WAYFARE_OIDC_CLIENT_ID
+    printf 'WAYFARE_OIDC_CLIENT_ID=%s\n' "$WAYFARE_OIDC_CLIENT_ID" >> .env
+  fi
+  if ! grep -q '^WAYFARE_OIDC_CLIENT_SECRET=.' .env; then
+    read -rsp "Logto Wayfare client secret: " WAYFARE_OIDC_CLIENT_SECRET
+    echo
+    printf 'WAYFARE_OIDC_CLIENT_SECRET=%s\n' "$WAYFARE_OIDC_CLIENT_SECRET" >> .env
+  fi
+  chmod 600 .env
+  for required in WAYFARE_DOMAIN WAYFARE_ADMIN_EMAIL APPLE_TEAM_ID POSTGRES_PASSWORD WAYFARE_SESSION_SECRET WAYFARE_OAUTH_SECRET WAYFARE_OIDC_ISSUER WAYFARE_OIDC_CLIENT_ID WAYFARE_OIDC_CLIENT_SECRET LOGTO_DOMAIN LOGTO_ADMIN_DOMAIN LOGTO_POSTGRES_PASSWORD LOGTO_SECRET_VAULT_KEK SMTP_HOST SMTP_FROM; do
     grep -q "^${required}=." .env || { echo ".env is missing ${required}; add it before rerunning." >&2; exit 1; }
   done
   echo "Reusing the existing .env and preserving its database, session, and SMTP secrets."
@@ -35,6 +62,11 @@ else
   read -rp "Wayfare domain [wayfare.threadway.ai]: " WAYFARE_DOMAIN
   WAYFARE_DOMAIN="${WAYFARE_DOMAIN:-wayfare.threadway.ai}"
   read -rp "Initial owner email: " WAYFARE_ADMIN_EMAIL
+  read -rp "Logto OIDC issuer [https://auth.threadway.ai/oidc]: " WAYFARE_OIDC_ISSUER
+  WAYFARE_OIDC_ISSUER="${WAYFARE_OIDC_ISSUER:-https://auth.threadway.ai/oidc}"
+  read -rp "Logto Wayfare client ID: " WAYFARE_OIDC_CLIENT_ID
+  read -rsp "Logto Wayfare client secret: " WAYFARE_OIDC_CLIENT_SECRET
+  echo
   read -rp "Apple Developer Team ID [R65UN25Q64]: " APPLE_TEAM_ID
   APPLE_TEAM_ID="${APPLE_TEAM_ID:-R65UN25Q64}"
   if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
@@ -53,6 +85,8 @@ else
   SMTP_FROM="${SMTP_FROM:-Wayfare <$WAYFARE_ADMIN_EMAIL>}"
 
   POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+  LOGTO_POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+  LOGTO_SECRET_VAULT_KEK="$(openssl rand -base64 32 | tr -d '\n')"
   WAYFARE_SESSION_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
   WAYFARE_OAUTH_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
   SMTP_PASS_B64="$(printf '%s' "$SMTP_PASS" | base64 | tr -d '\n')"
@@ -69,6 +103,13 @@ else
     printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
     printf 'WAYFARE_SESSION_SECRET=%s\n' "$WAYFARE_SESSION_SECRET"
     printf 'WAYFARE_OAUTH_SECRET=%s\n' "$WAYFARE_OAUTH_SECRET"
+    printf 'WAYFARE_OIDC_ISSUER=%s\n' "$WAYFARE_OIDC_ISSUER"
+    printf 'WAYFARE_OIDC_CLIENT_ID=%s\n' "$WAYFARE_OIDC_CLIENT_ID"
+    printf 'WAYFARE_OIDC_CLIENT_SECRET=%s\n' "$WAYFARE_OIDC_CLIENT_SECRET"
+    printf 'LOGTO_DOMAIN=auth.threadway.ai\n'
+    printf 'LOGTO_ADMIN_DOMAIN=auth-admin.threadway.ai\n'
+    printf 'LOGTO_POSTGRES_PASSWORD=%s\n' "$LOGTO_POSTGRES_PASSWORD"
+    printf 'LOGTO_SECRET_VAULT_KEK=%s\n' "$LOGTO_SECRET_VAULT_KEK"
     printf 'SMTP_HOST=%s\n' "$SMTP_HOST"
     printf 'SMTP_PORT=%s\n' "$SMTP_PORT"
     printf 'SMTP_SECURE=%s\n' "$SMTP_SECURE"
@@ -94,4 +135,4 @@ EOF
 chmod 644 /etc/cron.d/wayfare-backup
 
 echo "Wayfare is running at https://${WAYFARE_DOMAIN}"
-echo "Sign in with ${WAYFARE_ADMIN_EMAIL}; the first login link will create the owner account."
+echo "Sign in through Wayfare ID as ${WAYFARE_ADMIN_EMAIL}; the first verified login will create the owner account."

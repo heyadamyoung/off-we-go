@@ -419,3 +419,19 @@ test('native magic-link handling reports progress and contains exchange failures
     { status: 'error', error: 'The sign-in link expired' },
   ])
 })
+
+test('native OIDC cancellation returns an error without attempting token exchange', async () => {
+  const states = []
+  const message = 'Sign-in was cancelled or could not be completed'
+  const url = `https://wayfare.example.com/auth/native?error=${encodeURIComponent(message)}`
+  const expectedAppUrl = new URL('wayfare://auth')
+  expectedAppUrl.searchParams.set('error', message)
+  assert.equal(nativeAppUrlFromUrl(url), expectedAppUrl.href)
+  const handled = await completeNativeLogin(
+    url,
+    { async exchangeMagicToken() { throw new Error('must not exchange') } },
+    state => states.push(state),
+  )
+  assert.equal(handled, true)
+  assert.deepEqual(states, [{ status: 'error', error: message }])
+})

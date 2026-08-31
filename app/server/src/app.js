@@ -9,6 +9,19 @@ import { createWindowRateLimiter } from './rateLimit.js'
 const normalizeEmail = value => String(value || '').trim().toLowerCase()
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
 const newToken = () => randomBytes(32).toString('base64url')
+const pkceChallenge = verifier => createHash('sha256').update(verifier).digest('base64url')
+const loginCookieName = '__Host-wayfare-login'
+
+function cookieValue(request, name) {
+  const cookies = String(request.headers.cookie || '').split(';')
+  for (const cookie of cookies) {
+    const separator = cookie.indexOf('=')
+    if (separator > 0 && cookie.slice(0, separator).trim() === name) {
+      return cookie.slice(separator + 1).trim()
+    }
+  }
+  return null
+}
 
 function bearer(request) {
   const value = request.headers.authorization || ''
@@ -20,7 +33,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
   deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 }, maxDevicesPerTrip = 20,
   appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
-  androidPackageName = 'ai.threadway.wayfare', androidCertFingerprints = [],
+  androidPackageName = 'ai.threadway.wayfare', androidCertFingerprints = [], identityProvider = null,
   trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
   if (!repository) throw new Error('A repository is required')
   if (!mailer) throw new Error('A mailer is required')
@@ -43,6 +56,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   ])
   await app.register(cors, {
     origin(origin, callback) { callback(null, !origin || allowedOrigins.has(origin)) },
+    credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['content-type', 'authorization'], maxAge: 86400,
   })
@@ -133,6 +147,112 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return message
   }
 
+  const oidcCallbackUrl = `${publicUrl.replace(/\/$/, '')}/api/auth/oidc/callback`
+  const safeAuthContinuation = value => {
+    if (typeof value !== 'string') return null
+    try {
+      const root = publicUrl.replace(/\/$/, '')
+      const destination = new URL(value, root)
+      return destination.origin === root && destination.pathname === '/oauth/authorize'
+        ? destination.pathname + destination.search : null
+    } catch { return null }
+  }
+  const privateAuthReply = reply => reply
+    .header('cache-control', 'no-store')
+    .header('referrer-policy', 'no-referrer')
+  const oidcFailure = (reply, login, message) => {
+    const destination = new URL(login?.client === 'native' ? '/auth/native' : '/auth/callback', publicUrl)
+    destination.searchParams.set('error', message)
+    return privateAuthReply(reply).redirect(destination.href)
+  }
+
+  app.get('/api/auth/oidc/start', async (request, reply) => {
+    privateAuthReply(reply)
+    if (!identityProvider) return reply.code(503).send({ error: 'OIDC sign-in is not configured' })
+    const retryAfter = authIpLimiter.hit(request.ip, {
+      max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
+    })
+    if (retryAfter) {
+      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
+    }
+    const client = request.query?.client === 'native' ? 'native' : 'web'
+    const nativeChallenge = String(request.query?.challenge || '')
+    if (client === 'native' && !/^[A-Za-z0-9_-]{43}$/.test(nativeChallenge)) {
+      return reply.code(400).send({ error: 'The native sign-in request is missing its device binding' })
+    }
+    const webBinding = client === 'web' ? newToken() : null
+    const bindingHash = client === 'native' ? nativeChallenge : tokenHash(webBinding)
+    const state = newToken(), nonce = newToken(), codeVerifier = newToken()
+    await repository.createOidcLogin({
+      stateHash: tokenHash(state), nonce, codeVerifier, client, bindingHash,
+      continuation: safeAuthContinuation(request.query?.continue),
+      expiresAt: new Date(clock().getTime() + 10 * 60_000),
+    })
+    const location = await identityProvider.authorizationUrl({
+      redirectUri: oidcCallbackUrl, state, nonce,
+      codeChallenge: pkceChallenge(codeVerifier),
+    })
+    if (webBinding) {
+      reply.header('set-cookie', `${loginCookieName}=${webBinding}; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax`)
+    }
+    return reply.redirect(location)
+  })
+
+  app.get('/api/auth/oidc/callback', async (request, reply) => {
+    privateAuthReply(reply)
+    if (!identityProvider) return reply.code(503).send({ error: 'OIDC sign-in is not configured' })
+    const state = String(request.query?.state || '')
+    const login = state.length >= 32
+      ? await repository.consumeOidcLogin(tokenHash(state), clock()) : null
+    if (!login) return reply.code(400).send({ error: 'That sign-in attempt is invalid or has expired' })
+    if (!request.query?.code || request.query?.error) {
+      return oidcFailure(reply, login, 'Sign-in was cancelled or could not be completed')
+    }
+    let identity
+    try {
+      identity = await identityProvider.exchangeCallback({
+        currentUrl: new URL(request.raw.url, publicUrl).href,
+        redirectUri: oidcCallbackUrl, state, nonce: login.nonce,
+        codeVerifier: login.codeVerifier,
+      })
+    } catch (error) {
+      app.log.warn({ err: error }, 'OIDC callback exchange failed')
+      return oidcFailure(reply, login, 'The identity provider could not verify this sign-in')
+    }
+    const email = normalizeEmail(identity?.email)
+    if (!identity?.issuer || !identity?.subject || !identity?.emailVerified || !email) {
+      return oidcFailure(reply, login, 'A verified email address is required to sign in')
+    }
+    const user = await repository.resolveOidcUser({
+      issuer: identity.issuer, subject: identity.subject, email,
+    })
+    if (!user) {
+      return oidcFailure(reply, login, 'This account has not been invited to Wayfare')
+    }
+    const handoff = newToken()
+    await repository.createLoginHandoff({
+      hash: tokenHash(handoff), userId: user.id, client: login.client, bindingHash: login.bindingHash,
+      expiresAt: new Date(clock().getTime() + 2 * 60_000),
+    })
+    const destination = new URL(login.client === 'native' ? '/auth/native' : '/auth/callback', publicUrl)
+    destination.searchParams.set('token', handoff)
+    if (login.continuation) destination.searchParams.set('continue', login.continuation)
+    return reply.redirect(destination.href)
+  })
+
+  app.get('/api/auth/oidc/logout', async (request, reply) => {
+    privateAuthReply(reply)
+    const native = request.query?.client === 'native'
+    const returnTo = new URL(native ? '/auth/native?logout=1' : '/', publicUrl).href
+    if (!identityProvider?.endSessionUrl) return reply.redirect(returnTo)
+    try {
+      return reply.redirect(await identityProvider.endSessionUrl({ postLogoutRedirectUri: returnTo }))
+    } catch (error) {
+      app.log.warn({ err: error }, 'OIDC provider logout discovery failed')
+      return reply.redirect(returnTo)
+    }
+  })
+
   app.post('/api/auth/magic-link', { bodyLimit: 16 * 1024 }, async (request, reply) => {
     const email = normalizeEmail(request.body?.email)
     // Stop at the IP bucket first. Once an address is blocked, attacker-made
@@ -151,18 +271,31 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   })
 
   app.post('/api/auth/exchange', async (request, reply) => {
+    privateAuthReply(reply)
     const token = String(request.body?.token || '')
     const now = clock()
-    const email = token.length >= 32
-      ? await repository.consumeMagicToken(tokenHash(token), now) : null
-    if (!email) return reply.code(401).send({ error: 'That sign-in link is invalid or has expired' })
+    const client = request.body?.client === 'native' ? 'native' : 'web'
+    const binding = client === 'native'
+      ? pkceChallenge(String(request.body?.verifier || ''))
+      : tokenHash(cookieValue(request, loginCookieName) || '')
+    let user = token.length >= 32
+      ? await repository.consumeLoginHandoff({ hash: tokenHash(token), now, client, bindingHash: binding }) : null
+    const usedOidcHandoff = Boolean(user)
+    if (!user) {
+      const email = token.length >= 32
+        ? await repository.consumeMagicToken(tokenHash(token), now) : null
+      if (email) user = await repository.ensureUser(email)
+    }
+    if (!user) return reply.code(401).send({ error: 'That sign-in link is invalid or has expired' })
 
-    const user = await repository.ensureUser(email)
     const accessToken = newToken()
     await repository.createSession({
       hash: tokenHash(accessToken), userId: user.id,
       expiresAt: new Date(now.getTime() + 90 * 24 * 60 * 60_000),
     })
+    if (usedOidcHandoff && client === 'web') {
+      reply.header('set-cookie', `${loginCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`)
+    }
     return { accessToken, user }
   })
 

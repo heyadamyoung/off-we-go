@@ -62,7 +62,9 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
       headers['content-type'] ||= 'application/json'
       body = JSON.stringify(body)
     }
-    const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, { ...options, headers, body: body as BodyInit | null | undefined })
+    const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, {
+      credentials: 'include', ...options, headers, body: body as BodyInit | null | undefined,
+    })
     if (response.status === 401 && !path.startsWith('/auth/')) await save(null)
     if (!response.ok) {
       let message = `Request failed (${response.status})`
@@ -83,8 +85,8 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     request,
     getSession() { return session },
     subscribe(listener: (session: AuthSession | null) => void) { listeners.add(listener); return () => listeners.delete(listener) },
-    async exchangeMagicToken(token: string) {
-      const result = await request<AuthSession>('/auth/exchange', { method: 'POST', body: { token } })
+    async exchangeMagicToken(token: string, binding: { client?: 'native'; verifier?: string } = {}) {
+      const result = await request<AuthSession>('/auth/exchange', { method: 'POST', body: { token, ...binding } })
       return await save({ accessToken: result.accessToken, user: result.user })
     },
     async restore() {

@@ -41,3 +41,25 @@
     Referrer-Policy strict-origin-when-cross-origin
   }
 }
+
+{$LOGTO_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy logto:3001
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+  }
+}
+
+{$LOGTO_ADMIN_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy logto:3002
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+  }
+}

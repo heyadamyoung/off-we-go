@@ -1,14 +1,16 @@
-function parsedMagicUrl(value) {
+function parsedLoginUrl(value) {
   try {
     const url = new URL(value)
     const token = url.searchParams.get('token')
-    return token && token.length >= 32 ? { url, token } : null
+    const error = String(url.searchParams.get('error') || '').slice(0, 200)
+    return token && token.length >= 32 ? { url, token, error: null }
+      : error ? { url, token: null, error } : null
   } catch { return null }
 }
 
 export function magicTokenFromUrl(value) {
-  const parsed = parsedMagicUrl(value)
-  if (!parsed) return null
+  const parsed = parsedLoginUrl(value)
+  if (!parsed?.token) return null
   const { url, token } = parsed
   const isUniversalLink = url.protocol === 'https:' &&
     (url.pathname === '/auth/callback' || url.pathname === '/auth/native')
@@ -17,16 +19,17 @@ export function magicTokenFromUrl(value) {
 }
 
 export function browserMagicTokenFromUrl(value) {
-  const parsed = parsedMagicUrl(value)
+  const parsed = parsedLoginUrl(value)
   return parsed?.url.protocol === 'https:' && parsed.url.pathname === '/auth/callback'
     ? parsed.token : null
 }
 
 export function nativeAppUrlFromUrl(value) {
-  const parsed = parsedMagicUrl(value)
+  const parsed = parsedLoginUrl(value)
   if (!parsed || !['http:', 'https:'].includes(parsed.url.protocol) || parsed.url.pathname !== '/auth/native') return null
   const destination = new URL('wayfare://auth')
-  destination.searchParams.set('token', parsed.token)
+  if (parsed.token) destination.searchParams.set('token', parsed.token)
+  else destination.searchParams.set('error', parsed.error)
   return destination.href
 }
 
@@ -44,6 +47,15 @@ export async function completeNativeLogin(
   authClient: NativeAuthClient | null | undefined,
   onState: (state: NativeLoginState) => void = () => {},
 ) {
+  const parsed = parsedLoginUrl(value)
+  const isNativeReturn = parsed && (
+    (parsed.url.protocol === 'https:' && ['/auth/callback', '/auth/native'].includes(parsed.url.pathname)) ||
+    (parsed.url.protocol === 'wayfare:' && parsed.url.hostname === 'auth')
+  )
+  if (isNativeReturn && parsed.error) {
+    onState({ status: 'error', error: parsed.error })
+    return true
+  }
   const token = magicTokenFromUrl(value)
   if (!token || !authClient) return false
   onState({ status: 'exchanging', error: null })

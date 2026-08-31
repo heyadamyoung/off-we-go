@@ -1,6 +1,6 @@
 import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
 import { createApiClient, safeOAuthContinuation } from './api-client-core'
-import { mobileTracker, sessionStorage } from './mobile'
+import { mobileTracker, sessionStorage, startOidcLogin, startOidcLogout } from './mobile'
 import { browserMagicTokenFromUrl } from './mobile-auth-core'
 import type {
   AuthSession, Coordinates, Device, Id, Invite, LiveFix, Person, Stop,
@@ -249,15 +249,21 @@ export async function sendMagicLink(email: string) {
   if (!hasBackend) throw new Error('No backend configured')
   return authClient.request('/auth/magic-link', { method: 'POST', body: { email: email.trim().toLowerCase() } })
 }
+export async function signInWithOidc() {
+  if (!hasBackend) throw new Error('No backend configured')
+  await startOidcLogin(API_URL)
+}
 export async function signOut() {
   try { if (hasBackend) await authClient.signOut() }
   finally { await mobileTracker.forget() }
+  if (hasBackend) await startOidcLogout(API_URL)
 }
 export async function deleteAccount() {
   if (!hasBackend) throw new Error('No backend configured')
   await authClient.request('/account', { method: 'DELETE', body: { confirm: 'DELETE' } })
   try { await authClient.signOut() }
   finally { await mobileTracker.forget() }
+  await startOidcLogout(API_URL)
 }
 
 export async function loadAttractions(box: Record<string, string | number>, { headlineOnly = false, limit = 1000 } = {}) {

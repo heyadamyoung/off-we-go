@@ -3,11 +3,13 @@ import { Preferences } from '@capacitor/preferences'
 import { App as NativeApp } from '@capacitor/app'
 import { Camera } from '@capacitor/camera'
 import { LocalNotifications } from '@capacitor/local-notifications'
+import { Browser } from '@capacitor/browser'
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage'
 import { createMobileTracker } from './mobile-tracking-core'
 import { galleryPhotosToFiles } from './mobile-photos-core'
 import { completeNativeLogin, type NativeLoginState } from './mobile-auth-core'
 import { createNativeLocationDriver, createNativeTrackingFetch } from './mobile-platform-core'
+import { beginOidcLogin, beginOidcLogout, NATIVE_OIDC_VERIFIER_KEY } from './login-core'
 
 export const isNativeApp = Capacitor.isNativePlatform()
 export const mobilePlatform = Capacitor.getPlatform()
@@ -111,6 +113,7 @@ export async function pickNativePhotos() {
 }
 
 let appUrlListener = null
+let nativeOidcPending = false
 let nativeLoginState: NativeLoginState | null = null
 const nativeLoginListeners = new Set<(state: NativeLoginState) => void>()
 
@@ -125,14 +128,43 @@ export function subscribeToNativeLogin(listener: (state: NativeLoginState) => vo
   return () => { nativeLoginListeners.delete(listener) }
 }
 
+export function startOidcLogin(apiBaseUrl: string) {
+  if (isNativeApp) nativeOidcPending = true
+  return beginOidcLogin({
+    apiBaseUrl, native: isNativeApp, location: window.location, browser: Browser, storage: sessionStorage,
+  }).catch(error => { nativeOidcPending = false; throw error })
+}
+
+export function startOidcLogout(apiBaseUrl: string) {
+  nativeOidcPending = false
+  return beginOidcLogout({
+    apiBaseUrl, native: isNativeApp, location: window.location, browser: Browser,
+  })
+}
+
+const nativeBoundAuthClient = authClient => ({
+  async exchangeMagicToken(token) {
+    const verifier = await sessionStorage.getItem(NATIVE_OIDC_VERIFIER_KEY)
+    try { return await authClient.exchangeMagicToken(token, verifier ? { client: 'native', verifier } : {}) }
+    finally { await sessionStorage.removeItem(NATIVE_OIDC_VERIFIER_KEY) }
+  },
+})
+
 export async function initializeNativeServices(authClient) {
   if (!isNativeApp) return
   if (!appUrlListener) {
     appUrlListener = NativeApp.addListener('appUrlOpen', ({ url }) => {
-      void completeNativeLogin(url, authClient, publishNativeLogin)
+      nativeOidcPending = false
+      void Browser.close().catch(() => {})
+      void completeNativeLogin(url, nativeBoundAuthClient(authClient), publishNativeLogin)
+    })
+    void Browser.addListener('browserFinished', () => {
+      if (!nativeOidcPending) return
+      nativeOidcPending = false
+      publishNativeLogin({ status: 'error', error: 'Sign-in was cancelled' })
     })
     const launch = await NativeApp.getLaunchUrl()
-    if (launch?.url) await completeNativeLogin(launch.url, authClient, publishNativeLogin)
+    if (launch?.url) await completeNativeLogin(launch.url, nativeBoundAuthClient(authClient), publishNativeLogin)
   }
   await mobileTracker.restore().catch(() => {})
 }

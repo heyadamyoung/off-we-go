@@ -34,6 +34,41 @@ test('the sign-in screen gives the Wayfare icon enough room to be legible', asyn
   expect(size).toEqual({ width: 64, height: 64 })
 })
 
+test('the OIDC sign-in action stays inside an older iPhone viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.goto('/')
+  const layout = await page.evaluate(() => {
+    const root = document.querySelector('#root')
+    root.innerHTML = `
+      <div class="boot">
+        <div class="bootIn wide">
+          <span class="mk brand"><img src="/wayfare-icon.png" alt=""></span>
+          <b>Sign in to Wayfare</b>
+          <p>Continue to Wayfare ID to sign in securely.</p>
+          <button class="btn pri" type="button">Continue to sign in</button>
+        </div>
+      </div>`
+
+    const viewportWidth = document.documentElement.clientWidth
+    const action = document.querySelector('button').getBoundingClientRect()
+    const card = document.querySelector('.bootIn').getBoundingClientRect()
+    return {
+      viewportWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      actionLeft: action.left,
+      actionRight: action.right,
+      cardLeft: card.left,
+      cardRight: card.right,
+    }
+  })
+
+  expect(layout.documentWidth).toBe(layout.viewportWidth)
+  expect(layout.actionLeft).toBeGreaterThanOrEqual(0)
+  expect(layout.actionRight).toBeLessThanOrEqual(layout.viewportWidth)
+  expect(layout.cardLeft).toBeGreaterThanOrEqual(0)
+  expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth)
+})
+
 test('publishes the Wayfare mark as a multi-size favicon', async ({ page, request }) => {
   await page.goto('/')
   const href = await page.locator('link[rel="icon"]').getAttribute('href')
