@@ -46,6 +46,18 @@ test('publishes the Wayfare mark as a multi-size favicon', async ({ page, reques
   expect(icon.readUInt16LE(4)).toBe(4)
 })
 
+test('an email browser can hand a native magic link to the installed app', async ({ page }) => {
+  const token = 'one-time-login-token-at-least-thirty-two-characters'
+  await page.goto(`/auth/native?token=${token}`)
+
+  const openApp = page.getByRole('link', { name: 'Open Wayfare app' })
+  await expect(openApp).toBeVisible()
+  await expect(openApp).toHaveAttribute('href', `wayfare://auth?token=${token}`)
+  await expect(page.getByRole('link', { name: 'Sign in on the website instead' })).toHaveAttribute(
+    'href', `/auth/callback?token=${token}`,
+  )
+})
+
 /* Getting a reliably clickable pin needs care: photo stacks are drawn above and
    to the right of their stop's pin, so at some zooms they cover neighbours. Fly
    to a stop that has no photos and it lands centred and uncovered every time.
@@ -73,6 +85,25 @@ test('loads the trip with map, markers and filmstrip', async ({ page }) => {
   await expect(page.locator('.mstack')).toHaveCount(5)
   await expect(page.locator('.fcard').first()).toBeVisible()
   await expect(page.locator('.tflow')).toContainText('km walked')
+})
+
+test('fit the whole trip keeps every stop inside a phone-sized map', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+
+  await page.getByTitle('Fit the whole trip').click()
+  await page.waitForTimeout(1000)
+
+  const allStopsInsideMap = await page.evaluate(() => {
+    const map = document.querySelector('.mapcanvas').getBoundingClientRect()
+    return [...document.querySelectorAll('.mstop .pin')].every(pin => {
+      const box = pin.getBoundingClientRect()
+      const x = box.x + box.width / 2
+      const y = box.y + box.height / 2
+      return x >= map.left && x <= map.right && y >= map.top && y <= map.bottom
+    })
+  })
+  expect(allStopsInsideMap).toBe(true)
 })
 
 test('the header People action stays compact at tablet widths', async ({ page }) => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { authClient, completeBrowserLogin, hasBackend, sendMagicLink } from '../../backend'
 import { initializeNativeServices, subscribeToNativeLogin } from '../../mobile'
+import { magicTokenFromUrl, nativeAppUrlFromUrl } from '../../mobile-auth-core'
 
 function useSession() {
   const [session, setSession] = useState(null)
@@ -83,7 +84,28 @@ function SignInScreen() {
   )
 }
 
-export { SignInScreen, useSession }
+function NativeLoginHandoff() {
+  const current = window.location.href
+  const appUrl = nativeAppUrlFromUrl(current)
+  const token = appUrl ? magicTokenFromUrl(appUrl) : null
+  const webUrl = token ? `/auth/callback?token=${encodeURIComponent(token)}` : '/'
+
+  return (
+    <div className="boot">
+      <div className="bootIn wide">
+        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+        <b>{appUrl ? 'Open Wayfare' : 'That sign-in link is invalid'}</b>
+        <p>{appUrl
+          ? 'Outlook opened your sign-in link in a browser. Tap below to finish signing in securely in the Wayfare app.'
+          : 'Request a fresh sign-in email from the Wayfare app and try again.'}</p>
+        {appUrl && <a className="btn pri" href={appUrl}>Open Wayfare app</a>}
+        <a className="btn" href={webUrl}>{appUrl ? 'Sign in on the website instead' : 'Go to Wayfare'}</a>
+      </div>
+    </div>
+  )
+}
+
+export { NativeLoginHandoff, SignInScreen, useSession }
 
 
 

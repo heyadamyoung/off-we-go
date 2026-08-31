@@ -4,7 +4,9 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { createMobileTracker } from '../src/mobile-tracking-core.ts'
 import * as mobilePhotos from '../src/mobile-photos-core.ts'
-import { completeNativeLogin, magicTokenFromUrl } from '../src/mobile-auth-core.ts'
+import {
+  browserMagicTokenFromUrl, completeNativeLogin, magicTokenFromUrl, nativeAppUrlFromUrl,
+} from '../src/mobile-auth-core.ts'
 
 const { galleryPhotosToFiles } = mobilePhotos
 
@@ -379,11 +381,28 @@ test('an older photo without EXIF coordinates reaches the backend without the cu
 })
 
 test('a Wayfare magic-link callback exposes the one-time VPS login token', () => {
-  assert.equal(magicTokenFromUrl(
-    'https://wayfare.example.com/auth/callback?token=one-time-login-token-at-least-thirty-two-characters',
-  ), 'one-time-login-token-at-least-thirty-two-characters')
+  const token = 'one-time-login-token-at-least-thirty-two-characters'
+  assert.equal(magicTokenFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
+  assert.equal(magicTokenFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), token)
+  assert.equal(magicTokenFromUrl(`wayfare://auth?token=${token}`), token)
   assert.equal(magicTokenFromUrl('https://example.com/not-a-login'), null)
-  assert.equal(magicTokenFromUrl('wayfare://auth?token=one-time-login-token-at-least-thirty-two-characters'), null)
+  assert.equal(magicTokenFromUrl(`other-app://auth?token=${token}`), null)
+})
+
+test('the website exchanges only its callback and leaves a native handoff token untouched', () => {
+  const token = 'one-time-login-token-at-least-thirty-two-characters'
+  assert.equal(browserMagicTokenFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
+  assert.equal(browserMagicTokenFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), null)
+  assert.equal(browserMagicTokenFromUrl(`wayfare://auth?token=${token}`), null)
+})
+
+test('an Outlook browser handoff produces an explicit Wayfare app URL', () => {
+  const token = 'one-time-login-token-at-least-thirty-two-characters'
+  assert.equal(
+    nativeAppUrlFromUrl(`https://wayfare.example.com/auth/native?token=${token}`),
+    `wayfare://auth?token=${token}`,
+  )
+  assert.equal(nativeAppUrlFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), null)
 })
 
 test('native magic-link handling reports progress and contains exchange failures', async () => {

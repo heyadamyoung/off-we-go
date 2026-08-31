@@ -167,10 +167,13 @@ export default function TripApp({ data, onReload }: TripAppProps) {
     setFollowing(false)
     if (!stops.length) return
     const lngs = stops.map(s => s.lng), lats = stops.map(s => s.lat)
-    setView({
-      center: [(Math.min(...lngs) + Math.max(...lngs)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2],
-      zoom: 13.1, ms: 620,
-    })
+    const west = Math.min(...lngs), east = Math.max(...lngs)
+    const south = Math.min(...lats), north = Math.max(...lats)
+    setView(v => ({
+      center: [(west + east) / 2, (south + north) / 2],
+      zoom: v.zoom, ms: 620,
+      bounds: [[west, south], [east, north]],
+    }))
   }, [stops])
 
   const zoomBy = useCallback(d => {

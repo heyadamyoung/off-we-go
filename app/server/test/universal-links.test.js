@@ -15,7 +15,10 @@ test('the VPS publishes the Apple association for secure auth universal links', 
   assert.deepEqual(response.json(), {
     applinks: {
       apps: [],
-      details: [{ appID: 'A1B2C3D4E5.ai.threadway.wayfare', paths: ['/auth/callback*'] }],
+      details: [{
+        appID: 'A1B2C3D4E5.ai.threadway.wayfare',
+        paths: ['/auth/callback*', '/auth/native*'],
+      }],
     },
   })
   await app.close()

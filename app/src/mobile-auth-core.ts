@@ -1,10 +1,33 @@
-export function magicTokenFromUrl(value) {
+function parsedMagicUrl(value) {
   try {
     const url = new URL(value)
-    if (url.protocol !== 'https:' || url.pathname !== '/auth/callback') return null
     const token = url.searchParams.get('token')
-    return token && token.length >= 32 ? token : null
+    return token && token.length >= 32 ? { url, token } : null
   } catch { return null }
+}
+
+export function magicTokenFromUrl(value) {
+  const parsed = parsedMagicUrl(value)
+  if (!parsed) return null
+  const { url, token } = parsed
+  const isUniversalLink = url.protocol === 'https:' &&
+    (url.pathname === '/auth/callback' || url.pathname === '/auth/native')
+  const isCustomScheme = url.protocol === 'wayfare:' && url.hostname === 'auth'
+  return isUniversalLink || isCustomScheme ? token : null
+}
+
+export function browserMagicTokenFromUrl(value) {
+  const parsed = parsedMagicUrl(value)
+  return parsed?.url.protocol === 'https:' && parsed.url.pathname === '/auth/callback'
+    ? parsed.token : null
+}
+
+export function nativeAppUrlFromUrl(value) {
+  const parsed = parsedMagicUrl(value)
+  if (!parsed || !['http:', 'https:'].includes(parsed.url.protocol) || parsed.url.pathname !== '/auth/native') return null
+  const destination = new URL('wayfare://auth')
+  destination.searchParams.set('token', parsed.token)
+  return destination.href
 }
 
 export interface NativeLoginState {

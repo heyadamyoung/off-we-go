@@ -111,6 +111,14 @@ test('the native app uses Capacitor HTTP so authentication survives WebView susp
   assert.equal(JSON.parse(config).plugins?.CapacitorHttp?.enabled, true);
 });
 
+test('the iOS app can be opened explicitly by an email browser handoff', async () => {
+  const infoPlist = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, 'ios/App/App/Info.plist'), 'utf8'),
+  );
+
+  assert.match(infoPlist, /<key>CFBundleURLSchemes<\/key>\s*<array>\s*<string>wayfare<\/string>/);
+});
+
 test('Ad Hoc device input accepts modern and legacy Apple UDIDs without accepting other identifiers', async () => {
   const { parseAdHocDevices } = await import('../scripts/iosAdHocDevices.mjs');
 

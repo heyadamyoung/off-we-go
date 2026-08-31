@@ -1,6 +1,7 @@
 import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
 import { createApiClient, safeOAuthContinuation } from './api-client-core'
 import { mobileTracker, sessionStorage } from './mobile'
+import { browserMagicTokenFromUrl } from './mobile-auth-core'
 import type {
   AuthSession, Coordinates, Device, Id, Invite, LiveFix, Person, Stop,
   Trip, TripComment, TripData, TripLoadResult, TripPhoto, UploadInput,
@@ -21,8 +22,8 @@ export function completeBrowserLogin() {
   if (!hasBackend || typeof window === 'undefined') return Promise.resolve(authClient.getSession())
   if (browserLogin) return browserLogin
   const url = new URL(window.location.href)
-  const token = url.searchParams.get('token')
-  if (!token || token.length < 32) return Promise.resolve(authClient.getSession())
+  const token = browserMagicTokenFromUrl(url.href)
+  if (!token) return Promise.resolve(authClient.getSession())
   const continuation = safeOAuthContinuation(url.searchParams.get('continue'), url.origin)
   browserLogin = authClient.exchangeMagicToken(token).then(session => {
     if (continuation) window.location.replace(continuation)

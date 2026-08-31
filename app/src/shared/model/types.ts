@@ -6,6 +6,7 @@ export interface MapView {
   center: Coordinates
   zoom: number
   ms?: number
+  bounds?: [Coordinates, Coordinates]
 }
 
 export interface Stop {

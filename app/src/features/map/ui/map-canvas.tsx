@@ -216,6 +216,13 @@ const MapCanvas = memo(function MapCanvas({
      report back on moveend lands here again and must not start a second move. */
   useEffect(() => {
     if (!map) return
+    if (view.bounds) {
+      map.fitBounds(view.bounds, {
+        padding: 32, maxZoom: 15,
+        duration: view.ms == null ? 420 : view.ms, essential: true,
+      })
+      return
+    }
     const c = map.getCenter()
     if (Math.abs(c.lng - view.center[0]) < 1e-7 &&
         Math.abs(c.lat - view.center[1]) < 1e-7 &&

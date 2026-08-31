@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { loadTrip } from '../backend'
-import { SignInScreen, useSession } from '../features/auth'
+import { NativeLoginHandoff, SignInScreen, useSession } from '../features/auth'
 import { NoTrip, TripApp } from '../features/trip'
 import type { TripLoadResult } from '../shared/model/types'
 
@@ -26,7 +26,7 @@ function Boot({ error, onRetry }: BootProps) {
   )
 }
 
-export default function App() {
+function AuthenticatedApp() {
   const { session, ready } = useSession()
   const [data, setData] = useState<TripLoadResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -50,6 +50,13 @@ export default function App() {
   // Remount cleanly if the signed-in identity changes which trip we are showing.
   return <TripApp key={data.tripId + ':' + (session?.user?.id || 'anon')}
                   data={data} onReload={reload} />
+}
+
+export default function App() {
+  if (typeof window !== 'undefined' && window.location.pathname === '/auth/native') {
+    return <NativeLoginHandoff />
+  }
+  return <AuthenticatedApp />
 }
 
 

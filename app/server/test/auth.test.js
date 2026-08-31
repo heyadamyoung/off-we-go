@@ -26,7 +26,11 @@ test('an invited email can exchange a one-time link for an authenticated session
   assert.equal(sent.length, 1)
   assert.equal(sent[0].to, 'owner@example.com')
   assert.match(sent[0].webUrl, /^https:\/\/wayfare\.example\.com\/auth\/callback\?token=/)
-  assert.equal(sent[0].nativeUrl, sent[0].webUrl)
+  assert.match(sent[0].nativeUrl, /^https:\/\/wayfare\.example\.com\/auth\/native\?token=/)
+  assert.equal(
+    new URL(sent[0].nativeUrl).searchParams.get('token'),
+    new URL(sent[0].webUrl).searchParams.get('token'),
+  )
 
   const token = new URL(sent[0].webUrl).searchParams.get('token')
   const exchanged = await app.inject({

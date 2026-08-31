@@ -63,7 +63,13 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.get('/.well-known/apple-app-site-association', async (_request, reply) => {
     if (!appleTeamId) return reply.code(404).send({ error: 'Apple universal links are not configured' })
     return reply.type('application/json').send({
-      applinks: { apps: [], details: [{ appID: `${appleTeamId}.${appleBundleId}`, paths: ['/auth/callback*'] }] },
+      applinks: {
+        apps: [],
+        details: [{
+          appID: `${appleTeamId}.${appleBundleId}`,
+          paths: ['/auth/callback*', '/auth/native*'],
+        }],
+      },
     })
   })
   app.get('/.well-known/assetlinks.json', async (_request, reply) => {
@@ -116,11 +122,12 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         }
       } catch {}
     }
-    const universalUrl = callback.href
+    const native = new URL('/auth/native', root)
+    native.searchParams.set('token', token)
     const message = {
       to: email,
-      webUrl: universalUrl,
-      nativeUrl: universalUrl,
+      webUrl: callback.href,
+      nativeUrl: native.href,
     }
     await mailer.send(message)
     return message
