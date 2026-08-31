@@ -367,27 +367,30 @@ test('theme choice survives a reload', async ({ page }) => {
   expect(await page.evaluate(() => document.body.dataset.theme)).toBe(chosen)
 })
 
-test('theme swaps replace the map style before loading its sprite atlas', async ({ page }) => {
+test('theme swaps disable MapLibre style diffing for incompatible sprite atlases', async ({ page }) => {
   await open(page)
-  await page.evaluate(() => { window.__oldWayfareStyle = window.__wayfareMap.style })
-
-  let releaseStyle
-  const styleRequested = new Promise(resolve => {
-    page.route('**/*-gl-style/style.json', async route => {
-      resolve()
-      await new Promise(release => { releaseStyle = release })
-      await route.continue()
-    })
+  await page.evaluate(() => {
+    const map = window.__wayfareMap
+    const setStyle = map.setStyle.bind(map)
+    window.__wayfareSetStyleOptions = undefined
+    map.setStyle = (style, options) => {
+      window.__wayfareSetStyleOptions = options
+      return setStyle(style, options)
+    }
   })
 
-  await page.locator('.tbtn.ghost[title^="Theme"]').click()
-  await styleRequested
+  const themeButton = page.locator('.tbtn.ghost[title^="Theme"]')
+  await themeButton.click()
 
-  const styleWasReplaced = await page.evaluate(
-    () => window.__wayfareMap.style !== window.__oldWayfareStyle,
-  )
-  releaseStyle()
-  expect(styleWasReplaced).toBe(true)
+  // The map follows daylight until the first manual override. If that override
+  // chooses the style already on screen, the next click guarantees a real swap.
+  if (await page.evaluate(() => window.__wayfareSetStyleOptions === undefined)) {
+    await themeButton.click()
+  }
+
+  await expect.poll(() => page.evaluate(
+    () => window.__wayfareSetStyleOptions?.diff ?? null,
+  )).toBe(false)
 })
 
 test('the roster lists people and takes an invite', async ({ page }) => {
