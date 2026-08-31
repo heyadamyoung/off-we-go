@@ -92,6 +92,18 @@ test('the manual-signing workflow does not request automatic provisioning update
   assert.doesNotMatch(workflow, /-allowProvisioningUpdates/);
 });
 
+test('the iOS compile workflow installs pnpm before setup-node configures its pnpm cache', async () => {
+  const workflow = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, '..', '.github', 'workflows', 'ios-build.yml'), 'utf8'),
+  );
+
+  const pnpmSetup = workflow.indexOf('pnpm/action-setup@');
+  const nodeSetup = workflow.indexOf('actions/setup-node@');
+
+  assert.notEqual(pnpmSetup, -1, 'The workflow must install pnpm with pnpm/action-setup');
+  assert.ok(pnpmSetup < nodeSetup, 'pnpm must be available before setup-node restores its pnpm cache');
+});
+
 test('the iOS app declares that it does not use non-exempt encryption', async () => {
   const infoPlist = await import('node:fs/promises').then(({ readFile }) =>
     readFile(path.join(appRoot, 'ios/App/App/Info.plist'), 'utf8'),
