@@ -18,9 +18,10 @@ jobs:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
       IOS_ADHOC_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ADHOC_PROVISIONING_PROFILE_NAME }}
-      IOS_ADHOC_DEVICE_UDID: ${{ secrets.IOS_ADHOC_DEVICE_UDID }}
       WAYFARE_DOMAIN: wayfare.threadway.ai
       GH_TOKEN: ${{ github.token }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
     defaults:
       run:
         working-directory: app
@@ -49,19 +50,16 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
-          IOS_ADHOC_PROVISIONING_PROFILE: ${{ secrets.IOS_ADHOC_PROVISIONING_PROFILE }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/wayfare-adhoc-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           CERTIFICATE_PATH="$RUNNER_TEMP/wayfare-distribution.p12"
           PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
           APP_STORE_PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_App_Store_CI.mobileprovision"
-          ADHOC_PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_iPad_Ad_Hoc.mobileprovision"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
           mkdir -p "$PROFILE_DIRECTORY"
           printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 -D > "$APP_STORE_PROFILE_PATH"
-          printf '%s' "$IOS_ADHOC_PROVISIONING_PROFILE" | base64 -D > "$ADHOC_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -73,6 +71,19 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
+      - name: Register devices and refresh Ad Hoc profile
+        env:
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          IOS_ADHOC_DEVICES: ${{ secrets.IOS_ADHOC_DEVICES }}
+        run: |
+          DEVICES_PATH="$RUNNER_TEMP/wayfare-adhoc-devices.json"
+          node scripts/iosAdHocDevices.mjs "$IOS_ADHOC_DEVICES" > "$DEVICES_PATH"
+          echo "IOS_ADHOC_DEVICES_PATH=$DEVICES_PATH" >> "$GITHUB_ENV"
+          if ! command -v fastlane >/dev/null 2>&1; then
+            gem install fastlane --no-document
+          fi
+          IOS_ADHOC_DEVICES_PATH="$DEVICES_PATH" fastlane ios refresh_adhoc_profile
+
       - name: Create Ad Hoc export configuration
         run: >-
           node scripts/iosReleaseCore.mjs "$APPLE_TEAM_ID" "$IOS_BUNDLE_ID"
@@ -81,7 +92,7 @@ jobs:
       - name: Archive Wayfare
         run: >-
           node scripts/iosArchive.mjs "$RUNNER_TEMP/Wayfare.xcarchive"
-          "$APPLE_TEAM_ID" 1 "$WAYFARE_DOMAIN"
+          "$APPLE_TEAM_ID" "$GITHUB_RUN_NUMBER" "$WAYFARE_DOMAIN"
 
       - name: Export the signed IPA
         run: |
@@ -91,7 +102,9 @@ jobs:
             -exportPath "$RUNNER_TEMP/WayfareAdHoc" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Verify the iPad is authorized
+      - name: Verify every registered device is authorized
+        env:
+          IOS_ADHOC_DEVICES: ${{ secrets.IOS_ADHOC_DEVICES }}
         run: |
           IPA_PATH="$(find "$RUNNER_TEMP/WayfareAdHoc" -type f -name '*.ipa' -print -quit)"
           test -n "$IPA_PATH"
@@ -100,25 +113,29 @@ jobs:
           APP_PATH="$(find "$RUNNER_TEMP/WayfareVerify/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$APP_PATH"
           security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/EmbeddedProfile.plist"
-          /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$RUNNER_TEMP/EmbeddedProfile.plist" \
-            | grep -Fq -- "$IOS_ADHOC_DEVICE_UDID"
+          node scripts/iosAdHocDevices.mjs "$IOS_ADHOC_DEVICES" \
+            | ruby -rjson -e 'JSON.parse(STDIN.read).each_value { |udid| puts udid }' \
+            | while IFS= read -r udid; do
+                /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$RUNNER_TEMP/EmbeddedProfile.plist" \
+                  | grep -Fq -- "$udid"
+              done
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" \
             = "$IOS_BUNDLE_ID"
           codesign --verify --deep --strict "$APP_PATH"
           cp "$IPA_PATH" "$RUNNER_TEMP/Wayfare.ipa"
 
-      - name: Publish the iPad build
+      - name: Publish the registered-device build
         working-directory: .
         run: |
           TAG="wayfare-ipad-adhoc"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
-              --title "Wayfare iPad Ad Hoc" \
+              --title "Wayfare Registered Devices" \
               --notes "Signed Ad Hoc build for registered Wayfare test devices." \
               --prerelease
           else
             gh release create "$TAG" \
-              --title "Wayfare iPad Ad Hoc" \
+              --title "Wayfare Registered Devices" \
               --notes "Signed Ad Hoc build for registered Wayfare test devices." \
               --prerelease
           fi

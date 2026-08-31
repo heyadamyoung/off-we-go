@@ -110,3 +110,19 @@ test('the native app uses Capacitor HTTP so authentication survives WebView susp
 
   assert.equal(JSON.parse(config).plugins?.CapacitorHttp?.enabled, true);
 });
+
+test('Ad Hoc device input accepts modern and legacy Apple UDIDs without accepting other identifiers', async () => {
+  const { parseAdHocDevices } = await import('../scripts/iosAdHocDevices.mjs');
+
+  assert.deepEqual(parseAdHocDevices(JSON.stringify({
+    'Family iPhone': '00008120-001E5DE81AD8201E',
+    'Older iPad': 'A'.repeat(40),
+  })), {
+    'Family iPhone': '00008120-001E5DE81AD8201E',
+    'Older iPad': 'A'.repeat(40),
+  });
+  assert.throws(
+    () => parseAdHocDevices(JSON.stringify({ 'Family iPhone': '89049032007108882600151350551843' })),
+    /valid Apple UDID/i,
+  );
+});

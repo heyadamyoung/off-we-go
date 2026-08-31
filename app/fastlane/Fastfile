@@ -1,0 +1,32 @@
+require 'json'
+
+default_platform(:ios)
+
+platform :ios do
+  desc 'Register the private test devices and refresh the Ad Hoc profile'
+  lane :refresh_adhoc_profile do
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch('APP_STORE_CONNECT_KEY_ID'),
+      issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID'),
+      key_content: ENV.fetch('APP_STORE_CONNECT_API_KEY_P8')
+    )
+    devices = JSON.parse(File.read(ENV.fetch('IOS_ADHOC_DEVICES_PATH')))
+
+    register_devices(
+      devices: devices,
+      platform: 'ios',
+      team_id: ENV.fetch('APPLE_TEAM_ID'),
+      api_key: api_key
+    )
+    get_provisioning_profile(
+      adhoc: true,
+      force: true,
+      app_identifier: ENV.fetch('IOS_BUNDLE_ID'),
+      team_id: ENV.fetch('APPLE_TEAM_ID'),
+      provisioning_name: ENV.fetch('IOS_ADHOC_PROVISIONING_PROFILE_NAME'),
+      filename: 'Wayfare_Ad_Hoc.mobileprovision',
+      output_path: ENV.fetch('RUNNER_TEMP'),
+      api_key: api_key
+    )
+  end
+end
