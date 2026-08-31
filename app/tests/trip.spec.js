@@ -324,7 +324,14 @@ test('finding a place fills in its name, description and picture', async ({ page
   expect(names.join(' ')).not.toMatch(/straat|neighbourhood|district/i)
 
   const before = await page.locator('.mstop').count()
-  await page.locator('.mfind').first().click()
+  const markers = page.locator('.mfind')
+  const clickableIndex = await markers.evaluateAll(buttons => buttons.findIndex(button => {
+    const box = button.getBoundingClientRect()
+    const topmost = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+    return topmost === button || button.contains(topmost)
+  }))
+  expect(clickableIndex).toBeGreaterThanOrEqual(0)
+  await markers.nth(clickableIndex).click()
   await expect(page.locator('.editor')).toBeVisible()
 
   await expect(page.locator('.editor .f input').first()).not.toHaveValue('')
