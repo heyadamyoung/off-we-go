@@ -208,7 +208,10 @@ const MapCanvas = memo(function MapCanvas({
   useEffect(() => {
     if (!map || theme === shownTheme.current) return
     shownTheme.current = theme
-    map.setStyle(STYLE[theme === 'light' ? 'light' : 'dark'])
+    // These basemaps have different sprite atlases. Reusing the old Style while
+    // the new document loads can make an atlas update target the old texture's
+    // dimensions, which ANGLE rejects as an overflowing texSubImage2D offset.
+    map.setStyle(STYLE[theme === 'light' ? 'light' : 'dark'], { diff: false })
   }, [map, theme])
 
   /* ---- keep the camera in step with the app -----------------------------

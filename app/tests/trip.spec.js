@@ -367,6 +367,29 @@ test('theme choice survives a reload', async ({ page }) => {
   expect(await page.evaluate(() => document.body.dataset.theme)).toBe(chosen)
 })
 
+test('theme swaps replace the map style before loading its sprite atlas', async ({ page }) => {
+  await open(page)
+  await page.evaluate(() => { window.__oldWayfareStyle = window.__wayfareMap.style })
+
+  let releaseStyle
+  const styleRequested = new Promise(resolve => {
+    page.route('**/*-gl-style/style.json', async route => {
+      resolve()
+      await new Promise(release => { releaseStyle = release })
+      await route.continue()
+    })
+  })
+
+  await page.locator('.tbtn.ghost[title^="Theme"]').click()
+  await styleRequested
+
+  const styleWasReplaced = await page.evaluate(
+    () => window.__wayfareMap.style !== window.__oldWayfareStyle,
+  )
+  releaseStyle()
+  expect(styleWasReplaced).toBe(true)
+})
+
 test('the roster lists people and takes an invite', async ({ page }) => {
   await open(page)
   await page.locator('.tbtn.hot').click()
