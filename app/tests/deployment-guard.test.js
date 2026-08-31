@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import test from 'node:test';
@@ -53,4 +54,14 @@ test('production compose runs a private pinned Logto service behind the existing
   assert.equal(compose.services.logto.environment.TRUST_PROXY_HEADER, '1');
   assert.equal(compose.services.web.environment.LOGTO_DOMAIN, 'auth.example.com');
   assert.equal(compose.services.web.environment.LOGTO_ADMIN_DOMAIN, 'auth-admin.example.com');
+});
+
+test('production restore includes the Logto identity database', () => {
+  const restore = readFileSync(path.join(appRoot, 'deploy', 'restore.sh'), 'utf8');
+
+  assert.match(restore, /SOURCE\/logto\.dump/);
+  assert.match(restore, /logto-db pg_restore --list/);
+  assert.match(restore, /logto_restore/);
+  assert.match(restore, /docker compose stop api logto/);
+  assert.match(restore, /alter database logto_restore rename to logto/);
 });

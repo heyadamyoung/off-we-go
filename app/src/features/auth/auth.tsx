@@ -54,8 +54,8 @@ function SignInScreen() {
       <div className="bootIn wide">
         <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         <b>{busy ? 'Signing you in…' : 'Sign in to Wayfare'}</b>
-        <p>Continue to Wayfare ID to sign in with your password, Google, Apple, or another
-           method configured for your family.</p>
+        <p>Continue to Wayfare ID to sign in with your password. Additional identity
+           providers can be enabled for your family later.</p>
         <button className="btn pri" type="button" disabled={busy} onClick={signIn}>
           {busy ? 'Opening secure sign-in…' : 'Continue to sign in'}
         </button>
