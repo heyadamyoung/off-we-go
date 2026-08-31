@@ -217,6 +217,17 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       Object.assign(trip, changes)
       return trip
     },
+    async loadProfileByHandle(user, handle) {
+      const profile = [...profiles.values()].find(value => value.handle === handle)
+      if (!profile) return null
+      const sharesTrip = profile.id === user.id || [...trips.values()].some(trip =>
+        trip.members.some(member => member.profileId === user.id) &&
+        trip.members.some(member => member.profileId === profile.id))
+      return sharesTrip ? {
+        profileId: profile.id, handle: profile.handle,
+        displayName: profile.displayName, avatarUrl: profile.avatarUrl,
+      } : null
+    },
     async updateProfile(user, changes) {
       const profile = profiles.get(user.id)
       if (!profile) return null

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadTrip } from '../backend'
+import { hasBackend, loadTrip, loadUserProfile } from '../backend'
 import { NativeLoginHandoff, SignInScreen, useSession } from '../features/auth'
+import { UserProfile, UserProfileUnavailable } from '../features/people'
 import { TripApp, TripLanding } from '../features/trip'
-import type { TripLoadResult } from '../shared/model/types'
+import type { Person, TripLoadResult } from '../shared/model/types'
 import Toast, { type ToastNotice } from '../shared/ui/toast'
 import { appErrorMessage } from '../user-messages-core'
+import { parseAppRoute, tripHref } from '../app-routes-core'
 
 interface BootProps {
   error?: unknown
@@ -49,7 +51,16 @@ function AuthenticatedApp() {
     let alive = true
     setError(null)
     loadTrip(session)
-      .then(d => { if (alive) setData(d) })
+      .then(d => {
+        if (!alive) return
+        if ('trip' in d && d.trip.slug) {
+          const canonical = tripHref(d.trip.slug)
+          if (window.location.pathname !== canonical || window.location.search) {
+            window.history.replaceState({}, '', canonical)
+          }
+        }
+        setData(d)
+      })
       .catch((caught: unknown) => { if (alive) setError(caught instanceof Error ? caught : new Error(String(caught))) })
     return () => { alive = false }
   }, [ready, session, attempt])
@@ -63,14 +74,46 @@ function AuthenticatedApp() {
   // Remount cleanly if the signed-in identity changes which trip we are showing.
   else content = <TripApp key={data.tripId + ':' + (session?.user?.id || 'anon')}
                   data={data} onReload={reload}
-                  onHome={() => window.location.assign(window.location.pathname)} />
+                  onHome={() => window.location.assign('/')} />
+  return <>{content}<Toast notice={notice} /></>
+}
+
+function UserProfileApp({ handle }: { handle: string }) {
+  const { session, ready } = useSession()
+  const [profile, setProfile] = useState<Person | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [notice, setNotice] = useState<ToastNotice | null>(null)
+  const notify = useCallback((next: ToastNotice) => setNotice(next), [])
+
+  useEffect(() => {
+    if (!ready || (hasBackend && !session)) return
+    let alive = true
+    setError(null)
+    loadUserProfile(handle)
+      .then(value => { if (alive) setProfile(value) })
+      .catch((caught: unknown) => {
+        if (alive) setError(caught instanceof Error ? caught : new Error(String(caught)))
+      })
+    return () => { alive = false }
+  }, [ready, session, handle, attempt])
+
+  let content
+  if (!ready) content = <Boot />
+  else if (hasBackend && !session) content = <SignInScreen notify={notify} />
+  else if (error) content = <UserProfileUnavailable error={error}
+                          onRetry={() => setAttempt(value => value + 1)} />
+  else if (!profile) content = <Boot />
+  else content = <UserProfile profile={profile} />
   return <>{content}<Toast notice={notice} /></>
 }
 
 export default function App() {
-  if (typeof window !== 'undefined' && window.location.pathname === '/auth/native') {
-    return <NativeLoginHandoff />
-  }
+  const route = typeof window === 'undefined'
+    ? { name: 'home' as const }
+    : parseAppRoute(window.location.pathname, window.location.search)
+  if (route.name === 'native-auth') return <NativeLoginHandoff />
+  if (route.name === 'user') return <UserProfileApp handle={route.handle} />
   return <AuthenticatedApp />
 }
 

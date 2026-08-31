@@ -31,12 +31,12 @@ export const picFallback = (seed, w = 1200, h = 800) => {
 };
 
 export const FAMILY = [
-  { id: 'u1', name: 'Maya',        role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
-  { id: 'u2', name: 'Alex',        role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/men/46.jpg' },
-  { id: 'u3', name: 'Zoe',         role: 'Travelling',  avatar: 'https://randomuser.me/api/portraits/women/85.jpg' },
-  { id: 'u4', name: 'Grandma Jo',  role: 'Following',   avatar: 'https://randomuser.me/api/portraits/women/68.jpg' },
-  { id: 'u5', name: 'Uncle Kai',   role: 'Following',   avatar: 'https://randomuser.me/api/portraits/men/32.jpg' },
-  { id: 'u6', name: 'Aunt Nia',    role: 'Following',   avatar: 'https://randomuser.me/api/portraits/women/12.jpg' },
+  { id: 'u1', handle: 'maya', name: 'Maya', role: 'Travelling', avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
+  { id: 'u2', handle: 'alex', name: 'Alex', role: 'Travelling', avatar: 'https://randomuser.me/api/portraits/men/46.jpg' },
+  { id: 'u3', handle: 'zoe', name: 'Zoe', role: 'Travelling', avatar: 'https://randomuser.me/api/portraits/women/85.jpg' },
+  { id: 'u4', handle: 'grandma-jo', name: 'Grandma Jo', role: 'Following', avatar: 'https://randomuser.me/api/portraits/women/68.jpg' },
+  { id: 'u5', handle: 'uncle-kai', name: 'Uncle Kai', role: 'Following', avatar: 'https://randomuser.me/api/portraits/men/32.jpg' },
+  { id: 'u6', handle: 'aunt-nia', name: 'Aunt Nia', role: 'Following', avatar: 'https://randomuser.me/api/portraits/women/12.jpg' },
 ];
 export const byName = n => FAMILY.find(f => f.name === n) || FAMILY[0];
 

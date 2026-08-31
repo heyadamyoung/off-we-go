@@ -11,6 +11,7 @@ import { PhotoViewer, UploadModal, useTripPhotos } from '../photos'
 import { AttractionCard, SightsView } from '../sights'
 import { Filmstrip, HeroCard, Ticker } from './ui/trip-chrome'
 import { ALL_DAYS } from '../../shared/constants/trip'
+import { absoluteTripHref } from '../../app-routes-core'
 import { PhotosView, TimelineView } from './ui/trip-views'
 import { withFace } from './onboarding'
 import useLiveTrip from './model/use-live-trip'
@@ -324,8 +325,8 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
                              family={family} canEdit={canEdit} trip={trip} onSaveTrip={saveTrip}
                              me={me} onSaveMe={saveMe} phones={phones} onPhonesChange={setPhones}
                              viewers={viewers}
-                             appLink={window.location.origin + window.location.pathname
-                                      + (trip.slug ? `?t=${trip.slug}` : '')} />}
+                             appLink={absoluteTripHref(trip.slug, window.location.origin,
+                               String(import.meta.env.VITE_API_URL || ''))} />}
       {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhoto} live={live} stops={stops} toast={toast} />}
       <ToastNoticeView notice={notice} />
     </div>

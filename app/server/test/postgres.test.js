@@ -215,6 +215,8 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   const changedProfile = await repository.updateProfile(user, { name: 'Alex', handle: 'alex-travels' })
   assert.equal(changedProfile.profileId, user.id)
   assert.equal(changedProfile.handle, 'alex-travels')
+  assert.equal((await repository.loadProfileByHandle(user, 'alex-travels')).displayName, 'Alex')
+  assert.equal(await repository.loadProfileByHandle(uninvitedUser, 'alex-travels'), null)
   assert.deepEqual(await repository.updateProfile(uninvitedUser, { handle: 'alex-travels' }), { conflict: 'handle' })
   await repository.updateTrip(user, trip.id, { title: 'Renamed without breaking links' })
   assert.equal((await repository.loadCurrentTrip(user, trip.slug)).slug, 'persistent-trip')

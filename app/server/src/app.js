@@ -541,6 +541,19 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return trip
   })
 
+  app.get('/api/users/:handle', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const handle = normalizeProfileHandle(request.params.handle)
+    if (!handle) return reply.code(404).send({ error: 'Profile not found' })
+    const profile = await repository.loadProfileByHandle(user, handle)
+    if (!profile) return reply.code(404).send({ error: 'Profile not found' })
+    return {
+      id: profile.profileId, handle: profile.handle, name: profile.displayName,
+      avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
+    }
+  })
+
   app.patch('/api/profile', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

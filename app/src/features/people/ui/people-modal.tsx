@@ -9,6 +9,7 @@ import Icon from '../../../shared/ui/icon'
 import Modal from '../../../shared/ui/modal'
 import { daysBetween, formatRange } from '../../../shared/lib/trip-dates'
 import { appErrorMessage } from '../../../user-messages-core'
+import { userHref } from '../../../app-routes-core'
 
 function TripSettings({ trip, onSave }: any) {
   const [f, setF] = useState({ title: trip.title || '', crew: trip.crew || '',
@@ -324,7 +325,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
           {family.map(f => (
             <div className="rperson" key={f.id}>
               {f.avatar ? <img src={f.avatar} alt="" /> : <span className="ini">{(f.name || '?')[0]}</span>}
-              <div><b>{f.name}</b><span>{f.handle ? `@${f.handle} · ` : ''}{f.role}
+              <div><b>{f.name}</b><span>{f.handle && <><a href={userHref(f.handle)}>@{f.handle}</a> · </>}{f.role}
                 {viewingIds.has(f.id) && <i className="viewing-now"> · Viewing now</i>}
               </span></div>
               <em>{f.memberRole === 'owner' ? 'Owner' : f.memberRole === 'editor' ? 'Editor' : 'Viewer'}</em>

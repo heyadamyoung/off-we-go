@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { acceptInvite, createTrip, deleteAccount, signOut } from '../../backend'
 import { daysBetween, formatRange } from '../../shared/lib/trip-dates'
 import { appErrorMessage } from '../../user-messages-core'
+import { tripHref } from '../../app-routes-core'
 import type { Id, PendingInvite, TripSummary } from '../../shared/model/types'
 import type { ToastNotice } from '../../shared/ui/toast'
 
@@ -134,7 +135,7 @@ function TripLanding({ email, trips = [], invites = [], onChanged, notify }: Tri
                     <p>{[trip.crew, trip.dates].filter(Boolean).join(' · ') || tripRole(trip.role)}</p>
                     <span>{tripRole(trip.role)}</span>
                   </div>
-                  <a className="btn pri" href={`?t=${encodeURIComponent(trip.slug)}`}
+                  <a className="btn pri" href={tripHref(trip.slug)}
                      aria-label={`Open ${trip.title}`}>Open</a>
                 </article>)}
               </div> : <div className="landingEmpty"><b>No trips yet</b>

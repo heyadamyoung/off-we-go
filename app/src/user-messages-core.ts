@@ -1,5 +1,5 @@
 export type AppAction =
-  | 'load-trip' | 'create-trip' | 'accept-invite' | 'delete-account'
+  | 'load-trip' | 'load-profile' | 'create-trip' | 'accept-invite' | 'delete-account'
   | 'save-trip' | 'save-profile' | 'send-invite' | 'remove-invite' | 'remove-member'
   | 'add-phone' | 'remove-phone' | 'share-location' | 'open-photos' | 'upload-photo'
   | 'post-comment' | 'save-reaction' | 'save-photo' | 'delete-photo' | 'delete-comment'
@@ -10,6 +10,7 @@ type ApiError = Error & { status?: number; code?: string }
 
 const failures: Record<AppAction, string> = {
   'load-trip': 'We could not load this trip. Please try again.',
+  'load-profile': 'We could not load this profile. Please try again.',
   'create-trip': 'We could not create your trip. Check the details and try again.',
   'accept-invite': 'We could not accept that invitation. It may have expired or been withdrawn.',
   'delete-account': 'We could not delete your account. Please try again.',
@@ -41,6 +42,7 @@ const failures: Record<AppAction, string> = {
 
 const unavailable: Partial<Record<AppAction, string>> = {
   'load-trip': 'Trips are temporarily unavailable. Please try again later.',
+  'load-profile': 'Profiles are temporarily unavailable. Please try again later.',
   'upload-photo': 'Photo uploads are temporarily unavailable. Please try again later.',
   'open-photos': 'Your photo library is temporarily unavailable. Please try again later.',
   'share-location': 'Location sharing is temporarily unavailable. Please try again later.',

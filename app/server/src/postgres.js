@@ -434,6 +434,18 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const result = await pool.query('select * from trips where id=$1', [tripId])
       return result.rows[0] ? camelTrip(result.rows[0]) : null
     },
+    async loadProfileByHandle(user, handle) {
+      const result = await pool.query(`select p.id,p.handle,p.display_name,p.avatar_path
+        from profiles p where p.handle=$2 and (p.id=$1 or exists(
+          select 1 from trip_members mine join trip_members theirs on theirs.trip_id=mine.trip_id
+          where mine.profile_id=$1 and theirs.profile_id=p.id
+        ))`, [user.id, handle])
+      const value = result.rows[0]
+      return value ? {
+        profileId: value.id, handle: value.handle,
+        displayName: value.display_name, avatarUrl: value.avatar_path,
+      } : null
+    },
     async updateProfile(user, changes) {
       const client = await pool.connect()
       try {

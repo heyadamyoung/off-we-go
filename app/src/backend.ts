@@ -3,6 +3,7 @@ import { createApiClient, safeOAuthContinuation } from './api-client-core'
 import { mobileTracker, sessionStorage } from './mobile'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
+import { parseAppRoute } from './app-routes-core'
 import type {
   AcceptedInvite, AuthSession, Coordinates, Device, Id, Invite, LiveFix, PendingInvite, Person, Stop,
   Trip, TripComment, TripData, TripLandingData, TripLoadResult, TripPhoto, TripSummary, UploadInput,
@@ -53,7 +54,7 @@ interface SampleState {
 let sample: SampleState | null = null
 const sampleTrip = () => {
   if (!sample) sample = {
-    trip: { ...TRIP, id: 'sample' }, stops: STOPS.map(value => ({ ...value })),
+    trip: { ...TRIP, id: 'sample', slug: 'sample' }, stops: STOPS.map(value => ({ ...value })),
     photos: PHOTOS.map(value => ({ ...value })), route: ROUTE.map(value => [...value] as Coordinates),
     family: FAMILY.map((value, index) => ({
       ...value, memberRole: index === 1 ? 'owner' : value.role === 'Travelling' ? 'editor' : 'viewer',
@@ -79,7 +80,8 @@ const sampleResult = (): TripData => {
 const tripPath = (tripId: Id) => `/trips/${encodeURIComponent(tripId)}`
 
 export async function loadTrip(session: AuthSession | null): Promise<TripLoadResult> {
-  const wanted = new URLSearchParams(window.location.search).get('t')
+  const route = parseAppRoute(window.location.pathname, window.location.search)
+  const wanted = route.name === 'trip' ? route.slug : null
   if (!hasBackend) {
     if (wanted) return sampleResult()
     const trip = sampleResult().trip
@@ -98,6 +100,15 @@ export async function loadTrip(session: AuthSession | null): Promise<TripLoadRes
     }
     throw error
   }
+}
+
+export async function loadUserProfile(handle: string): Promise<Person> {
+  if (!hasBackend) {
+    const profile = sampleTrip().family.find(person => person.handle === handle)
+    if (!profile) throw Object.assign(new Error('Profile not found'), { status: 404 })
+    return { ...profile }
+  }
+  return authClient.request(`/users/${encodeURIComponent(handle)}`)
 }
 
 export async function loadTripLanding(session: AuthSession): Promise<TripLandingData> {

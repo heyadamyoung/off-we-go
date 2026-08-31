@@ -30,7 +30,36 @@ test('the landing page lists accessible trips without opening one automatically'
   await expect(page.locator('.mapcanvas')).toHaveCount(0)
 
   await trip.click()
-  await expect(page).toHaveURL(/\?t=sample$/)
+  await expect(page).toHaveURL('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
+})
+
+test('human-readable trip and user URLs survive direct navigation', async ({ page }) => {
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
+
+  await page.getByRole('button', { name: 'People' }).click()
+  const alex = page.getByRole('link', { name: '@alex' })
+  await expect(alex).toHaveAttribute('href', '/users/alex')
+  await alex.click()
+
+  await expect(page).toHaveURL('/users/alex')
+  await expect(page.getByRole('heading', { name: 'Alex' })).toBeVisible()
+  await expect(page.getByText('@alex', { exact: true })).toBeVisible()
+})
+
+test('an unavailable profile stays private and offers a way back', async ({ page }) => {
+  await page.goto('/users/missing-person')
+
+  await expect(page.getByRole('heading', { name: 'Profile unavailable' })).toBeVisible()
+  await expect(page.getByText('This profile does not exist, or you do not share a trip with this person.')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Back to your trips' })).toHaveAttribute('href', '/')
+})
+
+test('legacy trip query links are replaced with the canonical trip URL', async ({ page }) => {
+  await page.goto('/?t=sample')
+
+  await expect(page).toHaveURL('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
 })
 

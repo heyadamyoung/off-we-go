@@ -57,6 +57,42 @@ test('an owner can update trip details and their global profile', async () => {
   await app.close()
 })
 
+test('profile handles resolve only for authenticated people who share a trip', async () => {
+  const { app, repository, authorization, trip } = await setup()
+  const changed = await app.inject({
+    method: 'PATCH', url: '/api/profile', headers: { authorization },
+    payload: { name: 'Alex Young', handle: 'alex-young' },
+  })
+  assert.equal(changed.statusCode, 200)
+
+  const anonymous = await app.inject({ method: 'GET', url: '/api/users/alex-young' })
+  assert.equal(anonymous.statusCode, 401)
+
+  const outsiderAuthorization = await authenticate(repository, 'outsider@example.com')
+  const privateProfile = await app.inject({
+    method: 'GET', url: '/api/users/alex-young', headers: { authorization: outsiderAuthorization },
+  })
+  assert.equal(privateProfile.statusCode, 404)
+
+  const invitation = (await app.inject({
+    method: 'POST', url: `/api/trips/${trip.id}/invites`, headers: { authorization },
+    payload: { email: 'friend@example.com', role: 'viewer' },
+  })).json()
+  const friendAuthorization = await authenticate(repository, 'friend@example.com')
+  assert.equal((await app.inject({
+    method: 'POST', url: `/api/invites/${invitation.id}/accept`, headers: { authorization: friendAuthorization },
+  })).statusCode, 200)
+
+  const visibleProfile = await app.inject({
+    method: 'GET', url: '/api/users/alex-young', headers: { authorization: friendAuthorization },
+  })
+  assert.equal(visibleProfile.statusCode, 200)
+  assert.deepEqual(visibleProfile.json(), {
+    id: changed.json().id, handle: 'alex-young', name: 'Alex Young', avatar: null,
+  })
+  await app.close()
+})
+
 test('a trip cannot accumulate an unbounded number of registered phones', async () => {
   const { app, authorization, trip } = await setup()
   const statuses = []
