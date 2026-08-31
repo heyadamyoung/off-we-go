@@ -5,6 +5,7 @@ import formbody from '@fastify/formbody'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { registerMcpRoutes } from './mcp.js'
 import { createWindowRateLimiter } from './rateLimit.js'
+import { createLogtoExperienceService } from './logto-experience.js'
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase()
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
@@ -34,6 +35,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 }, maxDevicesPerTrip = 20,
   appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
   androidPackageName = 'ai.threadway.wayfare', androidCertFingerprints = [], identityProvider = null,
+  experienceFetch = fetch,
   trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
   if (!repository) throw new Error('A repository is required')
   if (!mailer) throw new Error('A mailer is required')
@@ -58,7 +60,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     origin(origin, callback) { callback(null, !origin || allowedOrigins.has(origin)) },
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['content-type', 'authorization'], maxAge: 86400,
+    allowedHeaders: ['content-type', 'authorization', 'x-wayfare-experience'], maxAge: 86400,
   })
   await app.register(formbody)
   await app.register(multipart, {
@@ -118,36 +120,23 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return Number.isNaN(date.getTime()) ? null : date
   }
 
-  const issueMagicLink = async (email, continuation = null) => {
-    const token = newToken()
-    const now = clock()
-    await repository.createMagicToken({
-      hash: tokenHash(token), email,
-      expiresAt: new Date(now.getTime() + 15 * 60_000),
-    })
-    const root = publicUrl.replace(/\/$/, '')
-    const callback = new URL('/auth/callback', root)
-    callback.searchParams.set('token', token)
-    if (typeof continuation === 'string') {
-      try {
-        const destination = new URL(continuation, root)
-        if (destination.origin === root && destination.pathname === '/oauth/authorize') {
-          callback.searchParams.set('continue', destination.pathname + destination.search)
-        }
-      } catch {}
-    }
-    const native = new URL('/auth/native', root)
-    native.searchParams.set('token', token)
+  const sendTripInvitation = async invite => {
+    const appUrl = new URL('/', publicUrl)
     const message = {
-      to: email,
-      webUrl: callback.href,
-      nativeUrl: native.href,
+      kind: 'trip-invitation',
+      to: invite.email,
+      appUrl: appUrl.href,
+      tripTitle: invite.tripTitle,
     }
     await mailer.send(message)
     return message
   }
 
   const oidcCallbackUrl = `${publicUrl.replace(/\/$/, '')}/api/auth/oidc/callback`
+  const experienceCookieName = '__Host-wayfare-experience'
+  const experience = createLogtoExperienceService({
+    identityProvider, publicUrl, fetch: experienceFetch, clock,
+  })
   const safeAuthContinuation = value => {
     if (typeof value !== 'string') return null
     try {
@@ -253,22 +242,87 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
   })
 
-  app.post('/api/auth/magic-link', { bodyLimit: 16 * 1024 }, async (request, reply) => {
-    const email = normalizeEmail(request.body?.email)
-    // Stop at the IP bucket first. Once an address is blocked, attacker-made
-    // email strings never allocate additional per-email buckets.
-    let retryAfter = authIpLimiter.hit(request.ip, {
+  app.post('/api/auth/experience/start', async (request, reply) => {
+    privateAuthReply(reply)
+    if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
+    const retryAfter = authIpLimiter.hit(request.ip, {
       max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
     })
-    if (!retryAfter) retryAfter = authEmailLimiter.hit(email || '<empty>', {
-      max: authRateLimit.maxPerEmail, windowMs: authRateLimit.windowMs,
-    })
-    if (retryAfter) return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
-    if (email && await repository.emailAllowed(email)) {
-      await issueMagicLink(email, request.body?.continue)
+    if (retryAfter) {
+      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
     }
-    return reply.code(202).send({ ok: true })
+    try {
+      const handle = await experience.start()
+      reply.header('set-cookie', `${experienceCookieName}=${handle}; Path=/; Max-Age=900; Secure; HttpOnly; SameSite=Strict`)
+      return { started: true, interaction: handle }
+    } catch (error) {
+      app.log.warn({ err: error }, 'Logto experience start failed')
+      return reply.code(502).send({ error: 'Could not start sign-in' })
+    }
   })
+
+  const forwardExperience = async (request, reply) => {
+    privateAuthReply(reply)
+    if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
+    const handle = String(request.headers['x-wayfare-experience'] || '') || cookieValue(request, experienceCookieName)
+    const path = String(request.params?.['*'] || '')
+    if (['verification/password', 'verification/verification-code',
+      'verification/verification-code/verify'].includes(path)) {
+      let retryAfter = authIpLimiter.hit(request.ip, {
+        max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
+      })
+      if (!retryAfter && path !== 'verification/verification-code/verify') {
+        const identifier = request.body?.identifier
+        const email = identifier?.type === 'email' ? normalizeEmail(identifier.value) : '<empty>'
+        retryAfter = authEmailLimiter.hit(email || '<empty>', {
+          max: authRateLimit.maxPerEmail, windowMs: authRateLimit.windowMs,
+        })
+      }
+      if (retryAfter) {
+        return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
+      }
+    }
+    if (path === 'verification/verification-code' &&
+      (experience.event(handle) === 'Register' || request.body?.interactionEvent === 'Register')) {
+      const identifier = request.body?.identifier
+      const email = identifier?.type === 'email' ? normalizeEmail(identifier.value) : ''
+      if (!email || !await repository.emailAllowed(email)) {
+        return reply.code(403).send({ error: 'An invitation is required to create a Wayfare account' })
+      }
+    }
+    let result
+    try {
+      result = await experience.forward({
+        handle, method: request.method, path, body: request.body,
+      })
+    } catch (error) {
+      app.log.warn({ err: error }, 'Logto experience request failed')
+      return reply.code(502).send({ error: 'The sign-in service could not complete this request' })
+    }
+    if (result.identity) {
+      const identity = result.identity
+      const email = normalizeEmail(identity?.email)
+      if (!identity?.issuer || !identity?.subject || !identity?.emailVerified || !email) {
+        return reply.code(401).send({ error: 'A verified email address is required to sign in' })
+      }
+      const user = await repository.resolveOidcUser({
+        issuer: identity.issuer, subject: identity.subject, email,
+      })
+      if (!user) return reply.code(403).send({ error: 'This account has not been invited to Wayfare' })
+      const accessToken = newToken()
+      await repository.createSession({
+        hash: tokenHash(accessToken), userId: user.id,
+        expiresAt: new Date(clock().getTime() + 90 * 24 * 60 * 60_000),
+      })
+      reply.header('set-cookie', `${experienceCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`)
+      return { accessToken, user }
+    }
+    reply.code(result.status)
+    if (result.status === 204) return reply.send()
+    return reply.type(result.contentType || 'application/json').send(result.body || '{}')
+  }
+  app.route({ method: ['PUT', 'POST'], url: '/api/auth/experience', handler: forwardExperience })
+  app.route({ method: ['PUT', 'POST'], url: '/api/auth/experience/*', handler: forwardExperience })
 
   app.post('/api/auth/exchange', async (request, reply) => {
     privateAuthReply(reply)
@@ -278,22 +332,16 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const binding = client === 'native'
       ? pkceChallenge(String(request.body?.verifier || ''))
       : tokenHash(cookieValue(request, loginCookieName) || '')
-    let user = token.length >= 32
+    const user = token.length >= 32
       ? await repository.consumeLoginHandoff({ hash: tokenHash(token), now, client, bindingHash: binding }) : null
-    const usedOidcHandoff = Boolean(user)
-    if (!user) {
-      const email = token.length >= 32
-        ? await repository.consumeMagicToken(tokenHash(token), now) : null
-      if (email) user = await repository.ensureUser(email)
-    }
-    if (!user) return reply.code(401).send({ error: 'That sign-in link is invalid or has expired' })
+    if (!user) return reply.code(401).send({ error: 'That sign-in handoff is invalid or has expired' })
 
     const accessToken = newToken()
     await repository.createSession({
       hash: tokenHash(accessToken), userId: user.id,
       expiresAt: new Date(now.getTime() + 90 * 24 * 60 * 60_000),
     })
-    if (usedOidcHandoff && client === 'web') {
+    if (client === 'web') {
       reply.header('set-cookie', `${loginCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`)
     }
     return { accessToken, user }
@@ -366,7 +414,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
 
   await registerMcpRoutes(app, {
     repository, fileStore, publicUrl, oauthSecret, clock,
-    authenticate: authenticated, sendInvite: issueMagicLink,
+    authenticate: authenticated, sendInvite: sendTripInvitation,
   })
 
   app.delete('/api/account', async (request, reply) => {
@@ -776,6 +824,20 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return invites
   })
 
+  app.get('/api/invites/pending', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    return repository.listPendingInvites(user)
+  })
+
+  app.post('/api/invites/:inviteId/accept', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const accepted = await repository.acceptInvite(user, request.params.inviteId)
+    if (!accepted) return reply.code(404).send({ error: 'Invitation not found' })
+    return accepted
+  })
+
   app.post('/api/trips/:tripId/invites', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -787,7 +849,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     })
     if (!invite) return reply.code(403).send({ error: 'You cannot manage this trip' })
     let mailed = true, mailError = null
-    try { await issueMagicLink(email) }
+    try { await sendTripInvitation(invite) }
     catch (error) { mailed = false; mailError = error.message }
     return reply.code(201).send({ ...invite, mailed, mailError })
   })

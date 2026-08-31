@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import sharp from 'sharp'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 const filesModule = await import('../src/files.js').catch(() => null)
 
@@ -34,10 +35,7 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   t.after(() => app.close())
   const origin = `http://127.0.0.1:${app.server.address().port}`
 
-  await post(`${origin}/api/auth/magic-link`, { email: 'owner@example.com' })
-  const magic = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await post(`${origin}/api/auth/exchange`, { token: magic })
-  const accessToken = (await login.json()).accessToken
+  const accessToken = (await authenticate(repository, 'owner@example.com')).slice(7)
   const tripResponse = await post(`${origin}/api/trips`, { title: 'Photo trip' }, accessToken)
   const trip = await tripResponse.json()
 

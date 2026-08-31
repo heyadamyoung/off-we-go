@@ -81,7 +81,7 @@ test('publishes the Wayfare mark as a multi-size favicon', async ({ page, reques
   expect(icon.readUInt16LE(4)).toBe(4)
 })
 
-test('an email browser can hand a native magic link to the installed app', async ({ page }) => {
+test('an OIDC browser return can hand sign-in back to the installed app', async ({ page }) => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   await page.goto(`/auth/native?token=${token}`)
 

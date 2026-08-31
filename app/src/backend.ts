@@ -1,9 +1,10 @@
 import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
 import { createApiClient, safeOAuthContinuation } from './api-client-core'
-import { mobileTracker, sessionStorage, startOidcLogin, startOidcLogout } from './mobile'
-import { browserMagicTokenFromUrl } from './mobile-auth-core'
+import { mobileTracker, sessionStorage } from './mobile'
+import { browserLoginHandoffFromUrl } from './mobile-auth-core'
+import { createLogtoExperienceClient } from './logto-experience-core'
 import type {
-  AuthSession, Coordinates, Device, Id, Invite, LiveFix, Person, Stop,
+  AcceptedInvite, AuthSession, Coordinates, Device, Id, Invite, LiveFix, PendingInvite, Person, Stop,
   Trip, TripComment, TripData, TripLoadResult, TripPhoto, UploadInput,
 } from './shared/model/types'
 
@@ -16,16 +17,17 @@ export const authClient = createApiClient({
   storage: sessionStorage,
   fetch: globalThis.fetch.bind(globalThis),
 })
+const logtoExperience = createLogtoExperienceClient(authClient)
 
 let browserLogin: Promise<AuthSession | null> | null = null
 export function completeBrowserLogin() {
   if (!hasBackend || typeof window === 'undefined') return Promise.resolve(authClient.getSession())
   if (browserLogin) return browserLogin
   const url = new URL(window.location.href)
-  const token = browserMagicTokenFromUrl(url.href)
+  const token = browserLoginHandoffFromUrl(url.href)
   if (!token) return Promise.resolve(authClient.getSession())
   const continuation = safeOAuthContinuation(url.searchParams.get('continue'), url.origin)
-  browserLogin = authClient.exchangeMagicToken(token).then(session => {
+  browserLogin = authClient.exchangeLoginHandoff(token).then(session => {
     if (continuation) window.location.replace(continuation)
     return session
   }).finally(() => {
@@ -82,7 +84,11 @@ export async function loadTrip(session: AuthSession | null): Promise<TripLoadRes
   const wanted = new URLSearchParams(window.location.search).get('t')
   try { return await authClient.request(`/trips/current${wanted ? `?t=${encodeURIComponent(wanted)}` : ''}`) }
   catch (error) {
-    if (error.status === 404) return { noTrip: true, email: session.user.email }
+    if (error.status === 404) {
+      const invites = await listPendingInvites()
+      invites.sort((a, b) => Number(b.tripSlug === wanted) - Number(a.tripSlug === wanted))
+      return { noTrip: true, email: session.user.email, invites }
+    }
     throw error
   }
 }
@@ -129,6 +135,14 @@ export async function setLike(tripId: Id, photoId: Id, on: boolean): Promise<unk
 export async function listInvites(tripId: Id): Promise<Invite[]> {
   if (isSample(tripId)) return sampleTrip().invites.map(item => ({ ...item }))
   return authClient.request(`${tripPath(tripId)}/invites`)
+}
+export async function listPendingInvites(): Promise<PendingInvite[]> {
+  if (!hasBackend) return []
+  return authClient.request('/invites/pending')
+}
+export async function acceptInvite(id: Id): Promise<AcceptedInvite> {
+  if (!hasBackend) throw new Error('No backend configured')
+  return authClient.request(`/invites/${encodeURIComponent(id)}/accept`, { method: 'POST' })
 }
 export async function invitePerson(tripId: Id, input: Omit<Invite, 'id' | 'claimedAt'>): Promise<Invite> {
   if (isSample(tripId)) { const row = { id: uid(), ...input, claimedAt: null }; sampleTrip().invites.push(row); return row }
@@ -245,25 +259,27 @@ export function subscribeToPositions(tripId: Id, onFix: (fix: LiveFix) => void, 
 }
 export async function sweepPhotos() { return { objects: 0, inserted: 0, skipped: [] } }
 
-export async function sendMagicLink(email: string) {
+export async function signInWithPassword(email: string, password: string) {
   if (!hasBackend) throw new Error('No backend configured')
-  return authClient.request('/auth/magic-link', { method: 'POST', body: { email: email.trim().toLowerCase() } })
+  return logtoExperience.signIn(email, password)
 }
-export async function signInWithOidc() {
+export async function sendRegistrationCode(email: string) {
   if (!hasBackend) throw new Error('No backend configured')
-  await startOidcLogin(API_URL)
+  return logtoExperience.sendRegistrationCode(email)
+}
+export async function completeRegistration(input: { verificationId: string; code: string; password: string }) {
+  if (!hasBackend) throw new Error('No backend configured')
+  return logtoExperience.completeRegistration(input)
 }
 export async function signOut() {
   try { if (hasBackend) await authClient.signOut() }
   finally { await mobileTracker.forget() }
-  if (hasBackend) await startOidcLogout(API_URL)
 }
 export async function deleteAccount() {
   if (!hasBackend) throw new Error('No backend configured')
   await authClient.request('/account', { method: 'DELETE', body: { confirm: 'DELETE' } })
   try { await authClient.signOut() }
   finally { await mobileTracker.forget() }
-  await startOidcLogout(API_URL)
 }
 
 export async function loadAttractions(box: Record<string, string | number>, { headlineOnly = false, limit = 1000 } = {}) {

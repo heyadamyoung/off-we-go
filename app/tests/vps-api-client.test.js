@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 const moduleUnderTest = await import('../src/api-client-core.ts').catch(() => null)
 const liveModule = await import('../src/live-positions-core.ts').catch(() => null)
 
-test('the VPS client exchanges a magic token, persists the session and authenticates requests', async () => {
+test('the VPS client exchanges an OIDC handoff, persists the session and authenticates requests', async () => {
   assert.ok(moduleUnderTest?.createApiClient, 'the self-hosted API client has not been implemented')
   const saved = new Map()
   const calls = []
@@ -26,7 +26,7 @@ test('the VPS client exchanges a magic token, persists the session and authentic
     },
   })
 
-  const session = await client.exchangeMagicToken('one-time-token')
+  const session = await client.exchangeLoginHandoff('one-time-token')
   assert.equal(session.user.email, 'owner@example.com')
   assert.deepEqual(JSON.parse(saved.get('wayfare-session')), session)
 
@@ -56,7 +56,7 @@ test('native login becomes authenticated before slow keychain persistence finish
   let observed = null
   client.subscribe(session => { observed = session })
 
-  const exchange = client.exchangeMagicToken('one-time-token')
+  const exchange = client.exchangeLoginHandoff('one-time-token')
   await writeStarted
 
   assert.equal(observed?.accessToken, 'native-session-token')
@@ -79,7 +79,7 @@ test('API errors expose their HTTP status so the app can distinguish an empty ac
   })
 })
 
-test('magic-link continuation only returns to the same-origin OAuth authorization page', () => {
+test('OIDC continuation only returns to the same-origin OAuth authorization page', () => {
   assert.equal(
     moduleUnderTest.safeOAuthContinuation('/oauth/authorize?client_id=abc', 'https://wayfare.example.com'),
     '/oauth/authorize?client_id=abc',

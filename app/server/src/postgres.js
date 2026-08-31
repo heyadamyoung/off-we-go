@@ -34,12 +34,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   const ensureUser = async (client, email) => {
     const result = await client.query(`insert into users(email) values($1)
       on conflict(email) do update set email=excluded.email returning id,email`, [email])
-    const user = result.rows[0]
-    await client.query(`insert into trip_members(trip_id,user_id,role,display_name)
-      select trip_id,$1,role,coalesce(name,split_part($2,'@',1)) from trip_invites
-      where email=$2 on conflict(trip_id,user_id) do nothing`, [user.id, email])
-    await client.query('update trip_invites set claimed_at=coalesce(claimed_at,now()) where email=$1', [email])
-    return user
+    return result.rows[0]
   }
 
   const memberRole = async (client, userId, tripId) => {
@@ -87,14 +82,6 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const result = await pool.query(`select 1 from users where email=$1
         union all select 1 from trip_invites where email=$1 limit 1`, [email])
       return result.rowCount > 0
-    },
-    async createMagicToken({ hash, email, expiresAt }) {
-      await pool.query('delete from login_tokens where email=$1 or expires_at <= now()', [email])
-      await pool.query('insert into login_tokens(token_hash,email,expires_at) values($1,$2,$3)', [hash, email, expiresAt])
-    },
-    async consumeMagicToken(hash, now) {
-      const result = await pool.query('delete from login_tokens where token_hash=$1 and expires_at>$2 returning email', [hash, now])
-      return result.rows[0]?.email || null
     },
     async createOidcLogin({ stateHash, codeVerifier, nonce, client, bindingHash, continuation, expiresAt }) {
       await pool.query('delete from oidc_login_attempts where expires_at <= now()')
@@ -494,16 +481,54 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
-        const result = await client.query(`insert into trip_invites(trip_id,email,name,role)
+        const result = await client.query(`with invitation as (
+          insert into trip_invites(trip_id,email,name,role)
           values($1,$2,$3,$4) on conflict(trip_id,email) do update
-          set name=excluded.name,role=excluded.role returning *`,
+          set name=excluded.name,role=excluded.role returning *
+        ) select invitation.*,t.slug trip_slug,t.title trip_title
+          from invitation join trips t on t.id=invitation.trip_id`,
         [tripId, input.email, input.name, input.role])
         await client.query(`update trip_members m set role=$3 from users u
           where m.trip_id=$1 and m.user_id=u.id and u.email=$2 and m.role<>'owner'`,
         [tripId, input.email, input.role])
         await client.query('commit')
         const value = result.rows[0]
-        return { id: value.id, email: value.email, name: value.name, role: value.role, claimedAt: value.claimed_at }
+        return {
+          id: value.id, email: value.email, name: value.name, role: value.role,
+          claimedAt: value.claimed_at, tripId: value.trip_id,
+          tripSlug: value.trip_slug, tripTitle: value.trip_title,
+        }
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
+    },
+    async listPendingInvites(user) {
+      const result = await pool.query(`select i.*,t.slug trip_slug,t.title trip_title
+        from trip_invites i join trips t on t.id=i.trip_id
+        where i.email=$1 and i.claimed_at is null order by i.created_at`, [user.email])
+      return result.rows.map(value => ({
+        id: value.id, email: value.email, name: value.name, role: value.role,
+        tripId: value.trip_id, tripSlug: value.trip_slug, tripTitle: value.trip_title,
+      }))
+    },
+    async acceptInvite(user, inviteId) {
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const result = await client.query(`select i.*,t.slug trip_slug,t.title trip_title
+          from trip_invites i join trips t on t.id=i.trip_id
+          where i.id=$1 and i.email=$2 and i.claimed_at is null for update of i`,
+        [inviteId, user.email])
+        const invite = result.rows[0]
+        if (!invite) { await client.query('rollback'); return null }
+        await client.query(`insert into trip_members(trip_id,user_id,role,display_name)
+          values($1,$2,$3,$4) on conflict(trip_id,user_id) do nothing`,
+        [invite.trip_id, user.id, invite.role, invite.name || user.email.split('@')[0]])
+        await client.query('update trip_invites set claimed_at=now() where id=$1', [invite.id])
+        await client.query('commit')
+        return {
+          tripId: invite.trip_id, tripSlug: invite.trip_slug,
+          tripTitle: invite.trip_title, role: invite.role,
+        }
       } catch (error) { await client.query('rollback'); throw error }
       finally { client.release() }
     },

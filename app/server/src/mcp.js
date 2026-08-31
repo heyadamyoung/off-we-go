@@ -98,7 +98,7 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
   const returnsToThisDevice = redirect.protocol === 'http:'
     && ['127.0.0.1', 'localhost', '[::1]'].includes(redirect.hostname)
   const writeRequested = scopes.includes('trips:write')
-  const signInHref = escapeHtml(`/api/auth/oidc/start?client=web&continue=${encodeURIComponent(continuation)}`)
+  const signInHref = escapeHtml(`/?continue=${encodeURIComponent(continuation)}`)
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -350,7 +350,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite, logge
   })
 
   server.registerTool('invite_person', {
-    description: 'Invite a person to a trip as an editor or viewer. This sends a Wayfare sign-in email.',
+    description: 'Create a pending trip invitation and send an email telling the recipient to sign in and accept it.',
     inputSchema: z.object({
       tripId: entityId, email: z.string().email(), name: z.string().trim().max(160).nullable().optional(),
       role: z.enum(['editor', 'viewer']).default('viewer'),
@@ -359,7 +359,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite, logge
     const normalizedEmail = email.trim().toLowerCase()
     const invitation = await repository.upsertInvite(user, tripId, { email: normalizedEmail, name: name || null, role })
     if (!invitation) return toolFailure('Only a trip owner can send invitations.')
-    try { await sendInvite(normalizedEmail); return result({ ...invitation, mailed: true }) }
+    try { await sendInvite(invitation); return result({ ...invitation, mailed: true }) }
     catch { return result({ ...invitation, mailed: false, mailError: 'The invitation was saved, but its email could not be sent.' }) }
   })
 
@@ -574,7 +574,8 @@ export async function registerMcpRoutes(app, {
 
   const mcpHandler = createMcpHandler(({ authInfo }) => buildMcpServer({
     repository, user: authInfo.user, scopes: authInfo.scopes, fileStore, logger: app.log, clock,
-    sendInvite: async email => {
+    sendInvite: async invitation => {
+      const email = invitation.email
       const now = clock().getTime()
       const increment = (key, max) => {
         let window = inviteWindows.get(key)
@@ -593,7 +594,7 @@ export async function registerMcpRoutes(app, {
       if (increment(`user:${authInfo.user.id}`, 10) || increment(`target:${authInfo.user.id}:${email}`, 3)) {
         throw new Error('Invitation email rate limit exceeded')
       }
-      return sendInvite(email)
+      return sendInvite(invitation)
     },
   }), { legacy: 'stateless' })
   const nodeHandler = toNodeHandler(mcpHandler, {

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 const jsonPost = (url, body, token) => fetch(url, {
   method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -25,10 +26,7 @@ test('a photo without EXIF coordinates is placed from the uploader GPS trail by 
   t.after(() => app.close())
   const origin = `http://127.0.0.1:${app.server.address().port}`
 
-  await jsonPost(`${origin}/api/auth/magic-link`, { email: 'owner@example.com' })
-  const magic = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await jsonPost(`${origin}/api/auth/exchange`, { token: magic })
-  const accessToken = (await login.json()).accessToken
+  const accessToken = (await authenticate(repository, 'owner@example.com')).slice(7)
   const trip = await (await jsonPost(`${origin}/api/trips`, { title: 'Photo trail' }, accessToken)).json()
   const device = await (await jsonPost(`${origin}/api/trips/${trip.id}/devices`, { name: 'iPhone' }, accessToken)).json()
   await jsonPost(`${origin}/api/ingest/track`, {

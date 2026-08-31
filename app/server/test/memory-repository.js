@@ -1,7 +1,6 @@
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const fakeUuid = (namespace, value) => `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
-  const magicTokens = new Map()
   const oidcLogins = new Map()
   const oidcIdentities = new Map()
   const loginHandoffs = new Map()
@@ -39,17 +38,6 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return allowed.has(email) || [...trips.values()].some(trip => trip.invites.some(invite => invite.email === email))
     },
     async findUserByEmail(email) { return users.get(email) || null },
-    async createMagicToken({ hash, email, expiresAt }) {
-      for (const [existingHash, value] of magicTokens) {
-        if (value.email === email) magicTokens.delete(existingHash)
-      }
-      magicTokens.set(hash, { email, expiresAt })
-    },
-    async consumeMagicToken(hash, now) {
-      const row = magicTokens.get(hash)
-      magicTokens.delete(hash)
-      return row && row.expiresAt > now ? row.email : null
-    },
     async createOidcLogin({ stateHash, ...login }) {
       oidcLogins.set(stateHash, login)
     },
@@ -60,18 +48,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async ensureUser(email) {
       if (!users.has(email)) users.set(email, { id: fakeUuid(1, nextUser++), email })
-      const user = users.get(email)
-      for (const trip of trips.values()) {
-        const invite = trip.invites.find(value => value.email === email)
-        if (invite && !trip.members.some(member => member.userId === user.id)) {
-          trip.members.push({
-            userId: user.id, email, role: invite.role,
-            displayName: invite.name || email.split('@')[0], avatarUrl: null,
-          })
-          invite.claimedAt = new Date()
-        }
-      }
-      return user
+      return users.get(email)
     },
     async resolveOidcUser({ issuer, subject, email }) {
       const key = `${issuer}\u0000${subject}`
@@ -300,7 +277,30 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         invite = { id: fakeUuid(5, trip.invites.length + 1), ...input, claimedAt: null }
         trip.invites.push(invite)
       }
-      return invite
+      return { ...invite, tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title }
+    },
+    async listPendingInvites(user) {
+      return [...trips.values()].flatMap(trip => trip.invites
+        .filter(invite => invite.email === user.email && !invite.claimedAt)
+        .map(invite => ({
+          id: invite.id, email: invite.email, name: invite.name, role: invite.role,
+          tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title,
+        })))
+    },
+    async acceptInvite(user, inviteId) {
+      for (const trip of trips.values()) {
+        const invite = trip.invites.find(value => value.id === inviteId && value.email === user.email && !value.claimedAt)
+        if (!invite) continue
+        if (!trip.members.some(member => member.userId === user.id)) {
+          trip.members.push({
+            userId: user.id, email: user.email, role: invite.role,
+            displayName: invite.name || user.email.split('@')[0], avatarUrl: null,
+          })
+        }
+        invite.claimedAt = new Date()
+        return { tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title, role: invite.role }
+      }
+      return null
     },
     async listInvites(user, tripId) {
       if (!await this.canManageTrip(user.id, tripId)) return null

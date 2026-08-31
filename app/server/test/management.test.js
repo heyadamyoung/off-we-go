@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 async function setup(fileStore = null) {
   const sent = []
@@ -10,12 +11,10 @@ async function setup(fileStore = null) {
     repository, fileStore, mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const token = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token } })
-  const authorization = `Bearer ${login.json().accessToken}`
+  const authorization = await authenticate(repository, 'owner@example.com')
+  const user = await repository.findUserByEmail('owner@example.com')
   const trip = (await app.inject({ method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'Before' } })).json()
-  return { app, repository, authorization, trip, user: login.json().user }
+  return { app, repository, authorization, trip, user }
 }
 
 test('an owner can update trip details and their trip profile', async () => {

@@ -2,24 +2,18 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
-async function exchange(app, sent, email) {
-  const before = sent.length
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email } })
-  const token = new URL(sent[before].webUrl).searchParams.get('token')
-  const response = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token } })
-  return `Bearer ${response.json().accessToken}`
-}
-
-test('an owner invitation lets a viewer sign in and read but not edit the trip', async () => {
+test('an invited account must explicitly accept before it can read the trip', async () => {
   const sent = []
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    repository,
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  const owner = await exchange(app, sent, 'owner@example.com')
+  const owner = await authenticate(repository, 'owner@example.com')
   const tripResponse = await app.inject({
     method: 'POST', url: '/api/trips', headers: { authorization: owner }, payload: { title: 'Shared trip' },
   })
@@ -32,8 +26,42 @@ test('an owner invitation lets a viewer sign in and read but not edit the trip',
   assert.equal(invited.statusCode, 201)
   assert.equal(invited.json().mailed, true)
   assert.equal(sent.at(-1).to, 'friend@example.com')
+  assert.equal(sent.at(-1).kind, 'trip-invitation')
+  assert.equal(sent.at(-1).appUrl, 'https://wayfare.example.com/')
+  assert.equal(sent.at(-1).webUrl, undefined, 'trip invitations must not contain a sign-in token')
 
-  const viewer = await exchange(app, sent, 'friend@example.com')
+  const viewer = await authenticate(repository, 'friend@example.com')
+  const beforeAcceptance = await app.inject({
+    method: 'GET', url: '/api/trips/current', headers: { authorization: viewer },
+  })
+  assert.equal(beforeAcceptance.statusCode, 404)
+
+  const pending = await app.inject({
+    method: 'GET', url: '/api/invites/pending', headers: { authorization: viewer },
+  })
+  assert.equal(pending.statusCode, 200)
+  assert.deepEqual(pending.json(), [{
+    id: invited.json().id,
+    email: 'friend@example.com',
+    name: 'Alex',
+    role: 'viewer',
+    tripId: trip.id,
+    tripSlug: trip.slug,
+    tripTitle: 'Shared trip',
+  }])
+
+  const stranger = await authenticate(repository, 'stranger@example.com')
+  const stolen = await app.inject({
+    method: 'POST', url: `/api/invites/${invited.json().id}/accept`, headers: { authorization: stranger },
+  })
+  assert.equal(stolen.statusCode, 404)
+
+  const accepted = await app.inject({
+    method: 'POST', url: `/api/invites/${invited.json().id}/accept`, headers: { authorization: viewer },
+  })
+  assert.equal(accepted.statusCode, 200)
+  assert.equal(accepted.json().tripId, trip.id)
+
   const loaded = await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: viewer } })
   assert.equal(loaded.statusCode, 200)
   assert.equal(loaded.json().canEdit, false)
@@ -49,13 +77,14 @@ test('an owner invitation lets a viewer sign in and read but not edit the trip',
 
 test('only owners manage invitations and revoking a claimed invitation removes trip access', async () => {
   const sent = []
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    repository,
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  const owner = await exchange(app, sent, 'owner@example.com')
+  const owner = await authenticate(repository, 'owner@example.com')
   const trip = (await app.inject({
     method: 'POST', url: '/api/trips', headers: { authorization: owner }, payload: { title: 'Private trip' },
   })).json()
@@ -63,7 +92,10 @@ test('only owners manage invitations and revoking a claimed invitation removes t
     method: 'POST', url: `/api/trips/${trip.id}/invites`, headers: { authorization: owner },
     payload: { email: 'editor@example.com', name: 'Ed', role: 'editor' },
   })).json()
-  const editor = await exchange(app, sent, 'editor@example.com')
+  const editor = await authenticate(repository, 'editor@example.com')
+  assert.equal((await app.inject({
+    method: 'POST', url: `/api/invites/${invitation.id}/accept`, headers: { authorization: editor },
+  })).statusCode, 200)
 
   const editorInvite = await app.inject({
     method: 'POST', url: `/api/trips/${trip.id}/invites`, headers: { authorization: editor },
@@ -82,20 +114,24 @@ test('only owners manage invitations and revoking a claimed invitation removes t
 
 test('an owner can remove a claimed member but cannot remove the trip owner', async () => {
   const sent = []
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    repository,
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
-  const owner = await exchange(app, sent, 'owner@example.com')
+  const owner = await authenticate(repository, 'owner@example.com')
   const trip = (await app.inject({
     method: 'POST', url: '/api/trips', headers: { authorization: owner }, payload: { title: 'Private trip' },
   })).json()
-  await app.inject({
+  const invitation = (await app.inject({
     method: 'POST', url: `/api/trips/${trip.id}/invites`, headers: { authorization: owner },
     payload: { email: 'friend@example.com', name: 'Friend', role: 'viewer' },
-  })
-  const friend = await exchange(app, sent, 'friend@example.com')
+  })).json()
+  const friend = await authenticate(repository, 'friend@example.com')
+  assert.equal((await app.inject({
+    method: 'POST', url: `/api/invites/${invitation.id}/accept`, headers: { authorization: friend },
+  })).statusCode, 200)
   const friendProfile = (await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: friend } })).json().me
   const ownerProfile = (await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: owner } })).json().me
 

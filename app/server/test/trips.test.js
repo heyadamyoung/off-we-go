@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 async function signedInApp() {
   const sent = []
@@ -12,10 +13,7 @@ async function signedInApp() {
     publicUrl: 'https://wayfare.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const token = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token } })
-  return { app, repository, authorization: `Bearer ${login.json().accessToken}` }
+  return { app, repository, authorization: await authenticate(repository, 'owner@example.com') }
 }
 
 test('an authenticated owner can create and reload a trip in the app contract', async () => {

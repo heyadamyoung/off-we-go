@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createTrip, deleteAccount, signOut } from '../../backend'
+import { acceptInvite, createTrip, deleteAccount, signOut } from '../../backend'
 import { daysBetween, formatRange } from '../../shared/lib/trip-dates'
 
 /* A face, or the next best thing.
@@ -23,7 +23,7 @@ function initialAvatar(name) {
 export const withFace = person =>
   (person && person.avatar ? person : { ...person, avatar: initialAvatar(person && person.name) })
 
-function NoTrip({ email, onCreated }: any) {
+function NoTrip({ email, invites = [], onCreated }: any) {
   const [making, setMaking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
@@ -50,6 +50,12 @@ function NoTrip({ email, onCreated }: any) {
     if (window.prompt('Permanently delete this Wayfare account? Type DELETE to continue.') !== 'DELETE') return
     try { await deleteAccount(); window.location.reload() }
     catch (error) { setErr(error.message || 'Could not delete your account') }
+  }
+  const accept = async id => {
+    if (busy) return
+    setBusy(true); setErr(null)
+    try { await acceptInvite(id); onCreated() }
+    catch (error) { setErr(error.message || 'Could not accept that invitation'); setBusy(false) }
   }
 
   return (
@@ -90,10 +96,21 @@ function NoTrip({ email, onCreated }: any) {
           </>
         ) : (
           <>
-            <b>No trip yet</b>
-            <p>You are signed in as <strong>{email}</strong>, but nobody has invited that
+            <b>{invites.length ? 'Trip invitation' : 'No trip yet'}</b>
+            {invites.length ? <>
+              <p>You are signed in as <strong>{email}</strong>. Accept an invitation to join the trip.</p>
+              <div className="roster">
+                {invites.map(invite => <div className="rperson pend" key={invite.id}>
+                  <span className="ini">{(invite.tripTitle || '?')[0]}</span>
+                  <div><b>{invite.tripTitle}</b><span>{invite.role === 'editor' ? 'Can edit' : 'Can view'}</span></div>
+                  <button className="btn pri" disabled={busy} onClick={() => accept(invite.id)}>
+                    {busy ? 'Accepting…' : 'Accept'}
+                  </button>
+                </div>)}
+              </div>
+            </> : <p>You are signed in as <strong>{email}</strong>, but nobody has invited that
                address to a trip. Invitations go by email address, so it has to be this one —
-               ask whoever is running it to add you. Or start your own.</p>
+               ask whoever is running it to add you. Or start your own.</p>}
             <div className="linkrow">
               <button className="btn" onClick={() => signOut().then(() => window.location.reload())}>
                 Sign out

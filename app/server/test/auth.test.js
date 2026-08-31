@@ -170,37 +170,6 @@ test('a linked OIDC subject keeps the same Wayfare account after its provider em
   await app.close()
 })
 
-test('OIDC app handoffs do not invalidate a pending emailed invitation login', async () => {
-  const sent = []
-  const app = await moduleUnderTest.buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
-    mailer: { async send(message) { sent.push(message) } }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
-  })
-  await app.inject({
-    method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' },
-  })
-  const emailToken = new URL(sent[0].webUrl).searchParams.get('token')
-
-  const started = await app.inject({ method: 'GET', url: '/api/auth/oidc/start' })
-  const state = new URL(started.headers.location).searchParams.get('state')
-  const callback = await app.inject({
-    method: 'GET', url: `/api/auth/oidc/callback?code=provider-code&state=${encodeURIComponent(state)}`,
-  })
-  const oidcToken = new URL(callback.headers.location).searchParams.get('token')
-
-  const oidcExchange = await app.inject({
-    method: 'POST', url: '/api/auth/exchange',
-    headers: { cookie: loginCookie(started) }, payload: { token: oidcToken },
-  })
-  const emailExchange = await app.inject({
-    method: 'POST', url: '/api/auth/exchange', payload: { token: emailToken },
-  })
-  assert.equal(oidcExchange.statusCode, 200)
-  assert.equal(emailExchange.statusCode, 200)
-  await app.close()
-})
-
 test('native OIDC sign-in returns through the app universal-link handoff', async () => {
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
@@ -286,100 +255,161 @@ test('OIDC logout ends the provider session and uses a fixed safe return', async
   await app.close()
 })
 
-test('an invited email can exchange a one-time link for an authenticated session', async () => {
-  assert.ok(moduleUnderTest?.buildServer, 'the self-hosted Wayfare API has not been implemented')
-
-  const sent = []
-  const app = await moduleUnderTest.buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
-    mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
-    sessionSecret: 'test-secret-that-is-long-enough',
-  })
-
-  const health = await app.inject({ method: 'GET', url: '/api/health' })
-  assert.equal(health.statusCode, 200)
-  assert.deepEqual(health.json(), { ok: true })
-
-  const requested = await app.inject({
-    method: 'POST', url: '/api/auth/magic-link', payload: { email: ' OWNER@example.com ' },
-  })
-  assert.equal(requested.statusCode, 202)
-  assert.equal(sent.length, 1)
-  assert.equal(sent[0].to, 'owner@example.com')
-  assert.match(sent[0].webUrl, /^https:\/\/wayfare\.example\.com\/auth\/callback\?token=/)
-  assert.match(sent[0].nativeUrl, /^https:\/\/wayfare\.example\.com\/auth\/native\?token=/)
-  assert.equal(
-    new URL(sent[0].nativeUrl).searchParams.get('token'),
-    new URL(sent[0].webUrl).searchParams.get('token'),
-  )
-
-  const token = new URL(sent[0].webUrl).searchParams.get('token')
-  const exchanged = await app.inject({
-    method: 'POST', url: '/api/auth/exchange', payload: { token },
-  })
-  assert.equal(exchanged.statusCode, 200)
-  const session = exchanged.json()
-  assert.equal(session.user.email, 'owner@example.com')
-  assert.match(session.accessToken, /^[A-Za-z0-9_-]{32,}$/)
-
-  const replay = await app.inject({
-    method: 'POST', url: '/api/auth/exchange', payload: { token },
-  })
-  assert.equal(replay.statusCode, 401)
-
-  const oversizedExchange = await app.inject({
-    method: 'POST', url: '/api/auth/exchange', payload: { token: 'x'.repeat(100_000) },
-  })
-  assert.equal(oversizedExchange.statusCode, 413)
-
-  const current = await app.inject({
-    method: 'GET', url: '/api/auth/session',
-    headers: { authorization: `Bearer ${session.accessToken}` },
-  })
-  assert.equal(current.statusCode, 200)
-  assert.deepEqual(current.json().user, session.user)
-
-  await app.close()
-})
-
-test('magic-link requests are throttled per email before they can spam SMTP or invalidate more tokens', async () => {
+test('magic-link authentication is unavailable', async () => {
   const sent = []
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
-    clock: () => new Date('2027-01-01T00:00:00Z'),
-    authRateLimit: { maxPerEmail: 2, maxPerIp: 10, windowMs: 60_000 },
+  })
+  const requested = await app.inject({
+    method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' },
+  })
+  assert.equal(requested.statusCode, 404)
+  assert.deepEqual(sent, [])
+  const exchanged = await app.inject({
+    method: 'POST', url: '/api/auth/exchange', payload: { token: 'x'.repeat(43) },
+  })
+  assert.equal(exchanged.statusCode, 401)
+  await app.close()
+})
+
+test('custom password sign-in completes the Logto interaction without exposing hosted Logto pages', async () => {
+  const upstream = []
+  const identityProvider = createOidcProvider()
+  const experienceFetch = async (url, options = {}) => {
+    upstream.push({ url: String(url), options })
+    const path = new URL(url).pathname
+    if (path === '/oidc/auth') {
+      return new Response(null, {
+        status: 303,
+        headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+      })
+    }
+    if (path === '/api/experience/submit') {
+      return Response.json({ redirectTo: '/oidc/continue' })
+    }
+    if (path === '/oidc/continue') {
+      const authorization = new URL(upstream[0].url)
+      const callback = new URL(authorization.searchParams.get('redirect_uri'))
+      callback.searchParams.set('code', 'provider-code')
+      callback.searchParams.set('state', authorization.searchParams.get('state'))
+      return new Response(null, { status: 302, headers: { location: callback.href } })
+    }
+    if (path === '/api/experience/verification/password') {
+      return Response.json({ verificationId: 'password-verification' })
+    }
+    return new Response(null, { status: 204 })
+  }
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    mailer: { async send() {} }, identityProvider, experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+
+  const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  assert.equal(started.statusCode, 200)
+  assert.equal(started.json().started, true)
+  assert.match(started.json().interaction, /^[A-Za-z0-9_-]{32,}$/)
+  const interactionCookie = loginCookie(started)
+  assert.match(interactionCookie, /^__Host-wayfare-experience=/)
+  assert.doesNotMatch(String(started.headers['set-cookie']), /logto_interaction/)
+
+  const calls = [
+    ['PUT', '/api/auth/experience', { interactionEvent: 'SignIn' }],
+    ['POST', '/api/auth/experience/verification/password', {
+      identifier: { type: 'email', value: 'owner@example.com' }, password: 'correct horse battery staple',
+    }],
+    ['POST', '/api/auth/experience/identification', { verificationId: 'password-verification' }],
+  ]
+  for (const [method, url, payload] of calls) {
+    const response = await app.inject({
+      method, url, headers: { 'x-wayfare-experience': started.json().interaction }, payload,
+    })
+    assert.ok(response.statusCode < 300, `${method} ${url}: ${response.body}`)
+  }
+  const submitted = await app.inject({
+    method: 'POST', url: '/api/auth/experience/submit',
+    headers: { 'x-wayfare-experience': started.json().interaction }, payload: {},
+  })
+  assert.equal(submitted.statusCode, 200)
+  assert.equal(submitted.json().user.email, 'owner@example.com')
+  assert.match(submitted.json().accessToken, /^[A-Za-z0-9_-]{32,}$/)
+  assert.equal(upstream.some(call => new URL(call.url).pathname === '/sign-in'), false)
+  assert.match(String(upstream[1].options.headers.cookie), /logto_interaction=secret/)
+  await app.close()
+})
+
+test('custom account creation cannot send a Logto verification code to an uninvited email', async () => {
+  let verificationCodeRequests = 0
+  const experienceFetch = async (url, options = {}) => {
+    const path = new URL(url).pathname
+    if (path === '/oidc/auth') {
+      return new Response(null, {
+        status: 303,
+        headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+      })
+    }
+    if (path === '/api/experience/verification/verification-code') verificationCodeRequests++
+    return new Response(null, { status: 204 })
+  }
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository({ allowedEmails: ['invited@example.com'] }),
+    mailer: { async send() {} }, identityProvider: createOidcProvider(), experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  const cookie = loginCookie(started)
+  await app.inject({
+    method: 'PUT', url: '/api/auth/experience', headers: { cookie }, payload: { interactionEvent: 'Register' },
+  })
+  const denied = await app.inject({
+    method: 'POST', url: '/api/auth/experience/verification/verification-code', headers: { cookie },
+    payload: { identifier: { type: 'email', value: 'stranger@example.com' }, interactionEvent: 'Register' },
+  })
+
+  assert.equal(denied.statusCode, 403)
+  assert.equal(denied.json().error, 'An invitation is required to create a Wayfare account')
+  assert.equal(verificationCodeRequests, 0)
+  await app.close()
+})
+
+test('custom password checks are throttled per email before reaching Logto', async () => {
+  let passwordChecks = 0
+  const experienceFetch = async url => {
+    const path = new URL(url).pathname
+    if (path === '/oidc/auth') {
+      return new Response(null, {
+        status: 303,
+        headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+      })
+    }
+    if (path === '/api/experience/verification/password') passwordChecks++
+    return path === '/api/experience/verification/password'
+      ? Response.json({ verificationId: 'password-verification' })
+      : new Response(null, { status: 204 })
+  }
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    mailer: { async send() {} }, identityProvider: createOidcProvider(), experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    authRateLimit: { maxPerEmail: 2, maxPerIp: 20, windowMs: 60_000 },
   })
   const statuses = []
-  for (let index = 0; index < 3; index++) statuses.push((await app.inject({
-    method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' },
-  })).statusCode)
-  assert.deepEqual(statuses, [202, 202, 429])
-  assert.equal(sent.length, 2)
-
-  const oversized = await app.inject({
-    method: 'POST', url: '/api/auth/magic-link',
-    payload: { email: `${'x'.repeat(20_000)}@example.com` },
-  })
-  assert.equal(oversized.statusCode, 413)
-  await app.close()
-})
-
-test('a malformed OAuth continuation cannot break or redirect a magic link', async () => {
-  const sent = []
-  const app = await moduleUnderTest.buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
-    mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
-  })
-  const requested = await app.inject({
-    method: 'POST', url: '/api/auth/magic-link',
-    payload: { email: 'owner@example.com', continue: 'http://[' },
-  })
-  assert.equal(requested.statusCode, 202)
-  assert.equal(sent.length, 1)
-  assert.equal(new URL(sent[0].webUrl).searchParams.has('continue'), false)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+    const interaction = started.json().interaction
+    await app.inject({
+      method: 'PUT', url: '/api/auth/experience', headers: { 'x-wayfare-experience': interaction },
+      payload: { interactionEvent: 'SignIn' },
+    })
+    statuses.push((await app.inject({
+      method: 'POST', url: '/api/auth/experience/verification/password',
+      headers: { 'x-wayfare-experience': interaction },
+      payload: { identifier: { type: 'email', value: 'OWNER@example.com' }, password: 'guess' },
+    })).statusCode)
+  }
+  assert.deepEqual(statuses, [200, 200, 429])
+  assert.equal(passwordChecks, 2)
   await app.close()
 })

@@ -8,16 +8,16 @@ export function createMailer({ from, transport }) {
   if (!from) throw new Error('SMTP_FROM is required')
   if (!transport?.sendMail) throw new Error('An SMTP transport is required')
   return {
-    async send({ to, webUrl, nativeUrl }) {
-      const web = escapeHtml(webUrl), native = escapeHtml(nativeUrl)
+    async send({ to, appUrl, tripTitle }) {
+      const title = String(tripTitle || 'a Wayfare trip')
+      const safeTitle = escapeHtml(title), safeUrl = escapeHtml(appUrl)
       await transport.sendMail({
-        from, to, subject: 'Sign in to Wayfare',
-        text: `Sign in to Wayfare:\n\n${webUrl}\n\nOn an iPhone with Wayfare installed:\n${nativeUrl}\n\nThis link expires in 15 minutes and can be used once.`,
+        from, to, subject: `You're invited to ${title}`,
+        text: `You've been invited to ${title} in Wayfare.\n\nOpen Wayfare, then sign in or create an account with this email address to review and accept the invitation:\n\n${appUrl}`,
         html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:auto;padding:32px">
-          <h1 style="font-size:24px">Sign in to Wayfare</h1>
-          <p><a href="${web}" style="display:inline-block;background:#111;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Open Wayfare</a></p>
-          <p>If Wayfare is installed on your iPhone, <a href="${native}">open it in the app</a>.</p>
-          <p style="color:#666">This link expires in 15 minutes and can be used once.</p>
+          <h1 style="font-size:24px">You&apos;re invited to ${safeTitle}</h1>
+          <p>Open Wayfare, then sign in or create an account with this email address to review and accept the invitation.</p>
+          <p><a href="${safeUrl}" style="display:inline-block;background:#111;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Review invitation</a></p>
         </div>`,
       })
     },

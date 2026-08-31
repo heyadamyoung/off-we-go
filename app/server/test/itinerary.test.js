@@ -2,19 +2,18 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 async function ownerHarness() {
   const sent = []
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    repository,
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const magic = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token: magic } })
-  const authorization = `Bearer ${login.json().accessToken}`
+  const authorization = await authenticate(repository, 'owner@example.com')
   const created = await app.inject({ method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'Editable' } })
   return { app, authorization, trip: created.json() }
 }

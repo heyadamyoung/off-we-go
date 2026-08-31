@@ -5,7 +5,7 @@ import { once } from 'node:events'
 import { createMobileTracker } from '../src/mobile-tracking-core.ts'
 import * as mobilePhotos from '../src/mobile-photos-core.ts'
 import {
-  browserMagicTokenFromUrl, completeNativeLogin, magicTokenFromUrl, nativeAppUrlFromUrl,
+  browserLoginHandoffFromUrl, completeNativeLogin, loginHandoffFromUrl, nativeAppUrlFromUrl,
 } from '../src/mobile-auth-core.ts'
 
 const { galleryPhotosToFiles } = mobilePhotos
@@ -380,20 +380,20 @@ test('an older photo without EXIF coordinates reaches the backend without the cu
   })
 })
 
-test('a Wayfare magic-link callback exposes the one-time VPS login token', () => {
+test('a Wayfare OIDC callback exposes the one-time login handoff', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
-  assert.equal(magicTokenFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
-  assert.equal(magicTokenFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), token)
-  assert.equal(magicTokenFromUrl(`wayfare://auth?token=${token}`), token)
-  assert.equal(magicTokenFromUrl('https://example.com/not-a-login'), null)
-  assert.equal(magicTokenFromUrl(`other-app://auth?token=${token}`), null)
+  assert.equal(loginHandoffFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
+  assert.equal(loginHandoffFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), token)
+  assert.equal(loginHandoffFromUrl(`wayfare://auth?token=${token}`), token)
+  assert.equal(loginHandoffFromUrl('https://example.com/not-a-login'), null)
+  assert.equal(loginHandoffFromUrl(`other-app://auth?token=${token}`), null)
 })
 
 test('the website exchanges only its callback and leaves a native handoff token untouched', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
-  assert.equal(browserMagicTokenFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
-  assert.equal(browserMagicTokenFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), null)
-  assert.equal(browserMagicTokenFromUrl(`wayfare://auth?token=${token}`), null)
+  assert.equal(browserLoginHandoffFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
+  assert.equal(browserLoginHandoffFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), null)
+  assert.equal(browserLoginHandoffFromUrl(`wayfare://auth?token=${token}`), null)
 })
 
 test('an Outlook browser handoff produces an explicit Wayfare app URL', () => {
@@ -405,18 +405,18 @@ test('an Outlook browser handoff produces an explicit Wayfare app URL', () => {
   assert.equal(nativeAppUrlFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), null)
 })
 
-test('native magic-link handling reports progress and contains exchange failures', async () => {
+test('native OIDC handoff reports progress and contains exchange failures', async () => {
   const states = []
   const handled = await completeNativeLogin(
     'https://wayfare.example.com/auth/callback?token=one-time-login-token-at-least-thirty-two-characters',
-    { async exchangeMagicToken() { throw new Error('The sign-in link expired') } },
+    { async exchangeLoginHandoff() { throw new Error('The sign-in handoff expired') } },
     state => states.push(state),
   )
 
   assert.equal(handled, false)
   assert.deepEqual(states, [
     { status: 'exchanging', error: null },
-    { status: 'error', error: 'The sign-in link expired' },
+    { status: 'error', error: 'The sign-in handoff expired' },
   ])
 })
 
@@ -429,7 +429,7 @@ test('native OIDC cancellation returns an error without attempting token exchang
   assert.equal(nativeAppUrlFromUrl(url), expectedAppUrl.href)
   const handled = await completeNativeLogin(
     url,
-    { async exchangeMagicToken() { throw new Error('must not exchange') } },
+    { async exchangeLoginHandoff() { throw new Error('must not exchange') } },
     state => states.push(state),
   )
   assert.equal(handled, true)

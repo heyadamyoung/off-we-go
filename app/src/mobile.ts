@@ -143,9 +143,9 @@ export function startOidcLogout(apiBaseUrl: string) {
 }
 
 const nativeBoundAuthClient = authClient => ({
-  async exchangeMagicToken(token) {
+  async exchangeLoginHandoff(token) {
     const verifier = await sessionStorage.getItem(NATIVE_OIDC_VERIFIER_KEY)
-    try { return await authClient.exchangeMagicToken(token, verifier ? { client: 'native', verifier } : {}) }
+    try { return await authClient.exchangeLoginHandoff(token, verifier ? { client: 'native', verifier } : {}) }
     finally { await sessionStorage.removeItem(NATIVE_OIDC_VERIFIER_KEY) }
   },
 })

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 const root = 'https://wayfare.example.com'
 
@@ -20,11 +21,7 @@ async function fixture() {
     publicUrl: root,
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const magicToken = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token: magicToken } })
-  const accessToken = login.json().accessToken
-  return { app, repository, authorization: `Bearer ${accessToken}` }
+  return { app, repository, authorization: await authenticate(repository, 'owner@example.com') }
 }
 
 async function registerClient(app) {

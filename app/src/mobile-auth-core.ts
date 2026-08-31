@@ -8,7 +8,7 @@ function parsedLoginUrl(value) {
   } catch { return null }
 }
 
-export function magicTokenFromUrl(value) {
+export function loginHandoffFromUrl(value) {
   const parsed = parsedLoginUrl(value)
   if (!parsed?.token) return null
   const { url, token } = parsed
@@ -18,7 +18,7 @@ export function magicTokenFromUrl(value) {
   return isUniversalLink || isCustomScheme ? token : null
 }
 
-export function browserMagicTokenFromUrl(value) {
+export function browserLoginHandoffFromUrl(value) {
   const parsed = parsedLoginUrl(value)
   return parsed?.url.protocol === 'https:' && parsed.url.pathname === '/auth/callback'
     ? parsed.token : null
@@ -39,7 +39,7 @@ export interface NativeLoginState {
 }
 
 interface NativeAuthClient {
-  exchangeMagicToken(token: string): Promise<unknown>
+  exchangeLoginHandoff(token: string): Promise<unknown>
 }
 
 export async function completeNativeLogin(
@@ -56,11 +56,11 @@ export async function completeNativeLogin(
     onState({ status: 'error', error: parsed.error })
     return true
   }
-  const token = magicTokenFromUrl(value)
+  const token = loginHandoffFromUrl(value)
   if (!token || !authClient) return false
   onState({ status: 'exchanging', error: null })
   try {
-    await authClient.exchangeMagicToken(token)
+    await authClient.exchangeLoginHandoff(token)
     onState({ status: 'complete', error: null })
     return true
   } catch (caught) {

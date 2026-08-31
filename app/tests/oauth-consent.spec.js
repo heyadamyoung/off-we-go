@@ -111,7 +111,7 @@ test('uses Wayfare styling and keeps permission controls aligned', async ({ page
     await page.locator('.identity').evaluate(element => element.classList.add('good'))
     expect(await disclosureContrast(page, '.identity.good', '.identity.good')).toBeGreaterThanOrEqual(4.5)
     const loginButton = page.getByRole('link', { name: 'Continue to sign in' })
-    await expect(loginButton).toHaveAttribute('href', /\/api\/auth\/oidc\/start\?client=web&continue=/)
+    await expect(loginButton).toHaveAttribute('href', /^\/\?continue=%2Foauth%2Fauthorize/)
     await loginButton.hover()
     expect(await disclosureContrast(page, '.login a', '.login a')).toBeGreaterThanOrEqual(4.5)
 

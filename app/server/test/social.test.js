@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 test('a trip member can comment on and like a photo, then undo both', async () => {
   const sent = []
@@ -12,10 +13,7 @@ test('a trip member can comment on and like a photo, then undo both', async () =
     publicUrl: 'https://wayfare.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const magic = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token: magic } })
-  const authorization = `Bearer ${login.json().accessToken}`
+  const authorization = await authenticate(repository, 'owner@example.com')
   const created = await app.inject({ method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'Social' } })
   const trip = created.json()
   const photo = repository.seedPhoto(trip.id)

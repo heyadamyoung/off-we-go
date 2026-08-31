@@ -45,7 +45,7 @@ Location sharing is optional and can reduce battery life. Continued use of GPS r
 
 ## Review notes
 
-Wayfare is invitation-only. Provide App Review with a dedicated reviewer email that has already been invited to a sample trip. The reviewer requests a one-time link on the sign-in screen; no password is used.
+Wayfare is invitation-only. Provide App Review with a dedicated reviewer account whose verified email has a pending invitation to a sample trip. The reviewer signs in with the supplied Wayfare ID credentials, accepts the invitation in the app, and then opens the sample trip.
 
 To test background location: sign in, open the people/phones panel, register the test device, start sharing, and accept the iOS location prompts. The status card exposes pause/resume and removal controls. Location is visible only to members of that private trip and is retained for 30 days.
 

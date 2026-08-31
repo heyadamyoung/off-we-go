@@ -257,7 +257,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
       // The invitation stands either way; say plainly which happened, because
       // "Invited" over a mail that never went is how somebody ends up waiting.
       toast(row.mailed
-        ? `Invited ${row.email} — sign-in link sent`
+        ? `Invited ${row.email} — invitation email sent`
         : `${row.email} can join, but the email did not send: ${row.mailError || 'unknown error'}`)
     } catch (e2) {
       toast(e2.message || 'Could not send that invite')

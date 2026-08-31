@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 test('account deletion removes the user, sole-owned trip content, private files and active session', async () => {
   const sent = [], removed = []
@@ -12,10 +13,7 @@ test('account deletion removes the user, sole-owned trip content, private files 
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const token = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = (await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token } })).json()
-  const headers = { authorization: `Bearer ${login.accessToken}` }
+  const headers = { authorization: await authenticate(repository, 'owner@example.com') }
   const trip = (await app.inject({ method: 'POST', url: '/api/trips', headers, payload: { title: 'Private trip' } })).json()
   repository.seedPhoto(trip.id)
 
@@ -44,10 +42,7 @@ test('account deletion retries private-file removal after a filesystem failure a
     clock: () => now,
   }
   const app = await buildServer(options)
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const token = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = (await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token } })).json()
-  const headers = { authorization: `Bearer ${login.accessToken}` }
+  const headers = { authorization: await authenticate(repository, 'owner@example.com') }
   const trip = (await app.inject({ method: 'POST', url: '/api/trips', headers, payload: { title: 'Private trip' } })).json()
   repository.seedPhoto(trip.id)
 

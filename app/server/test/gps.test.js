@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { authenticate } from './auth-helper.js'
 
 test('a registered phone can report an idempotent GPS fix that its trip can read', async () => {
   const sent = []
@@ -14,10 +15,7 @@ test('a registered phone can report an idempotent GPS fix that its trip can read
     clock: () => new Date('2027-06-04T13:21:00.000Z'),
   })
 
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const magic = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token: magic } })
-  const authorization = `Bearer ${login.json().accessToken}`
+  const authorization = await authenticate(repository, 'owner@example.com')
   const created = await app.inject({
     method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'GPS trip' },
   })
@@ -72,17 +70,15 @@ test('a registered phone can report an idempotent GPS fix that its trip can read
 
 test('GPS ingestion rejects a phone that exceeds its configured burst limit', async () => {
   const sent = []
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
+    repository,
     mailer: { async send(message) { sent.push(message) } },
     publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     clock: () => new Date('2027-06-04T13:21:00.000Z'),
     ingestRateLimit: { max: 2, windowMs: 60_000 },
   })
-  await app.inject({ method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' } })
-  const token = new URL(sent[0].webUrl).searchParams.get('token')
-  const login = (await app.inject({ method: 'POST', url: '/api/auth/exchange', payload: { token } })).json()
-  const headers = { authorization: `Bearer ${login.accessToken}` }
+  const headers = { authorization: await authenticate(repository, 'owner@example.com') }
   const trip = (await app.inject({ method: 'POST', url: '/api/trips', headers, payload: { title: 'GPS trip' } })).json()
   const device = (await app.inject({ method: 'POST', url: `/api/trips/${trip.id}/devices`, headers, payload: { name: 'Phone' } })).json()
 

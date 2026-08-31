@@ -57,6 +57,19 @@ export interface Invite {
   mailError?: string
 }
 
+export interface PendingInvite extends Invite {
+  tripId: Id
+  tripSlug: string
+  tripTitle: string
+}
+
+export interface AcceptedInvite {
+  tripId: Id
+  tripSlug: string
+  tripTitle: string
+  role: string
+}
+
 export interface Device {
   id: Id
   name: string
@@ -138,7 +151,7 @@ export type ApiRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown }
 export type TripLoadResult =
   | TripData
   | { needsAuth: true }
-  | { noTrip: true; email?: string }
+  | { noTrip: true; email?: string; invites: PendingInvite[] }
 
 export interface Attraction {
   id: Id | number

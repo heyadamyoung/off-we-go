@@ -85,7 +85,10 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     request,
     getSession() { return session },
     subscribe(listener: (session: AuthSession | null) => void) { listeners.add(listener); return () => listeners.delete(listener) },
-    async exchangeMagicToken(token: string, binding: { client?: 'native'; verifier?: string } = {}) {
+    async acceptSession(value: AuthSession) {
+      return save({ accessToken: value.accessToken, user: value.user })
+    },
+    async exchangeLoginHandoff(token: string, binding: { client?: 'native'; verifier?: string } = {}) {
       const result = await request<AuthSession>('/auth/exchange', { method: 'POST', body: { token, ...binding } })
       return await save({ accessToken: result.accessToken, user: result.user })
     },

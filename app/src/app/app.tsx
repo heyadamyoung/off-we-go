@@ -46,7 +46,7 @@ function AuthenticatedApp() {
   if (error) return <Boot error={error} onRetry={() => setAttempt(a => a + 1)} />
   if (!data) return <Boot />
   if ('needsAuth' in data) return <SignInScreen />
-  if ('noTrip' in data) return <NoTrip email={data.email} onCreated={reload} />
+  if ('noTrip' in data) return <NoTrip email={data.email} invites={data.invites} onCreated={reload} />
   // Remount cleanly if the signed-in identity changes which trip we are showing.
   return <TripApp key={data.tripId + ':' + (session?.user?.id || 'anon')}
                   data={data} onReload={reload} />

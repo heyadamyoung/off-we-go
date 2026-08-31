@@ -47,7 +47,7 @@ The installer writes a root-readable `.env`. [.env.vps.example](.env.vps.example
 
 ### Logto / OIDC setup
 
-Wayfare uses the same browser-BFF shape as Threadway: the API is a confidential OIDC client, starts authorization code flow with PKCE, validates state, nonce, issuer, signature, and token claims on the callback, then links the stable `(issuer, subject)` identity to a Wayfare user. Provider access, ID, and refresh tokens are never sent to the app and are not persisted by Wayfare.
+Wayfare uses the same custom-auth BFF shape as Threadway2. The app renders its own email/password and create-account screens and calls a narrow Wayfare proxy over Logto's Experience API. Logto interaction cookies and redirects stay on the server. The API completes authorization code flow with PKCE, validates state, nonce, issuer, signature, and token claims, then links the stable `(issuer, subject)` identity to a Wayfare user. Provider access, ID, and refresh tokens are never sent to the app and are not persisted by Wayfare.
 
 In Logto, create a **Traditional Web** application for Wayfare and register this exact redirect URI:
 
@@ -55,18 +55,13 @@ In Logto, create a **Traditional Web** application for Wayfare and register this
 https://your-domain/api/auth/oidc/callback
 ```
 
-Register these post sign-out redirect URIs as well, so signing out clears both the Wayfare session and the hosted Logto session:
-
-```text
-https://your-domain/
-https://your-domain/auth/native?logout=1
-```
-
 Copy its issuer, application ID, and application secret into `WAYFARE_OIDC_ISSUER`, `WAYFARE_OIDC_CLIENT_ID`, and `WAYFARE_OIDC_CLIENT_SECRET`. The issuer is the OIDC issuer, including `/oidc` for self-hosted Logto—not merely the console origin.
 
 When upgrading an older installation, `sudo bash deploy/install.sh` prompts only for missing OIDC values and appends them to the existing `.env`; database, session, OAuth, and SMTP secrets are preserved.
 
-Configure the real sign-in methods in Logto under **Sign-in & account**. Email/password can be the primary identifier; Google, Apple, Microsoft, or other social connectors can be enabled on the same hosted sign-in page. Wayfare requires the resulting identity to carry a provider-verified email matching the owner, an existing user, or a pending trip invitation. If Google or another social provider is available in the iOS app, configure Sign in with Apple as well for App Store compliance.
+Configure email as the sign-in and registration identifier and enable password sign-in in Logto under **Sign-in & account**. Wayfare's create-account form uses Logto's email verification code before setting the password. Wayfare requires the resulting identity to carry a provider-verified email matching the owner, an existing user, or a pending trip invitation.
+
+Inviting someone creates a pending `trip_invites` record and sends a notification containing only the ordinary Wayfare app/site URL, with no trip selector or authentication token. The recipient signs in—or creates an account—with the invited email address, reviews the pending invitation in Wayfare, and explicitly accepts it. Only acceptance creates the `trip_members` record; invitation emails are not authentication links.
 
 The web build uses `VITE_API_URL=/api`. For a native build, set the public absolute API URL before syncing:
 

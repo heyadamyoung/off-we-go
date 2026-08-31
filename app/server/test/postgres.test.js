@@ -21,13 +21,6 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
 
   assert.equal(await repository.emailAllowed('owner@example.com'), true)
   const expiresAt = new Date('2027-01-01T00:15:00.000Z')
-  await repository.createMagicToken({ hash: 'magic-hash', email: 'owner@example.com', expiresAt })
-  assert.equal(
-    await repository.consumeMagicToken('magic-hash', new Date('2027-01-01T00:01:00.000Z')),
-    'owner@example.com',
-  )
-  assert.equal(await repository.consumeMagicToken('magic-hash', new Date('2027-01-01T00:02:00.000Z')), null)
-
   await repository.createOidcLogin({
     stateHash: 'oidc-state-hash', codeVerifier: 'oidc-code-verifier', nonce: 'oidc-nonce',
     client: 'native', bindingHash: 'native-binding-hash',
@@ -220,7 +213,21 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   const invitation = await repository.upsertInvite(user, trip.id, {
     email: 'friend@example.com', name: 'Friend', role: 'editor',
   })
-  const friend = await repository.ensureUser('friend@example.com')
+  const friend = await repository.resolveOidcUser({
+    issuer: 'https://identity.example.com/oidc', subject: 'identity-user-2', email: 'friend@example.com',
+  })
+  assert.equal(await repository.loadCurrentTrip(friend, trip.slug), null)
+  assert.deepEqual(await repository.listPendingInvites(friend), [{
+    id: invitation.id,
+    email: 'friend@example.com',
+    name: 'Friend',
+    role: 'editor',
+    tripId: trip.id,
+    tripSlug: trip.slug,
+    tripTitle: 'Persistent trip',
+  }])
+  assert.equal((await repository.acceptInvite(friend, invitation.id)).tripId, trip.id)
+  assert.deepEqual(await repository.listPendingInvites(friend), [])
   assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.userId === friend.id).role, 'editor')
   await repository.upsertInvite(user, trip.id, { email: 'friend@example.com', name: 'Friend', role: 'viewer' })
   assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.userId === friend.id).role, 'viewer')

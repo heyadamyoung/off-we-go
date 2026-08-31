@@ -5,7 +5,7 @@
 3. Create the `ai.threadway.wayfare` identifier in Apple Developer and enable Associated Domains.
 4. In Xcode Cloud, connect this repository, choose the `App` scheme, set the branch, and use `app/ios/App/ci_scripts/ci_post_clone.sh`.
 5. Select automatic signing for the correct team and create an archive build for iOS. The repository's GitHub workflow also compiles the unsigned iPhone/iPad simulator target on every main-branch change.
-6. Distribute the archive to internal TestFlight testers. On a real iPhone and iPad verify login links, selected Photos, upload, background GPS with the screen locked, offline/online retry, pause/resume, account deletion, and all permission-denial paths.
+6. Distribute the archive to internal TestFlight testers. On a real iPhone and iPad verify account sign-in/sign-up, invitation acceptance, selected Photos, upload, background GPS with the screen locked, offline/online retry, pause/resume, account deletion, and all permission-denial paths.
 7. Capture final App Store screenshots from that build, fill the manual values in `metadata.md`, complete App Privacy answers, and submit for review.
 
 The codebase can automate compilation and tests. Apple credentials, legal contact information, the review account, and the physical-device observations must be supplied by the account owner.
