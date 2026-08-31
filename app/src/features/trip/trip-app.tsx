@@ -166,6 +166,7 @@ export default function TripApp({ data, onReload }: TripAppProps) {
   const fitAll = useCallback(() => {
     setFollowing(false)
     if (!stops.length) return
+    setSelected(null)
     const lngs = stops.map(s => s.lng), lats = stops.map(s => s.lat)
     const west = Math.min(...lngs), east = Math.max(...lngs)
     const south = Math.min(...lats), north = Math.max(...lats)

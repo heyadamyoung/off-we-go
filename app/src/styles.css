@@ -265,8 +265,8 @@ img{display:block}
 .editor .lookup:disabled{opacity:.5;cursor:default}
 
 /* ---------------- boot ---------------- */
-.boot{height:100%;display:grid;place-items:center;background:var(--bg)}
-.bootIn.wide{max-width:420px}
+.boot{height:100%;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;background:var(--bg)}
+.bootIn.wide{width:100%;max-width:420px}
 .bootIn.wide form{width:100%;margin-top:4px}
 .bootIn .warn{color:#ff8b6b}
 .btn.danger{border-color:#8e3b33;color:#ff9b87}
@@ -577,7 +577,7 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 .modal .mb{padding:18px;display:flex;flex-direction:column;gap:13px}
 .modal .mb p{margin:0;font-size:13px;color:var(--ink2);line-height:1.55}
 .linkrow{display:flex;gap:8px}
-.linkrow input{flex:1;height:38px;border-radius:9px;background:var(--bg3);border:1px solid var(--line2);
+.linkrow input{flex:1;min-width:0;height:38px;border-radius:9px;background:var(--bg3);border:1px solid var(--line2);
   padding:0 12px;font-size:12.5px;outline:none}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 13px;
   border-radius:9px;border:1px solid var(--line2);background:var(--bg2);font-size:13px;font-weight:700}
@@ -627,6 +627,8 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 }
 
 @media (max-width:620px){
+  .bootIn .linkrow input{font-size:16px}
+  .wctl{right:8px;top:8px;flex-direction:row}
   .tlogo{padding:0 12px;border-right:0}
   .tright{padding:0 8px;gap:6px;border-left:0}
   .pref.attr{display:none}           /* the layer is on unless somebody turns it off */

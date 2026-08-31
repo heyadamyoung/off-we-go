@@ -87,20 +87,22 @@ test('loads the trip with map, markers and filmstrip', async ({ page }) => {
   await expect(page.locator('.tflow')).toContainText('km walked')
 })
 
-test('fit the whole trip keeps every stop inside a phone-sized map', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await open(page)
+test('fit the whole trip reveals every stop on the smallest phone viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.goto('/')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
+  await page.waitForTimeout(3500)
 
-  await page.getByTitle('Fit the whole trip').click()
+  await page.getByTitle('Fit the whole trip').click({ timeout: 5000 })
   await page.waitForTimeout(1000)
+  await expect(page.locator('.herocard')).toHaveCount(0)
 
   const allStopsInsideMap = await page.evaluate(() => {
     const map = document.querySelector('.mapcanvas').getBoundingClientRect()
     return [...document.querySelectorAll('.mstop .pin')].every(pin => {
       const box = pin.getBoundingClientRect()
-      const x = box.x + box.width / 2
-      const y = box.y + box.height / 2
-      return x >= map.left && x <= map.right && y >= map.top && y <= map.bottom
+      return box.left >= map.left && box.right <= map.right
+        && box.top >= map.top && box.bottom <= map.bottom
     })
   })
   expect(allStopsInsideMap).toBe(true)
