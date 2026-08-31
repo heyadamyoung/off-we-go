@@ -1,6 +1,6 @@
-# Contributing to Wayfare
+# Contributing to Off We Go
 
-Thank you for helping improve Wayfare.
+Thank you for helping improve Off We Go.
 
 ## Development
 

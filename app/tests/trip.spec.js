@@ -19,7 +19,7 @@ async function open(page) {
 const stopNames = page =>
   page.locator('.fcard .t b').allTextContents()
 
-test('the sign-in screen gives the Wayfare icon enough room to be legible', async ({ page }) => {
+test('the sign-in screen gives the Off We Go icon enough room to be legible', async ({ page }) => {
   await page.goto('/')
   const size = await page.evaluate(() => {
     const screen = document.createElement('div')
@@ -43,8 +43,8 @@ test('the OIDC sign-in action stays inside an older iPhone viewport', async ({ p
       <div class="boot">
         <div class="bootIn wide">
           <span class="mk brand"><img src="/wayfare-icon.png" alt=""></span>
-          <b>Sign in to Wayfare</b>
-          <p>Continue to Wayfare ID to sign in securely.</p>
+          <b>Sign in to Off We Go</b>
+          <p>Continue to Off We Go ID to sign in securely.</p>
           <button class="btn pri" type="button">Continue to sign in</button>
         </div>
       </div>`
@@ -69,7 +69,7 @@ test('the OIDC sign-in action stays inside an older iPhone viewport', async ({ p
   expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth)
 })
 
-test('publishes the Wayfare mark as a multi-size favicon', async ({ page, request }) => {
+test('publishes the Off We Go mark as a multi-size favicon', async ({ page, request }) => {
   await page.goto('/')
   const href = await page.locator('link[rel="icon"]').getAttribute('href')
   expect(href).toBe('/favicon.ico')
@@ -85,7 +85,7 @@ test('an OIDC browser return can hand sign-in back to the installed app', async 
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   await page.goto(`/auth/native?token=${token}`)
 
-  const openApp = page.getByRole('link', { name: 'Open Wayfare app' })
+  const openApp = page.getByRole('link', { name: 'Open Off We Go app' })
   await expect(openApp).toBeVisible()
   await expect(openApp).toHaveAttribute('href', `wayfare://auth?token=${token}`)
   await expect(page.getByRole('link', { name: 'Sign in on the website instead' })).toHaveAttribute(
@@ -151,7 +151,7 @@ test('the header People action stays compact at tablet widths', async ({ page })
   expect(people.width).toBeLessThanOrEqual(100)
 })
 
-test('the Wayfare mark is legible in the phone header', async ({ page }) => {
+test('the Off We Go mark is legible in the phone header', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 })
   await open(page)
 
@@ -172,19 +172,20 @@ test('the phone header controls reach the right edge', async ({ page }) => {
   expect(gap).toBeLessThanOrEqual(1)
 })
 
-test('the Wayfare mark opens the app menu', async ({ page }) => {
+test('the Off We Go mark opens the app menu', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 })
   await open(page)
 
   const trigger = page.getByRole('button', { name: 'Open menu' })
+  await expect(page.locator('.wm')).toHaveText('Off We Go')
   await expect(trigger).toHaveAttribute('aria-expanded', 'false')
   await trigger.click()
 
   await expect(trigger).toHaveAttribute('aria-expanded', 'true')
-  await expect(page.getByRole('menu', { name: 'Wayfare menu' })).toBeVisible()
+  await expect(page.getByRole('menu', { name: 'Off We Go menu' })).toBeVisible()
 
   await page.getByRole('menuitem', { name: 'People' }).click()
-  await expect(page.getByRole('menu', { name: 'Wayfare menu' })).toHaveCount(0)
+  await expect(page.getByRole('menu', { name: 'Off We Go menu' })).toHaveCount(0)
   await expect(page.locator('.modal')).toBeVisible()
 })
 

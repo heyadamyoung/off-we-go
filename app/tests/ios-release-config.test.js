@@ -13,7 +13,7 @@ test('archive arguments leave dependency bundle identifiers untouched', async ()
     archivePath: '/tmp/Wayfare.xcarchive',
     teamId: 'R65UN25Q64',
     buildNumber: '42',
-    domain: 'wayfare.threadway.ai',
+    domain: 'offwego.to',
   }), [
     '-workspace', 'ios/App/App.xcworkspace',
     '-scheme', 'App',
@@ -22,7 +22,7 @@ test('archive arguments leave dependency bundle identifiers untouched', async ()
     '-archivePath', '/tmp/Wayfare.xcarchive',
     'DEVELOPMENT_TEAM=R65UN25Q64',
     'CURRENT_PROJECT_VERSION=42',
-    'WAYFARE_DOMAIN=wayfare.threadway.ai',
+    'WAYFARE_DOMAIN=offwego.to',
     'clean', 'archive',
   ]);
 });

@@ -12,7 +12,7 @@ jobs:
   simulator-build:
     runs-on: macos-15
     env:
-      WAYFARE_DOMAIN: wayfare.threadway.ai
+      WAYFARE_DOMAIN: offwego.to
     defaults:
       run:
         working-directory: app

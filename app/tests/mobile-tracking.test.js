@@ -151,6 +151,23 @@ async function endpoint(handler) {
   return `http://127.0.0.1:${server.address().port}/track`
 }
 
+test('background location tells the user that Off We Go is sharing their position', async () => {
+  const driver = locationDriver()
+  const tracker = createMobileTracker({ driver, storage: memoryStorage(), fetch })
+
+  await tracker.configure({
+    endpoint: 'https://offwego.to/api/ingest/track',
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
+
+  assert.equal(driver.options.backgroundTitle, 'Off We Go location sharing')
+  assert.equal(driver.options.backgroundMessage,
+    'Your trip location is being shared with your Off We Go group.')
+  await tracker.stop()
+})
+
 test('a background location is authenticated and transmitted in the backend OwnTracks format', async () => {
   const received = []
   const url = await endpoint(async (request, response) => {
@@ -265,7 +282,7 @@ test('Android requests notification access before starting background location',
   const backgroundGeolocation = {
     async addWatcher(options, listener) {
       events.push('location')
-      assert.equal(options.backgroundTitle, 'Wayfare location sharing')
+      assert.equal(options.backgroundTitle, 'Off We Go location sharing')
       assert.equal(typeof listener, 'function')
       return 'watch-1'
     },
@@ -285,7 +302,7 @@ test('Android requests notification access before starting background location',
     backgroundGeolocation, localNotifications, platform: 'android',
   })
 
-  assert.equal(await driver.addWatcher({ backgroundTitle: 'Wayfare location sharing' }, () => {}), 'watch-1')
+  assert.equal(await driver.addWatcher({ backgroundTitle: 'Off We Go location sharing' }, () => {}), 'watch-1')
   assert.deepEqual(events, ['check-notifications', 'request-notifications', 'location'])
 })
 
@@ -380,7 +397,7 @@ test('an older photo without EXIF coordinates reaches the backend without the cu
   })
 })
 
-test('a Wayfare OIDC callback exposes the one-time login handoff', () => {
+test('a Off We Go OIDC callback exposes the one-time login handoff', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   assert.equal(loginHandoffFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
   assert.equal(loginHandoffFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), token)
@@ -396,7 +413,7 @@ test('the website exchanges only its callback and leaves a native handoff token 
   assert.equal(browserLoginHandoffFromUrl(`wayfare://auth?token=${token}`), null)
 })
 
-test('an Outlook browser handoff produces an explicit Wayfare app URL', () => {
+test('an Outlook browser handoff produces an explicit Off We Go app URL', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   assert.equal(
     nativeAppUrlFromUrl(`https://wayfare.example.com/auth/native?token=${token}`),

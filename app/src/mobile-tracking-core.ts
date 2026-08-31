@@ -170,8 +170,8 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
     publish({ status: 'starting', error: null })
     try {
       watcherId = await driver.addWatcher({
-        backgroundTitle: 'Wayfare location sharing',
-        backgroundMessage: 'Your trip location is being shared with your Wayfare group.',
+        backgroundTitle: 'Off We Go location sharing',
+        backgroundMessage: 'Your trip location is being shared with your Off We Go group.',
         requestPermissions: true,
         stale: false,
         distanceFilter: 10,

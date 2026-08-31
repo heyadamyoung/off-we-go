@@ -1,6 +1,6 @@
 # iOS release checklist
 
-1. Confirm `wayfare.threadway.ai` resolves to the VPS and `https://wayfare.threadway.ai/api/health` returns `{"ok":true}`.
+1. Confirm `offwego.to` resolves to the VPS and `https://offwego.to/api/health` returns `{"ok":true}`.
 2. Confirm the VPS `.env` retains `APPLE_TEAM_ID=R65UN25Q64`; verify `/.well-known/apple-app-site-association` returns `R65UN25Q64.ai.threadway.wayfare` without redirects.
 3. Create the `ai.threadway.wayfare` identifier in Apple Developer and enable Associated Domains.
 4. In Xcode Cloud, connect this repository, choose the `App` scheme, set the branch, and use `app/ios/App/ci_scripts/ci_post_clone.sh`.

@@ -9,7 +9,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ExampleInstrumentedTest {
     @Test
-    fun usesWayfareAppContext() {
+    fun usesOffWeGoAppContext() {
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("ai.threadway.wayfare", appContext.packageName)
     }

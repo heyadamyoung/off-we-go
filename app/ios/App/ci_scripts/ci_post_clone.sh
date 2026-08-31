@@ -2,7 +2,7 @@
 set -eu
 
 APP_ROOT="$CI_PRIMARY_REPOSITORY_PATH/app"
-: "${WAYFARE_DOMAIN:=wayfare.threadway.ai}"
+: "${WAYFARE_DOMAIN:=offwego.to}"
 export WAYFARE_DOMAIN
 
 cd "$APP_ROOT"

@@ -13,7 +13,7 @@ export function serializeRequestForLog(request) {
 export function productionLoggerOptions(level = 'info') {
   return {
     level,
-    // Fastify's default request serializer includes the full URL. Wayfare has
+    // Fastify's default request serializer includes the full URL. Off We Go has
     // signed media and legacy GPS credentials in query strings, so log only
     // the path and never serialize request headers.
     serializers: { req: serializeRequestForLog },

@@ -7,7 +7,7 @@ test('the SMTP mailer sends a trip invitation without an authentication token', 
   assert.ok(moduleUnderTest?.createMailer, 'the VPS SMTP mailer has not been implemented')
   const sent = []
   const mailer = moduleUnderTest.createMailer({
-    from: 'Wayfare <wayfare@example.com>',
+    from: 'Off We Go <wayfare@example.com>',
     transport: { async sendMail(message) { sent.push(message) } },
   })
   await mailer.send({
@@ -18,6 +18,7 @@ test('the SMTP mailer sends a trip invitation without an authentication token', 
   })
 
   assert.equal(sent[0].subject, "You're invited to Summer in Paris")
+  assert.match(sent[0].text, /in Off We Go/)
   assert.match(sent[0].text, /sign in or create an account/i)
   assert.match(sent[0].text, /https:\/\/wayfare\.example\.com\//)
   assert.doesNotMatch(sent[0].text, /\?t=/)

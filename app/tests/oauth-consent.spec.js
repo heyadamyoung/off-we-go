@@ -68,7 +68,7 @@ async function hostConsent() {
   return { app, client: registration.json(), url: `${address}/oauth/authorize?${query}` }
 }
 
-test('uses Wayfare styling and keeps permission controls aligned', async ({ page }) => {
+test('uses Off We Go styling and keeps permission controls aligned', async ({ page }) => {
   const fixture = await hostConsent()
   try {
     const response = await page.goto(fixture.url)

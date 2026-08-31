@@ -18,7 +18,7 @@ jobs:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
       IOS_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_PROVISIONING_PROFILE_NAME }}
-      WAYFARE_DOMAIN: wayfare.threadway.ai
+      WAYFARE_DOMAIN: offwego.to
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
     defaults:
@@ -86,7 +86,7 @@ jobs:
           node scripts/iosReleaseCore.mjs "$APPLE_TEAM_ID" "$IOS_BUNDLE_ID"
           "$IOS_PROVISIONING_PROFILE_NAME" > "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Archive Wayfare
+      - name: Archive Off We Go
         run: >-
           node scripts/iosArchive.mjs "$RUNNER_TEMP/Wayfare.xcarchive"
           "$APPLE_TEAM_ID" "$GITHUB_RUN_NUMBER" "$WAYFARE_DOMAIN"

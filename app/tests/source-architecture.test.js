@@ -55,7 +55,7 @@ test('application source contains no JavaScript modules', async () => {
   assert.deepEqual(JavaScriptFiles, [])
 })
 
-test('Wayfare Android sources are Kotlin rather than Java', async () => {
+test('Off We Go Android sources are Kotlin rather than Java', async () => {
   const androidSourceRoot = path.join(appRoot, 'android', 'app', 'src')
   const entries = await readdir(androidSourceRoot, { recursive: true })
   const javaFiles = entries.filter(file => file.endsWith('.java'))

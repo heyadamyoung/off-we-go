@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Wayfare</string>
+	<string>Off We Go</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -38,13 +38,13 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Wayfare uses the camera only when you choose to take a trip photo.</string>
+	<string>Off We Go uses the camera only when you choose to take a trip photo.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Wayfare shares your trip position with members of your private trip, including while the screen is locked.</string>
+	<string>Off We Go shares your trip position with members of your private trip, including while the screen is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Wayfare uses your position to place you and your photos on your private trip map.</string>
+	<string>Off We Go uses your position to place you and your photos on your private trip map.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Wayfare lets you select trip photos from Apple Photos to upload to your private trip.</string>
+	<string>Off We Go lets you select trip photos from Apple Photos to upload to your private trip.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

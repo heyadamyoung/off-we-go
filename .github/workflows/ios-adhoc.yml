@@ -18,7 +18,7 @@ jobs:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
       IOS_ADHOC_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ADHOC_PROVISIONING_PROFILE_NAME }}
-      WAYFARE_DOMAIN: wayfare.threadway.ai
+      WAYFARE_DOMAIN: offwego.to
       GH_TOKEN: ${{ github.token }}
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -89,7 +89,7 @@ jobs:
           node scripts/iosReleaseCore.mjs "$APPLE_TEAM_ID" "$IOS_BUNDLE_ID"
           "$IOS_ADHOC_PROVISIONING_PROFILE_NAME" ad-hoc > "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Archive Wayfare
+      - name: Archive Off We Go
         run: >-
           node scripts/iosArchive.mjs "$RUNNER_TEMP/Wayfare.xcarchive"
           "$APPLE_TEAM_ID" "$GITHUB_RUN_NUMBER" "$WAYFARE_DOMAIN"
@@ -130,13 +130,13 @@ jobs:
           TAG="wayfare-ipad-adhoc"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
-              --title "Wayfare Registered Devices" \
-              --notes "Signed Ad Hoc build for registered Wayfare test devices." \
+              --title "Off We Go Registered Devices" \
+              --notes "Signed Ad Hoc build for registered Off We Go test devices." \
               --prerelease
           else
             gh release create "$TAG" \
-              --title "Wayfare Registered Devices" \
-              --notes "Signed Ad Hoc build for registered Wayfare test devices." \
+              --title "Off We Go Registered Devices" \
+              --notes "Signed Ad Hoc build for registered Off We Go test devices." \
               --prerelease
           fi
           gh release upload "$TAG" "$RUNNER_TEMP/Wayfare.ipa" --clobber

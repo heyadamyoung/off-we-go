@@ -30,7 +30,7 @@ import { cellsCovering, attractionsInCell, isHeadline, setApiHeaders,
          setApiThrottle, extractsFor } from '../src/places.js'
 
 // Wikimedia asks scripts to identify themselves, and refuses them otherwise.
-setApiHeaders({ 'User-Agent': 'Wayfare/1.0 (family trip viewer; support@threadway.ai)' })
+setApiHeaders({ 'User-Agent': 'Off We Go/1.0 (family trip viewer; support@threadway.ai)' })
 // Two a second. Measured: ten requests in four seconds already earns a 429.
 setApiThrottle(500)
 
@@ -41,7 +41,7 @@ if (!dryRun && !DATABASE_URL) {
   console.error(`
 Missing credentials.
 
-  DATABASE_URL  PostgreSQL connection string for the Wayfare database
+  DATABASE_URL  PostgreSQL connection string for the Off We Go database
 `)
   process.exit(1)
 }
