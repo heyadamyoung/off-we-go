@@ -27,6 +27,7 @@ test('an authenticated owner can create and reload a trip in the app contract', 
   })
   assert.equal(created.statusCode, 201)
   assert.equal(created.json().title, 'Scotland 2027')
+  assert.equal(created.json().slug, 'scotland-2027')
 
   const loaded = await app.inject({
     method: 'GET', url: `/api/trips/current?t=${created.json().slug}`,
@@ -42,14 +43,28 @@ test('an authenticated owner can create and reload a trip in the app contract', 
     },
     stops: [], photos: [], route: [], comments: {}, likes: [],
     family: [{
-      id: created.json().ownerId, slug: 'owner-100001', name: 'owner', role: 'Travelling',
+      id: created.json().ownerId, handle: 'owner-user', name: 'owner', role: 'Travelling',
       memberRole: 'owner', avatar: null,
     }],
     canEdit: true,
     me: {
-      id: created.json().ownerId, slug: 'owner-100001', name: 'owner', role: 'Travelling',
+      id: created.json().ownerId, handle: 'owner-user', name: 'owner', role: 'Travelling',
       memberRole: 'owner', avatar: null,
     },
   })
+
+  const duplicate = await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization },
+    payload: { title: 'Scotland 2027' },
+  })
+  assert.equal(duplicate.statusCode, 201)
+  assert.equal(duplicate.json().slug, 'scotland-2027-2')
+
+  const renamed = await app.inject({
+    method: 'PATCH', url: `/api/trips/${created.json().id}`, headers: { authorization },
+    payload: { title: 'Highlands 2027' },
+  })
+  assert.equal(renamed.statusCode, 200)
+  assert.equal(renamed.json().slug, 'scotland-2027', 'renaming a trip must not break shared links')
   await app.close()
 })

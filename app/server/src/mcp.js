@@ -182,7 +182,7 @@ function tripForMcp(row) {
     id: row.id, slug: row.slug, title: row.title, crew: row.crew, dates: row.dates,
     dayCount: row.dayCount, startsOn: row.startsOn, endsOn: row.endsOn,
     members: row.members.map(member => ({
-      id: member.profileId, slug: member.slug, name: member.displayName, role: member.role,
+      id: member.profileId, handle: member.handle, name: member.displayName, role: member.role,
     })),
     stops: row.stops,
     photos: row.photos.map(({ storagePath: _storagePath, thumbPath: _thumbPath, ...photo }) => photo),

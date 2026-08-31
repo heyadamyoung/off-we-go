@@ -52,7 +52,7 @@ test('custom account creation verifies the email before setting a password', asy
   const recorder = recordingClient()
   const experience = createLogtoExperienceClient(recorder.api)
 
-  const verificationId = await experience.sendRegistrationCode(' Invited@Example.com ')
+  const verificationId = await experience.sendRegistrationCode(' Invited@Example.com ', 'adam-young')
   await experience.completeRegistration({
     verificationId, code: '204913', password: 'a sufficiently long password',
   })
@@ -61,14 +61,28 @@ test('custom account creation verifies the email before setting a password', asy
   assert.deepEqual(recorder.calls.map(call => [call.path, call.method]), [
     ['/auth/experience/start', 'POST'],
     ['/auth/experience', 'PUT'],
+    ['/auth/experience/handle', 'POST'],
     ['/auth/experience/verification/verification-code', 'POST'],
     ['/auth/experience/verification/verification-code/verify', 'POST'],
     ['/auth/experience/profile', 'POST'],
     ['/auth/experience/identification', 'POST'],
     ['/auth/experience/submit', 'POST'],
   ])
-  assert.deepEqual(recorder.calls[3].body, { verificationId: 'email-code', code: '204913' })
-  assert.deepEqual(recorder.calls[4].body, { type: 'password', value: 'a sufficiently long password' })
-  assert.equal(recorder.calls[6].headers['x-wayfare-experience'], 'opaque-interaction')
+  assert.deepEqual(recorder.calls[2].body, { handle: 'adam-young' })
+  assert.deepEqual(recorder.calls[4].body, { verificationId: 'email-code', code: '204913' })
+  assert.deepEqual(recorder.calls[5].body, { type: 'password', value: 'a sufficiently long password' })
+  assert.equal(recorder.calls[7].headers['x-wayfare-experience'], 'opaque-interaction')
   assert.equal(recorder.accepted().user.email, 'invited@example.com')
+})
+
+test('requesting another registration code keeps the reserved handle interaction', async () => {
+  const recorder = recordingClient()
+  const experience = createLogtoExperienceClient(recorder.api)
+
+  await experience.sendRegistrationCode('invited@example.com', 'adam-young')
+  await experience.sendRegistrationCode('invited@example.com', 'adam-young')
+
+  assert.equal(recorder.calls.filter(call => call.path === '/auth/experience/start').length, 1)
+  assert.equal(recorder.calls.filter(call => call.path === '/auth/experience/handle').length, 2)
+  assert.equal(recorder.calls.filter(call => call.path.endsWith('/verification/verification-code')).length, 2)
 })

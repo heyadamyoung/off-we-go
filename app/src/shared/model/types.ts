@@ -98,7 +98,7 @@ export interface TripComment {
 
 export interface Person {
   id?: Id
-  slug?: string
+  handle?: string
   name: string
   email?: string
   role?: string

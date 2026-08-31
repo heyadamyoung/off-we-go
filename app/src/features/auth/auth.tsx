@@ -34,6 +34,7 @@ function SignInScreen({ notify }: { notify: (notice: ToastNotice) => void }) {
   const [mode, setMode] = useState<'signin' | 'register'>('signin')
   const [phase, setPhase] = useState<'details' | 'code'>('details')
   const [email, setEmail] = useState('')
+  const [handle, setHandle] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [code, setCode] = useState('')
@@ -72,7 +73,7 @@ function SignInScreen({ notify }: { notify: (notice: ToastNotice) => void }) {
           notify({ message: 'Those passwords do not match.', tone: 'error' })
           return
         }
-        try { setVerificationId(await sendRegistrationCode(email)) }
+        try { setVerificationId(await sendRegistrationCode(email, handle)) }
         catch (error) { fail(error, 'send-code'); return }
         setPhase('code')
         setBusy(false)
@@ -94,7 +95,7 @@ function SignInScreen({ notify }: { notify: (notice: ToastNotice) => void }) {
 
   const switchMode = () => {
     setMode(value => value === 'signin' ? 'register' : 'signin')
-    setPhase('details'); setPassword(''); setConfirmPassword('')
+    setPhase('details'); setHandle(''); setPassword(''); setConfirmPassword('')
     setCode(''); setVerificationId('')
   }
 
@@ -110,6 +111,15 @@ function SignInScreen({ notify }: { notify: (notice: ToastNotice) => void }) {
             : `Enter the verification code Logto sent to ${email.trim().toLowerCase()}.`}</p>
         <form className="authForm" onSubmit={submit}>
           {phase === 'details' && <>
+            {mode === 'register' && <label className="field">
+              <span>Handle</span>
+              <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false}
+                required minLength={3} maxLength={30}
+                pattern="[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*" placeholder="adam-young"
+                aria-describedby="handle-help" value={handle}
+                onChange={event => setHandle(event.target.value.toLowerCase())} />
+              <small id="handle-help">Your unique @handle. Use letters, numbers, and single hyphens.</small>
+            </label>}
             <label className="field">
               <span>Email</span>
               <input type="email" autoComplete="email" inputMode="email" required autoFocus

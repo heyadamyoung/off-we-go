@@ -64,6 +64,8 @@ const forbidden: Partial<Record<AppAction, string>> = {
 export function appErrorMessage(caught: unknown, action: AppAction): string {
   const error = caught as Partial<ApiError> | null
   const status = Number(error?.status || 0)
+  if (error?.code === 'profile.handle_taken') return 'That handle is already taken. Try another one.'
+  if (error?.code === 'profile.handle_invalid') return 'Use 3–30 letters, numbers, or single hyphens for your handle.'
   if (caught instanceof TypeError || status === 0 && /fetch|network|offline/i.test(String(error?.message || ''))) {
     return 'Check your internet connection and try again.'
   }

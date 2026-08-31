@@ -63,7 +63,9 @@ Configure email as the sign-in and registration identifier and enable password s
 
 Inviting someone creates a pending `trip_invites` record and sends a notification containing only the ordinary Off We Go app/site URL, with no trip selector or authentication token. The recipient signs in—or creates an account—with the invited email address, reviews the pending invitation in Off We Go, and explicitly accepts it. Only acceptance creates the `trip_members` record; invitation emails are not authentication links.
 
-Each authentication user has one global `profiles` row containing their stable slug, display name, and avatar. `trip_members` links a trip to a profile and contains only relationship data (`role` and `joined_at`); profile details are never copied into a membership. Updating `/api/profile` therefore changes the person everywhere they appear.
+Each authentication user has one global `profiles` row containing their unique handle, display name, and avatar. New accounts choose a handle before email verification; handles are lowercase, 3–30 characters, and contain only letters, numbers, and single hyphens. `trip_members` links a trip to a profile and contains only relationship data (`role` and `joined_at`); profile details are never copied into a membership. Updating `/api/profile` therefore changes the person everywhere they appear.
+
+Trip slugs are allocated once from the trip title (`italy-2027`, then `italy-2027-2` when needed) and do not change when the title is edited. Older opaque slugs remain as aliases so previously shared private links continue to resolve.
 
 The web build uses `VITE_API_URL=/api`. For a native build, set the public absolute API URL before syncing:
 

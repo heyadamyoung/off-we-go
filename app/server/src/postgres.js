@@ -2,17 +2,16 @@ import pg from 'pg'
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
+import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
 
 const rows = result => result.rows || []
 const sha256 = value => createHash('sha256').update(value).digest('hex')
-const profileSlug = email => {
-  const base = String(email).split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'traveller'
-  return `${base}-${randomBytes(8).toString('hex')}`
-}
+const HANDLE_LOCK = 9152028
+const TRIP_SLUG_LOCK = 9152029
 
 export function migrationChecksumStatus(sql, storedChecksum) {
   const normalizedSql = sql.replaceAll('\r\n', '\n')
@@ -35,16 +34,20 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
   const admin = String(adminEmail || '').trim().toLowerCase()
 
-  const ensureUser = async (client, email) => {
+  const ensureUser = async (client, email, chosenHandle = null) => {
     const result = await client.query(`insert into users(email) values($1)
       on conflict(email) do update set email=excluded.email returning id,email`, [email])
     const user = result.rows[0]
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const inserted = await client.query(`insert into profiles(id,slug,display_name)
+    const rawBase = slugBase(email.split('@')[0], 'traveller', 30)
+    const base = normalizeProfileHandle(rawBase) || `${rawBase.slice(0, 25) || 'traveller'}-user`
+    for (let attempt = 1; attempt <= 100; attempt++) {
+      const ending = attempt === 1 ? '' : `-${attempt}`
+      const handle = chosenHandle || `${base.slice(0, 30 - ending.length).replace(/-$/g, '')}${ending}`
+      const inserted = await client.query(`insert into profiles(id,handle,display_name)
         values($1,$2,$3) on conflict do nothing returning id`,
-      [user.id, profileSlug(email), email.split('@')[0]])
+      [user.id, handle, email.split('@')[0]])
       if (inserted.rowCount || (await client.query('select 1 from profiles where id=$1', [user.id])).rowCount) break
-      if (attempt === 4) throw new Error('Could not allocate a unique profile slug')
+      if (chosenHandle || attempt === 100) throw new Error('Could not allocate a unique profile handle')
     }
     return user
   }
@@ -101,6 +104,24 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         (state_hash,code_verifier,nonce,client_kind,binding_hash,continuation,expires_at)
         values($1,$2,$3,$4,$5,$6,$7)`, [stateHash, codeVerifier, nonce, client, bindingHash, continuation, expiresAt])
     },
+    async reserveProfileHandle({ reservationHash, handle, expiresAt }) {
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        await client.query('select pg_advisory_xact_lock($1)', [HANDLE_LOCK])
+        await client.query('delete from profile_handle_reservations where expires_at<=now()')
+        const unavailable = await client.query(`select 1 from profiles where handle=$1
+          union all select 1 from profile_handle_reservations
+          where handle=$1 and reservation_hash<>$2 limit 1`, [handle, reservationHash])
+        if (unavailable.rowCount) { await client.query('rollback'); return false }
+        await client.query(`insert into profile_handle_reservations(reservation_hash,handle,expires_at)
+          values($1,$2,$3) on conflict(reservation_hash) do update
+          set handle=excluded.handle,expires_at=excluded.expires_at`, [reservationHash, handle, expiresAt])
+        await client.query('commit')
+        return true
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
+    },
     async consumeOidcLogin(stateHash, now) {
       const result = await pool.query(`delete from oidc_login_attempts
         where state_hash=$1 and expires_at>$2
@@ -112,14 +133,26 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       } : null
     },
     async ensureUser(email) { return ensureUser(pool, email) },
-    async resolveOidcUser({ issuer, subject, email }) {
+    async resolveOidcUser({ issuer, subject, email, handleReservationHash = null }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
+        await client.query('select pg_advisory_xact_lock($1)', [HANDLE_LOCK])
         const linked = await client.query(`select u.id,u.email from oidc_identities i
           join users u on u.id=i.user_id where i.issuer=$1 and i.subject=$2`, [issuer, subject])
-        if (linked.rows[0]) { await client.query('commit'); return linked.rows[0] }
-        const user = await ensureUser(client, email)
+        if (linked.rows[0]) {
+          if (handleReservationHash) await client.query('delete from profile_handle_reservations where reservation_hash=$1', [handleReservationHash])
+          await client.query('commit')
+          return linked.rows[0]
+        }
+        const known = await client.query('select id,email from users where email=$1', [email])
+        let user = known.rows[0]
+        if (!user) {
+          const reservation = handleReservationHash ? await client.query(`select handle from profile_handle_reservations
+            where reservation_hash=$1 and expires_at>now() for update`, [handleReservationHash]) : { rows: [] }
+          if (!reservation.rows[0]) { await client.query('rollback'); return null }
+          user = await ensureUser(client, email, reservation.rows[0].handle)
+        }
         const inserted = await client.query(`insert into oidc_identities(issuer,subject,user_id)
           values($1,$2,$3) on conflict(issuer,subject) do nothing returning user_id`, [issuer, subject, user.id])
         if (!inserted.rowCount) {
@@ -128,6 +161,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           await client.query('commit')
           return raced.rows[0] || null
         }
+        if (handleReservationHash) await client.query('delete from profile_handle_reservations where reservation_hash=$1', [handleReservationHash])
         await client.query('commit')
         return user
       } catch (error) { await client.query('rollback'); throw error }
@@ -309,8 +343,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
-        const base = (input.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'trip'
-        const slug = `${base}-${randomBytes(3).toString('hex')}`
+        await client.query('select pg_advisory_xact_lock($1)', [TRIP_SLUG_LOCK])
+        const slug = await availableSlug(input.title, async candidate => (await client.query(`select 1 from trips where slug=$1
+          union all select 1 from trip_slug_aliases where slug=$1 limit 1`, [candidate])).rowCount > 0)
         const result = await client.query(`insert into trips(slug,title,crew,dates,day_count,starts_on,ends_on)
           values($1,$2,$3,$4,$5,$6,$7) returning *`, [
           slug, input.title, input.crew || null, input.dates || null, input.dayCount || 1,
@@ -333,13 +368,17 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async loadCurrentTrip(user, slug) {
       const values = [user.id]
       let where = 'm.profile_id=$1'
-      if (slug) { values.push(slug); where += ' and t.slug=$2' }
+      if (slug) {
+        values.push(slug)
+        where += ` and (t.slug=$2 or exists(
+          select 1 from trip_slug_aliases a where a.trip_id=t.id and a.slug=$2))`
+      }
       const tripResult = await pool.query(`select t.* from trips t join trip_members m on m.trip_id=t.id
         where ${where} order by t.created_at limit 1`, values)
       if (!tripResult.rows[0]) return null
       const trip = tripResult.rows[0]
       const [members, stops, photos, route, comments, likes] = await Promise.all([
-        pool.query(`select m.profile_id,m.role,p.slug,p.display_name,p.avatar_path,u.email from trip_members m
+        pool.query(`select m.profile_id,m.role,p.handle,p.display_name,p.avatar_path,u.email from trip_members m
           join profiles p on p.id=m.profile_id join users u on u.id=p.id
           where m.trip_id=$1 order by m.joined_at`, [trip.id]),
         pool.query('select * from stops where trip_id=$1 order by seq,created_at', [trip.id]),
@@ -360,7 +399,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return {
         ...camelTrip(trip),
         members: rows(members).map(value => ({
-          profileId: value.profile_id, email: value.email, slug: value.slug, role: value.role,
+          profileId: value.profile_id, email: value.email, handle: value.handle, role: value.role,
           displayName: value.display_name, avatarUrl: value.avatar_path,
         })),
         stops: rows(stops).map(value => ({
@@ -396,25 +435,38 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return result.rows[0] ? camelTrip(result.rows[0]) : null
     },
     async updateProfile(user, changes) {
-      const previous = changes.avatarPath !== undefined
-        ? await pool.query('select avatar_path from profiles where id=$1', [user.id])
-        : null
-      const entries = []
-      if (changes.name !== undefined) entries.push(['display_name', changes.name])
-      if (changes.avatarPath !== undefined) entries.push(['avatar_path', changes.avatarPath])
-      if (entries.length) {
-        const set = entries.map(([column], index) => `${column}=$${index + 2}`).join(',')
-        await pool.query(`update profiles set ${set},updated_at=now() where id=$1`,
-          [user.id, ...entries.map(([, value]) => value)])
-      }
-      const result = await pool.query(`select p.*,u.email from profiles p join users u on u.id=p.id
-        where p.id=$1`, [user.id])
-      const value = result.rows[0]
-      return value ? {
-        profileId: value.id, email: value.email, slug: value.slug,
-        displayName: value.display_name, avatarUrl: value.avatar_path,
-        oldAvatarUrl: previous?.rows[0]?.avatar_path || null,
-      } : null
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        if (changes.handle !== undefined) {
+          await client.query('select pg_advisory_xact_lock($1)', [HANDLE_LOCK])
+          await client.query('delete from profile_handle_reservations where expires_at<=now()')
+          const conflict = await client.query(`select 1 from profiles where handle=$1 and id<>$2
+            union all select 1 from profile_handle_reservations where handle=$1 limit 1`, [changes.handle, user.id])
+          if (conflict.rowCount) { await client.query('rollback'); return { conflict: 'handle' } }
+        }
+        const previous = changes.avatarPath !== undefined
+          ? await client.query('select avatar_path from profiles where id=$1', [user.id]) : null
+        const entries = []
+        if (changes.name !== undefined) entries.push(['display_name', changes.name])
+        if (changes.handle !== undefined) entries.push(['handle', changes.handle])
+        if (changes.avatarPath !== undefined) entries.push(['avatar_path', changes.avatarPath])
+        if (entries.length) {
+          const set = entries.map(([column], index) => `${column}=$${index + 2}`).join(',')
+          await client.query(`update profiles set ${set},updated_at=now() where id=$1`,
+            [user.id, ...entries.map(([, value]) => value)])
+        }
+        const result = await client.query(`select p.*,u.email from profiles p join users u on u.id=p.id
+          where p.id=$1`, [user.id])
+        await client.query('commit')
+        const value = result.rows[0]
+        return value ? {
+          profileId: value.id, email: value.email, handle: value.handle,
+          displayName: value.display_name, avatarUrl: value.avatar_path,
+          oldAvatarUrl: previous?.rows[0]?.avatar_path || null,
+        } : null
+      } catch (error) { await client.query('rollback'); throw error }
+      finally { client.release() }
     },
     async canEditTrip(userId, tripId) {
       return ['owner', 'editor'].includes(await memberRole(pool, userId, tripId))

@@ -185,9 +185,14 @@ export async function updateTrip(tripId: Id, fields: Partial<Trip>): Promise<Tri
   if (isSample(tripId)) { Object.assign(sampleTrip().trip, fields); return { ...sampleTrip().trip } }
   return authClient.request(tripPath(tripId), { method: 'PATCH', body: fields })
 }
-export async function updateMe({ name }: Partial<Person>): Promise<Person> {
-  if (!hasBackend) { const me = sampleTrip().family[1] || sampleTrip().family[0]; if (name !== undefined) me.name = name; return { ...me } }
-  return authClient.request('/profile', { method: 'PATCH', body: { name } })
+export async function updateMe({ name, handle }: Partial<Person>): Promise<Person> {
+  if (!hasBackend) {
+    const me = sampleTrip().family[1] || sampleTrip().family[0]
+    if (name !== undefined) me.name = name
+    if (handle !== undefined) me.handle = handle
+    return { ...me }
+  }
+  return authClient.request('/profile', { method: 'PATCH', body: { name, handle } })
 }
 export async function uploadAvatar(file: File): Promise<string> {
   if (!hasBackend) {
@@ -268,9 +273,9 @@ export async function signInWithPassword(email: string, password: string) {
   if (!hasBackend) throw new Error('No backend configured')
   return logtoExperience.signIn(email, password)
 }
-export async function sendRegistrationCode(email: string) {
+export async function sendRegistrationCode(email: string, handle: string) {
   if (!hasBackend) throw new Error('No backend configured')
-  return logtoExperience.sendRegistrationCode(email)
+  return logtoExperience.sendRegistrationCode(email, handle)
 }
 export async function completeRegistration(input: { verificationId: string; code: string; password: string }) {
   if (!hasBackend) throw new Error('No backend configured')

@@ -203,10 +203,10 @@ export default function TripApp({ data, onReload }: TripAppProps) {
     catch (e) { setTrip(before); toast(appErrorMessage(e, 'save-trip'), 'error') }
   }, [trip, tripId, toast])
 
-  const saveMe = useCallback(async ({ name, file }) => {
+  const saveMe = useCallback(async ({ name, handle, file }) => {
     try {
       if (file) await uploadAvatar(file)
-      const saved = await updateMe({ name })
+      const saved = await updateMe({ name, handle })
       setMe(m => ({ ...m, ...saved }))
       setFamily(list => list.map(f => (f.id === me.id ? withFace({ ...f, ...saved }) : f)))
       toast('Profile saved')

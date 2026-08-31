@@ -1,3 +1,5 @@
+import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
+
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const fakeUuid = (namespace, value) => `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
@@ -7,6 +9,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const sessions = new Map()
   const users = new Map()
   const profiles = new Map()
+  const profileHandleReservations = new Map()
   const trips = new Map()
   const devices = new Map()
   const positions = new Map()
@@ -47,24 +50,44 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       oidcLogins.delete(stateHash)
       return row && row.expiresAt > now ? row : null
     },
-    async ensureUser(email) {
+    async ensureUser(email, chosenHandle = null) {
       if (!users.has(email)) {
         const user = { id: fakeUuid(1, nextUser++), email }
-        const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'traveller'
+        const rawBase = slugBase(email.split('@')[0], 'traveller', 30)
+        const base = normalizeProfileHandle(rawBase) || `${rawBase.slice(0, 25) || 'traveller'}-user`
+        let handle = chosenHandle || base
+        for (let suffix = 2; [...profiles.values()].some(profile => profile.handle === handle); suffix++) handle = `${base}-${suffix}`
         users.set(email, user)
         profiles.set(user.id, {
-          id: user.id, slug: `${base}-${user.id.slice(-6)}`,
+          id: user.id, handle,
           email, displayName: email.split('@')[0], avatarUrl: null,
         })
       }
       return users.get(email)
     },
-    async resolveOidcUser({ issuer, subject, email }) {
+    async reserveProfileHandle({ reservationHash, handle, expiresAt }) {
+      const now = new Date()
+      for (const [key, value] of profileHandleReservations) {
+        if (value.expiresAt <= now) profileHandleReservations.delete(key)
+      }
+      if ([...profiles.values()].some(profile => profile.handle === handle)) return false
+      if ([...profileHandleReservations].some(([key, value]) => key !== reservationHash && value.handle === handle)) return false
+      profileHandleReservations.set(reservationHash, { handle, expiresAt })
+      return true
+    },
+    async resolveOidcUser({ issuer, subject, email, handleReservationHash = null }) {
       const key = `${issuer}\u0000${subject}`
       const existingId = oidcIdentities.get(key)
       if (existingId) return [...users.values()].find(user => user.id === existingId) || null
-      const user = await this.ensureUser(email)
+      let user = users.get(email)
+      if (!user) {
+        const reservation = handleReservationHash && profileHandleReservations.get(handleReservationHash)
+        if (reservation?.expiresAt > new Date()) user = await this.ensureUser(email, reservation.handle)
+        else if (allowed.has(email)) user = await this.ensureUser(email)
+        else return null
+      }
       oidcIdentities.set(key, user.id)
+      if (handleReservationHash) profileHandleReservations.delete(handleReservationHash)
       return user
     },
     async createLoginHandoff({ hash, userId, client, bindingHash, expiresAt }) {
@@ -153,9 +176,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async createTrip(user, input) {
       const id = fakeUuid(2, nextTrip++)
-      const base = (input.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const slug = await availableSlug(input.title, candidate =>
+        [...trips.values()].some(trip => trip.slug === candidate))
       const trip = {
-        id, slug: `${base || 'trip'}-${id.slice(-1)}`, ownerId: user.id,
+        id, slug, ownerId: user.id,
         title: input.title, crew: input.crew || null, dates: input.dates || null,
         dayCount: input.dayCount || 1, startsOn: input.startsOn || null, endsOn: input.endsOn || null,
         members: [{ profileId: user.id, role: 'owner' }],
@@ -181,7 +205,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         members: trip.members.map(member => {
           const profile = profiles.get(member.profileId)
           return {
-            ...member, email: profile.email, slug: profile.slug,
+            ...member, email: profile.email, handle: profile.handle,
             displayName: profile.displayName, avatarUrl: profile.avatarUrl,
           }
         }),
@@ -196,8 +220,16 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async updateProfile(user, changes) {
       const profile = profiles.get(user.id)
       if (!profile) return null
+      if (changes.handle !== undefined) {
+        const reserved = [...profileHandleReservations.values()].some(value =>
+          value.expiresAt > new Date() && value.handle === changes.handle)
+        if (reserved || [...profiles.values()].some(value => value.id !== user.id && value.handle === changes.handle)) {
+          return { conflict: 'handle' }
+        }
+      }
       const oldAvatarUrl = profile.avatarUrl
       if (changes.name !== undefined) profile.displayName = changes.name
+      if (changes.handle !== undefined) profile.handle = changes.handle
       if (changes.avatarPath !== undefined) profile.avatarUrl = changes.avatarPath
       return { ...profile, profileId: profile.id, oldAvatarUrl }
     },

@@ -373,6 +373,153 @@ test('custom account creation sends a Logto verification code without requiring 
   await app.close()
 })
 
+test('account creation reserves a normalized unique profile handle before contacting Logto', async () => {
+  let upstreamHandleRequests = 0
+  const experienceFetch = async (url) => {
+    const path = new URL(url).pathname
+    if (path === '/oidc/auth') {
+      return new Response(null, {
+        status: 303,
+        headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+      })
+    }
+    if (path.endsWith('/handle')) upstreamHandleRequests++
+    return new Response(null, { status: 204 })
+  }
+  const repository = createMemoryRepository()
+  const app = await moduleUnderTest.buildServer({
+    repository, mailer: { async send() {} },
+    identityProvider: createOidcProvider(), experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const first = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  const second = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  for (const interaction of [first.json().interaction, second.json().interaction]) {
+    await app.inject({
+      method: 'PUT', url: '/api/auth/experience',
+      headers: { 'x-wayfare-experience': interaction }, payload: { interactionEvent: 'Register' },
+    })
+  }
+  const reserve = interaction => app.inject({
+    method: 'POST', url: '/api/auth/experience/handle',
+    headers: { 'x-wayfare-experience': interaction }, payload: { handle: 'Adam-Young' },
+  })
+
+  const reserved = await reserve(first.json().interaction)
+  assert.equal(reserved.statusCode, 200)
+  assert.deepEqual(reserved.json(), { handle: 'adam-young' })
+
+  const conflict = await reserve(second.json().interaction)
+  assert.equal(conflict.statusCode, 409)
+  assert.deepEqual(conflict.json(), {
+    code: 'profile.handle_taken', error: 'That handle is already taken.',
+  })
+  assert.equal(upstreamHandleRequests, 0, 'private handle reservations must never be forwarded to Logto')
+
+  const existing = await repository.ensureUser('existing@example.com')
+  assert.deepEqual(await repository.updateProfile(existing, { handle: 'adam-young' }), { conflict: 'handle' },
+    'editing a profile cannot steal a handle reserved by an account being created')
+
+  const forged = await app.inject({
+    method: 'POST', url: '/api/auth/experience/handle',
+    headers: { 'x-wayfare-experience': 'not-an-issued-registration' }, payload: { handle: 'forged-handle' },
+  })
+  assert.equal(forged.statusCode, 400)
+  await app.close()
+})
+
+test('account creation rejects malformed and impersonating profile handles', async () => {
+  const experienceFetch = async url => new URL(url).pathname === '/oidc/auth'
+    ? new Response(null, {
+      status: 303,
+      headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+    })
+    : new Response(null, { status: 204 })
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository(), mailer: { async send() {} },
+    identityProvider: createOidcProvider(), experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  await app.inject({
+    method: 'PUT', url: '/api/auth/experience', headers: { 'x-wayfare-experience': started.json().interaction },
+    payload: { interactionEvent: 'Register' },
+  })
+  for (const handle of ['ab', 'two--hyphens', 'email@example.com', 'support']) {
+    const response = await app.inject({
+      method: 'POST', url: '/api/auth/experience/handle',
+      headers: { 'x-wayfare-experience': started.json().interaction }, payload: { handle },
+    })
+    assert.equal(response.statusCode, 400, handle)
+    assert.equal(response.json().code, 'profile.handle_invalid')
+  }
+  await app.close()
+})
+
+test('account creation binds the reserved handle to the new global profile', async () => {
+  const upstream = []
+  const identityProvider = createOidcProvider({
+    issuer: 'https://identity.example.com/oidc', subject: 'new-identity',
+    email: 'new@example.com', emailVerified: true,
+  })
+  const experienceFetch = async (url, options = {}) => {
+    upstream.push({ url: String(url), options })
+    const path = new URL(url).pathname
+    if (path === '/oidc/auth') {
+      return new Response(null, {
+        status: 303,
+        headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+      })
+    }
+    if (path === '/api/experience/verification/verification-code') {
+      return Response.json({ verificationId: 'email-code' })
+    }
+    if (path === '/api/experience/submit') return Response.json({ redirectTo: '/oidc/continue' })
+    if (path === '/oidc/continue') {
+      const authorization = new URL(upstream[0].url)
+      const callback = new URL(authorization.searchParams.get('redirect_uri'))
+      callback.searchParams.set('code', 'provider-code')
+      callback.searchParams.set('state', authorization.searchParams.get('state'))
+      return new Response(null, { status: 302, headers: { location: callback.href } })
+    }
+    return new Response(null, { status: 204 })
+  }
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository(), mailer: { async send() {} }, identityProvider, experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  const interaction = started.json().interaction
+  const headers = { 'x-wayfare-experience': interaction }
+  const calls = [
+    ['PUT', '/api/auth/experience', { interactionEvent: 'Register' }],
+    ['POST', '/api/auth/experience/handle', { handle: 'Prairie-Adam' }],
+    ['POST', '/api/auth/experience/verification/verification-code', {
+      identifier: { type: 'email', value: 'new@example.com' }, interactionEvent: 'Register',
+    }],
+    ['POST', '/api/auth/experience/verification/verification-code/verify', {
+      verificationId: 'email-code', code: '204913',
+    }],
+    ['POST', '/api/auth/experience/profile', { type: 'password', value: 'a sufficiently long password' }],
+    ['POST', '/api/auth/experience/identification', { verificationId: 'email-code' }],
+  ]
+  for (const [method, url, payload] of calls) {
+    const response = await app.inject({ method, url, headers, payload })
+    assert.ok(response.statusCode < 300, `${method} ${url}: ${response.body}`)
+  }
+  const registered = await app.inject({
+    method: 'POST', url: '/api/auth/experience/submit', headers, payload: {},
+  })
+  assert.equal(registered.statusCode, 200)
+  const authorization = `Bearer ${registered.json().accessToken}`
+  await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'First Trip' },
+  })
+  const loaded = await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization } })
+  assert.equal(loaded.json().me.handle, 'prairie-adam')
+  await app.close()
+})
+
 test('custom account creation translates Logto failures into safe actionable errors', async () => {
   const experienceFetch = async (url) => {
     const path = new URL(url).pathname

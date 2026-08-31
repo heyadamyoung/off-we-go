@@ -371,6 +371,7 @@ test('requires a scoped OAuth token and can manipulate a trip through MCP tools'
   })
   assert.equal(tripView.statusCode, 200)
   assert.match(tripView.body, /Scotland 2027/)
+  assert.match(tripView.body, /\\"handle\\": \\"owner-user\\"/)
   assert.doesNotMatch(tripView.body, /owner@example\.com/)
 
   const updated = await app.inject({

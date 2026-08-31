@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { legacyDate, legacyInviteRole, legacyPhotoRequest } from './legacyMigrationCore.mjs'
+import { availableSlug, normalizeProfileHandle, slugBase } from '../server/src/slugs.js'
 
 const required = name => {
   const value = process.env[name]
@@ -94,6 +95,9 @@ try {
       if (member.display_name?.trim()) profileNames.set(member.user_id, member.display_name.trim())
     }
     const importedPhotos = []
+    const usedHandles = new Set()
+    const legacyTripSlugs = new Set(data.trips.map(value => value.slug).filter(Boolean))
+    const usedTripSlugs = new Set(legacyTripSlugs)
     for (const photo of data.photos) {
       try { importedPhotos.push({ ...photo, ...await convertPhoto(photo) }) }
       catch (error) {
@@ -109,17 +113,27 @@ try {
       for (const value of data.users) {
         await target.query(`insert into users(id,email,created_at) values($1,lower($2),$3)
           on conflict(id) do update set email=excluded.email`, [value.id, value.email, value.created_at])
-        const base = value.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'traveller'
-        const slug = `${base}-${value.id.replaceAll('-', '').slice(0, 16)}`
-        await target.query(`insert into profiles(id,slug,display_name,created_at,updated_at)
+        const rawBase = slugBase(profileNames.get(value.id) || value.email.split('@')[0], 'traveller', 30)
+        const base = normalizeProfileHandle(rawBase) || `${rawBase.slice(0, 25) || 'traveller'}-user`
+        const handle = await availableSlug(base, candidate => usedHandles.has(candidate), {
+          fallback: 'traveller', maxLength: 30,
+        })
+        usedHandles.add(handle)
+        await target.query(`insert into profiles(id,handle,display_name,created_at,updated_at)
           values($1,$2,$3,$4,now()) on conflict(id) do update set display_name=excluded.display_name,updated_at=now()`,
-        [value.id, slug, profileNames.get(value.id) || value.email.split('@')[0], value.created_at])
+        [value.id, handle, profileNames.get(value.id) || value.email.split('@')[0], value.created_at])
       }
       for (const value of data.trips) {
+        const slug = await availableSlug(value.title, candidate => usedTripSlugs.has(candidate))
+        usedTripSlugs.add(slug)
         await target.query(`insert into trips(id,slug,title,crew,dates,day_count,created_at)
           values($1,$2,$3,$4,$5,$6,$7) on conflict(id) do update set
           slug=excluded.slug,title=excluded.title,crew=excluded.crew,dates=excluded.dates,day_count=excluded.day_count`,
-        [value.id, value.slug, value.title, value.crew, value.dates, value.day_count || 1, value.created_at])
+        [value.id, slug, value.title, value.crew, value.dates, value.day_count || 1, value.created_at])
+        if (value.slug && value.slug !== slug) {
+          await target.query(`insert into trip_slug_aliases(slug,trip_id) values($1,$2)
+            on conflict(slug) do nothing`, [value.slug, value.id])
+        }
       }
       for (const value of data.members.filter(value => knownUsers.has(value.user_id) && knownTrips.has(value.trip_id))) {
         await target.query(`insert into trip_members(trip_id,profile_id,role,joined_at)

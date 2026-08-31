@@ -18,7 +18,7 @@ async function setup(fileStore = null) {
 }
 
 test('an owner can update trip details and their global profile', async () => {
-  const { app, authorization, trip, user } = await setup()
+  const { app, repository, authorization, trip, user } = await setup()
   const changed = await app.inject({
     method: 'PATCH', url: `/api/trips/${trip.id}`, headers: { authorization },
     payload: { title: 'After', crew: 'Us', dayCount: 8 },
@@ -28,11 +28,12 @@ test('an owner can update trip details and their global profile', async () => {
 
   const profile = await app.inject({
     method: 'PATCH', url: '/api/profile', headers: { authorization },
-    payload: { name: 'Alex', avatarPath: 'another-profile/private.jpg' },
+    payload: { name: 'Alex', handle: 'alex-travels', avatarPath: 'another-profile/private.jpg' },
   })
   assert.equal(profile.statusCode, 200)
   assert.equal(profile.json().id, user.id)
   assert.equal(profile.json().name, 'Alex')
+  assert.equal(profile.json().handle, 'alex-travels')
   assert.equal(profile.json().avatar, null)
 
   const otherTrip = (await app.inject({
@@ -42,7 +43,17 @@ test('an owner can update trip details and their global profile', async () => {
     method: 'GET', url: `/api/trips/current?t=${otherTrip.slug}`, headers: { authorization },
   })
   assert.equal(loaded.json().me.name, 'Alex')
-  assert.equal(loaded.json().me.slug, profile.json().slug)
+  assert.equal(loaded.json().me.handle, profile.json().handle)
+
+  const otherAuthorization = await authenticate(repository, 'other@example.com')
+  const conflict = await app.inject({
+    method: 'PATCH', url: '/api/profile', headers: { authorization: otherAuthorization },
+    payload: { handle: 'Alex-Travels' },
+  })
+  assert.equal(conflict.statusCode, 409)
+  assert.deepEqual(conflict.json(), {
+    code: 'profile.handle_taken', error: 'That handle is already taken.',
+  })
   await app.close()
 })
 

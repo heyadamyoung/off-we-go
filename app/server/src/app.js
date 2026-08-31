@@ -6,6 +6,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { registerMcpRoutes } from './mcp.js'
 import { createWindowRateLimiter } from './rateLimit.js'
 import { createLogtoExperienceService } from './logto-experience.js'
+import { normalizeProfileHandle } from './slugs.js'
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase()
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
@@ -259,6 +260,30 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
   })
 
+  app.post('/api/auth/experience/handle', async (request, reply) => {
+    privateAuthReply(reply)
+    if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
+    const experienceHandle = String(request.headers['x-wayfare-experience'] || '') || cookieValue(request, experienceCookieName)
+    if (!experienceHandle || experience.event(experienceHandle) !== 'Register') {
+      return reply.code(400).send({ error: 'Your registration attempt has expired' })
+    }
+    const handle = normalizeProfileHandle(request.body?.handle)
+    if (!handle) {
+      return reply.code(400).send({
+        code: 'profile.handle_invalid',
+        error: 'Use 3–30 letters, numbers, or single hyphens for your handle.',
+      })
+    }
+    const reserved = await repository.reserveProfileHandle({
+      reservationHash: tokenHash(experienceHandle), handle,
+      expiresAt: new Date(clock().getTime() + 15 * 60_000),
+    })
+    if (!reserved) {
+      return reply.code(409).send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
+    }
+    return { handle }
+  })
+
   const forwardExperience = async (request, reply) => {
     privateAuthReply(reply)
     if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
@@ -297,6 +322,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       }
       const user = await repository.resolveOidcUser({
         issuer: identity.issuer, subject: identity.subject, email,
+        handleReservationHash: tokenHash(handle),
       })
       if (!user) return reply.code(500).send({ error: 'Could not create your Off We Go account' })
       const accessToken = newToken()
@@ -437,7 +463,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
 
     const member = value => ({
       id: value.profileId,
-      slug: value.slug,
+      handle: value.handle,
       name: value.displayName || value.email.split('@')[0],
       role: ['owner', 'editor'].includes(value.role) ? 'Travelling' : 'Following',
       memberRole: value.role,
@@ -509,12 +535,24 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.patch('/api/profile', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
+    const requestedHandle = request.body?.handle === undefined
+      ? undefined : normalizeProfileHandle(request.body.handle)
+    if (request.body?.handle !== undefined && !requestedHandle) {
+      return reply.code(400).send({
+        code: 'profile.handle_invalid',
+        error: 'Use 3–30 letters, numbers, or single hyphens for your handle.',
+      })
+    }
     const profile = await repository.updateProfile(user, {
       ...(request.body?.name !== undefined ? { name: String(request.body.name).trim() || user.email.split('@')[0] } : {}),
+      ...(requestedHandle !== undefined ? { handle: requestedHandle } : {}),
     })
+    if (profile?.conflict === 'handle') {
+      return reply.code(409).send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
+    }
     if (!profile) return reply.code(404).send({ error: 'Profile not found' })
     return {
-      id: profile.profileId, slug: profile.slug,
+      id: profile.profileId, handle: profile.handle,
       name: profile.displayName || profile.email.split('@')[0],
       avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
     }

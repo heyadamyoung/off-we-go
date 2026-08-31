@@ -44,6 +44,7 @@ function TripSettings({ trip, onSave }: any) {
 
 function MyProfile({ me, onSave }: any) {
   const [name, setName] = useState(me.name || '')
+  const [handle, setHandle] = useState(me.handle || '')
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const ref = useRef(null)
@@ -51,10 +52,10 @@ function MyProfile({ me, onSave }: any) {
 
   const save = async () => {
     setBusy(true)
-    try { await onSave({ name: name.trim() || me.name, file }) ; setFile(null) }
+    try { await onSave({ name: name.trim() || me.name, handle: handle.trim(), file }) ; setFile(null) }
     finally { setBusy(false) }
   }
-  const changed = name.trim() !== (me.name || '') || !!file
+  const changed = name.trim() !== (me.name || '') || handle.trim().toLowerCase() !== (me.handle || '') || !!file
 
   return (
     <div className="mine">
@@ -65,6 +66,12 @@ function MyProfile({ me, onSave }: any) {
       <input ref={ref} type="file" accept="image/*" hidden
              onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
       <input value={name} placeholder="Your name" onChange={e => setName(e.target.value)} />
+      <label className="field">
+        <span>Handle</span>
+        <input value={handle} placeholder="adam-young" minLength={3} maxLength={30}
+          autoCapitalize="none" spellCheck={false}
+          pattern="[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*" onChange={e => setHandle(e.target.value.toLowerCase())} />
+      </label>
       <button className="btn" disabled={!changed || busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
     </div>
   )
@@ -317,7 +324,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
           {family.map(f => (
             <div className="rperson" key={f.id}>
               {f.avatar ? <img src={f.avatar} alt="" /> : <span className="ini">{(f.name || '?')[0]}</span>}
-              <div><b>{f.name}</b><span>{f.role}
+              <div><b>{f.name}</b><span>{f.handle ? `@${f.handle} · ` : ''}{f.role}
                 {viewingIds.has(f.id) && <i className="viewing-now"> · Viewing now</i>}
               </span></div>
               <em>{f.memberRole === 'owner' ? 'Owner' : f.memberRole === 'editor' ? 'Editor' : 'Viewer'}</em>

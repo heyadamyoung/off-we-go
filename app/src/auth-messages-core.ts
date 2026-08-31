@@ -3,6 +3,8 @@ export type AuthAction = 'signin' | 'send-code' | 'register'
 type AuthError = Error & { code?: string; status?: number }
 
 const messagesByCode: Record<string, string> = {
+  'profile.handle_invalid': 'Use 3–30 letters, numbers, or single hyphens for your handle.',
+  'profile.handle_taken': 'That handle is already taken. Try another one.',
   'user.email_already_in_use': 'An account already exists for this email. Sign in instead.',
   'auth.account_exists': 'An account already exists for this email. Sign in instead.',
   'user.invalid_email': 'Enter a valid email address.',

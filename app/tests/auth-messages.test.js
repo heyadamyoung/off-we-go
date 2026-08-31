@@ -36,6 +36,13 @@ test('auth errors use safe action-specific fallbacks instead of raw provider det
   assert.doesNotMatch(authErrorMessage(failure('unknown.internal', 500), 'register'), /unsafe|provider/i)
 })
 
+test('auth errors explain profile handle validation and uniqueness', () => {
+  assert.equal(authErrorMessage(failure('profile.handle_invalid'), 'send-code'),
+    'Use 3–30 letters, numbers, or single hyphens for your handle.')
+  assert.equal(authErrorMessage(failure('profile.handle_taken', 409), 'send-code'),
+    'That handle is already taken. Try another one.')
+})
+
 test('auth successes have friendly messages for each completed action', () => {
   assert.equal(authSuccessMessage('signin'), 'Signed in. Welcome back!')
   assert.equal(authSuccessMessage('send-code'), 'Verification code sent. Check your email.')
