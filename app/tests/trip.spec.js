@@ -123,16 +123,27 @@ test('the OIDC sign-in action stays inside an older iPhone viewport', async ({ p
   expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth)
 })
 
-test('publishes the Off We Go mark as a multi-size favicon', async ({ page, request }) => {
+test('publishes the Off We Go mark for browser and installed web app icons', async ({ page, request }) => {
   await page.goto('/')
   const href = await page.locator('link[rel="icon"]').getAttribute('href')
   expect(href).toBe('/favicon.ico')
+
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', '/apple-touch-icon.png')
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/site.webmanifest')
 
   const response = await request.get(href)
   expect(response.ok()).toBe(true)
   const icon = await response.body()
   expect([...icon.subarray(0, 4)]).toEqual([0, 0, 1, 0])
   expect(icon.readUInt16LE(4)).toBe(4)
+
+  const manifestResponse = await request.get('/site.webmanifest')
+  expect(manifestResponse.ok()).toBe(true)
+  const manifest = await manifestResponse.json()
+  expect(manifest.icons).toEqual(expect.arrayContaining([
+    expect.objectContaining({ src: '/icon-192.png', sizes: '192x192' }),
+    expect.objectContaining({ src: '/icon-512.png', sizes: '512x512' }),
+  ]))
 })
 
 test('an OIDC browser return can hand sign-in back to the installed app', async ({ page }) => {
