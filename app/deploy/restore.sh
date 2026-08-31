@@ -7,7 +7,7 @@ if [[ -z "$SOURCE" || ! -f "$SOURCE/database.dump" || ! -f "$SOURCE/logto.dump" 
   echo "Usage: $0 backups/YYYYMMDDTHHMMSSZ" >&2
   exit 1
 fi
-read -rp "This replaces Wayfare's current database, Logto identities, and uploads. Type RESTORE: " CONFIRM
+read -rp "This replaces Off We Go's current database, Logto identities, and uploads. Type RESTORE: " CONFIRM
 [[ "$CONFIRM" == "RESTORE" ]] || exit 1
 
 # Validate both archives before the live service is touched.

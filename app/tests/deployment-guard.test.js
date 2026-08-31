@@ -40,7 +40,7 @@ test('production compose runs a private pinned Logto service behind the existing
       LOGTO_POSTGRES_PASSWORD: 'logto-database-secret',
       LOGTO_SECRET_VAULT_KEK: 'base64-key',
       SMTP_HOST: 'smtp.example.com',
-      SMTP_FROM: 'Wayfare <owner@example.com>',
+      SMTP_FROM: 'Off We Go <owner@example.com>',
     },
     encoding: 'utf8',
   });

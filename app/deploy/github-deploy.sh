@@ -14,7 +14,7 @@ readonly release_sha="${BASH_REMATCH[1]}"
 
 exec 9>"$LOCK_FILE"
 if ! flock -w 600 9; then
-  echo "Another Wayfare deployment is still running." >&2
+  echo "Another Off We Go deployment is still running." >&2
   exit 75
 fi
 
@@ -107,12 +107,17 @@ trap rollback ERR
 cd "$APP_ROOT"
 docker compose config --quiet
 docker compose up -d --build --wait --wait-timeout 180
+deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
+if [[ -z "$deployment_domain" ]]; then
+  echo "WAYFARE_DOMAIN is missing from $APP_ROOT/.env." >&2
+  exit 67
+fi
 curl --fail --silent --show-error --retry 12 --retry-delay 5 \
-  "https://wayfare.threadway.ai/api/health" >/dev/null
+  "https://${deployment_domain}/api/health" >/dev/null
 bash -n "$APP_ROOT/deploy/github-deploy.sh"
 install -o root -g root -m 755 \
   "$APP_ROOT/deploy/github-deploy.sh" /usr/local/sbin/wayfare-github-deploy
 printf '%s\n' "$release_sha" > .deployed-sha
 trap - ERR
 
-echo "Wayfare deployed at $release_sha."
+echo "Off We Go deployed at $release_sha."

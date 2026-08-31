@@ -42,6 +42,14 @@
   }
 }
 
+www.{$WAYFARE_DOMAIN} {
+  redir https://{$WAYFARE_DOMAIN}{uri} permanent
+}
+
+wayfare.threadway.ai {
+  redir https://{$WAYFARE_DOMAIN}{uri} permanent
+}
+
 {$LOGTO_DOMAIN} {
   encode zstd gzip
   reverse_proxy logto:3001

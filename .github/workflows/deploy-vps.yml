@@ -1,4 +1,4 @@
-name: Deploy Wayfare to VPS
+name: Deploy Off We Go to VPS
 
 on:
   push:
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: production
-      url: https://wayfare.threadway.ai
+      url: https://offwego.to
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 

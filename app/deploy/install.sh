@@ -45,11 +45,11 @@ if [[ "$EXISTING_ENV" == true ]]; then
     printf 'WAYFARE_OIDC_ISSUER=%s\n' "$WAYFARE_OIDC_ISSUER" >> .env
   fi
   if ! grep -q '^WAYFARE_OIDC_CLIENT_ID=.' .env; then
-    read -rp "Logto Wayfare client ID: " WAYFARE_OIDC_CLIENT_ID
+    read -rp "Logto Off We Go client ID: " WAYFARE_OIDC_CLIENT_ID
     printf 'WAYFARE_OIDC_CLIENT_ID=%s\n' "$WAYFARE_OIDC_CLIENT_ID" >> .env
   fi
   if ! grep -q '^WAYFARE_OIDC_CLIENT_SECRET=.' .env; then
-    read -rsp "Logto Wayfare client secret: " WAYFARE_OIDC_CLIENT_SECRET
+    read -rsp "Logto Off We Go client secret: " WAYFARE_OIDC_CLIENT_SECRET
     echo
     printf 'WAYFARE_OIDC_CLIENT_SECRET=%s\n' "$WAYFARE_OIDC_CLIENT_SECRET" >> .env
   fi
@@ -59,13 +59,13 @@ if [[ "$EXISTING_ENV" == true ]]; then
   done
   echo "Reusing the existing .env and preserving its database, session, and SMTP secrets."
 else
-  read -rp "Wayfare domain [wayfare.threadway.ai]: " WAYFARE_DOMAIN
-  WAYFARE_DOMAIN="${WAYFARE_DOMAIN:-wayfare.threadway.ai}"
+  read -rp "Off We Go domain [offwego.to]: " WAYFARE_DOMAIN
+  WAYFARE_DOMAIN="${WAYFARE_DOMAIN:-offwego.to}"
   read -rp "Initial owner email: " WAYFARE_ADMIN_EMAIL
   read -rp "Logto OIDC issuer [https://auth.threadway.ai/oidc]: " WAYFARE_OIDC_ISSUER
   WAYFARE_OIDC_ISSUER="${WAYFARE_OIDC_ISSUER:-https://auth.threadway.ai/oidc}"
-  read -rp "Logto Wayfare client ID: " WAYFARE_OIDC_CLIENT_ID
-  read -rsp "Logto Wayfare client secret: " WAYFARE_OIDC_CLIENT_SECRET
+  read -rp "Logto Off We Go client ID: " WAYFARE_OIDC_CLIENT_ID
+  read -rsp "Logto Off We Go client secret: " WAYFARE_OIDC_CLIENT_SECRET
   echo
   read -rp "Apple Developer Team ID [R65UN25Q64]: " APPLE_TEAM_ID
   APPLE_TEAM_ID="${APPLE_TEAM_ID:-R65UN25Q64}"
@@ -81,8 +81,8 @@ else
   read -rp "SMTP username (blank if none): " SMTP_USER
   read -rsp "SMTP password (blank if none): " SMTP_PASS
   echo
-  read -rp "From address [Wayfare <$WAYFARE_ADMIN_EMAIL>]: " SMTP_FROM
-  SMTP_FROM="${SMTP_FROM:-Wayfare <$WAYFARE_ADMIN_EMAIL>}"
+  read -rp "From address [Off We Go <$WAYFARE_ADMIN_EMAIL>]: " SMTP_FROM
+  SMTP_FROM="${SMTP_FROM:-Off We Go <$WAYFARE_ADMIN_EMAIL>}"
 
   POSTGRES_PASSWORD="$(openssl rand -hex 32)"
   LOGTO_POSTGRES_PASSWORD="$(openssl rand -hex 32)"
@@ -134,5 +134,5 @@ cat > /etc/cron.d/wayfare-backup <<EOF
 EOF
 chmod 644 /etc/cron.d/wayfare-backup
 
-echo "Wayfare is running at https://${WAYFARE_DOMAIN}"
-echo "Sign in through Wayfare ID as ${WAYFARE_ADMIN_EMAIL}; the first verified login will create the owner account."
+echo "Off We Go is running at https://${WAYFARE_DOMAIN}"
+echo "Sign in through Off We Go ID as ${WAYFARE_ADMIN_EMAIL}; the first verified login will create the owner account."
