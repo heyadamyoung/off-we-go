@@ -613,7 +613,11 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   font-size:13px;outline:none}
 .field input:focus{border-color:var(--hot)}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:300;background:var(--ink);
-  color:var(--bg1);padding:11px 18px;border-radius:99px;font-size:13px;font-weight:700;box-shadow:var(--shadow)}
+  color:var(--bg1);padding:11px 18px;border-radius:99px;font-size:13px;font-weight:700;box-shadow:var(--shadow);
+  display:flex;align-items:center;gap:9px;max-width:min(520px,calc(100vw - 28px));text-align:left;animation:rise .2s ease}
+.toast span{display:grid;place-items:center;flex:0 0 20px;width:20px;height:20px;border-radius:50%;background:var(--hot);color:#0a0c10;font-size:12px;font-weight:900}
+.toast.error{background:#fff1f0;color:#741b18;border:1px solid #f3b6b2}
+.toast.error span{background:#c73832;color:#fff}
 
 @media (max-width:1080px){ .viewer{grid-template-columns:1fr} .vside{display:none} }
 

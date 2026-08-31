@@ -3,6 +3,7 @@ import { isNativeApp, pickNativePhotos } from '../../../mobile'
 import { metres } from '../../../shared/lib/geo'
 import Icon from '../../../shared/ui/icon'
 import Modal from '../../../shared/ui/modal'
+import { appErrorMessage } from '../../../user-messages-core'
 
 function UploadModal({ onClose, onAdd, live, stops, toast }: any) {
   const [files, setFiles] = useState([])
@@ -33,7 +34,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast }: any) {
       if (selected) { if (selected.length) setPicked(selected); return }
       fileRef.current?.click()
     } catch (e) {
-      if (!/cancel/i.test(e?.message || '')) toast(e.message || 'Could not open Photos')
+      if (!/cancel/i.test(e?.message || '')) toast(appErrorMessage(e, 'open-photos'), 'error')
     }
   }
   const [busy, setBusy] = useState(false)
@@ -65,7 +66,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast }: any) {
       toast(`${what} to the map`)
       onClose()
     } catch (e) {
-      toast(e.message || 'Could not upload that photo')
+      toast(appErrorMessage(e, 'upload-photo'), 'error')
     } finally {
       setBusy(false)
     }

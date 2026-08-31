@@ -1,6 +1,7 @@
 export type Id = string
 export type Coordinates = [number, number]
-export type Toast = (message: string) => void
+export type ToastTone = 'success' | 'error'
+export type Toast = (message: string, tone?: ToastTone) => void
 
 export interface MapView {
   center: Coordinates
@@ -97,6 +98,7 @@ export interface TripComment {
 
 export interface Person {
   id?: Id
+  slug?: string
   name: string
   email?: string
   role?: string

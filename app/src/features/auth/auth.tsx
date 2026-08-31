@@ -6,6 +6,10 @@ import {
 import { initializeNativeServices } from '../../mobile'
 import { loginHandoffFromUrl, nativeAppUrlFromUrl } from '../../mobile-auth-core'
 import { safeOAuthContinuation } from '../../api-client-core'
+import {
+  authCallbackMessage, authErrorMessage, authSuccessMessage, type AuthAction,
+} from '../../auth-messages-core'
+import type { ToastNotice } from '../../shared/ui/toast'
 
 function useSession() {
   const [session, setSession] = useState(null)
@@ -26,7 +30,7 @@ function useSession() {
   return { session, ready }
 }
 
-function SignInScreen() {
+function SignInScreen({ notify }: { notify: (notice: ToastNotice) => void }) {
   const [mode, setMode] = useState<'signin' | 'register'>('signin')
   const [phase, setPhase] = useState<'details' | 'code'>('details')
   const [email, setEmail] = useState('')
@@ -35,28 +39,48 @@ function SignInScreen() {
   const [code, setCode] = useState('')
   const [verificationId, setVerificationId] = useState('')
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(() => {
-    if (typeof window === 'undefined') return null
-    return String(new URL(window.location.href).searchParams.get('error') || '').slice(0, 200) || null
-  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const callbackError = new URL(window.location.href).searchParams.get('error')
+    if (callbackError) notify({ message: authCallbackMessage(callbackError), tone: 'error' })
+  }, [notify])
+
+  const fail = (caught: unknown, action: AuthAction) => {
+    setBusy(false)
+    notify({ message: authErrorMessage(caught, action), tone: 'error' })
+  }
 
   const submit = async (event) => {
     event.preventDefault()
     if (busy) return
-    setBusy(true); setErr(null)
+    setBusy(true)
     try {
       let authenticated = false
       if (mode === 'signin') {
-        await signInWithPassword(email, password)
+        try { await signInWithPassword(email, password) }
+        catch (error) { fail(error, 'signin'); return }
+        notify({ message: authSuccessMessage('signin'), tone: 'success' })
         authenticated = true
       } else if (phase === 'details') {
-        if (password.length < 12) throw new Error('Use at least 12 characters for your password')
-        if (password !== confirmPassword) throw new Error('Those passwords do not match')
-        setVerificationId(await sendRegistrationCode(email))
+        if (password.length < 12) {
+          fail(Object.assign(new Error(), { code: 'password.rejected' }), 'register')
+          return
+        }
+        if (password !== confirmPassword) {
+          setBusy(false)
+          notify({ message: 'Those passwords do not match.', tone: 'error' })
+          return
+        }
+        try { setVerificationId(await sendRegistrationCode(email)) }
+        catch (error) { fail(error, 'send-code'); return }
         setPhase('code')
         setBusy(false)
+        notify({ message: authSuccessMessage('send-code'), tone: 'success' })
       } else {
-        await completeRegistration({ verificationId, code, password })
+        try { await completeRegistration({ verificationId, code, password }) }
+        catch (error) { fail(error, 'register'); return }
+        notify({ message: authSuccessMessage('register'), tone: 'success' })
         authenticated = true
       }
       if (authenticated && typeof window !== 'undefined') {
@@ -65,16 +89,13 @@ function SignInScreen() {
         if (continuation) window.location.replace(continuation)
       }
     }
-    catch (e2) {
-      setBusy(false)
-      setErr(e2.message || 'Could not complete sign-in')
-    }
+    catch (error) { fail(error, mode === 'signin' ? 'signin' : 'register') }
   }
 
   const switchMode = () => {
     setMode(value => value === 'signin' ? 'register' : 'signin')
     setPhase('details'); setPassword(''); setConfirmPassword('')
-    setCode(''); setVerificationId(''); setErr(null)
+    setCode(''); setVerificationId('')
   }
 
   return (
@@ -85,7 +106,7 @@ function SignInScreen() {
         <p>{mode === 'signin'
           ? 'Sign in to plan the trip and keep everyone together.'
           : phase === 'details'
-            ? 'Use the email address that was invited to your Wayfare trip.'
+            ? 'Create an account to plan your own trip or accept a trip invitation.'
             : `Enter the verification code Logto sent to ${email.trim().toLowerCase()}.`}</p>
         <form className="authForm" onSubmit={submit}>
           {phase === 'details' && <>
@@ -111,20 +132,19 @@ function SignInScreen() {
             <input type="text" autoComplete="one-time-code" inputMode="numeric" required autoFocus
               value={code} onChange={event => setCode(event.target.value)} />
           </label>}
-          {err && <p className="warn" role="alert">{err}</p>}
           <button className="btn pri" type="submit" disabled={busy}>
             {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in'
               : phase === 'details' ? 'Send verification code' : 'Create account'}
           </button>
         </form>
         {phase === 'details' && <p className="authSwitch">
-          {mode === 'signin' ? 'New to Wayfare?' : 'Already have an account?'}{' '}
+          {mode === 'signin' ? 'New to Off We Go?' : 'Already have an account?'}{' '}
           <button type="button" onClick={switchMode} disabled={busy}>
             {mode === 'signin' ? 'Create account' : 'Sign in'}
           </button>
         </p>}
         {mode === 'register' && phase === 'code' && <button className="authBack" type="button"
-          disabled={busy} onClick={() => { setPhase('details'); setCode(''); setErr(null) }}>
+          disabled={busy} onClick={() => { setPhase('details'); setCode('') }}>
           Use a different email
         </button>}
       </div>
@@ -136,19 +156,20 @@ function NativeLoginHandoff() {
   const current = window.location.href
   const appUrl = nativeAppUrlFromUrl(current)
   const token = appUrl ? loginHandoffFromUrl(appUrl) : null
-  const error = String(new URL(current).searchParams.get('error') || '').slice(0, 200) || null
+  const rawError = String(new URL(current).searchParams.get('error') || '').slice(0, 200) || null
+  const error = rawError ? authCallbackMessage(rawError) : null
   const webUrl = token ? `/auth/callback?token=${encodeURIComponent(token)}` : '/'
 
   return (
     <div className="boot">
       <div className="bootIn wide">
         <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
-        <b>{error ? 'Sign-in did not finish' : appUrl ? 'Open Wayfare' : 'That sign-in return is invalid'}</b>
+        <b>{error ? 'Sign-in did not finish' : appUrl ? 'Open Off We Go' : 'That sign-in return is invalid'}</b>
         <p>{error || (appUrl
-          ? 'Your secure sign-in returned in this browser. Tap below to finish in the Wayfare app.'
-          : 'Start a fresh secure sign-in from the Wayfare app and try again.')}</p>
-        {appUrl && <a className="btn pri" href={appUrl}>Open Wayfare app</a>}
-        <a className="btn" href={webUrl}>{appUrl ? 'Sign in on the website instead' : 'Go to Wayfare'}</a>
+          ? 'Your secure sign-in returned in this browser. Tap below to finish in the Off We Go app.'
+          : 'Start a fresh secure sign-in from the Off We Go app and try again.')}</p>
+        {appUrl && <a className="btn pri" href={appUrl}>Open Off We Go app</a>}
+        <a className="btn" href={webUrl}>{appUrl ? 'Sign in on the website instead' : 'Go to Off We Go'}</a>
       </div>
     </div>
   )

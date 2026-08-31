@@ -8,6 +8,7 @@ import { agoLabel } from '../../../shared/lib/geo'
 import Icon from '../../../shared/ui/icon'
 import Modal from '../../../shared/ui/modal'
 import { daysBetween, formatRange } from '../../../shared/lib/trip-dates'
+import { appErrorMessage } from '../../../user-messages-core'
 
 function TripSettings({ trip, onSave }: any) {
   const [f, setF] = useState({ title: trip.title || '', crew: trip.crew || '',
@@ -93,7 +94,7 @@ function Phones({ tripId, family, canEdit, me, toast, phones, onChange }: any) {
       })
       toast('Location sharing is on')
     } catch (e) {
-      toast(e.message || 'Allow Always location access to start sharing')
+      toast(appErrorMessage(e, 'share-location'), 'error')
       throw e
     }
   }
@@ -107,7 +108,8 @@ function Phones({ tripId, family, canEdit, me, toast, phones, onChange }: any) {
       setCard(made); setName('')
       onChange?.(await listDevices(tripId))
       if (isNativeApp) await enableTracking(made).catch(() => {})
-    } catch (e2) { toast(e2.message || 'Could not add that phone') }
+      toast('Phone added')
+    } catch (e2) { toast(appErrorMessage(e2, 'add-phone'), 'error') }
     finally { setBusy(false) }
   }
 
@@ -117,7 +119,8 @@ function Phones({ tripId, family, canEdit, me, toast, phones, onChange }: any) {
       if (tracking.deviceId === id) await mobileTracker.forget()
       onChange?.(phones.filter(p => p.id !== id))
       if (card?.id === id) setCard(null)
-    } catch (e2) { toast(e2.message || 'Could not remove that phone') }
+      toast('Phone removed')
+    } catch (e2) { toast(appErrorMessage(e2, 'remove-phone'), 'error') }
   }
 
   if (!hasBackend) return <p>Phones report to the database, and this is the sample trip.</p>
@@ -131,11 +134,13 @@ function Phones({ tripId, family, canEdit, me, toast, phones, onChange }: any) {
                   : tracking.status === 'waiting' ? 'Waiting to send location'
                   : tracking.status === 'starting' ? 'Starting location sharing…'
                   : tracking.configured ? 'Location sharing is off' : 'Set up this iPhone below'}</b>
-            <span>{tracking.error || (tracking.queued ? `${tracking.queued} fix${tracking.queued === 1 ? '' : 'es'} queued for retry`
-              : 'Wayfare sends a fix after you move about 10 metres, including while the screen is locked.')}</span></div>
+            <span>{tracking.error ? appErrorMessage(new Error(tracking.error), 'share-location') : (tracking.queued ? `${tracking.queued} fix${tracking.queued === 1 ? '' : 'es'} queued for retry`
+              : 'Off We Go sends a fix after you move about 10 metres, including while the screen is locked.')}</span></div>
           {tracking.configured && ['tracking', 'waiting', 'starting'].includes(tracking.status)
             ? <button className="btn" disabled={tracking.status === 'starting'} onClick={() => mobileTracker.stop()}>Pause</button>
-            : tracking.configured && <button className="btn" onClick={() => mobileTracker.stop().then(() => mobileTracker.start()).catch(e => toast(e.message))}>Resume</button>}
+            : tracking.configured && <button className="btn" onClick={() => mobileTracker.stop().then(() => mobileTracker.start())
+                .then(() => toast('Location sharing resumed'))
+                .catch(e => toast(appErrorMessage(e, 'share-location'), 'error'))}>Resume</button>}
         </div>
       )}
       {phones.length ? (
@@ -174,7 +179,8 @@ function Phones({ tripId, family, canEdit, me, toast, phones, onChange }: any) {
 
 function SetupCard({ card, onClose, toast, tracking, onEnableTracking }: any) {
   const copy = (label, v) => navigator.clipboard?.writeText(v)
-    .then(() => toast(`${label} copied`)).catch(() => toast('Copy failed'))
+    .then(() => toast(`${label} copied`))
+    .catch(error => toast(appErrorMessage(error, 'copy'), 'error'))
   const trackUrl = `${functionsUrl}/track`
   const Row = ({ k, v }) => (
     <div className="kv">
@@ -191,10 +197,10 @@ function SetupCard({ card, onClose, toast, tracking, onEnableTracking }: any) {
       {isNativeApp ? <>
         <em>Location sharing</em>
         {mobilePlatform === 'android' ?
-          <p className="fine">Wayfare tracks this Android phone itself. Allow <b>precise location</b> and
-            <b> notifications</b> so sharing continues while the screen is locked. Android keeps a Wayfare
+          <p className="fine">Off We Go tracks this Android phone itself. Allow <b>precise location</b> and
+            <b> notifications</b> so sharing continues while the screen is locked. Android keeps a Off We Go
             notification visible whenever background tracking is active.</p> :
-          <p className="fine">Wayfare tracks this iPhone itself. Choose <b>Allow While Using App</b>, then
+          <p className="fine">Off We Go tracks this iPhone itself. Choose <b>Allow While Using App</b>, then
             approve <b>Always Allow</b> when iOS asks so fixes continue while the screen is locked. A blue
             location indicator may appear while tracking.</p>}
         <button className="btn pri" disabled={tracking?.status === 'starting'}
@@ -203,10 +209,10 @@ function SetupCard({ card, onClose, toast, tracking, onEnableTracking }: any) {
         </button>
         <em>Photos</em>
         {mobilePlatform === 'android' ?
-          <p className="fine">Take pictures normally with the phone camera. In Wayfare, press the camera
+          <p className="fine">Take pictures normally with the phone camera. In Off We Go, press the camera
             button, select up to 20 pictures from the system photo picker, and upload them together. The
             originals remain in the phone&apos;s photo library.</p> :
-          <p className="fine">Take pictures normally in Apple Camera. In Wayfare, press the camera button,
+          <p className="fine">Take pictures normally in Apple Camera. In Off We Go, press the camera button,
             choose <b>Apple Photos</b>, select up to 20 pictures, and upload them together. iPhone converts
             HEIC selections to browser-ready JPEG automatically.</p>}
       </> : <>
@@ -219,8 +225,8 @@ function SetupCard({ card, onClose, toast, tracking, onEnableTracking }: any) {
          <code>{trackUrl}?id=</code>token.</p>
 
       <em>2 · Its pictures</em>
-      <p className="fine">Open Wayfare on the phone and use the camera button to select pictures.
-         Wayfare uploads private, web-sized copies directly to your VPS; the originals stay in the
+      <p className="fine">Open Off We Go on the phone and use the camera button to select pictures.
+         Off We Go uploads private, web-sized copies directly to your VPS; the originals stay in the
          phone's photo library and iCloud.</p>
       </>}
 
@@ -258,9 +264,10 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
       // "Invited" over a mail that never went is how somebody ends up waiting.
       toast(row.mailed
         ? `Invited ${row.email} — invitation email sent`
-        : `${row.email} can join, but the email did not send: ${row.mailError || 'unknown error'}`)
+        : `${row.email} can join, but the invitation email could not be sent.`,
+      row.mailed ? 'success' : 'error')
     } catch (e2) {
-      toast(e2.message || 'Could not send that invite')
+      toast(appErrorMessage(e2, 'send-invite'), 'error')
     } finally { setBusy(false) }
   }
 
@@ -268,7 +275,8 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
     try {
       await revokeInvite(tripId, id)
       setInvites(list => list.filter(i => i.id !== id))
-    } catch (e2) { toast(e2.message || 'Could not remove that invite') }
+      toast('Invitation cancelled')
+    } catch (e2) { toast(appErrorMessage(e2, 'remove-invite'), 'error') }
   }
 
   const removePerson = async person => {
@@ -277,14 +285,14 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
       await removeMember(tripId, person.id)
       toast(`${person.name} removed from the trip`)
       window.location.reload()
-    } catch (error) { toast(error.message || 'Could not remove that person') }
+    } catch (error) { toast(appErrorMessage(error, 'remove-member'), 'error') }
   }
 
   const removeMyAccount = async () => {
     const confirmation = window.prompt('This permanently deletes your account, your uploads, and any trip you solely own. Type DELETE to continue.')
     if (confirmation !== 'DELETE') return
     try { await deleteAccount(); window.location.reload() }
-    catch (error) { toast(error.message || 'Could not delete your account') }
+    catch (error) { toast(appErrorMessage(error, 'delete-account'), 'error') }
   }
 
   return (
@@ -328,7 +336,7 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
           ))}
         </div>
 
-        <a className="btn" href={`mailto:safety@threadway.ai?subject=${encodeURIComponent('Wayfare safety concern')}&body=${encodeURIComponent(`Trip: ${trip?.title || tripId}\nPlease describe the member or content and what happened:\n`)}`}>
+        <a className="btn" href={`mailto:safety@threadway.ai?subject=${encodeURIComponent('Off We Go safety concern')}&body=${encodeURIComponent(`Trip: ${trip?.title || tripId}\nPlease describe the member or content and what happened:\n`)}`}>
           Report a safety concern
         </a>
 
@@ -356,7 +364,8 @@ function PeopleModal({ onClose, toast, tripId, family, canEdit, appLink, trip, o
               <input readOnly value={appLink} onFocus={e => e.target.select()} />
               <button className="btn" onClick={() => {
                 navigator.clipboard?.writeText(appLink)
-                  .then(() => toast('Link copied')).catch(() => toast('Copy failed'))
+                  .then(() => toast('Link copied'))
+                  .catch(error => toast(appErrorMessage(error, 'copy'), 'error'))
               }}><Icon n="copy" s={15} />Copy</button>
             </div>
             <p className="fine">The link is only where the trip lives — it grants nothing on

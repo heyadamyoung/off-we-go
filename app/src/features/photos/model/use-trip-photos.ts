@@ -5,6 +5,7 @@ import {
 } from '../../../backend'
 import { photoUploadMetadata } from '../../../mobile-photos-core'
 import { clamp } from '../../../shared/lib/numbers'
+import { appErrorMessage } from '../../../user-messages-core'
 import type {
   Id, Person, Toast, TripComment, TripData, TripPhoto, UploadInput, ViewerState,
 } from '../../../shared/model/types'
@@ -42,9 +43,10 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
         ...c,
         [photoId]: (c[photoId] || []).map(x => (x.id === temp.id ? { ...temp, ...saved, pending: false } : x)),
       }))
+      toast('Comment posted')
     } catch (e) {
       setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== temp.id) }))
-      toast(e.message || 'Could not post that')
+      toast(appErrorMessage(e, 'post-comment'), 'error')
     }
   }, [tripId, me.name, toast])
 
@@ -55,7 +57,7 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
       await setLike(tripId, id, on)
     } catch (e) {
       setLikes(s => { const n = new Set(s); on ? n.delete(id) : n.add(id); return n })
-      toast(e.message || 'Could not save that')
+      toast(appErrorMessage(e, 'save-reaction'), 'error')
     }
   }, [likes, tripId, toast])
 
@@ -69,10 +71,10 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
   const changePhoto = useCallback(async (id: Id, fields: Partial<TripPhoto>) => {
     const before = photos.find(p => p.id === id)
     setPhotos(list => list.map(p => (p.id === id ? { ...p, ...fields } : p)))
-    try { await updatePhoto(tripId, id, fields) }
+    try { await updatePhoto(tripId, id, fields); toast('Photo changes saved') }
     catch (e) {
       setPhotos(list => list.map(p => (p.id === id ? before : p)))
-      toast(e.message || 'Could not save that')
+      toast(appErrorMessage(e, 'save-photo'), 'error')
     }
   }, [tripId, photos, toast])
 
@@ -85,14 +87,14 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
       return ids.length ? { ids, index: clamp(v.index, 0, ids.length - 1) } : null
     })
     try { await deletePhoto(tripId, id); toast('Photo deleted') }
-    catch (e) { setPhotos(before); toast(e.message || 'Could not delete that') }
+    catch (e) { setPhotos(before); toast(appErrorMessage(e, 'delete-photo'), 'error') }
   }, [tripId, photos, toast])
 
   const removeComment = useCallback(async (photoId: Id, id: Id) => {
     const before = comments
     setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== id) }))
-    try { await deleteComment(tripId, id) }
-    catch (e) { setComments(before); toast(e.message || 'Could not delete that') }
+    try { await deleteComment(tripId, id); toast('Comment deleted') }
+    catch (e) { setComments(before); toast(appErrorMessage(e, 'delete-comment'), 'error') }
   }, [tripId, comments, toast])
 
   const viewerList = useMemo(() => {

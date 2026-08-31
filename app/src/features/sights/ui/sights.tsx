@@ -4,6 +4,7 @@ import { findSights } from '../api/find-sights'
 import { imageForPage, radiusForView } from '../api/nearby-places'
 import Icon from '../../../shared/ui/icon'
 import Pane from '../../../shared/ui/pane'
+import { appErrorMessage } from '../../../user-messages-core'
 
 function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }: any) {
   const [more, setMore] = useState(null)
@@ -46,14 +47,13 @@ function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }: any) {
   )
 }
 
-function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose }: any) {
+function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose, toast }: any) {
   const [items, setItems] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
   const [added, setAdded] = useState(() => new Set())
 
   const load = useCallback(async () => {
-    setBusy(true); setError(null)
+    setBusy(true)
     try {
       const found = await findSights({
         lng: centre.center[0], lat: centre.center[1],
@@ -62,7 +62,7 @@ function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose }: any) {
       })
       setItems(found)
     } catch (e) {
-      setError(e.message || 'Could not reach Wikipedia')
+      toast(appErrorMessage(e, 'search-places'), 'error')
     } finally { setBusy(false) }
   }, [centre])
 
@@ -99,7 +99,6 @@ function SightsView({ centre, stops, canEdit, onAdd, onShow, onClose }: any) {
         <Icon n="search" s={15} />{busy ? 'Searching…' : 'Search this area'}
       </button>}>
 
-      {error && <p className="swarn">{error}</p>}
       {!items && busy && <p className="snote">Looking for sights around here…</p>}
       {items && !list.length && !busy && (
         <p className="snote">Nothing found here. Move the map somewhere else and search again.</p>

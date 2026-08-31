@@ -68,12 +68,15 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     if (response.status === 401 && !path.startsWith('/auth/')) await save(null)
     if (!response.ok) {
       let message = `Request failed (${response.status})`
+      let code = ''
       try {
         const payload = await response.json()
         message = payload.error || message
+        code = typeof payload.code === 'string' ? payload.code : ''
       } catch { const text = await response.text(); if (text) message = text }
-      const error: Error & { status?: number } = new Error(message)
+      const error: Error & { status?: number; code?: string } = new Error(message)
       error.status = response.status
+      if (code) error.code = code
       throw error
     }
     if (response.status === 204) return null as T

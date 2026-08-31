@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { acceptInvite, createTrip, deleteAccount, signOut } from '../../backend'
 import { daysBetween, formatRange } from '../../shared/lib/trip-dates'
+import { appErrorMessage } from '../../user-messages-core'
+import type { ToastNotice } from '../../shared/ui/toast'
 
 /* A face, or the next best thing.
 
@@ -23,10 +25,9 @@ function initialAvatar(name) {
 export const withFace = person =>
   (person && person.avatar ? person : { ...person, avatar: initialAvatar(person && person.name) })
 
-function NoTrip({ email, invites = [], onCreated }: any) {
+function NoTrip({ email, invites = [], onCreated, notify }: any & { notify: (notice: ToastNotice) => void }) {
   const [making, setMaking] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(null)
   const [f, setF] = useState({ title: '', crew: '', startsOn: '', endsOn: '' })
   const span = daysBetween(f.startsOn, f.endsOn)
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))
@@ -34,7 +35,7 @@ function NoTrip({ email, invites = [], onCreated }: any) {
   const create = async e => {
     e.preventDefault()
     if (!f.title.trim() || busy) return
-    setBusy(true); setErr(null)
+    setBusy(true)
     try {
       await createTrip({
         title: f.title, crew: f.crew,
@@ -42,20 +43,25 @@ function NoTrip({ email, invites = [], onCreated }: any) {
         dates: formatRange(f.startsOn, f.endsOn),
         dayCount: span || 1,
       })
+      notify({ message: 'Trip created. Your adventure is ready.', tone: 'success' })
       onCreated()
     }
-    catch (e2) { setErr(e2.message || 'Could not create that trip'); setBusy(false) }
+    catch (e2) { notify({ message: appErrorMessage(e2, 'create-trip'), tone: 'error' }); setBusy(false) }
   }
   const removeAccount = async () => {
-    if (window.prompt('Permanently delete this Wayfare account? Type DELETE to continue.') !== 'DELETE') return
+    if (window.prompt('Permanently delete this Off We Go account? Type DELETE to continue.') !== 'DELETE') return
     try { await deleteAccount(); window.location.reload() }
-    catch (error) { setErr(error.message || 'Could not delete your account') }
+    catch (error) { notify({ message: appErrorMessage(error, 'delete-account'), tone: 'error' }) }
   }
   const accept = async id => {
     if (busy) return
-    setBusy(true); setErr(null)
-    try { await acceptInvite(id); onCreated() }
-    catch (error) { setErr(error.message || 'Could not accept that invitation'); setBusy(false) }
+    setBusy(true)
+    try {
+      await acceptInvite(id)
+      notify({ message: 'Invitation accepted. Welcome to the trip!', tone: 'success' })
+      onCreated()
+    }
+    catch (error) { notify({ message: appErrorMessage(error, 'accept-invite'), tone: 'error' }); setBusy(false) }
   }
 
   return (
@@ -92,7 +98,6 @@ function NoTrip({ email, invites = [], onCreated }: any) {
                         disabled={busy || !f.title.trim()}>{busy ? 'Creating…' : 'Create trip'}</button>
               </div>
             </form>
-            {err && <p className="warn">{err}</p>}
           </>
         ) : (
           <>
@@ -118,7 +123,6 @@ function NoTrip({ email, invites = [], onCreated }: any) {
               <button className="btn pri" onClick={() => setMaking(true)}>Start a trip</button>
             </div>
             <button className="btn danger" onClick={removeAccount}>Delete my account</button>
-            {err && <p className="warn">{err}</p>}
           </>
         )}
       </div>

@@ -3,6 +3,7 @@ import { createStop, deleteStop, replaceRoute, updateStop } from '../../../backe
 import { useAttractions } from '../../map'
 import { describePlace, enrichStops, findSights, imageForPage, radiusForView } from '../../sights'
 import { ALL_DAYS } from '../../../shared/constants/trip'
+import { appErrorMessage } from '../../../user-messages-core'
 import type {
   Attraction, Coordinates, Id, MapView, Stop, StopDraft, Toast, TripPhoto,
 } from '../../../shared/model/types'
@@ -121,7 +122,7 @@ export default function useItineraryEditor({
       toast(fresh.length ? `Found ${fresh.length} place${fresh.length === 1 ? '' : 's'} here`
                          : 'Nothing new found here — try zooming out')
     } catch (e) {
-      toast(e.message || 'Could not search for places')
+      toast(appErrorMessage(e, 'search-places'), 'error')
     } finally {
       setFinding(false)
     }
@@ -163,7 +164,7 @@ export default function useItineraryEditor({
       }))
       toast('Filled in from ' + pl.name)
     } catch (e) {
-      toast(e.message || 'Could not look that up')
+      toast(appErrorMessage(e, 'lookup-place'), 'error')
     }
   }, [draft, toast])
 
@@ -172,7 +173,7 @@ export default function useItineraryEditor({
     const next = routeDraft
     setRoute(next); setRouteDraft(null)
     try { await replaceRoute(tripId, next); toast('Route saved') }
-    catch (e) { toast(e.message || 'Could not save the route') }
+    catch (e) { toast(appErrorMessage(e, 'save-route'), 'error') }
   }, [routeDraft, tripId, toast])
 
   // Dragging a pin writes straight through; there is nothing to confirm.
@@ -182,7 +183,7 @@ export default function useItineraryEditor({
     try {
       await updateStop(tripId, id, { lng: lngLat[0], lat: lngLat[1] })
     } catch (e) {
-      toast(e.message || 'Could not move that stop')
+      toast(appErrorMessage(e, 'move-stop'), 'error')
     }
   }, [tripId, toast])
 
@@ -202,7 +203,7 @@ export default function useItineraryEditor({
       x.id === a.id ? { ...x, seq: bSeq } : x.id === b.id ? { ...x, seq: aSeq } : x))
     try {
       await Promise.all([updateStop(tripId, a.id, { seq: bSeq }), updateStop(tripId, b.id, { seq: aSeq })])
-    } catch (e) { toast(e.message || 'Could not reorder those') }
+    } catch (e) { toast(appErrorMessage(e, 'reorder-stops'), 'error') }
   }, [draft, ordered, tripId, toast])
 
   const saveDraft = useCallback(async () => {
@@ -226,7 +227,7 @@ export default function useItineraryEditor({
       }
       setDraft(null)
     } catch (e) {
-      toast(e.message || 'Could not save that stop')
+      toast(appErrorMessage(e, 'save-stop'), 'error')
     } finally {
       setSaving(false)
     }
@@ -243,7 +244,7 @@ export default function useItineraryEditor({
       setDraft(null)
       toast('Stop deleted')
     } catch (e) {
-      toast(e.message || 'Could not delete that stop')
+      toast(appErrorMessage(e, 'delete-stop'), 'error')
     } finally {
       setSaving(false)
     }
@@ -262,7 +263,7 @@ export default function useItineraryEditor({
       setStops(list => [...list, saved])
       toast(`${pl.name} added to the trip`)
     } catch (e) {
-      toast(e.message || 'Could not add that')
+      toast(appErrorMessage(e, 'add-place'), 'error')
     }
   }, [tripId, dayForNewStop, stops.length, toast])
 
@@ -287,7 +288,7 @@ export default function useItineraryEditor({
       })
       setStops(list => [...list, saved])
       toast(`${poi.n} added to the trip`)
-    } catch (e) { toast(e.message || 'Could not add that') }
+    } catch (e) { toast(appErrorMessage(e, 'add-place'), 'error') }
   }, [tripId, dayForNewStop, stops.length, toast])
 
   const showSight = useCallback(pl => {
