@@ -37,7 +37,7 @@ const PresenceFaces = memo(function PresenceFaces({ viewers = [] }: any) {
 const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
                                      liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
                                      sunPhase, canEdit, editing, onToggleEdit, me, onSignOut,
-                                     attractionsOn, onToggleAttractions, viewers }: any) {
+                                     onHome, attractionsOn, onToggleAttractions, viewers }: any) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -77,6 +77,11 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
                 : (me?.name || 'You').slice(0, 1).toUpperCase()}</span>
               <div><small>Signed in as</small><b>{me?.name || 'You'}</b></div>
             </div>
+            {onHome && (
+              <button type="button" role="menuitem" onClick={() => chooseMenuAction(onHome)}>
+                <Icon n="map" s={16} />All trips
+              </button>
+            )}
             <button type="button" role="menuitem" onClick={() => chooseMenuAction(onPeople)}>
               <Icon n="users" s={16} />People
             </button>

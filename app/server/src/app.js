@@ -446,6 +446,15 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return reply.code(204).send()
   })
 
+  app.get('/api/trips', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const [trips, invites] = await Promise.all([
+      repository.listTrips(user), repository.listPendingInvites(user),
+    ])
+    return { trips, invites }
+  })
+
   app.post('/api/trips', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

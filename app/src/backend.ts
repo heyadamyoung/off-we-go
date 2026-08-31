@@ -5,7 +5,7 @@ import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
 import type {
   AcceptedInvite, AuthSession, Coordinates, Device, Id, Invite, LiveFix, PendingInvite, Person, Stop,
-  Trip, TripComment, TripData, TripLoadResult, TripPhoto, UploadInput,
+  Trip, TripComment, TripData, TripLandingData, TripLoadResult, TripPhoto, TripSummary, UploadInput,
 } from './shared/model/types'
 
 const API_URL = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -79,17 +79,32 @@ const sampleResult = (): TripData => {
 const tripPath = (tripId: Id) => `/trips/${encodeURIComponent(tripId)}`
 
 export async function loadTrip(session: AuthSession | null): Promise<TripLoadResult> {
-  if (!hasBackend) return sampleResult()
-  if (!session) return { needsAuth: true }
   const wanted = new URLSearchParams(window.location.search).get('t')
+  if (!hasBackend) {
+    if (wanted) return sampleResult()
+    const trip = sampleResult().trip
+    return {
+      landing: true, trips: [{ ...trip, id: 'sample', slug: 'sample', role: 'owner' }], invites: [],
+    }
+  }
+  if (!session) return { needsAuth: true }
+  if (!wanted) return loadTripLanding(session)
   try { return await authClient.request(`/trips/current${wanted ? `?t=${encodeURIComponent(wanted)}` : ''}`) }
   catch (error) {
     if (error.status === 404) {
-      const invites = await listPendingInvites()
-      invites.sort((a, b) => Number(b.tripSlug === wanted) - Number(a.tripSlug === wanted))
-      return { noTrip: true, email: session.user.email, invites }
+      const landing = await loadTripLanding(session)
+      landing.invites.sort((a, b) => Number(b.tripSlug === wanted) - Number(a.tripSlug === wanted))
+      return landing
     }
     throw error
+  }
+}
+
+export async function loadTripLanding(session: AuthSession): Promise<TripLandingData> {
+  const result = await authClient.request<{ trips: TripSummary[]; invites: PendingInvite[] }>('/trips')
+  return {
+    landing: true, email: session.user.email,
+    trips: result.trips || [], invites: result.invites || [],
   }
 }
 

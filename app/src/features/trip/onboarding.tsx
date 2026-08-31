@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { acceptInvite, createTrip, deleteAccount, signOut } from '../../backend'
 import { daysBetween, formatRange } from '../../shared/lib/trip-dates'
 import { appErrorMessage } from '../../user-messages-core'
+import type { Id, PendingInvite, TripSummary } from '../../shared/model/types'
 import type { ToastNotice } from '../../shared/ui/toast'
 
 /* A face, or the next best thing.
@@ -25,9 +26,20 @@ function initialAvatar(name) {
 export const withFace = person =>
   (person && person.avatar ? person : { ...person, avatar: initialAvatar(person && person.name) })
 
-function NoTrip({ email, invites = [], onCreated, notify }: any & { notify: (notice: ToastNotice) => void }) {
+interface TripLandingProps {
+  email?: string
+  trips: TripSummary[]
+  invites: PendingInvite[]
+  onChanged: () => void
+  notify: (notice: ToastNotice) => void
+}
+
+const tripRole = (role: string) => role === 'owner' ? 'You own this trip'
+  : role === 'editor' ? 'You can edit' : 'You can view'
+
+function TripLanding({ email, trips = [], invites = [], onChanged, notify }: TripLandingProps) {
   const [making, setMaking] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<Id | 'create' | null>(null)
   const [f, setF] = useState({ title: '', crew: '', startsOn: '', endsOn: '' })
   const span = daysBetween(f.startsOn, f.endsOn)
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))
@@ -35,7 +47,7 @@ function NoTrip({ email, invites = [], onCreated, notify }: any & { notify: (not
   const create = async e => {
     e.preventDefault()
     if (!f.title.trim() || busy) return
-    setBusy(true)
+    setBusy('create')
     try {
       await createTrip({
         title: f.title, crew: f.crew,
@@ -44,9 +56,12 @@ function NoTrip({ email, invites = [], onCreated, notify }: any & { notify: (not
         dayCount: span || 1,
       })
       notify({ message: 'Trip created. Your adventure is ready.', tone: 'success' })
-      onCreated()
+      setMaking(false)
+      setF({ title: '', crew: '', startsOn: '', endsOn: '' })
+      setBusy(null)
+      onChanged()
     }
-    catch (e2) { notify({ message: appErrorMessage(e2, 'create-trip'), tone: 'error' }); setBusy(false) }
+    catch (e2) { notify({ message: appErrorMessage(e2, 'create-trip'), tone: 'error' }); setBusy(null) }
   }
   const removeAccount = async () => {
     if (window.prompt('Permanently delete this Off We Go account? Type DELETE to continue.') !== 'DELETE') return
@@ -55,22 +70,28 @@ function NoTrip({ email, invites = [], onCreated, notify }: any & { notify: (not
   }
   const accept = async id => {
     if (busy) return
-    setBusy(true)
+    setBusy(id)
     try {
       await acceptInvite(id)
       notify({ message: 'Invitation accepted. Welcome to the trip!', tone: 'success' })
-      onCreated()
+      setBusy(null)
+      onChanged()
     }
-    catch (error) { notify({ message: appErrorMessage(error, 'accept-invite'), tone: 'error' }); setBusy(false) }
+    catch (error) { notify({ message: appErrorMessage(error, 'accept-invite'), tone: 'error' }); setBusy(null) }
   }
 
   return (
-    <div className="boot">
-      <div className="bootIn wide">
-        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+    <main className="tripLanding">
+      <div className="tripLandingIn">
+        <header className="landingHead">
+          <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+          <div><span className="eyebrow">OFF WE GO</span><h1>Your trips</h1>
+            {email && <p>Signed in as {email}</p>}
+          </div>
+        </header>
         {making ? (
-          <>
-            <b>Start a trip</b>
+          <section className="landingPanel newTripPanel">
+            <h2>Start a trip</h2>
             <p>You will be its owner, and can invite everyone else once it exists.</p>
             <form className="newtrip" onSubmit={create}>
               <label>Where are you going?
@@ -95,42 +116,65 @@ function NoTrip({ email, invites = [], onCreated, notify }: any & { notify: (not
                 <button type="button" className="btn" style={{ flex: 1 }}
                         onClick={() => setMaking(false)}>Back</button>
                 <button type="submit" className="btn pri" style={{ flex: 1 }}
-                        disabled={busy || !f.title.trim()}>{busy ? 'Creating…' : 'Create trip'}</button>
+                        disabled={!!busy || !f.title.trim()}>{busy === 'create' ? 'Creating…' : 'Create trip'}</button>
               </div>
             </form>
-          </>
+          </section>
         ) : (
           <>
-            <b>{invites.length ? 'Trip invitation' : 'No trip yet'}</b>
-            {invites.length ? <>
-              <p>You are signed in as <strong>{email}</strong>. Accept an invitation to join the trip.</p>
-              <div className="roster">
-                {invites.map(invite => <div className="rperson pend" key={invite.id}>
-                  <span className="ini">{(invite.tripTitle || '?')[0]}</span>
-                  <div><b>{invite.tripTitle}</b><span>{invite.role === 'editor' ? 'Can edit' : 'Can view'}</span></div>
-                  <button className="btn pri" disabled={busy} onClick={() => accept(invite.id)}>
-                    {busy ? 'Accepting…' : 'Accept'}
-                  </button>
-                </div>)}
+            <section className="landingSection" aria-labelledby="accessible-trips">
+              <div className="landingSectionHead"><div><span className="eyebrow">READY TO GO</span>
+                <h2 id="accessible-trips">Trips you can access</h2></div>
+                <span className="countPill">{trips.length}</span>
               </div>
-            </> : <p>You are signed in as <strong>{email}</strong>, but nobody has invited that
-               address to a trip. Invitations go by email address, so it has to be this one —
-               ask whoever is running it to add you. Or start your own.</p>}
-            <div className="linkrow">
+              {trips.length ? <div className="tripGrid">
+                {trips.map(trip => <article className="tripCard" key={trip.id}>
+                  <span className="tripInitial">{(trip.title || '?')[0]}</span>
+                  <div className="tripCardBody"><h3>{trip.title}</h3>
+                    <p>{[trip.crew, trip.dates].filter(Boolean).join(' · ') || tripRole(trip.role)}</p>
+                    <span>{tripRole(trip.role)}</span>
+                  </div>
+                  <a className="btn pri" href={`?t=${encodeURIComponent(trip.slug)}`}
+                     aria-label={`Open ${trip.title}`}>Open</a>
+                </article>)}
+              </div> : <div className="landingEmpty"><b>No trips yet</b>
+                <p>Start your own trip, or accept an invitation below.</p></div>}
+            </section>
+
+            <section className="landingSection" aria-labelledby="trip-invitations">
+              <div className="landingSectionHead"><div><span className="eyebrow">WAITING FOR YOU</span>
+                <h2 id="trip-invitations">Invitations</h2></div>
+                <span className="countPill">{invites.length}</span>
+              </div>
+              {invites.length ? <div className="tripGrid">
+                {invites.map(invite => <article className="tripCard invitation" key={invite.id}>
+                  <span className="tripInitial">{(invite.tripTitle || '?')[0]}</span>
+                  <div className="tripCardBody"><h3>{invite.tripTitle}</h3>
+                    <p>You have been invited to join this trip.</p>
+                    <span>{invite.role === 'editor' ? 'Can edit' : 'Can view'}</span>
+                  </div>
+                  <button className="btn pri" disabled={!!busy} onClick={() => accept(invite.id)}>
+                    {busy === invite.id ? 'Accepting…' : 'Accept'}
+                  </button>
+                </article>)}
+              </div> : <div className="landingEmpty compact"><p>No pending invitations.</p></div>}
+            </section>
+
+            <div className="landingActions">
+              <button className="btn pri" onClick={() => setMaking(true)}>Start a new trip</button>
               <button className="btn" onClick={() => signOut().then(() => window.location.reload())}>
                 Sign out
               </button>
-              <button className="btn pri" onClick={() => setMaking(true)}>Start a trip</button>
+              <button className="btn danger" onClick={removeAccount}>Delete my account</button>
             </div>
-            <button className="btn danger" onClick={removeAccount}>Delete my account</button>
           </>
         )}
       </div>
-    </div>
+    </main>
   )
 }
 
-export default NoTrip
+export default TripLanding
 
 
 

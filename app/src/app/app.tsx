@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadTrip } from '../backend'
 import { NativeLoginHandoff, SignInScreen, useSession } from '../features/auth'
-import { NoTrip, TripApp } from '../features/trip'
+import { TripApp, TripLanding } from '../features/trip'
 import type { TripLoadResult } from '../shared/model/types'
 import Toast, { type ToastNotice } from '../shared/ui/toast'
 import { appErrorMessage } from '../user-messages-core'
@@ -18,11 +18,11 @@ function Boot({ error, onRetry }: BootProps) {
         <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
         {error ? (
           <>
-            <b>That trip would not load</b>
+            <b>Your trips would not load</b>
             <p>{appErrorMessage(error, 'load-trip')}</p>
             <button className="btn" onClick={onRetry}>Try again</button>
           </>
-        ) : <p>Loading the trip…</p>}
+        ) : <p>Loading your trips…</p>}
       </div>
     </div>
   )
@@ -58,11 +58,12 @@ function AuthenticatedApp() {
   if (error) content = <Boot error={error} onRetry={() => setAttempt(a => a + 1)} />
   else if (!data) content = <Boot />
   else if ('needsAuth' in data) content = <SignInScreen notify={notify} />
-  else if ('noTrip' in data) content = <NoTrip email={data.email} invites={data.invites}
-                                            onCreated={reload} notify={notify} />
+  else if ('landing' in data) content = <TripLanding email={data.email} trips={data.trips}
+                                             invites={data.invites} onChanged={reload} notify={notify} />
   // Remount cleanly if the signed-in identity changes which trip we are showing.
   else content = <TripApp key={data.tripId + ':' + (session?.user?.id || 'anon')}
-                  data={data} onReload={reload} />
+                  data={data} onReload={reload}
+                  onHome={() => window.location.assign(window.location.pathname)} />
   return <>{content}<Toast notice={notice} /></>
 }
 

@@ -9,6 +9,7 @@ const MAP_READY = 9000
 
 async function open(page) {
   await page.goto('/')
+  await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await page.waitForTimeout(3500)                 // let tiles and markers settle
   const follow = page.locator('.wc.on')           // stop the camera drifting under us
@@ -18,6 +19,30 @@ async function open(page) {
 
 const stopNames = page =>
   page.locator('.fcard .t b').allTextContents()
+
+test('the landing page lists accessible trips without opening one automatically', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.getByRole('heading', { name: 'Your trips' })).toBeVisible()
+  const trip = page.getByRole('link', { name: 'Open Amsterdam Weekend' })
+  await expect(trip).toBeVisible()
+  await expect(trip).toHaveCSS('text-decoration-line', 'none')
+  await expect(page.locator('.mapcanvas')).toHaveCount(0)
+
+  await trip.click()
+  await expect(page).toHaveURL(/\?t=sample$/)
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
+})
+
+test('the trip menu returns to the landing page', async ({ page }) => {
+  await open(page)
+
+  await page.getByRole('button', { name: 'Open menu' }).click()
+  await page.getByRole('menuitem', { name: 'All trips' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Your trips' })).toBeVisible()
+  await expect(page.locator('.mapcanvas')).toHaveCount(0)
+})
 
 test('the sign-in screen gives the Off We Go icon enough room to be legible', async ({ page }) => {
   await page.goto('/')
@@ -122,9 +147,23 @@ test('loads the trip with map, markers and filmstrip', async ({ page }) => {
   await expect(page.locator('.tflow')).toContainText('km walked')
 })
 
+test('a successful action shows a green toast with a green check mark', async ({ page }) => {
+  await open(page)
+  await page.locator('.fcard').first().click()
+  await page.locator('.herocard .btns .wbtn').nth(2).click()
+
+  const toast = page.locator('.toast.success')
+  await expect(toast).toContainText('Saved to favourites')
+  await expect(toast.locator('span')).toHaveText('✓')
+  await expect(toast).toHaveCSS('background-color', 'rgb(15, 42, 28)')
+  await expect(toast).toHaveCSS('color', 'rgb(34, 197, 94)')
+  await expect(toast.locator('span')).toHaveCSS('color', 'rgb(34, 197, 94)')
+})
+
 test('fit the whole trip reveals every stop on the smallest phone viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 })
   await page.goto('/')
+  await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await page.waitForTimeout(3500)
 
@@ -450,6 +489,7 @@ test('finding a place fills in its name, description and picture', async ({ page
 
 test('stops without a picture get a real one on load', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await page.waitForTimeout(14_000)          // load, then the lookups land
   await page.locator('.fdays button').first().click()

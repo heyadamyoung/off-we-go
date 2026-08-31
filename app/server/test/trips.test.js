@@ -68,3 +68,38 @@ test('an authenticated owner can create and reload a trip in the app contract', 
   assert.equal(renamed.json().slug, 'scotland-2027', 'renaming a trip must not break shared links')
   await app.close()
 })
+
+test('the trip landing contract lists every accessible trip and pending invitation', async () => {
+  const { app, repository, authorization } = await signedInApp()
+  const owned = await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization },
+    payload: { title: 'Scotland 2027', crew: 'The family', dates: 'June 1–14' },
+  })
+  const hostAuthorization = await authenticate(repository, 'host@example.com')
+  const invited = await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization: hostAuthorization },
+    payload: { title: 'Japan 2028', crew: 'Old friends', dates: 'April 3–17' },
+  })
+  await app.inject({
+    method: 'POST', url: `/api/trips/${invited.json().id}/invites`,
+    headers: { authorization: hostAuthorization },
+    payload: { email: 'owner@example.com', name: 'Owner', role: 'viewer' },
+  })
+
+  const landing = await app.inject({ method: 'GET', url: '/api/trips', headers: { authorization } })
+
+  assert.equal(landing.statusCode, 200)
+  assert.deepEqual(landing.json(), {
+    trips: [{
+      id: owned.json().id, slug: 'scotland-2027', title: 'Scotland 2027',
+      crew: 'The family', dates: 'June 1–14', dayCount: 1,
+      startsOn: null, endsOn: null, role: 'owner',
+    }],
+    invites: [{
+      id: '00000000-0000-4000-8000-000000500001',
+      email: 'owner@example.com', name: 'Owner', role: 'viewer',
+      tripId: invited.json().id, tripSlug: 'japan-2028', tripTitle: 'Japan 2028',
+    }],
+  })
+  await app.close()
+})

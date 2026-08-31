@@ -22,9 +22,10 @@ import ToastNoticeView, { type ToastNotice } from '../../shared/ui/toast'
 interface TripAppProps {
   data: TripData
   onReload?: () => void
+  onHome?: () => void
 }
 
-export default function TripApp({ data, onReload }: TripAppProps) {
+export default function TripApp({ data, onReload, onHome }: TripAppProps) {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('wf-theme') || 'dark' } catch { return 'dark' }
   })
@@ -228,6 +229,7 @@ export default function TripApp({ data, onReload }: TripAppProps) {
         sunPhase={mapOverride ? null : sun.phase}
         canEdit={canEdit} editing={editing} onToggleEdit={startEditing}
         me={me} viewers={viewers}
+        onHome={onHome}
         onSignOut={hasBackend ? () => signOut().then(() => window.location.reload()) : null} />
 
       <div className="stagewrap">

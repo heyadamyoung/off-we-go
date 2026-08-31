@@ -122,6 +122,19 @@ export interface Trip {
   slug?: string
 }
 
+export interface TripSummary extends Trip {
+  id: Id
+  slug: string
+  role: 'owner' | 'editor' | 'viewer' | string
+}
+
+export interface TripLandingData {
+  landing: true
+  email?: string
+  trips: TripSummary[]
+  invites: PendingInvite[]
+}
+
 export interface TripData {
   tripId: Id
   trip: Trip
@@ -153,7 +166,7 @@ export type ApiRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown }
 export type TripLoadResult =
   | TripData
   | { needsAuth: true }
-  | { noTrip: true; email?: string; invites: PendingInvite[] }
+  | TripLandingData
 
 export interface Attraction {
   id: Id | number
