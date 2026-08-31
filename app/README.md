@@ -1,6 +1,6 @@
-# Wayfare
+# Off We Go
 
-Wayfare is a private trip app with native iPhone and Android clients and a fully self-hosted backend. The VPS owns the PostgreSQL database, resized photo copies, authorization, invitations, GPS history, and web app. User authentication is delegated to an OpenID Connect provider such as the same self-hosted Logto instance used by Threadway.
+Off We Go is a private trip app with native iPhone and Android clients and a fully self-hosted backend. The VPS owns the PostgreSQL database, resized photo copies, authorization, invitations, GPS history, and web app. User authentication is delegated to an OpenID Connect provider such as the same self-hosted Logto instance used by Threadway.
 
 ## What runs on the VPS
 
@@ -23,7 +23,7 @@ Copy this `app` directory to the VPS, point your domain at it, and run from the 
 sudo bash deploy/install.sh
 ```
 
-On its first run the installer asks for the domain, owner, Logto client, and SMTP values; generates Wayfare secrets; creates storage directories; builds the containers; runs database migrations; waits for HTTPS health; and installs the nightly backup job. Later runs preserve existing `.env` values.
+On its first run the installer asks for the domain, owner, Logto client, and SMTP values; generates Off We Go secrets; creates storage directories; builds the containers; runs database migrations; waits for HTTPS health; and installs the nightly backup job. Later runs preserve existing `.env` values.
 
 Afterward, open `https://your-domain` and continue to the configured identity provider. A provider-verified login with the owner email supplied to the installer creates the initial administrator, who can create the first trip.
 
@@ -47,9 +47,9 @@ The installer writes a root-readable `.env`. [.env.vps.example](.env.vps.example
 
 ### Logto / OIDC setup
 
-Wayfare uses the same custom-auth BFF shape as Threadway2. The app renders its own email/password and create-account screens and calls a narrow Wayfare proxy over Logto's Experience API. Logto interaction cookies and redirects stay on the server. The API completes authorization code flow with PKCE, validates state, nonce, issuer, signature, and token claims, then links the stable `(issuer, subject)` identity to a Wayfare user. Provider access, ID, and refresh tokens are never sent to the app and are not persisted by Wayfare.
+Off We Go uses the same custom-auth BFF shape as Threadway2. The app renders its own email/password and create-account screens and calls a narrow Off We Go proxy over Logto's Experience API. Logto interaction cookies and redirects stay on the server. The API completes authorization code flow with PKCE, validates state, nonce, issuer, signature, and token claims, then links the stable `(issuer, subject)` identity to a Off We Go user. Provider access, ID, and refresh tokens are never sent to the app and are not persisted by Off We Go.
 
-In Logto, create a **Traditional Web** application for Wayfare and register this exact redirect URI:
+In Logto, create a **Traditional Web** application for Off We Go and register this exact redirect URI:
 
 ```text
 https://your-domain/api/auth/oidc/callback
@@ -59,30 +59,32 @@ Copy its issuer, application ID, and application secret into `WAYFARE_OIDC_ISSUE
 
 When upgrading an older installation, `sudo bash deploy/install.sh` prompts only for missing OIDC values and appends them to the existing `.env`; database, session, OAuth, and SMTP secrets are preserved.
 
-Configure email as the sign-in and registration identifier and enable password sign-in in Logto under **Sign-in & account**. Wayfare's create-account form uses Logto's email verification code before setting the password. Wayfare requires the resulting identity to carry a provider-verified email matching the owner, an existing user, or a pending trip invitation.
+Configure email as the sign-in and registration identifier and enable password sign-in in Logto under **Sign-in & account**. Off We Go's create-account form uses Logto's email verification code before setting the password. Anyone with a provider-verified email may create an account and their own trip; a trip invitation is required only to join and view someone else's private trip.
 
-Inviting someone creates a pending `trip_invites` record and sends a notification containing only the ordinary Wayfare app/site URL, with no trip selector or authentication token. The recipient signs in—or creates an account—with the invited email address, reviews the pending invitation in Wayfare, and explicitly accepts it. Only acceptance creates the `trip_members` record; invitation emails are not authentication links.
+Inviting someone creates a pending `trip_invites` record and sends a notification containing only the ordinary Off We Go app/site URL, with no trip selector or authentication token. The recipient signs in—or creates an account—with the invited email address, reviews the pending invitation in Off We Go, and explicitly accepts it. Only acceptance creates the `trip_members` record; invitation emails are not authentication links.
+
+Each authentication user has one global `profiles` row containing their stable slug, display name, and avatar. `trip_members` links a trip to a profile and contains only relationship data (`role` and `joined_at`); profile details are never copied into a membership. Updating `/api/profile` therefore changes the person everywhere they appear.
 
 The web build uses `VITE_API_URL=/api`. For a native build, set the public absolute API URL before syncing:
 
 ```bash
-VITE_API_URL=https://wayfare.threadway.ai/api pnpm ios:sync
-VITE_API_URL=https://wayfare.threadway.ai/api pnpm android:sync
+VITE_API_URL=https://offwego.to/api pnpm ios:sync
+VITE_API_URL=https://offwego.to/api pnpm android:sync
 ```
 
 Both native apps use the system photo picker and send background location fixes to `/api/ingest/track`. iOS requires Always Location permission. Android requires precise location and notification permission because it keeps a visible foreground-service notification active while sharing location.
 
 Native sign-in opens the system browser and returns through `/auth/native`; provider tokens never enter the Capacitor webview. Android HTTPS login handoffs require the SHA-256 certificate fingerprint used by Google Play App Signing. Add it to `ANDROID_SHA256_CERT_FINGERPRINTS` in the VPS `.env` (comma-separate multiple signing certificates), redeploy, and verify `/.well-known/assetlinks.json` before release.
 
-Public release pages are served at [privacy.html](https://wayfare.threadway.ai/privacy.html) and [support.html](https://wayfare.threadway.ai/support.html). App Store copy, privacy answers, review notes, and the release checklist are in `docs/app-store/`.
+Public release pages are served at [privacy.html](https://offwego.to/privacy.html) and [support.html](https://offwego.to/support.html). App Store copy, privacy answers, review notes, and the release checklist are in `docs/app-store/`.
 
 ## Remote MCP server and OAuth consent
 
-The VPS also exposes a private remote MCP server at `https://your-domain/mcp`. It is protected by the same Wayfare users and trip membership rules as the web and native apps.
+The VPS also exposes a private remote MCP server at `https://your-domain/mcp`. It is protected by the same Off We Go users and trip membership rules as the web and native apps.
 
-When an MCP client connects, Wayfare publishes OAuth discovery metadata, dynamically registers the public client, requires OAuth authorization code flow with S256 PKCE, and opens a branded consent page. The user can grant either read-only access or trip editing. Access tokens last one hour; rotated refresh tokens last 30 days, detect replay, and can be revoked through the OAuth revocation endpoint.
+When an MCP client connects, Off We Go publishes OAuth discovery metadata, dynamically registers the public client, requires OAuth authorization code flow with S256 PKCE, and opens a branded consent page. The user can grant either read-only access or trip editing. Access tokens last one hour; rotated refresh tokens last 30 days, detect replay, and can be revoked through the OAuth revocation endpoint.
 
-The MCP tools can list and read trips; create and update trips; create, update, or delete stops; replace routes; update or delete photo metadata; manage comments and likes; and manage invitations. Photo uploads remain in the Wayfare app because they require an image file.
+The MCP tools can list and read trips; create and update trips; create, update, or delete stops; replace routes; update or delete photo metadata; manage comments and likes; and manage invitations. Photo uploads remain in the Off We Go app because they require an image file.
 
 To connect, give a Streamable HTTP-capable MCP client this server URL:
 
@@ -90,11 +92,11 @@ To connect, give a Streamable HTTP-capable MCP client this server URL:
 https://your-domain/mcp
 ```
 
-The client should discover the OAuth endpoints automatically. If the browser is not already signed into Wayfare, the consent page starts the normal OIDC login and returns to the pending authorization request afterward. `WAYFARE_OAUTH_SECRET` signs pending MCP consent requests and must remain server-side.
+The client should discover the OAuth endpoints automatically. If the browser is not already signed into Off We Go, the consent page starts the normal OIDC login and returns to the pending authorization request afterward. `WAYFARE_OAUTH_SECRET` signs pending MCP consent requests and must remain server-side.
 
 ## One-time migration from the previous Supabase project
 
-The production runtime has no Supabase dependency. If the previous project contains real data, run the resumable one-time importer before inviting people to the VPS version. It copies users, trips, membership, invitations, stops, routes, photos, comments, and likes; private photo objects are downloaded with the legacy service-role key, resized into Wayfare's current display/thumbnail format, and recorded in a checksum manifest.
+The production runtime has no Supabase dependency. If the previous project contains real data, run the resumable one-time importer before inviting people to the VPS version. It copies users, trips, membership, invitations, stops, routes, photos, comments, and likes; private photo objects are downloaded with the legacy service-role key, resized into Off We Go's current display/thumbnail format, and recorded in a checksum manifest.
 
 First check row counts without writing anything:
 
