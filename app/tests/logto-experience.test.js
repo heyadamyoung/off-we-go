@@ -48,7 +48,7 @@ test('custom sign-in uses Logto password verification and saves the returned app
   assert.equal(recorder.accepted().accessToken, 'app-token')
 })
 
-test('custom account creation verifies the invited email before setting a password', async () => {
+test('custom account creation verifies the email before setting a password', async () => {
   const recorder = recordingClient()
   const experience = createLogtoExperienceClient(recorder.api)
 

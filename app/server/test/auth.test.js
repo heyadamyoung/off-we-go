@@ -136,7 +136,7 @@ test('a cancelled native provider flow returns an actionable error to the app', 
   await app.close()
 })
 
-test('a linked OIDC subject keeps the same Wayfare account after its provider email changes', async () => {
+test('a linked OIDC subject keeps the same Off We Go account after its provider email changes', async () => {
   const identity = {
     issuer: 'https://identity.example.com/oidc', subject: 'identity-user-1',
     email: 'owner@example.com', emailVerified: true,
@@ -340,7 +340,7 @@ test('custom password sign-in completes the Logto interaction without exposing h
   await app.close()
 })
 
-test('custom account creation cannot send a Logto verification code to an uninvited email', async () => {
+test('custom account creation sends a Logto verification code without requiring a trip invitation', async () => {
   let verificationCodeRequests = 0
   const experienceFetch = async (url, options = {}) => {
     const path = new URL(url).pathname
@@ -363,14 +363,56 @@ test('custom account creation cannot send a Logto verification code to an uninvi
   await app.inject({
     method: 'PUT', url: '/api/auth/experience', headers: { cookie }, payload: { interactionEvent: 'Register' },
   })
-  const denied = await app.inject({
+  const sent = await app.inject({
     method: 'POST', url: '/api/auth/experience/verification/verification-code', headers: { cookie },
     payload: { identifier: { type: 'email', value: 'stranger@example.com' }, interactionEvent: 'Register' },
   })
 
-  assert.equal(denied.statusCode, 403)
-  assert.equal(denied.json().error, 'An invitation is required to create a Wayfare account')
-  assert.equal(verificationCodeRequests, 0)
+  assert.equal(sent.statusCode, 204)
+  assert.equal(verificationCodeRequests, 1)
+  await app.close()
+})
+
+test('custom account creation translates Logto failures into safe actionable errors', async () => {
+  const experienceFetch = async (url) => {
+    const path = new URL(url).pathname
+    if (path === '/oidc/auth') {
+      return new Response(null, {
+        status: 303,
+        headers: { location: '/sign-in', 'set-cookie': 'logto_interaction=secret; Path=/; HttpOnly' },
+      })
+    }
+    if (path === '/api/experience/verification/verification-code') {
+      return Response.json({
+        code: 'connector.not_found',
+        message: 'Cannot find any available connector for type: Email.',
+      }, { status: 501 })
+    }
+    return new Response(null, { status: 204 })
+  }
+  const app = await moduleUnderTest.buildServer({
+    repository: createMemoryRepository(), mailer: { async send() {} },
+    identityProvider: createOidcProvider(), experienceFetch,
+    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
+  const interaction = started.json().interaction
+  await app.inject({
+    method: 'PUT', url: '/api/auth/experience', headers: { 'x-wayfare-experience': interaction },
+    payload: { interactionEvent: 'Register' },
+  })
+  const failed = await app.inject({
+    method: 'POST', url: '/api/auth/experience/verification/verification-code',
+    headers: { 'x-wayfare-experience': interaction },
+    payload: { identifier: { type: 'email', value: 'new@example.com' }, interactionEvent: 'Register' },
+  })
+
+  assert.equal(failed.statusCode, 501)
+  assert.deepEqual(failed.json(), {
+    code: 'auth.email_delivery_unavailable',
+    error: 'Email verification is temporarily unavailable. Please try again later.',
+  })
+  assert.doesNotMatch(failed.body, /connector|Logto/i)
   await app.close()
 })
 

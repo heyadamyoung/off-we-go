@@ -54,7 +54,6 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const key = `${issuer}\u0000${subject}`
       const existingId = oidcIdentities.get(key)
       if (existingId) return [...users.values()].find(user => user.id === existingId) || null
-      if (!await this.emailAllowed(email)) return null
       const user = await this.ensureUser(email)
       oidcIdentities.set(key, user.id)
       return user

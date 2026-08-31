@@ -107,9 +107,6 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         const linked = await client.query(`select u.id,u.email from oidc_identities i
           join users u on u.id=i.user_id where i.issuer=$1 and i.subject=$2`, [issuer, subject])
         if (linked.rows[0]) { await client.query('commit'); return linked.rows[0] }
-        const allowed = email === admin || (await client.query(`select 1 from users where email=$1
-          union all select 1 from trip_invites where email=$1 limit 1`, [email])).rowCount > 0
-        if (!allowed) { await client.query('rollback'); return null }
         const user = await ensureUser(client, email)
         const inserted = await client.query(`insert into oidc_identities(issuer,subject,user_id)
           values($1,$2,$3) on conflict(issuer,subject) do nothing returning user_id`, [issuer, subject, user.id])

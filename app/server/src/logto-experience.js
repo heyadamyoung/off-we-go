@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { safeExperienceError } from './auth-errors.js'
 
 const newToken = () => randomBytes(32).toString('base64url')
 const pkceChallenge = verifier => createHash('sha256').update(verifier).digest('base64url')
@@ -98,7 +99,14 @@ export function createLogtoExperienceService({ identityProvider, publicUrl, fetc
       })
       interaction.cookies = mergeCookies(interaction.cookies, response)
       const result = await responseBody(response)
-      if (normalizedPath !== 'submit' || !response.ok) {
+      if (!response.ok) {
+        return {
+          status: response.status,
+          body: JSON.stringify(safeExperienceError(response.status, result.text, normalizedPath)),
+          contentType: 'application/json',
+        }
+      }
+      if (normalizedPath !== 'submit') {
         return { status: response.status, body: result.text, contentType: result.contentType }
       }
 

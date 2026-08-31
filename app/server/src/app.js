@@ -215,9 +215,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await repository.resolveOidcUser({
       issuer: identity.issuer, subject: identity.subject, email,
     })
-    if (!user) {
-      return oidcFailure(reply, login, 'This account has not been invited to Wayfare')
-    }
+    if (!user) return oidcFailure(reply, login, 'We could not finish setting up your account. Please try again.')
     const handoff = newToken()
     await repository.createLoginHandoff({
       hash: tokenHash(handoff), userId: user.id, client: login.client, bindingHash: login.bindingHash,
@@ -282,14 +280,6 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
       }
     }
-    if (path === 'verification/verification-code' &&
-      (experience.event(handle) === 'Register' || request.body?.interactionEvent === 'Register')) {
-      const identifier = request.body?.identifier
-      const email = identifier?.type === 'email' ? normalizeEmail(identifier.value) : ''
-      if (!email || !await repository.emailAllowed(email)) {
-        return reply.code(403).send({ error: 'An invitation is required to create a Wayfare account' })
-      }
-    }
     let result
     try {
       result = await experience.forward({
@@ -308,7 +298,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       const user = await repository.resolveOidcUser({
         issuer: identity.issuer, subject: identity.subject, email,
       })
-      if (!user) return reply.code(403).send({ error: 'This account has not been invited to Wayfare' })
+      if (!user) return reply.code(500).send({ error: 'Could not create your Off We Go account' })
       const accessToken = newToken()
       await repository.createSession({
         hash: tokenHash(accessToken), userId: user.id,
