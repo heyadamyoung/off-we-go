@@ -10,6 +10,7 @@ interface ExperienceApiClient {
 export function createLogtoExperienceClient(api: ExperienceApiClient) {
   let interaction = ''
   let currentEvent: 'SignIn' | 'Register' | '' = ''
+  let registrationEmail = ''
   const call = <T = any>(path: string, method: string, body: unknown = {}) =>
     api.request<T>(`/auth/experience${path}`, {
       method, body, headers: interaction ? { 'x-wayfare-experience': interaction } : undefined,
@@ -31,6 +32,7 @@ export function createLogtoExperienceClient(api: ExperienceApiClient) {
     const session = await call<AuthSession>('/submit', 'POST')
     interaction = ''
     currentEvent = ''
+    registrationEmail = ''
     return api.acceptSession(session)
   }
 
@@ -46,6 +48,7 @@ export function createLogtoExperienceClient(api: ExperienceApiClient) {
 
     async sendRegistrationCode(email: string, handle: string) {
       const normalizedEmail = email.trim().toLowerCase()
+      registrationEmail = normalizedEmail
       await begin('Register')
       await call('/handle', 'POST', { handle })
       const verification = await call<{ verificationId: string }>('/verification/verification-code', 'POST', {
@@ -56,7 +59,9 @@ export function createLogtoExperienceClient(api: ExperienceApiClient) {
 
     async completeRegistration({ verificationId, code, password }:
       { verificationId: string; code: string; password: string }) {
-      await call('/verification/verification-code/verify', 'POST', { verificationId, code: code.trim() })
+      await call('/verification/verification-code/verify', 'POST', {
+        identifier: { type: 'email', value: registrationEmail }, verificationId, code: code.trim(),
+      })
       await call('/profile', 'POST', { type: 'password', value: password })
       return finish(verificationId)
     },

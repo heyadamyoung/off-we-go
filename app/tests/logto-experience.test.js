@@ -69,7 +69,11 @@ test('custom account creation verifies the email before setting a password', asy
     ['/auth/experience/submit', 'POST'],
   ])
   assert.deepEqual(recorder.calls[2].body, { handle: 'adam-young' })
-  assert.deepEqual(recorder.calls[4].body, { verificationId: 'email-code', code: '204913' })
+  assert.deepEqual(recorder.calls[4].body, {
+    identifier: { type: 'email', value: 'invited@example.com' },
+    verificationId: 'email-code',
+    code: '204913',
+  })
   assert.deepEqual(recorder.calls[5].body, { type: 'password', value: 'a sufficiently long password' })
   assert.equal(recorder.calls[7].headers['x-wayfare-experience'], 'opaque-interaction')
   assert.equal(recorder.accepted().user.email, 'invited@example.com')
