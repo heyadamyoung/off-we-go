@@ -89,6 +89,10 @@ try {
     const knownUsers = new Set(data.users.map(value => value.id))
     const knownTrips = new Set(data.trips.map(value => value.id))
     const owners = new Map(data.members.filter(value => value.role === 'owner').map(value => [value.trip_id, value.user_id]))
+    const profileNames = new Map()
+    for (const member of data.members) {
+      if (member.display_name?.trim()) profileNames.set(member.user_id, member.display_name.trim())
+    }
     const importedPhotos = []
     for (const photo of data.photos) {
       try { importedPhotos.push({ ...photo, ...await convertPhoto(photo) }) }
@@ -105,6 +109,11 @@ try {
       for (const value of data.users) {
         await target.query(`insert into users(id,email,created_at) values($1,lower($2),$3)
           on conflict(id) do update set email=excluded.email`, [value.id, value.email, value.created_at])
+        const base = value.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'traveller'
+        const slug = `${base}-${value.id.replaceAll('-', '').slice(0, 16)}`
+        await target.query(`insert into profiles(id,slug,display_name,created_at,updated_at)
+          values($1,$2,$3,$4,now()) on conflict(id) do update set display_name=excluded.display_name,updated_at=now()`,
+        [value.id, slug, profileNames.get(value.id) || value.email.split('@')[0], value.created_at])
       }
       for (const value of data.trips) {
         await target.query(`insert into trips(id,slug,title,crew,dates,day_count,created_at)
@@ -113,10 +122,9 @@ try {
         [value.id, value.slug, value.title, value.crew, value.dates, value.day_count || 1, value.created_at])
       }
       for (const value of data.members.filter(value => knownUsers.has(value.user_id) && knownTrips.has(value.trip_id))) {
-        await target.query(`insert into trip_members(trip_id,user_id,role,display_name,joined_at)
-          values($1,$2,$3,$4,$5) on conflict(trip_id,user_id) do update set
-          role=excluded.role,display_name=excluded.display_name`,
-        [value.trip_id, value.user_id, value.role, value.display_name, value.joined_at])
+        await target.query(`insert into trip_members(trip_id,profile_id,role,joined_at)
+          values($1,$2,$3,$4) on conflict(trip_id,profile_id) do update set role=excluded.role`,
+        [value.trip_id, value.user_id, value.role, value.joined_at])
       }
       for (const value of data.invites.filter(value => knownTrips.has(value.trip_id))) {
         await target.query(`insert into trip_invites(id,trip_id,email,name,role,claimed_at,created_at)
@@ -162,7 +170,7 @@ try {
     } catch (error) { await target.query('rollback'); throw error }
 
     const targetCounts = {}
-    for (const table of ['users','trips','trip_members','trip_invites','stops','photos','route_points','comments','photo_likes']) {
+    for (const table of ['users','profiles','trips','trip_members','trip_invites','stops','photos','route_points','comments','photo_likes']) {
       targetCounts[table] = Number((await target.query(`select count(*) count from ${table}`)).rows[0].count)
     }
     manifest.counts.target = targetCounts

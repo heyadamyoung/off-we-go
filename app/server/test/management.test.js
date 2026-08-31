@@ -17,7 +17,7 @@ async function setup(fileStore = null) {
   return { app, repository, authorization, trip, user }
 }
 
-test('an owner can update trip details and their trip profile', async () => {
+test('an owner can update trip details and their global profile', async () => {
   const { app, authorization, trip, user } = await setup()
   const changed = await app.inject({
     method: 'PATCH', url: `/api/trips/${trip.id}`, headers: { authorization },
@@ -27,12 +27,22 @@ test('an owner can update trip details and their trip profile', async () => {
   assert.equal(changed.json().title, 'After')
 
   const profile = await app.inject({
-    method: 'PATCH', url: `/api/trips/${trip.id}/members/me`, headers: { authorization },
-    payload: { name: 'Alex' },
+    method: 'PATCH', url: '/api/profile', headers: { authorization },
+    payload: { name: 'Alex', avatarPath: 'another-profile/private.jpg' },
   })
   assert.equal(profile.statusCode, 200)
   assert.equal(profile.json().id, user.id)
   assert.equal(profile.json().name, 'Alex')
+  assert.equal(profile.json().avatar, null)
+
+  const otherTrip = (await app.inject({
+    method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'Elsewhere' },
+  })).json()
+  const loaded = await app.inject({
+    method: 'GET', url: `/api/trips/current?t=${otherTrip.slug}`, headers: { authorization },
+  })
+  assert.equal(loaded.json().me.name, 'Alex')
+  assert.equal(loaded.json().me.slug, profile.json().slug)
   await app.close()
 })
 
@@ -82,21 +92,21 @@ test('an owner can edit and delete a photo record', async () => {
   await app.close()
 })
 
-test('an owner can upload a private avatar and attach it to their trip profile', async () => {
+test('an owner can upload a private avatar and attach it to their global profile', async () => {
   const stored = []
   const removed = []
   const { app, authorization, trip } = await setup({
     async storeAvatar(input) {
       stored.push(input)
-      const suffix = stored.length === 1 ? `${input.userId}-legacy.jpg` : `${input.userId}.jpg`
-      return { avatarPath: `${input.tripId}/avatars/${suffix}` }
+      const suffix = stored.length === 1 ? `${input.profileId}-legacy.jpg` : `${input.profileId}.jpg`
+      return { avatarPath: `profiles/${suffix}` }
     },
     async remove(path) { removed.push(path) },
   })
   const form = new FormData()
   form.append('avatar', new Blob([Buffer.from('image-bytes')], { type: 'image/jpeg' }), 'me.jpg')
   const response = await app.inject({
-    method: 'POST', url: `/api/trips/${trip.id}/members/me/avatar`, headers: { authorization },
+    method: 'POST', url: '/api/profile/avatar', headers: { authorization },
     payload: form,
   })
   assert.equal(response.statusCode, 201)
@@ -106,7 +116,7 @@ test('an owner can upload a private avatar and attach it to their trip profile',
   const replacement = new FormData()
   replacement.append('avatar', new Blob([Buffer.from('replacement-image')], { type: 'image/jpeg' }), 'me-again.jpg')
   const replaced = await app.inject({
-    method: 'POST', url: `/api/trips/${trip.id}/members/me/avatar`, headers: { authorization },
+    method: 'POST', url: '/api/profile/avatar', headers: { authorization },
     payload: replacement,
   })
   assert.equal(replaced.statusCode, 201)

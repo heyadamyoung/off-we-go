@@ -6,6 +6,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const loginHandoffs = new Map()
   const sessions = new Map()
   const users = new Map()
+  const profiles = new Map()
   const trips = new Map()
   const devices = new Map()
   const positions = new Map()
@@ -47,7 +48,15 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return row && row.expiresAt > now ? row : null
     },
     async ensureUser(email) {
-      if (!users.has(email)) users.set(email, { id: fakeUuid(1, nextUser++), email })
+      if (!users.has(email)) {
+        const user = { id: fakeUuid(1, nextUser++), email }
+        const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'traveller'
+        users.set(email, user)
+        profiles.set(user.id, {
+          id: user.id, slug: `${base}-${user.id.slice(-6)}`,
+          email, displayName: email.split('@')[0], avatarUrl: null,
+        })
+      }
       return users.get(email)
     },
     async resolveOidcUser({ issuer, subject, email }) {
@@ -149,23 +158,34 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         id, slug: `${base || 'trip'}-${id.slice(-1)}`, ownerId: user.id,
         title: input.title, crew: input.crew || null, dates: input.dates || null,
         dayCount: input.dayCount || 1, startsOn: input.startsOn || null, endsOn: input.endsOn || null,
-        members: [{ userId: user.id, email: user.email, role: 'owner', displayName: user.email.split('@')[0], avatarUrl: null }],
+        members: [{ profileId: user.id, role: 'owner' }],
         stops: [], photos: [], route: [], comments: {}, likes: [], invites: [],
       }
       trips.set(id, trip)
       return { id, slug: trip.slug, ownerId: user.id, title: trip.title }
     },
     async listTrips(user) {
-      return [...trips.values()].filter(trip => trip.members.some(member => member.userId === user.id))
+      return [...trips.values()].filter(trip => trip.members.some(member => member.profileId === user.id))
         .map(trip => ({
           id: trip.id, slug: trip.slug, title: trip.title, crew: trip.crew, dates: trip.dates,
           dayCount: trip.dayCount, startsOn: trip.startsOn, endsOn: trip.endsOn,
-          role: trip.members.find(member => member.userId === user.id).role,
+          role: trip.members.find(member => member.profileId === user.id).role,
         }))
     },
     async loadCurrentTrip(user, slug) {
-      return [...trips.values()].find(trip =>
-        (!slug || trip.slug === slug) && trip.members.some(member => member.userId === user.id)) || null
+      const trip = [...trips.values()].find(value =>
+        (!slug || value.slug === slug) && value.members.some(member => member.profileId === user.id))
+      if (!trip) return null
+      return {
+        ...trip,
+        members: trip.members.map(member => {
+          const profile = profiles.get(member.profileId)
+          return {
+            ...member, email: profile.email, slug: profile.slug,
+            displayName: profile.displayName, avatarUrl: profile.avatarUrl,
+          }
+        }),
+      }
     },
     async updateTrip(user, tripId, changes) {
       if (!await this.canEditTrip(user.id, tripId)) return null
@@ -173,33 +193,32 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       Object.assign(trip, changes)
       return trip
     },
-    async updateProfile(user, tripId, changes) {
-      const trip = trips.get(tripId)
-      const member = trip?.members.find(value => value.userId === user.id)
-      if (!member) return null
-      const oldAvatarUrl = member.avatarUrl
-      if (changes.name !== undefined) member.displayName = changes.name
-      if (changes.avatarPath !== undefined) member.avatarUrl = changes.avatarPath
-      return { ...member, oldAvatarUrl }
+    async updateProfile(user, changes) {
+      const profile = profiles.get(user.id)
+      if (!profile) return null
+      const oldAvatarUrl = profile.avatarUrl
+      if (changes.name !== undefined) profile.displayName = changes.name
+      if (changes.avatarPath !== undefined) profile.avatarUrl = changes.avatarPath
+      return { ...profile, profileId: profile.id, oldAvatarUrl }
     },
     async canEditTrip(userId, tripId) {
       const trip = trips.get(tripId)
-      return !!trip?.members.some(member => member.userId === userId && ['owner', 'editor'].includes(member.role))
+      return !!trip?.members.some(member => member.profileId === userId && ['owner', 'editor'].includes(member.role))
     },
     async canManageTrip(userId, tripId) {
-      return !!trips.get(tripId)?.members.some(member => member.userId === userId && member.role === 'owner')
+      return !!trips.get(tripId)?.members.some(member => member.profileId === userId && member.role === 'owner')
     },
     async canReadTrip(userId, tripId) {
-      return !!trips.get(tripId)?.members.some(member => member.userId === userId)
+      return !!trips.get(tripId)?.members.some(member => member.profileId === userId)
     },
     async createPhoto(user, tripId, input) {
       const trip = trips.get(tripId)
-      const member = trip?.members.find(value => value.userId === user.id)
+      const member = trip?.members.find(value => value.profileId === user.id)
       if (!trip || !member || !['owner', 'editor'].includes(member.role)) return null
       const photo = {
         id: fakeUuid(3, nextPhoto++), stopId: input.stopId || null,
         lng: input.lng, lat: input.lat, caption: input.caption || null,
-        by: member.displayName, when: input.takenAt || null,
+        by: profiles.get(member.profileId).displayName, when: input.takenAt || null,
         locationSource: input.locationSource || null,
         storagePath: input.storagePath, thumbPath: input.thumbPath, userId: user.id, clientKey: input.clientKey || null,
         seq: trip.photos.length,
@@ -269,7 +288,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (invite) {
         Object.assign(invite, input)
         const invitedUser = users.get(input.email)
-        const member = invitedUser && trip.members.find(value => value.userId === invitedUser.id)
+        const member = invitedUser && trip.members.find(value => value.profileId === invitedUser.id)
         if (member && member.role !== 'owner') member.role = input.role
       }
       else {
@@ -290,11 +309,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       for (const trip of trips.values()) {
         const invite = trip.invites.find(value => value.id === inviteId && value.email === user.email && !value.claimedAt)
         if (!invite) continue
-        if (!trip.members.some(member => member.userId === user.id)) {
-          trip.members.push({
-            userId: user.id, email: user.email, role: invite.role,
-            displayName: invite.name || user.email.split('@')[0], avatarUrl: null,
-          })
+        if (!trip.members.some(member => member.profileId === user.id)) {
+          trip.members.push({ profileId: user.id, role: invite.role })
         }
         invite.claimedAt = new Date()
         return { tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title, role: invite.role }
@@ -312,22 +328,22 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!invite) return false
       const invitedUser = users.get(invite.email)
       if (invitedUser) {
-        trip.members = trip.members.filter(value => value.userId !== invitedUser.id || value.role === 'owner')
+        trip.members = trip.members.filter(value => value.profileId !== invitedUser.id || value.role === 'owner')
       }
       const before = trip.invites.length
       trip.invites = trip.invites.filter(value => value.id !== inviteId)
       return before !== trip.invites.length
     },
-    async removeMember(user, tripId, memberUserId) {
+    async removeMember(user, tripId, profileId) {
       if (!await this.canManageTrip(user.id, tripId)) return null
       const trip = trips.get(tripId)
-      const member = trip.members.find(value => value.userId === memberUserId)
+      const member = trip.members.find(value => value.profileId === profileId)
       if (!member) return null
       if (member.role === 'owner') return 'owner'
-      trip.members = trip.members.filter(value => value.userId !== memberUserId)
-      trip.invites = trip.invites.filter(value => value.email !== member.email)
+      trip.members = trip.members.filter(value => value.profileId !== profileId)
+      trip.invites = trip.invites.filter(value => value.email !== profiles.get(profileId)?.email)
       const removedDevices = [...devices.values()]
-        .filter(value => value.tripId === tripId && value.userId === memberUserId).map(value => value.id)
+        .filter(value => value.tripId === tripId && value.userId === profileId).map(value => value.id)
       removedDevices.forEach(id => devices.delete(id))
       for (const [key, fix] of positions) if (removedDevices.includes(fix.deviceId)) positions.delete(key)
       return 'removed'
@@ -336,9 +352,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!await this.canReadTrip(user.id, tripId)) return null
       const trip = trips.get(tripId)
       if (!trip.photos.some(photo => photo.id === photoId)) return null
-      const member = trip.members.find(value => value.userId === user.id)
+      const member = trip.members.find(value => value.profileId === user.id)
       const comment = {
-        id: fakeUuid(6, nextComment++), by: member.displayName, text: body,
+        id: fakeUuid(6, nextComment++), by: profiles.get(member.profileId).displayName, text: body,
         userId: user.id, when: 'just now',
       }
       ;(trip.comments[photoId] ||= []).push(comment)
@@ -426,20 +442,21 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const paths = []
       for (const [tripId, trip] of [...trips]) {
         const owners = trip.members.filter(member => member.role === 'owner')
-        const soleOwner = owners.length === 1 && owners[0].userId === user.id
+        const soleOwner = owners.length === 1 && owners[0].profileId === user.id
         if (soleOwner) {
           for (const photo of trip.photos) paths.push(photo.storagePath, photo.thumbPath)
-          for (const member of trip.members) paths.push(member.avatarUrl)
           trips.delete(tripId)
           continue
         }
         for (const photo of trip.photos.filter(value => value.userId === user.id)) paths.push(photo.storagePath, photo.thumbPath)
         trip.photos = trip.photos.filter(value => value.userId !== user.id)
-        trip.members = trip.members.filter(value => value.userId !== user.id)
+        trip.members = trip.members.filter(value => value.profileId !== user.id)
         trip.invites = trip.invites.filter(value => value.email !== user.email)
       }
       for (const [hash, session] of sessions) if (session.userId === user.id) sessions.delete(hash)
       for (const [id, device] of devices) if (device.userId === user.id) devices.delete(id)
+      paths.push(profiles.get(user.id)?.avatarUrl)
+      profiles.delete(user.id)
       users.delete(user.email)
       const uniquePaths = [...new Set(paths.filter(Boolean))]
       for (const path of uniquePaths) fileDeletionQueue.set(path, new Date(0))

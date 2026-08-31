@@ -41,10 +41,10 @@ export function createDiskFileStore({ directory }) {
       catch (error) { await rm(absolute(storagePath), { force: true }); throw error }
       return { storagePath, thumbPath }
     },
-    async storeAvatar({ tripId, userId, bytes }) {
+    async storeAvatar({ profileId, bytes }) {
       // A stable path prevents replaced profile images from becoming
       // unreferenced personal data on disk.
-      const avatarPath = `${tripId}/avatars/${userId}.jpg`
+      const avatarPath = `profiles/${profileId}.jpg`
       const image = await sharp(bytes, { failOn: 'warning' }).rotate()
         .resize({ width: 512, height: 512, fit: 'cover', withoutEnlargement: true })
         .jpeg({ quality: 82, mozjpeg: true }).toBuffer()

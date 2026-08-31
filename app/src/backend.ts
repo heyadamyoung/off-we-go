@@ -152,9 +152,9 @@ export async function revokeInvite(tripId: Id, id: Id): Promise<unknown> {
   if (isSample(tripId)) { sampleTrip().invites = sampleTrip().invites.filter(item => item.id !== id); return }
   return authClient.request(`${tripPath(tripId)}/invites/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
-export async function removeMember(tripId: Id, userId: Id): Promise<unknown> {
+export async function removeMember(tripId: Id, profileId: Id): Promise<unknown> {
   if (isSample(tripId)) return
-  return authClient.request(`${tripPath(tripId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+  return authClient.request(`${tripPath(tripId)}/members/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
 }
 
 export async function uploadPhoto(tripId: Id, file: File, meta: Partial<TripPhoto & UploadInput> = {}): Promise<TripPhoto> {
@@ -185,15 +185,20 @@ export async function updateTrip(tripId: Id, fields: Partial<Trip>): Promise<Tri
   if (isSample(tripId)) { Object.assign(sampleTrip().trip, fields); return { ...sampleTrip().trip } }
   return authClient.request(tripPath(tripId), { method: 'PATCH', body: fields })
 }
-export async function updateMe(tripId: Id, _userId: Id | undefined, { name, avatarUrl, avatarPath }: Partial<Person>): Promise<Person> {
-  if (isSample(tripId)) { const me = sampleTrip().family[1] || sampleTrip().family[0]; if (name !== undefined) me.name = name; if (avatarUrl !== undefined) me.avatar = avatarUrl; return { ...me } }
-  return authClient.request(`${tripPath(tripId)}/members/me`, { method: 'PATCH', body: { name, avatarPath: avatarPath ?? avatarUrl } })
+export async function updateMe({ name }: Partial<Person>): Promise<Person> {
+  if (!hasBackend) { const me = sampleTrip().family[1] || sampleTrip().family[0]; if (name !== undefined) me.name = name; return { ...me } }
+  return authClient.request('/profile', { method: 'PATCH', body: { name } })
 }
-export async function uploadAvatar(tripId: Id, _userId: Id | undefined, file: File): Promise<string> {
-  if (isSample(tripId)) return URL.createObjectURL(file)
+export async function uploadAvatar(file: File): Promise<string> {
+  if (!hasBackend) {
+    const avatar = URL.createObjectURL(file)
+    const me = sampleTrip().family[1] || sampleTrip().family[0]
+    me.avatar = avatar
+    return avatar
+  }
   const form = new FormData(); form.append('avatar', file, file.name)
-  const result = await authClient.request(`${tripPath(tripId)}/members/me/avatar`, { method: 'POST', body: form })
-  return result.avatarPath
+  const result = await authClient.request('/profile/avatar', { method: 'POST', body: form })
+  return result.avatar
 }
 
 export function subscribeToTrip(tripId: Id, onChange: () => void) {

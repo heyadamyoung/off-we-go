@@ -19,6 +19,19 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   t.after(() => repository.close())
   await repository.migrate()
 
+  const schema = new pg.Client({ connectionString: databaseUrl })
+  await schema.connect()
+  const profileColumns = await schema.query(`select column_name from information_schema.columns
+    where table_schema='public' and table_name='profiles' order by column_name`)
+  const membershipColumns = await schema.query(`select column_name from information_schema.columns
+    where table_schema='public' and table_name='trip_members' order by column_name`)
+  await schema.end()
+  const profileColumnNames = new Set(profileColumns.rows.map(value => value.column_name))
+  for (const name of ['id', 'slug', 'display_name', 'avatar_path']) assert.equal(profileColumnNames.has(name), true)
+  assert.deepEqual(membershipColumns.rows.map(value => value.column_name), [
+    'joined_at', 'profile_id', 'role', 'trip_id',
+  ])
+
   assert.equal(await repository.emailAllowed('owner@example.com'), true)
   const expiresAt = new Date('2027-01-01T00:15:00.000Z')
   await repository.createOidcLogin({
@@ -42,6 +55,10 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   assert.deepEqual(await repository.resolveOidcUser({
     issuer: 'https://identity.example.com/oidc', subject: 'identity-user-1', email: 'renamed@example.com',
   }), user)
+  const uninvitedUser = await repository.resolveOidcUser({
+    issuer: 'https://identity.example.com/oidc', subject: 'identity-uninvited', email: 'new@example.com',
+  })
+  assert.equal(uninvitedUser.email, 'new@example.com')
   await repository.createLoginHandoff({
     hash: 'handoff-hash', userId: user.id, client: 'native', bindingHash: 'native-binding-hash', expiresAt,
   })
@@ -166,6 +183,11 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   const loaded = await repository.loadCurrentTrip(user, trip.slug)
   assert.equal(loaded.title, 'Persistent trip')
   assert.equal(loaded.members[0].role, 'owner')
+  const changedProfile = await repository.updateProfile(user, { name: 'Alex' })
+  assert.equal(changedProfile.profileId, user.id)
+  assert.match(changedProfile.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  const profileTrip = await repository.createTrip(user, { title: 'Profile check', dayCount: 1 })
+  assert.equal((await repository.loadCurrentTrip(user, profileTrip.slug)).members[0].displayName, 'Alex')
 
   const device = await repository.registerDevice(user, trip.id, {
     name: 'Phone', slug: 'phone-ab12', timezone: 'America/Regina', tokenHash: 'phone-hash',
@@ -228,9 +250,9 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   }])
   assert.equal((await repository.acceptInvite(friend, invitation.id)).tripId, trip.id)
   assert.deepEqual(await repository.listPendingInvites(friend), [])
-  assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.userId === friend.id).role, 'editor')
+  assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.profileId === friend.id).role, 'editor')
   await repository.upsertInvite(user, trip.id, { email: 'friend@example.com', name: 'Friend', role: 'viewer' })
-  assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.userId === friend.id).role, 'viewer')
+  assert.equal((await repository.loadCurrentTrip(friend, trip.slug)).members.find(value => value.profileId === friend.id).role, 'viewer')
   assert.equal(await repository.revokeInvite(user, trip.id, invitation.id), true)
   assert.equal(await repository.loadCurrentTrip(friend, trip.slug), null)
 

@@ -16,6 +16,8 @@ import { withFace } from './onboarding'
 import useLiveTrip from './model/use-live-trip'
 import useTripPresence from './model/use-trip-presence'
 import type { MapView, Person, TripData } from '../../shared/model/types'
+import { appErrorMessage } from '../../user-messages-core'
+import ToastNoticeView, { type ToastNotice } from '../../shared/ui/toast'
 
 interface TripAppProps {
   data: TripData
@@ -34,7 +36,7 @@ export default function TripApp({ data, onReload }: TripAppProps) {
   const [person, setPerson] = useState<string | null>(null)
   const [share, setShare] = useState(false)
   const [upload, setUpload] = useState(false)
-  const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [notice, setNotice] = useState<ToastNotice | null>(null)
   const [following, setFollowing] = useState(true)
 
   const { tripId, canEdit } = data
@@ -73,10 +75,10 @@ export default function TripApp({ data, onReload }: TripAppProps) {
   }, [data])
 
   const toastT = useRef(0)
-  const toast = useCallback((message: string) => {
-    setToastMsg(message)
+  const toast = useCallback((message: string, tone: ToastNotice['tone'] = 'success') => {
+    setNotice({ message, tone })
     window.clearTimeout(toastT.current)
-    toastT.current = window.setTimeout(() => setToastMsg(null), 2600)
+    toastT.current = window.setTimeout(() => setNotice(null), tone === 'error' ? 5200 : 3200)
   }, [])
   useEffect(() => () => window.clearTimeout(toastT.current), [])
 
@@ -197,20 +199,19 @@ export default function TripApp({ data, onReload }: TripAppProps) {
   const saveTrip = useCallback(async fields => {
     const before = trip
     setTrip(t => ({ ...t, ...fields }))
-    try { await updateTrip(tripId, fields) }
-    catch (e) { setTrip(before); toast(e.message || 'Could not save that') }
+    try { await updateTrip(tripId, fields); toast('Trip details saved') }
+    catch (e) { setTrip(before); toast(appErrorMessage(e, 'save-trip'), 'error') }
   }, [trip, tripId, toast])
 
   const saveMe = useCallback(async ({ name, file }) => {
-    let avatarUrl
     try {
-      if (file) avatarUrl = await uploadAvatar(tripId, me.id, file)
-      const saved = await updateMe(tripId, me.id, { name, avatarUrl })
+      if (file) await uploadAvatar(file)
+      const saved = await updateMe({ name })
       setMe(m => ({ ...m, ...saved }))
       setFamily(list => list.map(f => (f.id === me.id ? withFace({ ...f, ...saved }) : f)))
-      toast('Saved')
-    } catch (e) { toast(e.message || 'Could not save that') }
-  }, [tripId, me.id, toast])
+      toast('Profile saved')
+    } catch (e) { toast(appErrorMessage(e, 'save-profile'), 'error') }
+  }, [me.id, toast])
 
   const onPeople = useCallback(() => setShare(true), [])
   const onUpload = useCallback(() => setUpload(true), [])
@@ -324,7 +325,7 @@ export default function TripApp({ data, onReload }: TripAppProps) {
                              appLink={window.location.origin + window.location.pathname
                                       + (trip.slug ? `?t=${trip.slug}` : '')} />}
       {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhoto} live={live} stops={stops} toast={toast} />}
-      {toastMsg && <div className="toast">{toastMsg}</div>}
+      <ToastNoticeView notice={notice} />
     </div>
   )
 }

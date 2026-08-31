@@ -9,6 +9,10 @@ const migrationsDirectory = join(here, '..', 'migrations')
 
 const rows = result => result.rows || []
 const sha256 = value => createHash('sha256').update(value).digest('hex')
+const profileSlug = email => {
+  const base = String(email).split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'traveller'
+  return `${base}-${randomBytes(8).toString('hex')}`
+}
 
 export function migrationChecksumStatus(sql, storedChecksum) {
   const normalizedSql = sql.replaceAll('\r\n', '\n')
@@ -34,11 +38,19 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   const ensureUser = async (client, email) => {
     const result = await client.query(`insert into users(email) values($1)
       on conflict(email) do update set email=excluded.email returning id,email`, [email])
-    return result.rows[0]
+    const user = result.rows[0]
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const inserted = await client.query(`insert into profiles(id,slug,display_name)
+        values($1,$2,$3) on conflict do nothing returning id`,
+      [user.id, profileSlug(email), email.split('@')[0]])
+      if (inserted.rowCount || (await client.query('select 1 from profiles where id=$1', [user.id])).rowCount) break
+      if (attempt === 4) throw new Error('Could not allocate a unique profile slug')
+    }
+    return user
   }
 
   const memberRole = async (client, userId, tripId) => {
-    const result = await client.query('select role from trip_members where trip_id=$1 and user_id=$2', [tripId, userId])
+    const result = await client.query('select role from trip_members where trip_id=$1 and profile_id=$2', [tripId, userId])
     return result.rows[0]?.role || null
   }
 
@@ -304,8 +316,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           slug, input.title, input.crew || null, input.dates || null, input.dayCount || 1,
           input.startsOn || null, input.endsOn || null,
         ])
-        await client.query(`insert into trip_members(trip_id,user_id,role,display_name)
-          values($1,$2,'owner',$3)`, [result.rows[0].id, user.id, user.email.split('@')[0]])
+        await client.query(`insert into trip_members(trip_id,profile_id,role)
+          values($1,$2,'owner')`, [result.rows[0].id, user.id])
         await client.query('commit')
         return { ...camelTrip(result.rows[0]), ownerId: user.id }
       } catch (error) { await client.query('rollback'); throw error }
@@ -314,26 +326,27 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
 
     async listTrips(user) {
       const result = await pool.query(`select t.*,m.role from trips t
-        join trip_members m on m.trip_id=t.id where m.user_id=$1 order by t.created_at`, [user.id])
+        join trip_members m on m.trip_id=t.id where m.profile_id=$1 order by t.created_at`, [user.id])
       return result.rows.map(value => ({ ...camelTrip(value), role: value.role }))
     },
 
     async loadCurrentTrip(user, slug) {
       const values = [user.id]
-      let where = 'm.user_id=$1'
+      let where = 'm.profile_id=$1'
       if (slug) { values.push(slug); where += ' and t.slug=$2' }
       const tripResult = await pool.query(`select t.* from trips t join trip_members m on m.trip_id=t.id
         where ${where} order by t.created_at limit 1`, values)
       if (!tripResult.rows[0]) return null
       const trip = tripResult.rows[0]
       const [members, stops, photos, route, comments, likes] = await Promise.all([
-        pool.query(`select m.user_id,m.role,m.display_name,m.avatar_path,u.email from trip_members m
-          join users u on u.id=m.user_id where m.trip_id=$1 order by m.joined_at`, [trip.id]),
+        pool.query(`select m.profile_id,m.role,p.slug,p.display_name,p.avatar_path,u.email from trip_members m
+          join profiles p on p.id=m.profile_id join users u on u.id=p.id
+          where m.trip_id=$1 order by m.joined_at`, [trip.id]),
         pool.query('select * from stops where trip_id=$1 order by seq,created_at', [trip.id]),
         pool.query('select * from photos where trip_id=$1 order by seq,created_at', [trip.id]),
         pool.query('select lng,lat from route_points where trip_id=$1 order by seq', [trip.id]),
-        pool.query(`select c.*,coalesce(m.display_name,split_part(u.email,'@',1)) as author from comments c
-          join users u on u.id=c.user_id left join trip_members m on m.trip_id=c.trip_id and m.user_id=c.user_id
+        pool.query(`select c.*,p.display_name as author from comments c
+          join profiles p on p.id=c.user_id
           where c.trip_id=$1 order by c.created_at`, [trip.id]),
         pool.query('select photo_id from photo_likes where trip_id=$1 and user_id=$2', [trip.id, user.id]),
       ])
@@ -347,7 +360,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return {
         ...camelTrip(trip),
         members: rows(members).map(value => ({
-          userId: value.user_id, email: value.email, role: value.role,
+          profileId: value.profile_id, email: value.email, slug: value.slug, role: value.role,
           displayName: value.display_name, avatarUrl: value.avatar_path,
         })),
         stops: rows(stops).map(value => ({
@@ -382,23 +395,23 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const result = await pool.query('select * from trips where id=$1', [tripId])
       return result.rows[0] ? camelTrip(result.rows[0]) : null
     },
-    async updateProfile(user, tripId, changes) {
+    async updateProfile(user, changes) {
       const previous = changes.avatarPath !== undefined
-        ? await pool.query('select avatar_path from trip_members where trip_id=$1 and user_id=$2', [tripId, user.id])
+        ? await pool.query('select avatar_path from profiles where id=$1', [user.id])
         : null
       const entries = []
       if (changes.name !== undefined) entries.push(['display_name', changes.name])
       if (changes.avatarPath !== undefined) entries.push(['avatar_path', changes.avatarPath])
       if (entries.length) {
-        const set = entries.map(([column], index) => `${column}=$${index + 3}`).join(',')
-        await pool.query(`update trip_members set ${set} where trip_id=$1 and user_id=$2`,
-          [tripId, user.id, ...entries.map(([, value]) => value)])
+        const set = entries.map(([column], index) => `${column}=$${index + 2}`).join(',')
+        await pool.query(`update profiles set ${set},updated_at=now() where id=$1`,
+          [user.id, ...entries.map(([, value]) => value)])
       }
-      const result = await pool.query(`select m.*,u.email from trip_members m join users u on u.id=m.user_id
-        where m.trip_id=$1 and m.user_id=$2`, [tripId, user.id])
+      const result = await pool.query(`select p.*,u.email from profiles p join users u on u.id=p.id
+        where p.id=$1`, [user.id])
       const value = result.rows[0]
       return value ? {
-        userId: value.user_id, email: value.email, role: value.role,
+        profileId: value.id, email: value.email, slug: value.slug,
         displayName: value.display_name, avatarUrl: value.avatar_path,
         oldAvatarUrl: previous?.rows[0]?.avatar_path || null,
       } : null
@@ -486,7 +499,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           from invitation join trips t on t.id=invitation.trip_id`,
         [tripId, input.email, input.name, input.role])
         await client.query(`update trip_members m set role=$3 from users u
-          where m.trip_id=$1 and m.user_id=u.id and u.email=$2 and m.role<>'owner'`,
+          where m.trip_id=$1 and m.profile_id=u.id and u.email=$2 and m.role<>'owner'`,
         [tripId, input.email, input.role])
         await client.query('commit')
         const value = result.rows[0]
@@ -517,9 +530,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         [inviteId, user.email])
         const invite = result.rows[0]
         if (!invite) { await client.query('rollback'); return null }
-        await client.query(`insert into trip_members(trip_id,user_id,role,display_name)
-          values($1,$2,$3,$4) on conflict(trip_id,user_id) do nothing`,
-        [invite.trip_id, user.id, invite.role, invite.name || user.email.split('@')[0]])
+        await client.query(`insert into trip_members(trip_id,profile_id,role)
+          values($1,$2,$3) on conflict(trip_id,profile_id) do nothing`,
+        [invite.trip_id, user.id, invite.role])
         await client.query('update trip_invites set claimed_at=now() where id=$1', [invite.id])
         await client.query('commit')
         return {
@@ -545,7 +558,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           where id=$1 and trip_id=$2 for update`, [inviteId, tripId])
         if (!invite.rows[0]) { await client.query('rollback'); return false }
         await client.query(`delete from trip_members m using users u
-          where m.trip_id=$1 and m.user_id=u.id and u.email=$2 and m.role<>'owner'`,
+          where m.trip_id=$1 and m.profile_id=u.id and u.email=$2 and m.role<>'owner'`,
         [tripId, invite.rows[0].email])
         await client.query('delete from trip_invites where id=$1 and trip_id=$2', [inviteId, tripId])
         await client.query('commit')
@@ -553,19 +566,19 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       } catch (error) { await client.query('rollback'); throw error }
       finally { client.release() }
     },
-    async removeMember(user, tripId, memberUserId) {
+    async removeMember(user, tripId, profileId) {
       if (!await this.canManageTrip(user.id, tripId)) return null
       const client = await pool.connect()
       try {
         await client.query('begin')
-        const result = await client.query(`select m.role,u.email from trip_members m join users u on u.id=m.user_id
-          where m.trip_id=$1 and m.user_id=$2 for update`, [tripId, memberUserId])
+        const result = await client.query(`select m.role,u.email from trip_members m join users u on u.id=m.profile_id
+          where m.trip_id=$1 and m.profile_id=$2 for update`, [tripId, profileId])
         const member = result.rows[0]
         if (!member) { await client.query('rollback'); return null }
         if (member.role === 'owner') { await client.query('rollback'); return 'owner' }
-        await client.query('delete from devices where trip_id=$1 and user_id=$2', [tripId, memberUserId])
+        await client.query('delete from devices where trip_id=$1 and user_id=$2', [tripId, profileId])
         await client.query('delete from trip_invites where trip_id=$1 and email=$2', [tripId, member.email])
-        await client.query('delete from trip_members where trip_id=$1 and user_id=$2', [tripId, memberUserId])
+        await client.query('delete from trip_members where trip_id=$1 and profile_id=$2', [tripId, profileId])
         await client.query('commit')
         return 'removed'
       } catch (error) { await client.query('rollback'); throw error }
@@ -578,8 +591,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       [tripId, user.id, body, photoId])
       const value = result.rows[0]
       if (!value) return null
-      const member = await pool.query(`select coalesce(display_name,split_part($3,'@',1)) name
-        from trip_members where trip_id=$1 and user_id=$2`, [tripId, user.id, user.email])
+      const member = await pool.query('select display_name name from profiles where id=$1', [user.id])
       return {
         id: value.id, by: member.rows[0]?.name, text: value.body, userId: value.user_id,
         when: new Date(value.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
@@ -587,7 +599,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async deleteComment(user, tripId, commentId) {
       const result = await pool.query(`delete from comments c where c.id=$1 and c.trip_id=$2
-        and (c.user_id=$3 or exists(select 1 from trip_members m where m.trip_id=$2 and m.user_id=$3 and m.role in ('owner','editor')))`,
+        and (c.user_id=$3 or exists(select 1 from trip_members m where m.trip_id=$2 and m.profile_id=$3 and m.role in ('owner','editor')))`,
       [commentId, tripId, user.id])
       return result.rowCount > 0
     },
@@ -606,8 +618,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async createPhoto(user, tripId, input) {
       if (!await this.canEditTrip(user.id, tripId)) return null
-      const member = await pool.query(`select coalesce(display_name,split_part($3,'@',1)) as name
-        from trip_members where trip_id=$1 and user_id=$2`, [tripId, user.id, user.email])
+      const member = await pool.query('select display_name name from profiles where id=$1', [user.id])
       const result = await pool.query(`insert into photos
         (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,thumb_path,client_key,seq)
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,(select count(*) from photos where trip_id=$1)) returning *`, [
@@ -773,13 +784,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
-        const soleTrips = await client.query(`select m.trip_id from trip_members m where m.user_id=$1 and m.role='owner'
-          and not exists(select 1 from trip_members other where other.trip_id=m.trip_id and other.role='owner' and other.user_id<>$1)`, [user.id])
+        const soleTrips = await client.query(`select m.trip_id from trip_members m where m.profile_id=$1 and m.role='owner'
+          and not exists(select 1 from trip_members other where other.trip_id=m.trip_id and other.role='owner' and other.profile_id<>$1)`, [user.id])
         const tripIds = soleTrips.rows.map(value => value.trip_id)
         const files = await client.query(`
           select storage_path path from photos where user_id=$1 or trip_id=any($2::uuid[])
           union select thumb_path from photos where thumb_path is not null and (user_id=$1 or trip_id=any($2::uuid[]))
-          union select avatar_path from trip_members where avatar_path is not null and (user_id=$1 or trip_id=any($2::uuid[]))`,
+          union select avatar_path from profiles where id=$1 and avatar_path is not null`,
         [user.id, tripIds])
         for (const { path } of files.rows.filter(value => value.path)) {
           await client.query(`insert into file_deletion_queue(path) values($1)

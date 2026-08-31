@@ -65,7 +65,7 @@ test('an invited account must explicitly accept before it can read the trip', as
   const loaded = await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization: viewer } })
   assert.equal(loaded.statusCode, 200)
   assert.equal(loaded.json().canEdit, false)
-  assert.equal(loaded.json().me.name, 'Alex')
+  assert.equal(loaded.json().me.name, 'friend', 'an inviter cannot overwrite the invited user’s global profile')
 
   const forbidden = await app.inject({
     method: 'POST', url: `/api/trips/${trip.id}/stops`, headers: { authorization: viewer },

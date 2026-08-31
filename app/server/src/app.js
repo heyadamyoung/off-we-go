@@ -436,14 +436,15 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!row) return reply.code(404).send({ error: 'No trip found' })
 
     const member = value => ({
-      id: value.userId,
+      id: value.profileId,
+      slug: value.slug,
       name: value.displayName || value.email.split('@')[0],
       role: ['owner', 'editor'].includes(value.role) ? 'Travelling' : 'Following',
       memberRole: value.role,
       avatar: value.avatarUrl ? mediaUrl(value.avatarUrl) : null,
     })
     const family = row.members.map(member)
-    const me = member(row.members.find(value => value.userId === user.id))
+    const me = member(row.members.find(value => value.profileId === user.id))
     return {
       source: 'vps', tripId: row.id,
       trip: {
@@ -457,7 +458,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       })),
       route: row.route,
       comments: row.comments, likes: row.likes, family,
-      canEdit: ['owner', 'editor'].includes(row.members.find(value => value.userId === user.id)?.role),
+      canEdit: ['owner', 'editor'].includes(row.members.find(value => value.profileId === user.id)?.role),
       me,
     }
   })
@@ -505,28 +506,24 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return trip
   })
 
-  app.patch('/api/trips/:tripId/members/me', async (request, reply) => {
+  app.patch('/api/profile', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const member = await repository.updateProfile(user, request.params.tripId, {
+    const profile = await repository.updateProfile(user, {
       ...(request.body?.name !== undefined ? { name: String(request.body.name).trim() || user.email.split('@')[0] } : {}),
-      ...(request.body?.avatarPath !== undefined ? { avatarPath: request.body.avatarPath } : {}),
     })
-    if (!member) return reply.code(404).send({ error: 'Trip membership not found' })
+    if (!profile) return reply.code(404).send({ error: 'Profile not found' })
     return {
-      id: member.userId, name: member.displayName || member.email.split('@')[0],
-      role: ['owner', 'editor'].includes(member.role) ? 'Travelling' : 'Following',
-      memberRole: member.role, avatar: member.avatarUrl ? mediaUrl(member.avatarUrl) : null,
+      id: profile.profileId, slug: profile.slug,
+      name: profile.displayName || profile.email.split('@')[0],
+      avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
     }
   })
 
-  app.post('/api/trips/:tripId/members/me/avatar', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
+  app.post('/api/profile/avatar', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     if (!fileStore?.storeAvatar) return reply.code(503).send({ error: 'Avatar storage is not configured' })
-    if (!await repository.canReadTrip(user.id, request.params.tripId)) {
-      return reply.code(403).send({ error: 'You cannot edit this profile' })
-    }
     let bytes = null
     for await (const part of request.parts()) {
       if (part.type !== 'file') continue
@@ -535,15 +532,15 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
     if (!bytes?.length) return reply.code(400).send({ error: 'Choose an avatar to upload' })
     let stored
-    try { stored = await fileStore.storeAvatar({ tripId: request.params.tripId, userId: user.id, bytes }) }
+    try { stored = await fileStore.storeAvatar({ profileId: user.id, bytes }) }
     catch { return reply.code(400).send({ error: 'That file is not a readable image' }) }
-    const member = await repository.updateProfile(user, request.params.tripId, stored)
-    if (!member) {
+    const profile = await repository.updateProfile(user, stored)
+    if (!profile) {
       await fileStore.remove(stored.avatarPath).catch(() => {})
-      return reply.code(404).send({ error: 'Trip membership not found' })
+      return reply.code(404).send({ error: 'Profile not found' })
     }
-    if (member.oldAvatarUrl && member.oldAvatarUrl !== stored.avatarPath) {
-      await fileStore.remove(member.oldAvatarUrl).catch(() => {})
+    if (profile.oldAvatarUrl && profile.oldAvatarUrl !== stored.avatarPath) {
+      await fileStore.remove(profile.oldAvatarUrl).catch(() => {})
     }
     return reply.code(201).send({ avatarPath: stored.avatarPath, avatar: mediaUrl(stored.avatarPath) })
   })
@@ -852,10 +849,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     return reply.code(204).send()
   })
 
-  app.delete('/api/trips/:tripId/members/:userId', async (request, reply) => {
+  app.delete('/api/trips/:tripId/members/:profileId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const result = await repository.removeMember(user, request.params.tripId, request.params.userId)
+    const result = await repository.removeMember(user, request.params.tripId, request.params.profileId)
     if (result === 'owner') return reply.code(409).send({ error: 'A trip owner cannot be removed' })
     if (result !== 'removed') return reply.code(404).send({ error: 'Trip member not found' })
     return reply.code(204).send()

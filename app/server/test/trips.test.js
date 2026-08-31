@@ -42,12 +42,12 @@ test('an authenticated owner can create and reload a trip in the app contract', 
     },
     stops: [], photos: [], route: [], comments: {}, likes: [],
     family: [{
-      id: created.json().ownerId, name: 'owner', role: 'Travelling',
+      id: created.json().ownerId, slug: 'owner-100001', name: 'owner', role: 'Travelling',
       memberRole: 'owner', avatar: null,
     }],
     canEdit: true,
     me: {
-      id: created.json().ownerId, name: 'owner', role: 'Travelling',
+      id: created.json().ownerId, slug: 'owner-100001', name: 'owner', role: 'Travelling',
       memberRole: 'owner', avatar: null,
     },
   })
