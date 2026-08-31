@@ -104,7 +104,7 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Connect ${name} to Wayfare</title>
+  <title>Connect ${name} to Off We Go</title>
   <style nonce="${nonce}">
     :root{color-scheme:dark;--bg:#0a0c10;--bg1:#0d1016;--bg2:#12161e;--bg3:#181d27;--line:#1a1f2a;--line2:#272e3b;--ink:#eef1f6;--ink2:#a2abbb;--ink3:#68738a;--disclosure:#b5becc;--warning:#ff9a6b;--success:#4ade80;--hot:#ff7a3d;--hot2:#ff6a24;--hot-soft:#2a1409;--ok:#22c55e;--ok-soft:#0f2a1c;--shadow:0 1px 2px rgba(0,0,0,.5),0 18px 50px rgba(0,0,0,.55)}
     :root[data-theme="light"]{color-scheme:light;--bg:#eef1f5;--bg1:#fff;--bg2:#fff;--bg3:#eff2f7;--line:#e2e7ee;--line2:#d2d9e3;--ink:#101620;--ink2:#525c6b;--ink3:#8b94a3;--disclosure:#4b5565;--warning:#9a3412;--success:#067647;--hot:#e2561b;--hot2:#c84812;--hot-soft:#fdeee6;--ok:#0e9f6e;--ok-soft:#e7f8f0;--shadow:0 1px 2px rgba(16,24,40,.06),0 14px 40px rgba(16,24,40,.13)}
@@ -124,12 +124,12 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
 </head>
 <body>
 <main>
-  <div class="brand"><img src="/wayfare-icon.png" alt=""><span>Wayfare</span></div>
+  <div class="brand"><img src="/wayfare-icon.png" alt=""><span>Off We Go</span></div>
   <section class="card">
     <div class="top">
-      <div class="apps"><span class="app">${escapeHtml(client.clientName.slice(0, 1).toUpperCase())}</span><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M15 8l4 4-4 4"/></svg><span class="app w"><img src="/wayfare-icon.png" alt="Wayfare"></span></div>
+      <div class="apps"><span class="app">${escapeHtml(client.clientName.slice(0, 1).toUpperCase())}</span><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M15 8l4 4-4 4"/></svg><span class="app w"><img src="/wayfare-icon.png" alt="Off We Go"></span></div>
       <div class="unverified">Unverified client</div>
-      <h1>Connect ${name} to Wayfare?</h1>
+      <h1>Connect ${name} to Off We Go?</h1>
       <p class="sub">This lets the MCP client act on your trips with the permissions below.</p>
       <div class="connection-route"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7H6a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-3M14 4l4 4-4 4M18 8H9"/></svg><div><span>Returns to ${name}${returnsToThisDevice ? ' on this device' : ''}</span><code>${redirectOrigin}</code></div></div>
       <details class="technical-details"><summary>Connection details</summary><div class="technical-copy"><span>Client ID</span><code>${escapeHtml(client.id)}</code>${clientUri ? `<span>Self-reported website</span><a class="client-link" href="${escapeHtml(clientUri)}" rel="noreferrer">${escapeHtml(clientUri)}</a>` : ''}</div></details>
@@ -138,7 +138,7 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
       <div class="label">Requested access</div>
       <div class="permission"><span class="permission-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg></span><div class="permission-copy"><strong>View your trips</strong><span>Trip details, stops, routes, photo metadata and comments</span></div><input type="checkbox" checked disabled aria-label="View trips required"></div>
       ${writeRequested ? `<div class="permission"><span class="permission-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16zM13.5 6.5l4 4"/></svg></span><div class="permission-copy"><strong>Create and edit trip details</strong><span>Add or change trips, stops, routes, photos, comments and invitations</span></div><input id="write-scope" type="checkbox" checked aria-label="Allow trip editing"></div>` : ''}
-      <div id="identity" class="identity">Checking your Wayfare sign-in…</div>
+      <div id="identity" class="identity">Checking your Off We Go sign-in…</div>
       <div id="login" class="login">
         <div class="label">Sign in to continue</div>
         <a href="${signInHref}">Continue to sign in</a>
@@ -147,7 +147,7 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
       <div class="actions"><button id="deny" class="deny" type="button">Cancel</button><button id="approve" class="approve" type="button" disabled>Allow access</button></div>
       <p id="message" class="message" role="status"></p>
     </div>
-    <div class="fine">Your MCP client can revoke this connection through Wayfare’s OAuth revocation endpoint. Wayfare never shares your password.</div>
+    <div class="fine">Your MCP client can revoke this connection through Off We Go’s OAuth revocation endpoint. Off We Go never shares your password.</div>
   </section>
 </main>
 <script nonce="${nonce}">
@@ -156,9 +156,9 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
   let accessToken=null;
   try { accessToken=JSON.parse(localStorage.getItem(sessionKey)||'null')?.accessToken||null } catch {}
   const check=async()=>{
-    if(!accessToken){identity.textContent='Sign in to Wayfare before granting access.';login.classList.add('show');return}
+    if(!accessToken){identity.textContent='Sign in to Off We Go before granting access.';login.classList.add('show');return}
     try{const response=await fetch('/api/auth/session',{headers:{authorization:'Bearer '+accessToken}});if(!response.ok)throw new Error();const data=await response.json();identity.textContent='Signed in as '+data.user.email;identity.classList.add('good');approve.disabled=false}
-    catch{accessToken=null;localStorage.removeItem(sessionKey);identity.textContent='Your Wayfare sign-in has expired.';login.classList.add('show')}
+    catch{accessToken=null;localStorage.removeItem(sessionKey);identity.textContent='Your Off We Go sign-in has expired.';login.classList.add('show')}
   };
   const decide=async approveValue=>{message.textContent='';const scopes=['trips:read'];if(document.querySelector('#write-scope')?.checked)scopes.push('trips:write');const response=await fetch('/api/oauth/consent',{method:'POST',headers:{authorization:'Bearer '+accessToken,'content-type':'application/json'},body:JSON.stringify({requestToken,approve:approveValue,scope:scopes.join(' ')})});const data=await response.json();if(!response.ok){message.textContent=data.error||'Authorization failed.';return}location.assign(data.redirectTo)};
   approve.addEventListener('click',()=>decide(true));document.querySelector('#deny').addEventListener('click',()=>decide(false));check();
@@ -191,8 +191,8 @@ function tripForMcp(row) {
 }
 
 function buildMcpServer({ repository, user, scopes, fileStore, sendInvite, logger, clock }) {
-  const server = new McpServer({ name: 'Wayfare Trips', version: '1.0.0' }, {
-    instructions: 'Use these tools to read and maintain the authenticated user’s Wayfare trips. IDs returned by get_trip are required by mutation tools.',
+  const server = new McpServer({ name: 'Off We Go Trips', version: '1.0.0' }, {
+    instructions: 'Use these tools to read and maintain the authenticated user’s Off We Go trips. IDs returned by get_trip are required by mutation tools.',
   })
   server.registerTool('list_trips', {
     description: 'List every trip accessible to the authenticated user, including IDs, slugs and the user’s role.',
@@ -210,7 +210,7 @@ function buildMcpServer({ repository, user, scopes, fileStore, sendInvite, logge
   if (!scopes.includes('trips:write')) return server
 
   server.registerTool('create_trip', {
-    description: 'Create a Wayfare trip owned by the authenticated user.',
+    description: 'Create a Off We Go trip owned by the authenticated user.',
     inputSchema: z.object({
       title: z.string().trim().min(1).max(160), crew: z.string().max(240).nullable().optional(),
       dates: z.string().max(160).nullable().optional(), dayCount: z.number().int().min(1).max(1000).optional(),
@@ -388,7 +388,7 @@ export async function registerMcpRoutes(app, {
   }
   const protectedMetadata = {
     resource, authorization_servers: [root], scopes_supported: SCOPES,
-    bearer_methods_supported: ['header'], resource_name: 'Wayfare Trips',
+    bearer_methods_supported: ['header'], resource_name: 'Off We Go Trips',
   }
   const oauthWindows = new Map(), inviteWindows = new Map()
   const limited = (key, max, windowMs) => {
@@ -428,7 +428,7 @@ export async function registerMcpRoutes(app, {
       return oauthError(reply, 'invalid_redirect_uri', 'Provide HTTPS or loopback HTTP redirect URIs without fragments')
     }
     if (body.token_endpoint_auth_method && body.token_endpoint_auth_method !== 'none') {
-      return oauthError(reply, 'invalid_client_metadata', 'Wayfare dynamically registers public clients only')
+      return oauthError(reply, 'invalid_client_metadata', 'Off We Go dynamically registers public clients only')
     }
     const clientUri = safeMetadataUrl(body.client_uri), logoUri = safeMetadataUrl(body.logo_uri)
     if ((body.client_uri && !clientUri) || (body.logo_uri && !logoUri)) {
@@ -466,7 +466,7 @@ export async function registerMcpRoutes(app, {
     const scopes = requestedScopes(query.scope)
     if (!scopes) return fail('invalid_scope', 'Only trips:read and trips:write can be requested')
     const wantedResource = String(query.resource || resource)
-    if (wantedResource !== resource) return fail('invalid_target', 'The token resource must be the Wayfare MCP endpoint')
+    if (wantedResource !== resource) return fail('invalid_target', 'The token resource must be the Off We Go MCP endpoint')
     const authorizationRequest = {
       issuedAt: clock().getTime(), clientId: client.id, redirectUri, scopes,
       state: String(query.state || ''), codeChallenge: String(query.code_challenge), resource,
@@ -613,7 +613,7 @@ export async function registerMcpRoutes(app, {
       const grant = accessToken ? await repository.findMcpAccessToken(tokenHash(accessToken), clock()) : null
       if (!grant || grant.resource !== resource || !grant.scopes.includes('trips:read')) {
         return reply.header('www-authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="trips:read"`)
-          .code(401).send({ error: 'invalid_token', error_description: 'A valid Wayfare MCP token is required' })
+          .code(401).send({ error: 'invalid_token', error_description: 'A valid Off We Go MCP token is required' })
       }
       request.raw.auth = {
         token: accessToken, clientId: grant.clientId, scopes: grant.scopes,

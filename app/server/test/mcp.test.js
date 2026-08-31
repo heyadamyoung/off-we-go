@@ -111,7 +111,7 @@ test('publishes OAuth metadata for the protected MCP resource', async () => {
   assert.deepEqual(resource.json(), {
     resource: `${root}/mcp`, authorization_servers: [root],
     scopes_supported: ['trips:read', 'trips:write'],
-    bearer_methods_supported: ['header'], resource_name: 'Wayfare Trips',
+    bearer_methods_supported: ['header'], resource_name: 'Off We Go Trips',
   })
   const unrelatedRootResource = await app.inject({ method: 'GET', url: '/.well-known/oauth-protected-resource' })
   assert.equal(unrelatedRootResource.statusCode, 404)
