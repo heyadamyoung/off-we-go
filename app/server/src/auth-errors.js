@@ -23,6 +23,7 @@ const knownErrors = new Map([
   ['connector.invalid_config', ['auth.email_delivery_unavailable', 'Email verification is temporarily unavailable. Please try again later.']],
   ['connector.template_not_found', ['auth.email_delivery_unavailable', 'Email verification is temporarily unavailable. Please try again later.']],
   ['user.sign_up_method_not_enabled', ['auth.registration_unavailable', 'Account creation is temporarily unavailable. Please try again later.']],
+  ['user.missing_profile', ['auth.profile_incomplete', 'Your account details are incomplete. Check your handle and try again.']],
 ])
 
 export function safeExperienceError(status, body, path = '') {

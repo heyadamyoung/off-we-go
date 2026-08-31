@@ -12,6 +12,7 @@ function recordingClient() {
         calls.push({ path, ...options })
         if (path.endsWith('/start')) return { started: true, interaction: 'opaque-interaction' }
         if (path.endsWith('/verification/password')) return { verificationId: 'password-check' }
+        if (path.endsWith('/handle')) return { handle: 'adam-young' }
         if (path.endsWith('/verification/verification-code') && !path.endsWith('/verify')) {
           return { verificationId: 'email-code' }
         }
@@ -52,7 +53,7 @@ test('custom account creation verifies the email before setting a password', asy
   const recorder = recordingClient()
   const experience = createLogtoExperienceClient(recorder.api)
 
-  const verificationId = await experience.sendRegistrationCode(' Invited@Example.com ', 'adam-young')
+  const verificationId = await experience.sendRegistrationCode(' Invited@Example.com ', ' @Adam-Young ')
   await experience.completeRegistration({
     verificationId, code: '204913', password: 'a sufficiently long password',
   })
@@ -65,17 +66,19 @@ test('custom account creation verifies the email before setting a password', asy
     ['/auth/experience/verification/verification-code', 'POST'],
     ['/auth/experience/verification/verification-code/verify', 'POST'],
     ['/auth/experience/profile', 'POST'],
+    ['/auth/experience/profile', 'POST'],
     ['/auth/experience/identification', 'POST'],
     ['/auth/experience/submit', 'POST'],
   ])
-  assert.deepEqual(recorder.calls[2].body, { handle: 'adam-young' })
+  assert.deepEqual(recorder.calls[2].body, { handle: ' @Adam-Young ' })
   assert.deepEqual(recorder.calls[4].body, {
     identifier: { type: 'email', value: 'invited@example.com' },
     verificationId: 'email-code',
     code: '204913',
   })
-  assert.deepEqual(recorder.calls[5].body, { type: 'password', value: 'a sufficiently long password' })
-  assert.equal(recorder.calls[7].headers['x-wayfare-experience'], 'opaque-interaction')
+  assert.deepEqual(recorder.calls[5].body, { type: 'username', value: 'wayfare_adam_young' })
+  assert.deepEqual(recorder.calls[6].body, { type: 'password', value: 'a sufficiently long password' })
+  assert.equal(recorder.calls[8].headers['x-wayfare-experience'], 'opaque-interaction')
   assert.equal(recorder.accepted().user.email, 'invited@example.com')
 })
 

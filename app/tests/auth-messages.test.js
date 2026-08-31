@@ -19,6 +19,7 @@ test('auth errors turn provider codes into comprehensive actionable messages', (
     ['connector.not_found', 501, 'Email verification is temporarily unavailable. Please try again later.'],
     ['connector.rate_limit_exceeded', 429, 'Too many attempts. Wait a moment, then try again.'],
     ['auth.email_delivery_unavailable', 501, 'Email verification is temporarily unavailable. Please try again later.'],
+    ['auth.profile_incomplete', 422, 'Your account details are incomplete. Check your handle and try again.'],
   ]
 
   for (const [code, status, expected] of cases) {

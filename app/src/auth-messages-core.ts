@@ -41,6 +41,7 @@ const messagesByCode: Record<string, string> = {
   'connector.template_not_found': 'Email verification is temporarily unavailable. Please try again later.',
   'auth.email_delivery_unavailable': 'Email verification is temporarily unavailable. Please try again later.',
   'user.sign_up_method_not_enabled': 'Account creation is temporarily unavailable. Please try again later.',
+  'auth.profile_incomplete': 'Your account details are incomplete. Check your handle and try again.',
 }
 
 const fallbacks: Record<AuthAction, { invalid: string; unavailable: string }> = {
