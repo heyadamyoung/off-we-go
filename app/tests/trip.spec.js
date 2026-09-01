@@ -170,13 +170,23 @@ test('a long note cannot push the detail card off the top of a phone', async ({ 
   await expect(card).toBeVisible()
 
   // Below the bar, not merely on the screen: the bar is opaque, so a card that
-  // starts underneath it hides its own header just as completely.
-  const bar = await page.locator('header').first().boundingBox()
-  const box = await card.boundingBox()
-  expect(box.y, 'the card starts behind the top bar').toBeGreaterThanOrEqual(bar.y + bar.height)
-
+  // starts underneath it hides its own header just as completely. Every rect
+  // goes into the message — a failure here is about geometry, and "not in
+  // viewport" on its own does not say which edge went where.
   const close = card.getByRole('button', { name: 'Close' })
-  await expect(close, 'the only way back to the map is off the screen').toBeInViewport()
+  await expect(close).toBeVisible()
+  const [bar, box, x] = await Promise.all([
+    page.locator('header').first().boundingBox(), card.boundingBox(), close.boundingBox(),
+  ])
+  const where = `card ${JSON.stringify(box)} close ${JSON.stringify(x)} bar ${JSON.stringify(bar)}`
+
+  expect(box.y, `the card starts behind the top bar — ${where}`)
+    .toBeGreaterThanOrEqual(bar.y + bar.height)
+  expect(box.y + box.height, `the card runs off the bottom — ${where}`).toBeLessThanOrEqual(845)
+  expect(x.y, `the way back to the map is above the screen — ${where}`).toBeGreaterThanOrEqual(0)
+  expect(x.y + x.height, `the way back to the map is below the screen — ${where}`)
+    .toBeLessThanOrEqual(844)
+
   await close.click()
   await expect(card).toHaveCount(0)
 })
