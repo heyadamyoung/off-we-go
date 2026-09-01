@@ -1,6 +1,10 @@
 const timeOf = value => value instanceof Date ? value.getTime() : new Date(value).getTime()
 
-export function mergeLiveFixes(current, incoming, maxPerDevice = 6000) {
+export function liveRetryDelay(failures) {
+  return Math.min(30_000, 1_000 * (2 ** Math.max(0, Math.min(30, failures))))
+}
+
+export function mergeLiveFixes(current, incoming, maxPerDevice = 50_000) {
   const byDevice = new Map()
   for (const fix of [...current, ...incoming]) {
     if (!fix?.deviceId || !Number.isFinite(timeOf(fix.at))) continue

@@ -910,7 +910,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.get('/api/trips/:tripId/live', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const hours = Math.min(Math.max(finite(request.query?.hours) || 24, 1), 168)
+    const hours = Math.min(Math.max(finite(request.query?.hours) || 24, 1), 720)
     const rawCursor = finite(request.query?.cursor)
     const cursor = rawCursor == null ? 0 : Math.max(0, Math.floor(rawCursor))
     const result = await repository.loadLive(

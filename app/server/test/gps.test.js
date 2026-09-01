@@ -29,6 +29,17 @@ test('a registered phone can report an idempotent GPS fix that its trip can read
   const device = registered.json()
   assert.match(device.token, /^[A-Za-z0-9_-]{32,}$/)
 
+  const olderFix = {
+    _type: 'location', lat: 55.94, lon: -3.2,
+    tst: Math.floor(new Date('2027-05-15T13:20:00.000Z').getTime() / 1000),
+    acc: 9, vel: 0,
+  }
+  assert.equal((await app.inject({
+    method: 'POST', url: '/api/ingest/track',
+    headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+    payload: olderFix,
+  })).statusCode, 200)
+
   const fix = {
     _type: 'location', lat: 55.9533, lon: -3.1883, tst: 1812115200,
     acc: 7, alt: 51, vel: 4.5, cog: 90, batt: 82,
@@ -52,6 +63,11 @@ test('a registered phone can report an idempotent GPS fix that its trip can read
     accuracy: 7, speed: 1.25, at: '2027-06-04T13:20:00.000Z',
   }])
   assert.equal(Number.isInteger(live.json().cursor), true)
+
+  const tripHistory = await app.inject({
+    method: 'GET', url: `/api/trips/${trip.id}/live?hours=720`, headers: { authorization },
+  })
+  assert.equal(tripHistory.json().fixes.some(value => value.at === '2027-05-15T13:20:00.000Z'), true)
 
   const newerFix = { ...fix, lat: 55.954, tst: fix.tst + 30 }
   await app.inject({

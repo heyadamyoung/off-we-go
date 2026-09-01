@@ -318,15 +318,30 @@ export async function loadLive(tripId: Id, { hours = 24, cursor = null }: { hour
     fixes: result.fixes.map(asFix), cursor: result.cursor,
   }
 }
-export function subscribeToPositions(tripId: Id, onFix: (fix: LiveFix) => void, initialCursor = 0) {
+export function subscribeToPositions(
+  tripId: Id,
+  onFix: (fix: LiveFix) => void,
+  initialCursor = 0,
+  { hours = 24, onState }: {
+    hours?: number
+    onState?: (state: 'ready' | 'error', error?: unknown) => void
+  } = {},
+) {
   if (isSample(tripId)) return () => {}
-  let stopped = false, cursor = initialCursor
+  let stopped = false, polling = false, cursor = initialCursor
   const poll = async () => {
+    if (polling || stopped) return
+    polling = true
     try {
-      const result = await loadLive(tripId, { hours: 24, cursor })
+      const result = await loadLive(tripId, { hours, cursor })
       for (const fix of result.fixes) onFix(fix)
       cursor = result.cursor
-    } catch {}
+      onState?.('ready')
+    } catch (error) {
+      onState?.('error', error)
+    } finally {
+      polling = false
+    }
   }
   const timer = setInterval(() => { if (!stopped) poll() }, 10_000)
   return () => { stopped = true; clearInterval(timer) }

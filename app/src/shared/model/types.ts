@@ -86,6 +86,8 @@ export interface LiveFix {
   lng: number
   lat: number
   at: Date
+  accuracy?: number | null
+  speed?: number | null
   [key: string]: unknown
 }
 

@@ -4,6 +4,12 @@ import assert from 'node:assert/strict'
 const moduleUnderTest = await import('../src/api-client-core.ts').catch(() => null)
 const liveModule = await import('../src/live-positions-core.ts').catch(() => null)
 
+test('live polling retry delays grow exponentially but remain bounded', () => {
+  assert.equal(liveModule.liveRetryDelay(0), 1_000)
+  assert.equal(liveModule.liveRetryDelay(3), 8_000)
+  assert.equal(liveModule.liveRetryDelay(99), 30_000)
+})
+
 test('the VPS client exchanges an OIDC handoff, persists the session and authenticates requests', async () => {
   assert.ok(moduleUnderTest?.createApiClient, 'the self-hosted API client has not been implemented')
   const saved = new Map()

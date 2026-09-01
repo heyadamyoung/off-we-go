@@ -15,6 +15,7 @@ import { AttractionCard } from '../../sights'
 import { TripSettingsSheet } from '../../people'
 import { appErrorMessage } from '../../../user-messages-core'
 import { liveFollowView } from '../../../live-map-view-core'
+import { applyLiveStopStatuses } from '../../../live-stop-progress-core'
 import useLiveTrip from '../model/use-live-trip'
 import useTripPresence from '../model/use-trip-presence'
 import useTripData from '../model/use-trip-data'
@@ -108,10 +109,12 @@ function Trip({ data, busyEditing }:
     () => [...stops].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)), [stops])
   const {
     phones, setPhones, track, live, livePoints, liveReady, sun, mapTheme, markers, trail,
-    progress, progressCopy,
-  } = useLiveTrip({ tripId, route, stops: ordered, family, mapOverride })
+    progress, progressCopy, latestGpsPosition,
+  } = useLiveTrip({ tripId, trip, route, stops: ordered, family, mapOverride })
   const liveStop = progress.currentStop || progress.destination
   const day = search.day || liveStop?.day || ALL_DAYS
+  const liveStops = useMemo(
+    () => applyLiveStopStatuses(ordered, progress), [ordered, progress])
 
   const {
     photos, setPhotos, comments, likes, viewer, viewerList,
@@ -142,11 +145,11 @@ function Trip({ data, busyEditing }:
   }, [live, livePoints, liveReady, following])
 
   const items = useMemo(
-    () => tripItems({ stops: ordered, photos, day, query }), [ordered, photos, day, query])
+    () => tripItems({ stops: liveStops, photos, day, query }), [liveStops, photos, day, query])
   const selectedItem = useMemo(
     () => items.find(item => item.id === selected)
-      || tripItems({ stops: ordered, photos, day: ALL_DAYS }).find(item => item.id === selected),
-    [items, ordered, photos, selected])
+      || tripItems({ stops: liveStops, photos, day: ALL_DAYS }).find(item => item.id === selected),
+    [items, liveStops, photos, selected])
 
   const liveDay = liveStop?.day
 
@@ -247,9 +250,9 @@ function Trip({ data, busyEditing }:
   return (
     <div className="fixed inset-0 overflow-hidden bg-canvas text-ink">
       <MapCanvas theme={mapTheme} tint={sun} view={mapView} onView={onMapView}
-        route={routeDraft || track} stops={stops} photos={photos} markers={markers} trail={trail}
+        route={routeDraft || track} stops={liveStops} photos={photos} markers={markers} trail={trail}
         selectedStop={selected} labels={mapView.zoom > 13} onStop={pickStop}
-        onPhoto={openViewer} onLive={() => nowStop && patch({ sel: nowStop.id })}
+        onPhoto={openViewer} onLive={() => liveStop && patch({ sel: liveStop.id })}
         editing={editing} placing={!!placing} onMapClick={onMapClicked} onStopMove={onStopMove}
         places={editing && !routeDraft ? places : []} onPickPlace={pickPlace}
         attractions={attractions} onPickAttraction={setAttractionCard} />
@@ -290,7 +293,7 @@ function Trip({ data, busyEditing }:
       </div>
 
       {panelOpen && (
-        <TripPanel view={view} stops={ordered} photos={photos} people={family} viewers={viewers}
+        <TripPanel view={view} stops={liveStops} photos={photos} people={family} viewers={viewers}
           selected={selected} photoBy={photoBy} onPhotoBy={setPhotoBy}
           onSelect={select} onClose={() => patch({ view: undefined })}
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
@@ -363,7 +366,7 @@ function Trip({ data, busyEditing }:
 
       {viewer && viewerList && viewerList.length > 0 && (
         <PhotoViewer list={viewerList} index={clamp(viewer.index, 0, viewerList.length - 1)}
-          setIndex={setIndex} onClose={closeViewer} stops={stops}
+          setIndex={setIndex} onClose={closeViewer} stops={liveStops}
           byName={(name: string) => withFace(family.find(person => person.name === name) || { name })}
           comments={comments} addComment={addComment} likes={likes} toggleLike={toggleLike}
           theme={mapTheme} tint={sun} me={me} canEdit={canEdit} onPhotoChange={changePhoto}
@@ -381,12 +384,13 @@ function Trip({ data, busyEditing }:
 
       {search.sheet === 'add' && (
         <UploadModal onClose={() => patch({ sheet: undefined })} onAdd={addPhotoToMap}
-          live={live} stops={stops} toast={toast} theme={mapTheme} tint={sun} />
+          live={latestGpsPosition} stops={stops} toast={toast} theme={mapTheme} tint={sun} />
       )}
 
       {!hasBackend && (
         <div className="pointer-events-none absolute bottom-[var(--trip-3)] left-4 z-[3] rounded-full
                         sm:bottom-[var(--trip-2)]
+                        max-sm:hidden
                         bg-accent-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em]
                         text-accent">Sample trip</div>
       )}

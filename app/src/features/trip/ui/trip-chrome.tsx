@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Brandmark } from '../../../shared/ui/brand'
 import Icon from '../../../shared/ui/icon'
 import type { TripView } from '../../../trip-search-core'
@@ -66,17 +66,22 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
     actions.unshift(['edit', props.editing ? 'Done editing' : 'Edit the itinerary', 'pencil',
       props.editing, props.onEdit])
   }
+  const { strip, more, measure } = useScrollEdges()
+  // The edit button appears and disappears with the trip's permissions, which
+  // changes how much there is to scroll.
+  useEffect(measure, [measure, actions.length])
   /* A dozen buttons do not fit across a phone, and dropping any of them takes a
      capability off the small screen entirely — so the strip scrolls, views
-     first because they are the ones people reach for. The panel keeps its edge
-     and only the row inside it fades, which is what says "there is more". */
+     first because they are the ones people reach for. A button sliced in half
+     at the edge reads as a bug rather than an invitation, so the side with more
+     on it fades out under a chevron, and the fade follows the scroll: both
+     edges mid-strip, neither once there is nothing further that way. */
   return (
-    <div className="glass flex min-w-0 items-center rounded-xl p-1
+    <div className="glass relative flex min-w-0 items-center rounded-xl p-1
                     max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none
                     max-sm:backdrop-blur-none">
-      <div className="flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none]
-                      max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-26px),transparent)]
-                      max-sm:[&::-webkit-scrollbar]:hidden">
+      <div ref={strip} className="flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto
+                      max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
         {VIEWS.map(([key, label, icon]) => (
           <button key={key} data-tip={label} aria-label={label} title={key}
                   className={'tb' + (props.view === key ? ' active' : '')}
@@ -92,9 +97,57 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
           </button>
         ))}
       </div>
+      {more.left && <MoreThisWay side="left" />}
+      {more.right && <MoreThisWay side="right" />}
     </div>
   )
 })
+
+/* Which way there is more to see, kept in step with the strip rather than
+   assumed: the answer changes with the width of the phone, whether the edit
+   button is there at all, and where the strip has been scrolled to. */
+function useScrollEdges() {
+  const strip = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState({ left: false, right: false })
+
+  const measure = useCallback(() => {
+    const el = strip.current
+    if (!el) return
+    const slack = el.scrollWidth - el.clientWidth
+    setMore({
+      left: el.scrollLeft > 2,
+      right: slack > 2 && el.scrollLeft < slack - 2,
+    })
+  }, [])
+
+  useEffect(() => {
+    const el = strip.current
+    if (!el) return
+    measure()
+    el.addEventListener('scroll', measure, { passive: true })
+    const resize = new ResizeObserver(measure)
+    resize.observe(el)
+    return () => { el.removeEventListener('scroll', measure); resize.disconnect() }
+  }, [measure])
+
+  return { strip, more, measure }
+}
+
+/* The button at the edge is what says the strip scrolls, so it is not hidden —
+   it is faded into the bar it sits on, under an arrow pointing the way. A
+   transparency mask would have dissolved the button against the map instead. */
+function MoreThisWay({ side }: { side: 'left' | 'right' }) {
+  const left = side === 'left'
+  return (
+    <span aria-hidden="true"
+          className={'pointer-events-none absolute inset-y-0 z-[1] flex w-11 items-center text-muted sm:hidden ' +
+            (left
+              ? 'left-0 justify-start bg-gradient-to-r from-strong via-strong to-transparent'
+              : 'right-0 justify-end bg-gradient-to-l from-strong via-strong to-transparent')}>
+      <Icon n={left ? 'chevl' : 'chevron'} s={15} />
+    </span>
+  )
+}
 
 /* The one thing on the screen that is happening right now. Clicking it takes
    the map back to the travellers, wherever the map had wandered to. */

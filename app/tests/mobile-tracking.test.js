@@ -474,6 +474,15 @@ test('photo placement distinguishes embedded GPS from a displayed fallback posit
   })
 })
 
+test('photo placement never substitutes an itinerary coordinate for missing GPS', () => {
+  const stops = [{ id: 'planned', name: 'Planned stop', lng: 4.9, lat: 52.4 }]
+
+  assert.deepEqual(mobilePhotos.photoPlacement({}, { live: null, stops }), {
+    point: null, fallbackPoint: null, previewPoint: null,
+    stopId: null, stopName: null, source: 'live', hasEmbeddedGps: false,
+  })
+})
+
 test('an Off We Go OIDC callback exposes the one-time login handoff', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   assert.equal(loginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), token)

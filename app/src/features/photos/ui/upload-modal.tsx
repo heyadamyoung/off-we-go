@@ -28,7 +28,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
   const selectedFile = files[selected]
   const previewStop = placement?.stopId ? stops.find(stop => stop.id === placement.stopId) : null
   const previewMapPoint = previewStop ? [previewStop.lng, previewStop.lat] : placement?.previewPoint
-  const previewPhoto = placement && selectedFile ? {
+  const previewPhoto = placement?.previewPoint && selectedFile ? {
     id: `upload-${selected}`, src: selectedFile.url,
     lng: placement.previewPoint[0], lat: placement.previewPoint[1], stopId: placement.stopId,
   } : null
@@ -175,6 +175,15 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
                   : placement.source === 'live' ? 'This is the current phone position.'
                     : 'This is the trip’s latest known position.'}</p>}
           </div>
+        </div>
+      )}
+      {files.length > 0 && placement && !placement.previewPoint && (
+        <div className="rounded-xl border border-line bg-raised p-4">
+          <b className="flex items-center gap-1.5 text-xs text-muted">
+            <Icon n="pin" s={14} /> No reliable location available
+          </b>
+          <p className="hint mt-1">This photo has no embedded GPS and no phone has shared a fresh,
+            accurate position. It will upload without a map location.</p>
         </div>
       )}
       <p className="hint">

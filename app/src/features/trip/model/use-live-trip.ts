@@ -1,32 +1,64 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadLive, subscribeToPositions } from '../../../backend'
-import { mergeLiveFixes } from '../../../live-positions-core'
-import { deriveLiveStopProgress, describeLiveStopProgress } from '../../../live-stop-progress-core'
+import { liveRetryDelay, mergeLiveFixes } from '../../../live-positions-core'
+import {
+  deriveLiveStopProgress, describeLiveStopProgress, liveHistoryHours,
+} from '../../../live-stop-progress-core'
 import { agoLabel } from '../../../shared/lib/geo'
 import type { Coordinates } from '../../../shared/model/types'
 import { useDaylight } from '../../map'
 
-export default function useLiveTrip({ tripId, route, stops, family, mapOverride }) {
+export default function useLiveTrip({ tripId, trip, route, stops, family, mapOverride }) {
   /* Where the phones are. Fixes arrive on their own channel and move only the
      markers; nothing else is refetched for them. */
   const [phones, setPhones] = useState<any[]>([])
   const [fixes, setFixes] = useState<any[]>([])
   const [liveReady, setLiveReady] = useState(false)
+  const [liveError, setLiveError] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const historyHours = liveHistoryHours(trip)
   useEffect(() => {
-    let alive = true, stop = () => {}
+    let alive = true, stop = () => {}, retryTimer: ReturnType<typeof setTimeout> | null = null
+    let failures = 0
+    setPhones([])
+    setFixes([])
     setLiveReady(false)
-    loadLive(tripId)
-      .then(r => {
-        if (!alive) return
-        setPhones(r.devices)
-        setFixes(r.fixes)
-        setLiveReady(true)
-        stop = subscribeToPositions(tripId, fix => setFixes(list => mergeLiveFixes(list, [fix])), r.cursor)
-      })
-      .catch(() => { if (alive) setLiveReady(true) })
-    return () => { alive = false; stop() }
-  }, [tripId])
+    setLiveError(false)
+    const connect = () => {
+      loadLive(tripId, { hours: historyHours })
+        .then(r => {
+          if (!alive) return
+          failures = 0
+          setPhones(r.devices)
+          setFixes(r.fixes)
+          setLiveReady(true)
+          setLiveError(false)
+          stop = subscribeToPositions(
+            tripId,
+            fix => setFixes(list => mergeLiveFixes(list, [fix])),
+            r.cursor,
+            {
+              hours: historyHours,
+              onState: state => {
+                if (alive) setLiveError(state === 'error')
+              },
+            },
+          )
+        })
+        .catch(() => {
+          if (!alive) return
+          setLiveError(true)
+          setLiveReady(true)
+          retryTimer = setTimeout(connect, liveRetryDelay(failures++))
+        })
+    }
+    connect()
+    return () => {
+      alive = false
+      if (retryTimer) clearTimeout(retryTimer)
+      stop()
+    }
+  }, [tripId, historyHours])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000)
@@ -34,23 +66,26 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
   }, [])
 
   const progress = useMemo(
-    () => deriveLiveStopProgress({ stops, fixes, now: new Date(now) }), [stops, fixes, now])
+    () => deriveLiveStopProgress({
+      stops, fixes, now: new Date(now),
+      sourceState: !liveReady ? 'loading' : liveError ? 'error' : 'ready',
+    }), [stops, fixes, now, liveReady, liveError])
   const progressCopy = useMemo(
     () => describeLiveStopProgress(progress, new Date(now)), [progress, now])
   const latestFix = progress.latestFix
+  const latestGpsPosition: Coordinates | null = latestFix
+    ? [latestFix.lng, latestFix.lat] : null
 
-  /* Where the family is. The most recent fix from any phone; with none, the
-     end of the walked route if one has been drawn; failing that, the stop
-     marked "now", then the next one up, then the first. Nothing is simulated:
-     a marker that strolled a demo route on its own timer was fine for a sample
-     and a lie about a real trip. */
+  /* The freshest trustworthy phone fix drives the live camera. With no GPS,
+     the route endpoint or first stop is only a neutral map centre: no traveller
+     marker is rendered there and no stop is claimed as current. */
   const track = route
   const live = useMemo(() => {
-    if (latestFix) return [latestFix.lng, latestFix.lat]
+    if (latestGpsPosition) return latestGpsPosition
     if (track.length) return track[track.length - 1]
     const s = stops[0]
     return s ? [s.lng, s.lat] : [4.876, 52.367]
-  }, [latestFix, track, stops])
+  }, [latestGpsPosition, track, stops])
   const daylight = useDaylight(live)
   const mapTheme = mapOverride || daylight.base
   /* The wash was drawn for the basemap the sun would have chosen. Laid over the
@@ -86,7 +121,7 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
   }, [fixes])
   return {
     phones, setPhones, fixes, track, live, livePoints, liveReady, sun, mapTheme,
-    markers, trail, progress, progressCopy,
+    markers, trail, progress, progressCopy, latestGpsPosition,
   }
 }
 
