@@ -27,7 +27,7 @@ export default function HomeShell({ me, places, home, live, waiting, wide, child
       <div className="pointer-events-none absolute inset-0
                       [background:linear-gradient(90deg,var(--c-bg)_0%,var(--c-bg)_34%,transparent_64%),linear-gradient(0deg,var(--c-bg)_0%,transparent_22%)]" />
       <div className="absolute left-8 right-7 top-6 z-10 flex items-center justify-between md:left-16">
-        <Link to="/"><Wordmark /></Link>
+        <Link to="/"><Wordmark markSize={44} /></Link>
         <AccountMenu me={me} />
       </div>
       <div className={'absolute left-8 z-10 flex flex-col gap-5 pr-4 md:left-16 ' + (wide

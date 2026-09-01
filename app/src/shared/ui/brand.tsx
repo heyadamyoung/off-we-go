@@ -17,10 +17,11 @@ export function Brandmark({ size = 40, className = '' }: { size?: number; classN
   )
 }
 
-export function Wordmark({ className = '' }: { className?: string }) {
+export function Wordmark({ className = '', markSize = 62 }:
+  { className?: string; markSize?: number }) {
   return (
     <div className={'flex items-center gap-4 text-[13px] font-bold uppercase tracking-[.16em] text-faint ' + className}>
-      <Brandmark size={62} />
+      <Brandmark size={markSize} />
       Off We Go
     </div>
   )

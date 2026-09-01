@@ -129,6 +129,15 @@ test('publishes the Off We Go mark for browser and installed web app icons', asy
   }
 })
 
+test('the dashboard keeps its brandmark compact beside the wordmark', async ({ page }) => {
+  await page.goto('/')
+  const brandmark = page.getByRole('link', { name: 'Off We Go' }).locator('img')
+  await expect(brandmark).toBeVisible()
+
+  const bounds = await brandmark.boundingBox()
+  expect(bounds?.height).toBeLessThanOrEqual(48)
+})
+
 test('the viewport allows pinch zoom and covers the notch', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
