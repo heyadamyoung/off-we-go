@@ -83,7 +83,7 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
   const holder = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<any>(null)
   const [centre, setCentre] = useState<LngLat>(START)
-  const handled = useRef(false)   // the user has hold of the planet
+  const held = useRef(false)      // a pointer is down on the planet
   const idleSince = useRef(0)
 
   /* ---- create once ------------------------------------------------------ */
@@ -201,7 +201,8 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
 
   /* ---- spin on release, then the slow drift -----------------------------
      One frame loop, so the drift and the user's own inertia never fight over
-     the camera: while MapLibre is still easing a fling, this stands off. */
+     the camera: while a hand is on the planet, or MapLibre is still easing a
+     fling, this stands off. */
   useEffect(() => {
     if (!map) return
     const reduced = stillness()
@@ -211,18 +212,25 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
     const tick = (now: number) => {
       const elapsed = last ? Math.min(now - last, 64) : 0
       last = now
-      if (!reduced) {
-        // The weather keeps moving while the planet is being dragged: it is
-        // the one thing on the page that is not the reader's to hold still.
-        rolled += (elapsed / 1000) * CLOUD_DRIFT
-        weather.current?.roll(rolled)
+      try {
+        if (!reduced) {
+          // The weather keeps moving while the planet is being dragged: it is
+          // the one thing on the page that is not the reader's to hold still.
+          rolled += (elapsed / 1000) * CLOUD_DRIFT
+          weather.current?.roll(rolled)
+        }
+        if (!reduced && !held.current && !map.isMoving()
+            && now - idleSince.current > IDLE_BEFORE_DRIFT) {
+          const at = map.getCenter()
+          map.setCenter([at.lng + DRIFT * elapsed, at.lat])
+        }
+      } catch {
+        /* A frame that throws must not take the loop with it. Left to
+           propagate, the exception skips the call below and the planet stops
+           for the rest of the session with nothing on the page to say why. */
+      } finally {
+        frame = requestAnimationFrame(tick)
       }
-      if (!reduced && !handled.current && !map.isMoving()
-          && now - idleSince.current > IDLE_BEFORE_DRIFT) {
-        const at = map.getCenter()
-        map.setCenter([at.lng + DRIFT * elapsed, at.lat])
-      }
-      frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
@@ -233,13 +241,32 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
      of a planet. */
   useEffect(() => {
     if (!map) return
-    const follow = () => { const at = map.getCenter(); setCentre([at.lng, at.lat]) }
-    const grab = () => { handled.current = true }
-    const release = () => { handled.current = false; idleSince.current = performance.now() }
+    const box = holder.current
+    const follow = (event: any) => {
+      const at = map.getCenter()
+      setCentre([at.lng, at.lat])
+      // Anything the reader caused counts as a hand on the planet; the drift's
+      // own moves carry no original event and so do not hold it off.
+      if (event?.originalEvent) idleSince.current = performance.now()
+    }
+    /* Held is read from the pointer rather than from MapLibre's own drag,
+       which our once-a-frame `setCenter` can end without ever saying so. Every
+       way a press can finish releases it — including letting go outside the
+       window, which sends no pointerup at all, only a blur. */
+    const grab = () => { held.current = true; idleSince.current = performance.now() }
+    const release = () => { held.current = false; idleSince.current = performance.now() }
+    box?.addEventListener('pointerdown', grab)
+    window.addEventListener('pointerup', release)
+    window.addEventListener('pointercancel', release)
+    window.addEventListener('blur', release)
     map.on('move', follow)
-    map.on('dragstart', grab)
-    map.on('dragend', release)
-    return () => { map.off('move', follow); map.off('dragstart', grab); map.off('dragend', release) }
+    return () => {
+      box?.removeEventListener('pointerdown', grab)
+      window.removeEventListener('pointerup', release)
+      window.removeEventListener('pointercancel', release)
+      window.removeEventListener('blur', release)
+      map.off('move', follow)
+    }
   }, [map])
 
   useEffect(() => {
