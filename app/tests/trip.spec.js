@@ -250,6 +250,37 @@ test('fit the whole trip reveals every stop on the smallest phone viewport', asy
 
 /* ------------------------------------------------------------ selection */
 
+/* Asking to follow the travellers used to send two camera commands: the toggle
+   flew in to street level, and the effect behind it immediately re-issued the
+   move carrying the zoom from before the tap. The second one won, so a phone
+   that had been panned away crawled sideways and never zoomed. */
+test('following the travellers actually zooms in, and then holds still', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)                                   // open() leaves follow off
+
+  const camera = () => page.evaluate(() => ({
+    zoom: window.__offwegoMap.getZoom(),
+    moving: window.__offwegoMap.isMoving(),
+  }))
+  await page.evaluate(() => window.__offwegoMap.jumpTo({ center: [4.75, 52.32], zoom: 9 }))
+  await expect.poll(async () => (await camera()).zoom).toBeLessThan(9.5)
+
+  await page.getByRole('button', { name: 'Follow live position' }).click()
+  await expect.poll(async () => (await camera()).zoom, {
+    message: 'following should bring the travellers to street level',
+    timeout: 5000,
+  }).toBeGreaterThan(14)
+
+  // And having arrived it stays: live positions arrive on a timer, and a map
+  // that re-frames itself every time one does cannot be read.
+  await expect.poll(async () => (await camera()).moving, { timeout: 5000 }).toBe(false)
+  const settled = await camera()
+  await page.waitForTimeout(1200)
+  const later = await camera()
+  expect(later.moving, 'the camera started moving again on its own').toBe(false)
+  expect(Math.abs(later.zoom - settled.zoom)).toBeLessThan(0.01)
+})
+
 test('a pin selects its stop, a drag does not', async ({ page }) => {
   await open(page)
   const pin = await centreOnStop(page, PHOTOLESS)

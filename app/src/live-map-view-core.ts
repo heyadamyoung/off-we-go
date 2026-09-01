@@ -26,3 +26,22 @@ export function liveFollowView(
     bounds: [[west, south], [east, north]],
   }
 }
+
+/* The map fills the screen and the chrome floats on top of it, so fitting a
+   trip into the container hides whatever lands under the bars — on a phone
+   that is a third of the height. Fit into what can actually be seen instead,
+   and centre on the middle of that band rather than the middle of the map. */
+export interface MapPadding { top: number; right: number; bottom: number; left: number }
+
+export function visibleMapPadding(
+  { width, panelOpen = false }: { width: number; panelOpen?: boolean },
+): MapPadding {
+  if (width < 640) return { top: 128, right: 20, bottom: 202, left: 20 }
+  return { top: 40, right: 40, bottom: 228, left: panelOpen ? 500 : 40 }
+}
+
+/* Where to put the thing being focused: the centre of the visible band, which
+   is the container's centre shifted by half the difference in the padding. */
+export function paddingOffset(padding: MapPadding): [number, number] {
+  return [(padding.left - padding.right) / 2, (padding.top - padding.bottom) / 2]
+}

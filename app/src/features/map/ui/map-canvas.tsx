@@ -4,6 +4,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { lineOf, validLngLat } from '../../../shared/lib/geo'
+import { paddingOffset } from '../../../live-map-view-core'
 import { EMPTY_FC } from '../model/use-attractions'
 import { ACCENT, TRAIL, STYLE, linesOf } from '../model/map-style'
 import { LiveMarker, MapMarker } from './map-marker'
@@ -13,7 +14,7 @@ setWorkerUrl(maplibreWorkerUrl)
 const MapCanvas = memo(function MapCanvas({
   view, onView, theme, tint, interactive = true, route = [], stops = [], photos = [],
   markers = [], trail = [],
-  selectedStop, onStop, onPhoto, onLive, labels = false, highlight = null,
+  selectedStop, onStop, onPhoto, onLive, labels = false, highlight = null, padding = null,
   editing = false, placing = false, onMapClick, onStopMove, places = [], onPickPlace,
   attractions = null, onPickAttraction, children,
 }: any) {
@@ -216,24 +217,32 @@ const MapCanvas = memo(function MapCanvas({
   /* ---- keep the camera in step with the app -----------------------------
      Only moves when the app actually asks for somewhere else; the position we
      report back on moveend lands here again and must not start a second move. */
+  const fitted = useRef('')
   useEffect(() => {
     if (!map) return
+    const pad = padding || 32
+    const ms = view.ms == null ? 420 : view.ms
     if (view.bounds) {
-      map.fitBounds(view.bounds, {
-        padding: 32, maxZoom: 15,
-        duration: view.ms == null ? 420 : view.ms, essential: true,
-      })
+      // Live positions arrive on a timer; re-fitting the same box every time one
+      // does turns a still map into one that keeps sliding under the reader.
+      const key = JSON.stringify(view.bounds) + JSON.stringify(pad)
+      if (key === fitted.current) return
+      fitted.current = key
+      map.fitBounds(view.bounds, { padding: pad, maxZoom: 15, duration: ms, essential: true })
       return
     }
+    fitted.current = ''
     const c = map.getCenter()
     if (Math.abs(c.lng - view.center[0]) < 1e-7 &&
         Math.abs(c.lat - view.center[1]) < 1e-7 &&
         Math.abs(map.getZoom() - view.zoom) < 1e-4) return
     map.easeTo({
-      center: view.center, zoom: view.zoom,
-      duration: view.ms == null ? 420 : view.ms, essential: true,
+      center: view.center, zoom: view.zoom, duration: ms, essential: true,
+      // Put the target in the middle of the map you can see, not the middle of
+      // the container — a third of which is behind the chrome on a phone.
+      offset: padding ? paddingOffset(padding) : [0, 0],
     })
-  }, [map, view])
+  }, [map, view, padding])
 
   useEffect(() => {
     if (!map) return

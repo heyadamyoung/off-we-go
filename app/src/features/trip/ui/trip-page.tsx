@@ -14,7 +14,7 @@ import { PhotoViewer, UploadModal, useTripPhotos } from '../../photos'
 import { AttractionCard } from '../../sights'
 import { TripSettingsSheet } from '../../people'
 import { appErrorMessage } from '../../../user-messages-core'
-import { liveFollowView } from '../../../live-map-view-core'
+import { useTripCamera } from '../model/use-trip-camera'
 import { applyLiveStopStatuses } from '../../../live-stop-progress-core'
 import useLiveTrip from '../model/use-live-trip'
 import useTripPresence from '../model/use-trip-presence'
@@ -64,7 +64,6 @@ function Trip({ data, busyEditing }:
   const [stops, setStops] = useState(data.stops)
   const [family, setFamily] = useState(() => (data.family || []).map(withFace))
   const [me] = useState<Person>(data.me || data.family[0] || { name: 'You' })
-  const [following, setFollowing] = useState(true)
   const [placing, setPlacing] = useState<null | { move?: string }>(null)
   const [photoBy, setPhotoBy] = useState<string | null>(null)
   const [mapOverride, setMapOverride] = useState<string | null>(theme)
@@ -111,6 +110,9 @@ function Trip({ data, busyEditing }:
     phones, setPhones, track, live, livePoints, liveReady, sun, mapTheme, markers, trail,
     progress, progressCopy, latestGpsPosition,
   } = useLiveTrip({ tripId, trip, route, stops: ordered, family, mapOverride })
+
+  const { following, setFollowing, toggleFollow, fitAll, padding: mapPadding } = useTripCamera(
+    { live, livePoints, liveReady, stops, panelOpen: view !== 'map', setMapView })
   const liveStop = progress.currentStop || progress.destination
   const day = search.day || liveStop?.day || ALL_DAYS
   const liveStops = useMemo(
@@ -137,12 +139,6 @@ function Trip({ data, busyEditing }:
   })
 
   busyEditing.current = editing || !!draft || !!routeDraft
-
-  useEffect(() => {
-    if (!following || !liveReady) return
-    setMapView(current => liveFollowView(current, livePoints, { ready: true, duration: 900 })
-      || { center: live, zoom: current.zoom, ms: 900 })
-  }, [live, livePoints, liveReady, following])
 
   const items = useMemo(
     () => tripItems({ stops: liveStops, photos, day, query }), [liveStops, photos, day, query])
@@ -197,28 +193,6 @@ function Trip({ data, busyEditing }:
     return () => window.removeEventListener('keydown', key)
   }, [placing, draft, selected, patch, setDraft])
 
-  const fitAll = useCallback(() => {
-    setFollowing(false)
-    if (!stops.length) return
-    const lngs = stops.map(stop => stop.lng)
-    const lats = stops.map(stop => stop.lat)
-    const west = Math.min(...lngs), east = Math.max(...lngs)
-    const south = Math.min(...lats), north = Math.max(...lats)
-    setMapView(current => ({
-      center: [(west + east) / 2, (south + north) / 2], zoom: current.zoom, ms: 620,
-      bounds: [[west, south], [east, north]],
-    }))
-  }, [stops])
-
-  const toggleFollow = useCallback(() => {
-    const next = !following
-    setFollowing(next)
-    if (next) {
-      setMapView(current => liveFollowView(current, livePoints, { ready: liveReady, duration: 560 })
-        || { center: live, zoom: Math.max(current.zoom, 15), ms: 560 })
-    }
-  }, [following, live, livePoints, liveReady])
-
   const saveTrip = useCallback(async (fields: Record<string, unknown>) => {
     const before = trip
     setTrip(current => ({ ...current, ...fields }))
@@ -248,8 +222,12 @@ function Trip({ data, busyEditing }:
   ].filter(Boolean).join(' · ')
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-canvas text-ink">
-      <MapCanvas theme={mapTheme} tint={sun} view={mapView} onView={onMapView}
+    <div className="fixed inset-0 overflow-hidden bg-canvas text-ink"
+         onScroll={event => {
+           const screen = event.currentTarget
+           if (screen.scrollTop || screen.scrollLeft) { screen.scrollTop = 0; screen.scrollLeft = 0 }
+         }}>
+      <MapCanvas theme={mapTheme} tint={sun} view={mapView} onView={onMapView} padding={mapPadding}
         route={routeDraft || track} stops={liveStops} photos={photos} markers={markers} trail={trail}
         selectedStop={selected} labels={mapView.zoom > 13} onStop={pickStop}
         onPhoto={openViewer} onLive={() => liveStop && patch({ sel: liveStop.id })}
