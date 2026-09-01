@@ -142,6 +142,44 @@ test('a toast stays horizontally centred throughout its entrance animation', asy
   }
 })
 
+/* The trip chrome used to be laid out from both edges of the screen at once —
+   the title from the left, the actions from the right — which on a phone put
+   twelve buttons straight through the trip name and pushed the account menu off
+   the screen. Nothing up there may overlap or leave the viewport. */
+test('the trip chrome stays clear of itself on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+
+  const box = async locator => {
+    await expect(locator).toBeVisible()
+    return locator.boundingBox()
+  }
+  const title = await box(page.locator('header').first())
+  const cluster = await box(page.locator('.tb').first().locator('xpath=../..'))
+  const account = await box(page.locator('.avatar').last().locator('xpath=..'))
+  const bar = await box(page.locator('.fdays').locator('xpath=../..'))
+
+  expect(title.y + title.height, 'the actions overlap the trip name')
+    .toBeLessThanOrEqual(cluster.y + 1)
+  expect(title.x + title.width, 'the trip name runs under the account menu')
+    .toBeLessThanOrEqual(account.x + 1)
+  for (const [what, rect] of [['title', title], ['actions', cluster], ['account', account]]) {
+    expect(rect.x, `the ${what} starts off the left of the screen`).toBeGreaterThanOrEqual(-1)
+    expect(rect.x + rect.width, `the ${what} runs off the right of the screen`)
+      .toBeLessThanOrEqual(391)
+  }
+
+  // Everything that floats above the bottom bar has to clear it, at whatever
+  // height the bar takes on a phone.
+  for (const selector of ['.wctl', '.fdays']) {
+    const rect = await box(page.locator(selector))
+    expect(rect.y + rect.height, `${selector} sits below the fold`).toBeLessThanOrEqual(845)
+  }
+  const controls = await box(page.locator('.wctl'))
+  expect(controls.y + controls.height, 'the map controls overlap the bottom bar')
+    .toBeLessThanOrEqual(bar.y + 1)
+})
+
 test('fit the whole trip reveals every stop on the smallest phone viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 })
   await open(page)

@@ -13,16 +13,21 @@ export const VIEWS: Array<[TripView, string, string]> = [
 
 /* The mark sits beside the title block rather than above it: stacked, it had to
    shrink to the height of a line of small caps, which is exactly the size at
-   which this particular drawing stops being readable. */
+   which this particular drawing stops being readable. On a phone the mark keeps
+   the branding but the trip name is what the screen is about, so the small caps
+   and the subtitle go and a long name truncates instead of running under the
+   account menu. */
 export const TripTitle = memo(function TripTitle({ title, sub }: { title: string; sub: string }) {
   return (
-    <header className="absolute left-7 top-6 z-10 flex items-center gap-4">
-      <Brandmark size={62} />
-      <div className="flex flex-col gap-1">
-        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-faint">Off We Go</div>
-        <h1 className="m-0 text-[34px] font-extrabold leading-none tracking-[-.02em]
-                       max-sm:text-2xl">{title}</h1>
-        <div className="text-sm text-muted max-sm:hidden">{sub}</div>
+    <header className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+      <Brandmark size={62} className="max-sm:h-10 max-sm:w-auto" />
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-faint max-sm:hidden">
+          Off We Go
+        </div>
+        <h1 className="m-0 truncate text-[34px] font-extrabold leading-tight tracking-[-.02em]
+                       max-sm:text-[19px]">{title}</h1>
+        <div className="truncate text-sm text-muted max-sm:hidden">{sub}</div>
       </div>
     </header>
   )
@@ -61,22 +66,30 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
     actions.unshift(['edit', props.editing ? 'Done editing' : 'Edit the itinerary', 'pencil',
       props.editing, props.onEdit])
   }
+  /* A dozen buttons do not fit across a phone, and dropping any of them takes a
+     capability off the small screen entirely — so the strip scrolls, views
+     first because they are the ones people reach for. The panel keeps its edge
+     and only the row inside it fades, which is what says "there is more". */
   return (
-    <div className="glass flex items-center gap-0.5 rounded-xl p-1">
-      {VIEWS.map(([key, label, icon]) => (
-        <button key={key} data-tip={label} aria-label={label} title={key}
-                className={'tb' + (props.view === key ? ' active' : '')}
-                onClick={() => props.onView(key)}>
-          <Icon n={icon} s={18} />
-        </button>
-      ))}
-      <span className="mx-1 h-5 w-px bg-line2" />
-      {actions.map(([key, label, icon, on, run]) => (
-        <button key={key} data-tip={label} aria-label={label}
-                className={'tb' + (on ? ' on' : '')} onClick={run}>
-          <Icon n={icon} s={18} />
-        </button>
-      ))}
+    <div className="glass flex min-w-0 items-center rounded-xl p-1">
+      <div className="flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none]
+                      max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-26px),transparent)]
+                      max-sm:[&::-webkit-scrollbar]:hidden">
+        {VIEWS.map(([key, label, icon]) => (
+          <button key={key} data-tip={label} aria-label={label} title={key}
+                  className={'tb' + (props.view === key ? ' active' : '')}
+                  onClick={() => props.onView(key)}>
+            <Icon n={icon} s={18} />
+          </button>
+        ))}
+        <span className="mx-1 h-5 w-px flex-none bg-line2" />
+        {actions.map(([key, label, icon, on, run]) => (
+          <button key={key} data-tip={label} aria-label={label}
+                  className={'tb' + (on ? ' on' : '')} onClick={run}>
+            <Icon n={icon} s={18} />
+          </button>
+        ))}
+      </div>
     </div>
   )
 })
@@ -87,15 +100,16 @@ export const NowCapsule = memo(function NowCapsule(
   { text, meta, onClick }: { text: string; meta?: string; onClick: () => void },
 ) {
   return (
-    <button className="glass absolute bottom-[216px] left-1/2 z-[4] flex -translate-x-1/2 items-center
-                       gap-3.5 whitespace-nowrap rounded-full py-2.5 pl-4 pr-5"
+    <button className="glass absolute bottom-[var(--trip-2)] left-1/2 z-[4] flex max-w-[calc(100%-7.5rem)] sm:max-w-[calc(100%-2rem)]
+                       -translate-x-1/2 items-center gap-3.5 overflow-hidden whitespace-nowrap
+                       rounded-full py-2.5 pl-4 pr-5 sm:bottom-[var(--trip-1)]"
             onClick={onClick}>
       <span className="size-2.5 rounded-full bg-accent
                        shadow-[0_0_0_4px_var(--c-accent-soft),0_0_18px_var(--c-glow)]" />
-      <b className="text-[15px] font-bold">{text}</b>
+      <b className="truncate text-[15px] font-bold">{text}</b>
       {meta && <>
-        <span className="h-4 w-px bg-line2" />
-        <span className="tnum text-[13px] text-muted">{meta}</span>
+        <span className="h-4 w-px bg-line2 max-sm:hidden" />
+        <span className="tnum truncate text-[13px] text-muted max-sm:hidden">{meta}</span>
       </>}
     </button>
   )
@@ -107,7 +121,7 @@ export const ScopeToggle = memo(function ScopeToggle(
 ) {
   const button = 'rounded-full px-3.5 py-1.5 text-[12.5px] font-bold text-muted'
   return (
-    <div className={'glass absolute bottom-[212px] z-[4] flex rounded-full p-1 transition-[left] ' +
+    <div className={'glass absolute bottom-[var(--trip-1)] z-[4] flex rounded-full p-1 transition-[left] ' +
       (shifted ? 'left-[492px] max-lg:left-4' : 'left-4')}>
       <button className={button + (whole ? '' : ' bg-ink text-canvas')} onClick={onHere}>{here}</button>
       <button className={button + (whole ? ' bg-ink text-canvas' : '')} onClick={onWhole}>Whole trip</button>
@@ -121,11 +135,14 @@ export const MapControls = memo(function MapControls(
 ) {
   const button = 'wc grid size-10 place-items-center border-b border-line text-ink last:border-b-0 hover:bg-raised2'
   return (
-    <div className="wctl glass absolute bottom-[212px] right-4 z-[4] flex flex-col overflow-hidden rounded-xl">
+    <div className="wctl glass absolute bottom-[var(--trip-1)] right-4 z-[4] flex flex-col
+                    overflow-hidden rounded-xl">
       <button className={button + (following ? ' on bg-accent text-accent-ink' : '')}
               title="Follow the travellers" onClick={onFollow}><Icon n="locate" s={17} /></button>
-      <button className={button} title="Zoom in" onClick={() => onZoom(1)}><Icon n="plus" s={17} /></button>
-      <button className={button} title="Zoom out" onClick={() => onZoom(-1)}><Icon n="minus" s={17} /></button>
+      <button className={button + ' max-sm:hidden'} title="Zoom in"
+              onClick={() => onZoom(1)}><Icon n="plus" s={17} /></button>
+      <button className={button + ' max-sm:hidden'} title="Zoom out"
+              onClick={() => onZoom(-1)}><Icon n="minus" s={17} /></button>
       <button className={button} title="Fit the whole trip" onClick={onFit}><Icon n="expand" s={16} /></button>
     </div>
   )
@@ -150,7 +167,7 @@ export const PlaceHint = memo(function PlaceHint(
    there is no room for a sentence beside a map that small. */
 export function EditHint({ routeDraft, setRouteDraft, saveRoute, searchPlaces, places, setPlaces, route }) {
   return (
-    <div className="edithint glass absolute bottom-[212px] left-1/2 z-[8] flex -translate-x-1/2 items-center gap-2.5
+    <div className="edithint glass absolute bottom-[var(--trip-1)] left-1/2 z-[8] flex -translate-x-1/2 items-center gap-2.5
                     whitespace-nowrap rounded-full px-4 py-2 text-[12.5px] max-md:hidden">
       <b className="text-[11px] font-extrabold uppercase tracking-[.06em] text-accent">
         {routeDraft ? 'Route' : 'Edit mode'}

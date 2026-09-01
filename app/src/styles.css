@@ -109,6 +109,21 @@
   }
 }
 
+/* ------------------------------------------------------- the trip screen
+   The bottom bar is the datum for everything that floats above the map, so its
+   height lives here rather than as a number repeated in five components. A
+   phone needs two rows where the desktop fits one — day chips and search will
+   not share 390 pixels — and every floating control has to move with it. */
+:root {
+  --trip-bar: calc(196px + env(safe-area-inset-bottom, 0px));
+  --trip-1: calc(var(--trip-bar) + 16px);
+  --trip-2: calc(var(--trip-1) + 46px);
+  --trip-3: calc(var(--trip-2) + 42px);
+}
+@media (max-width: 639px) {
+  :root { --trip-bar: calc(236px + env(safe-area-inset-bottom, 0px)) }
+}
+
 /* --------------------------------------------------------------- components
    Kept to the handful of shapes that repeat across every screen. Everything
    else is written as utilities where it is used. */
@@ -160,7 +175,7 @@
 
   /* the round toolbar button used by the map cluster and the map controls */
   .tb {
-    position: relative; width: 38px; height: 38px; border-radius: 9px;
+    position: relative; flex: none; width: 38px; height: 38px; border-radius: 9px;
     display: flex; align-items: center; justify-content: center;
     color: var(--c-muted); transition: background .15s, color .15s;
   }
@@ -472,5 +487,5 @@
 .editor .lookup:disabled { opacity: .5; cursor: default }
 
 @media (max-width: 900px) {
-  .editor { left: 16px; right: 16px; width: auto; top: auto; bottom: 212px; max-height: 52% }
+  .editor { left: 16px; right: 16px; width: auto; top: auto; bottom: var(--trip-1); max-height: 52% }
 }

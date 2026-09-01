@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
    no raster fallback. It is a detailed drawing — a sunset, mountains and a road
    running to the horizon — and below about thirty pixels all of that collapses
    into an orange blob, so nothing here asks for less. */
-export function Brandmark({ size = 40 }: { size?: number }) {
+export function Brandmark({ size = 40, className = '' }: { size?: number; className?: string }) {
   return (
     <img
       src="/offwego-icon.svg"
@@ -12,7 +12,7 @@ export function Brandmark({ size = 40 }: { size?: number }) {
       aria-hidden="true"
       width={(size * 820) / 1060}
       height={size}
-      className="shrink-0 object-contain"
+      className={'shrink-0 object-contain ' + className}
     />
   )
 }

@@ -259,22 +259,29 @@ function Trip({ data, busyEditing }:
       <div className="pointer-events-none absolute inset-0 opacity-70
                       [background:linear-gradient(to_bottom,var(--c-bg)_0%,transparent_26%,transparent_58%,var(--c-bg)_100%)]" />
 
-      <TripTitle title={trip.title} sub={subtitle} />
+      {/* One top bar rather than two islands laid out from opposite edges that
+          met in the middle of a phone. The actions wrap to their own line below
+          the title there, and sit beside it above 640px. */}
+      <div className="absolute inset-x-4 top-4 z-10 flex flex-wrap items-center gap-2
+                      sm:inset-x-7 sm:top-6 sm:flex-nowrap sm:items-start sm:gap-3">
+        <TripTitle title={trip.title} sub={subtitle} />
 
-      <div className="absolute right-7 top-6 z-10 flex items-center gap-2.5">
-        <TripCluster view={view} onView={setView}
-          canEdit={canEdit} editing={editing} placing={!!placing} following={following}
-          theme={theme} attractions={showAttractions} onAttractions={toggleAttractions}
-          onEdit={startEditing}
-          onSettings={() => patch({ sheet: 'settings', tab: 'trip' })}
-          onPlace={() => { setPlacing(placing ? null : {}); patch({ sel: undefined }) }}
-          onFollow={toggleFollow}
-          onAdd={() => patch({ sheet: 'add' })}
-          onTheme={() => {
-            const next = theme === 'dark' ? 'light' : 'dark'
-            setTheme(next); setMapOverride(next)
-          }} />
-        <AccountMenu me={me} />
+        <div className="order-3 flex w-full min-w-0 items-center gap-2.5 sm:order-2 sm:w-auto">
+          <TripCluster view={view} onView={setView}
+            canEdit={canEdit} editing={editing} placing={!!placing} following={following}
+            theme={theme} attractions={showAttractions} onAttractions={toggleAttractions}
+            onEdit={startEditing}
+            onSettings={() => patch({ sheet: 'settings', tab: 'trip' })}
+            onPlace={() => { setPlacing(placing ? null : {}); patch({ sel: undefined }) }}
+            onFollow={toggleFollow}
+            onAdd={() => patch({ sheet: 'add' })}
+            onTheme={() => {
+              const next = theme === 'dark' ? 'light' : 'dark'
+              setTheme(next); setMapOverride(next)
+            }} />
+        </div>
+
+        <div className="order-2 sm:order-3"><AccountMenu me={me} /></div>
       </div>
 
       {panelOpen && (
@@ -371,7 +378,8 @@ function Trip({ data, busyEditing }:
       )}
 
       {!hasBackend && (
-        <div className="pointer-events-none absolute bottom-[262px] left-4 z-[3] rounded-full
+        <div className="pointer-events-none absolute bottom-[var(--trip-3)] left-4 z-[3] rounded-full
+                        sm:bottom-[var(--trip-2)]
                         bg-accent-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em]
                         text-accent">Sample trip</div>
       )}

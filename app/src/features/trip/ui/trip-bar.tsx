@@ -28,10 +28,13 @@ const TripBar = memo(function TripBar({
   }, [day])
 
   return (
-    <div className="glass absolute inset-x-0 bottom-0 z-[5] flex h-[196px] flex-col border-t border-line
-                    backdrop-blur-[18px]">
-      <div className="flex items-center justify-between gap-4 px-4 pb-1.5 pt-2.5">
-        <div ref={chips} className="fdays flex items-center gap-1.5 overflow-x-auto pr-10
+    <div className="glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col
+                    border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px]">
+      {/* The day chips and the search box each want the full width of a phone,
+          so below 640px they take a line each instead of splitting one. */}
+      <div className="flex items-center justify-between gap-4 px-4 pb-1.5 pt-2.5
+                      max-sm:flex-col max-sm:items-stretch max-sm:gap-2">
+        <div ref={chips} className="fdays flex items-center gap-1.5 overflow-x-auto pr-10 max-sm:pr-6
                         [mask-image:linear-gradient(to_right,#000_calc(100%-40px),transparent)]
                         [scrollbar-width:none]">
           <button className={'chip' + (day === ALL_DAYS ? ' sel' : '')}
@@ -48,7 +51,7 @@ const TripBar = memo(function TripBar({
           ))}
         </div>
         <label className="fsearch flex h-8 w-[230px] flex-none items-center gap-2 rounded-full border
-                          border-line bg-raised px-3 text-faint max-sm:w-auto max-sm:flex-1">
+                          border-line bg-raised px-3 text-faint max-sm:w-full">
           <Icon n="search" s={14} />
           <input className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-ink outline-none
                             placeholder:text-faint"
