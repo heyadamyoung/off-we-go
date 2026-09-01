@@ -21,6 +21,7 @@ test('a state is read against the audience it describes', () => {
 test('a build line says who can install it and where it went', () => {
   const line = describeBuild({
     version: '14',
+    release: '1.1',
     uploaded: '2026-09-01T23:45:00Z',
     processingState: 'VALID',
     internalState: 'READY_FOR_BETA_TESTING',
@@ -28,7 +29,8 @@ test('a build line says who can install it and where it went', () => {
     groups: ['Wayfare Friends & Family'],
   })
 
-  assert.match(line, /^build 14 \(2026-09-01 23:45\)/)
+  assert.match(line, /^1\.1 build 14 \(2026-09-01 23:45\)/,
+    'which version a build belongs to decides whether Apple reviews it afresh')
   assert.match(line, /internal: installable/)
   assert.match(line, /external: in beta review at Apple/)
   assert.match(line, /groups: Wayfare Friends & Family/)
@@ -37,6 +39,7 @@ test('a build line says who can install it and where it went', () => {
 test('a build nobody has released says so plainly', () => {
   const line = describeBuild({ version: '9', processingState: 'VALID', groups: [] })
 
+  assert.match(line, /^\? build 9/)
   assert.match(line, /unknown time/)
   assert.match(line, /groups: no external group/)
 })

@@ -11,7 +11,6 @@ on:
       - 'app/public/**'
       - 'app/ios/**'
       - 'app/capacitor.config.json'
-      - 'app/package.json'
       - 'app/pnpm-lock.yaml'
       - 'app/vite.config.ts'
       - 'app/tsconfig.json'
