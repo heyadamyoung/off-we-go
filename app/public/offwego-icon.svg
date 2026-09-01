@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     viewBox="0 0 820 1060"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">Off We Go icon</title>
+  <desc id="description">A gradient sunset, mountain road, and arched orange portal.</desc>
+
+  <defs>
+    <linearGradient id="frameGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD070"/>
+      <stop offset=".46" stop-color="#F5B84A"/>
+      <stop offset=".68" stop-color="#E9A23A"/>
+      <stop offset="1" stop-color="#D8801F"/>
+    </linearGradient>
+    <radialGradient id="skyGradient" cx="50%" cy="78%" r="78%" fx="50%" fy="78%">
+      <stop offset="0" stop-color="#FFC33A"/>
+      <stop offset=".34" stop-color="#FFA024"/>
+      <stop offset=".68" stop-color="#FF6B18"/>
+      <stop offset="1" stop-color="#EF3812"/>
+    </radialGradient>
+    <linearGradient id="foregroundGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#02050A"/>
+      <stop offset=".38" stop-color="#090B11"/>
+      <stop offset=".66" stop-color="#111219"/>
+      <stop offset="1" stop-color="#010306"/>
+    </linearGradient>
+    <linearGradient id="mountainGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7B3422"/>
+      <stop offset=".48" stop-color="#51251D"/>
+      <stop offset="1" stop-color="#29191A"/>
+    </linearGradient>
+    <linearGradient id="ridgeGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF4E18"/>
+      <stop offset=".52" stop-color="#DC3217"/>
+      <stop offset="1" stop-color="#A92319"/>
+    </linearGradient>
+    <linearGradient id="sunRouteGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFDF5"/>
+      <stop offset="1" stop-color="#FFF0DA"/>
+    </linearGradient>
+    <linearGradient id="markingGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFEBD2"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(-149 -124)">
+    <g id="portal-frame" inkscape:groupmode="layer" inkscape:label="Portal frame">
+      <path d="M554.75 166.08C758.08 164.48 903.82 313.46 929.44 488.25c1.41 9.64 3.28 21.37 3.31 31.5v623h-747.25V542.25c.03-18.41 2.42-38.15 5.01-54.5 27.25-172.2 167.57-316.99 364.24-321.67Z" fill="url(#frameGradient)"/>
+    </g>
+
+    <g id="scene-base" inkscape:groupmode="layer" inkscape:label="Scene base">
+      <path d="M285 595v64l39.15-16.16 49.93 41.66h30.49l80.11 37.68.77 2.07c.68 5.35 7.7 9.37 11.83 11.24 22.38 10.1 101.92 32.01 45.21 60.01-55.34 27.32-114.55 51.01-159.64 88.52-47.47 39.47-82.23 92.4-112.22 149.42-9.16 17.4-16.86 36.16-25.7 53.79-.22.44-2.02 1.01-3.93.77l.03-550.25c.12-59.28 27.04-123.73 50.22-160.94 52.09-83.62 164.62-168.13 312.5-147.88 120.44 16.5 209.67 96.85 249.79 193.65 10.32 24.9 25.36 73.2 25.45 107.67l.01 556.73c-53.8-45.1-106.88-91.06-159.54-137.23-15.83-13.88-60.32-56.25-40.29-88.5 8.79-14.15 39.89-46.18 26.38-72.5-20-38.99-90.61-50.87-138.8-64.29-33.93-9.44 13.85-23.86 21.38-30.34.47-.34 2.76-.6 2.39-2.15l13.73-6.84 46.5-25.25c5.81-3.05 14.98-7.05 21.14-10.28.65-.34 4.26.12 4.64 0l70.65 33.94 38.05-26.04c16.69 5.58 34.13 15.09 49.77 21.31V549.77c-.68-151.56-124.2-280.08-276.75-277.26C406.43 275.31 287.53 402.06 285 556.25V595Z" fill="url(#foregroundGradient)"/>
+    </g>
+
+    <g id="sky" inkscape:groupmode="layer" inkscape:label="Sky">
+      <path d="M703.25 624.96c-9.96-.15-20.16-1.72-27.84-3.84-5.81-1.6-11.66-5.9-17.85-7.35l-13.12 7.48c25.15-61.32-12.64-116.89-62.19-128.71-71.82-17.13-133.94 54.76-106.14 125.01-15.78 4.81-33.22 9.18-48.11 15.01-3.02-.83-7.28-3.61-8.75-4.95l-71.85-65.86-2.32-.31L286.07 595H285v-38.75c2.53-154.19 121.43-280.94 273.25-283.74C710.8 269.69 834.32 398.21 835 549.77l-27.26 17.9-23.99-9.17h-2.06l-78.44 66.46Z" fill="url(#skyGradient)"/>
+    </g>
+
+    <g id="sun-and-horizon-route" inkscape:groupmode="layer" inkscape:label="Sun and horizon route">
+      <path d="M476.11 617.55c-27.8-70.25 34.32-142.14 106.14-125.01 49.55 11.82 87.34 67.39 62.19 128.71l-26.73 18.19-13.55-2.63c-14.46 7.22-27.89 17.6-41.28 25.59l.4 1.41 40.97 21.32-13.73 6.84-3.11.98c-10.87 6.69-73.19 19.76-37.66 36.62 22.41 10.63 63.1 22.59 72.27 45.94 6.1 15.55-6.91 30.8-13.44 38.6-1.18 1.41-10.09 10.89-10.73 10.89H575.5c7-9.6 32.06-27.4 28-45.98-4.95-22.61-40.27-32.91-59.75-42.58-53.43-26.53 18.01-36.36 39-47.81.72-.55 4.32-1.36 3.81-3.57l-34.81-23.86c-11.29-7.95-22.3-16.97-33.65-24.31l-14.03 2.11-25.79-21.45h-2.17Z" fill="url(#sunRouteGradient)"/>
+      <path d="M590.52 691.97c.37 1.55-1.92 1.81-2.39 2.15l-.72-1.17 3.11-.98Z" fill="url(#ridgeGradient)"/>
+    </g>
+
+    <g id="mountains" inkscape:groupmode="layer" inkscape:label="Mountains">
+      <path d="M428 632.56c18.01 10.81 35.91 24.62 51.75 36.87 8.51 2.84 18.86 4.24 28.79 5.57 18.63 2.51 31.97 11.42 48.04 16.77l-.45 1.74c-17.85 2.72-35.04 7.64-50.58 12.48-6.12 1.9-21.3 9.35-20.1 18.26l-.77-2.07-80.11-37.68h-30.49l-49.93-41.66L285 659v-64h1.07l59.01-33.56 2.32.31 71.85 65.86c1.47 1.34 5.73 4.12 8.75 4.95Z" fill="url(#mountainGradient)"/>
+      <path d="M476.11 617.55h2.17L504.07 639l14.03-2.11c11.35 7.34 22.36 16.36 33.65 24.31l34.81 23.86c.51 2.21-3.09 3.02-3.81 3.57-.81-.3-1.02-.72-1.59-.6-7.98 1.64-18.06 3.17-25.03 5.48l.45-1.74c-16.07-5.35-29.41-14.26-48.04-16.77-9.93-1.33-20.28-2.73-28.79-5.57-15.84-12.25-33.74-26.06-51.75-36.87 14.89-5.83 32.33-10.2 48.11-15.01Z" fill="url(#ridgeGradient)"/>
+      <path d="M835 549.77v129.04c-15.64-6.22-33.08-15.73-49.77-21.31l-38.05 26.04-70.65-33.94c8.35-8.43 17.88-16.54 26.72-24.64l78.44-66.46h2.06l23.99 9.17L835 549.77Z" fill="url(#mountainGradient)"/>
+      <path d="m644.44 621.25 13.12-7.48c6.19 1.45 12.04 5.75 17.85 7.35 7.68 2.12 17.88 3.69 27.84 3.84-8.84 8.1-18.37 16.21-26.72 24.64-.38.12-3.99-.34-4.64 0-6.16 3.23-15.33 7.23-21.14 10.28l-46.5 25.25-40.97-21.32-.4-1.41c13.39-7.99 26.82-18.37 41.28-25.59l13.55 2.63 26.73-18.19Z" fill="url(#ridgeGradient)"/>
+    </g>
+
+    <g id="road-markings" inkscape:groupmode="layer" inkscape:label="Road markings" fill="url(#markingGradient)">
+      <path d="M522 1038.35h48.02c10.18 27.24 23.28 52.19 35.98 77.15h-73.83c-8.62-23.72-16.85-48.7-20.67-77.23l10.5.08Z"/>
+      <path d="M509.04 930h36.46c-1.7 28.41 5.36 47.93 10.5 69.5h-49.98c-2.88-22.4-1.64-50.13 3.02-69.5Z"/>
+      <path d="M554.09 846h25.05c-12.59 15.41-22.83 33.3-28.76 54.96-2.89-.14-34.37 2.79-31.9-1.71 9.06-20.38 21.47-38.01 35.61-53.25Z"/>
+    </g>
+  </g>
+</svg>

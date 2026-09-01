@@ -3,6 +3,8 @@
 !app/public/apple-touch-icon.png
 !app/public/icon-192.png
 !app/public/icon-512.png
+!app/public/brand/
+!app/public/brand/*.png
 !app/public/offwego-logo-transparent-teal-road.png
 .env*
 !.env.example
@@ -18,3 +20,4 @@ app/m-*.png
 app/m2-*.png
 app/live.png
 app/audit*.mjs
+app/*.tmp.mjs

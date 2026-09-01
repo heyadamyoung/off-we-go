@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -7,6 +7,7 @@ const modulePath = fileURLToPath(import.meta.url);
 const appRoot = path.resolve(path.dirname(modulePath), '..');
 const background = { r: 10, g: 12, b: 16, alpha: 1 };
 const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
+const transparentExportSizes = [16, 32, 48, 64, 128, 256, 512, 1024];
 
 const androidDensities = new Map([
   ['mdpi', { launcher: 48, foreground: 108 }],
@@ -23,14 +24,14 @@ async function writeAsset(filename, bytes) {
 
 async function transparentIcon(sourcePath, size) {
   return sharp(sourcePath)
-    .resize(size, size, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+    .resize(size, size, { fit: 'contain', background: transparent, kernel: sharp.kernel.lanczos3 })
     .png()
     .toBuffer();
 }
 
 async function opaqueIcon(sourcePath, size) {
   return sharp(sourcePath)
-    .resize(size, size, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+    .resize(size, size, { fit: 'contain', background, kernel: sharp.kernel.lanczos3 })
     .flatten({ background })
     .removeAlpha()
     .png()
@@ -41,7 +42,7 @@ async function adaptiveForeground(source, size) {
   const artworkSize = Math.round(size * 0.82);
   const artwork = await source
     .clone()
-    .resize(artworkSize, artworkSize, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+    .resize(artworkSize, artworkSize, { fit: 'contain', background: transparent, kernel: sharp.kernel.lanczos3 })
     .png()
     .toBuffer();
   const offset = Math.floor((size - artworkSize) / 2);
@@ -123,11 +124,17 @@ function createIco(images) {
 }
 
 export async function generateBrandIcons({ sourcePath, outputRoot }) {
+  const vectorMaster = await readFile(sourcePath);
   const source = sharp(sourcePath);
   const monochrome = await monochromeMaster(sourcePath);
   const publicDirectory = path.join(outputRoot, 'public');
 
+  await writeAsset(path.join(publicDirectory, 'offwego-icon.svg'), vectorMaster);
   await writeAsset(path.join(publicDirectory, 'offwego-icon.png'), await transparentIcon(sourcePath, 512));
+  await Promise.all(transparentExportSizes.map(async (size) => writeAsset(
+    path.join(publicDirectory, 'brand', `offwego-icon-${size}.png`),
+    await transparentIcon(sourcePath, size),
+  )));
 
   for (const [filename, size] of [
     ['apple-touch-icon.png', 180],
@@ -164,7 +171,7 @@ function argumentValue(name) {
 }
 
 if (path.resolve(process.argv[1] || '') === modulePath) {
-  const sourcePath = path.resolve(argumentValue('--source') || path.join(appRoot, 'public', 'offwego-logo-transparent-teal-road.png'));
+  const sourcePath = path.resolve(argumentValue('--source') || path.join(appRoot, 'public', 'offwego-icon.svg'));
   const outputRoot = path.resolve(argumentValue('--output-root') || appRoot);
   await generateBrandIcons({ sourcePath, outputRoot });
 }
