@@ -56,15 +56,17 @@ function useGliding(target, ms = 800) {
 
 
 // One phone on the map — or, with no phone reporting, the family's best-known
-// position. Eased between fixes so it walks rather than teleports.
-function LiveMarker({ map, lng, lat, avatar, name, title, onClick, movedRef }: any) {
+// position. Eased between fixes so it walks rather than teleports. A phone that
+// has gone quiet keeps its dot at the last place it was heard from, dimmed and
+// without the pulse: out of signal is not the same as gone.
+function LiveMarker({ map, lng, lat, avatar, name, title, stale, onClick, movedRef }: any) {
   const target = useMemo(() => [lng, lat], [lng, lat])
   const pt = useGliding(target, 800)
   return (
     <MapMarker map={map} lng={pt[0]} lat={pt[1]}>
-      <div className="mme" title={title}
+      <div className={'mme' + (stale ? ' quiet' : '')} title={title}
            onClick={e => { e.stopPropagation(); if (!movedRef.current) onClick?.() }}>
-        <span className="halo" />
+        {!stale && <span className="halo" />}
         {avatar ? <img src={avatar} alt="" draggable={false} />
                 : <span className="ini">{(name || '?')[0]}</span>}
         <span className="dot" />

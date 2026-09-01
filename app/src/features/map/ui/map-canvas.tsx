@@ -352,7 +352,7 @@ const MapCanvas = memo(function MapCanvas({
 
       {map && markers.map(m => (
         <LiveMarker key={m.key} map={map} lng={m.lng} lat={m.lat} avatar={m.avatar} name={m.name}
-                    title={m.title} onClick={onLive} movedRef={moved} />
+                    title={m.title} stale={m.stale} onClick={onLive} movedRef={moved} />
       ))}
 
       {children}

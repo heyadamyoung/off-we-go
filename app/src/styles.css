@@ -305,6 +305,10 @@
   position: absolute; right: 4px; bottom: 4px; width: 14px; height: 14px; border-radius: 50%;
   background: var(--c-trail); border: 2.5px solid var(--c-bg);
 }
+/* Heard from a while ago: still on the map, still where they were, but plainly
+   not live — no halo, a muted badge, and the face at half strength. */
+.mme.quiet img, .mme.quiet .ini { opacity: .55; filter: saturate(.55) }
+.mme.quiet .dot { background: var(--c-faint) }
 /* Hover work is pure noise mid-gesture, and effects recomputed from the pixels
    behind them cost a frame every frame while those pixels move. */
 .mapcanvas.drag .mstop, .mapcanvas.drag .mstack, .mapcanvas.drag .mme { pointer-events: none }
