@@ -6,26 +6,49 @@ import { buildToken } from './testflightRelease.mjs';
 
 const API = 'https://api.appstoreconnect.apple.com/v1';
 
+/* The same state names appear in the internal and external columns and do not
+   mean the same thing in both: internal testers never face review, so
+   IN_BETA_TESTING there means they have it, while externally it means Apple
+   has passed it. Saying "out with external testers" in the internal column,
+   as this did at first, tells you the opposite of the truth. */
 const READABLE = {
   PROCESSING: 'processing',
   READY_FOR_BETA_SUBMISSION: 'not submitted for beta review',
   WAITING_FOR_BETA_REVIEW: 'waiting for Apple to start beta review',
   IN_BETA_REVIEW: 'in beta review at Apple',
-  READY_FOR_BETA_TESTING: 'approved — external testers can install it',
-  IN_BETA_TESTING: 'out with external testers',
   BETA_REJECTED: 'rejected by Apple',
   EXPIRED: 'expired',
   MISSING_EXPORT_COMPLIANCE: 'blocked: export compliance unanswered',
 };
 
-export const readable = state => READABLE[state] || state || 'unknown';
+const BY_AUDIENCE = {
+  internal: { READY_FOR_BETA_TESTING: 'installable', IN_BETA_TESTING: 'installable' },
+  external: {
+    READY_FOR_BETA_TESTING: 'approved — they can install it',
+    IN_BETA_TESTING: 'approved — they can install it',
+  },
+};
+
+export const readable = (state, audience = 'external') =>
+  BY_AUDIENCE[audience]?.[state] || READABLE[state] || state || 'unknown';
+
+/** Who is in a group, so "did the invitation land?" has an answer. */
+export function describeGroup(group, testers) {
+  const people = (testers || [])
+    .map(tester => tester.attributes?.email || tester.id)
+    .sort();
+  const kind = group?.attributes?.isInternalGroup ? 'internal' : 'external';
+  return `${group?.attributes?.name} (${kind}): ${people.length
+    ? people.join(', ') : 'nobody yet'}`;
+}
 
 /** One line per build: what it is, and who can install it. */
 export function describeBuild({ version, uploaded, processingState, internalState, externalState, groups }) {
   const when = uploaded ? new Date(uploaded).toISOString().replace('T', ' ').slice(0, 16) : 'unknown time';
   const where = groups?.length ? groups.join(', ') : 'no external group';
-  return `build ${version} (${when})  processing: ${readable(processingState)}`
-    + `  internal: ${readable(internalState)}  external: ${readable(externalState)}  groups: ${where}`;
+  return `build ${version} (${when})  processing: ${readable(processingState, 'internal')}`
+    + `  internal: ${readable(internalState, 'internal')}`
+    + `  external: ${readable(externalState, 'external')}  groups: ${where}`;
 }
 
 async function api(path, token) {
@@ -51,6 +74,13 @@ async function main() {
   const apps = await api(`/apps?filter[bundleId]=${encodeURIComponent(bundleId)}`, token);
   const app = apps?.data?.[0];
   if (!app) throw new Error(`No app in App Store Connect for ${bundleId}`);
+
+  const groups = await api(`/apps/${app.id}/betaGroups?limit=200`, token);
+  for (const group of groups?.data || []) {
+    const testers = await api(`/betaGroups/${group.id}/betaTesters?limit=200`, token).catch(() => null);
+    console.log(describeGroup(group, testers?.data));
+  }
+  console.log('');
 
   const builds = await api(`/builds?filter[app]=${app.id}&limit=8&sort=-uploadedDate`, token);
   for (const build of builds?.data || []) {
