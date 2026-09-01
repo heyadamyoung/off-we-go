@@ -187,6 +187,16 @@ test('a long note cannot push the detail card off the top of a phone', async ({ 
   expect(x.y + x.height, `the way back to the map is below the screen — ${where}`)
     .toBeLessThanOrEqual(844)
 
+  // Rects alone would not catch the button being clipped by the card's own
+  // overflow or covered by the bar above it. Ask the page what is actually
+  // under that point.
+  const tappable = await close.evaluate(el => {
+    const r = el.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return !!hit && (hit === el || el.contains(hit))
+  })
+  expect(tappable, `nothing reaches the close button — ${where}`).toBe(true)
+
   await close.click()
   await expect(card).toHaveCount(0)
 })
