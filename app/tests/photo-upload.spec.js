@@ -7,12 +7,11 @@ test('selected photo thumbnails reveal their location source and expected map pl
     contentType: 'application/json',
     body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
   }))
-  await page.goto('/')
-  await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
-  await expect(page.locator('.mapcanvas canvas')).toBeVisible()
-  await page.locator('button[title="Add a photo"]').click()
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  await page.getByRole('button', { name: 'Add photos' }).click()
 
-  await page.locator('.modal input[type="file"]').evaluate(input => {
+  await page.locator('.dlg input[type="file"]').evaluate(input => {
     const tagged = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'tagged.jpg', { type: 'image/jpeg' })
     Object.defineProperty(tagged, 'offwegoMetadata', { value: {
       lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z',
@@ -29,7 +28,7 @@ test('selected photo thumbnails reveal their location source and expected map pl
 
   await expect(page.getByText('Embedded photo GPS')).toBeVisible()
   await expect(page.getByText('55.9533° N, 3.1883° W')).toBeVisible()
-  await expect(page.locator('.uploadmap canvas')).toBeVisible()
+  await expect(page.locator('.dlg .mapcanvas canvas')).toBeVisible()
 
   await page.getByRole('button', { name: 'Inspect selected photo 2' }).click()
   await expect(page.getByText('No embedded GPS')).toBeVisible()

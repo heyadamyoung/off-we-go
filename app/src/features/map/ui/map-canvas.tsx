@@ -1,7 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Map as MapGL, setWorkerUrl } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { lineOf, validLngLat } from '../../../shared/lib/geo'
@@ -15,11 +14,11 @@ const MapCanvas = memo(function MapCanvas({
   view, onView, theme, tint, interactive = true, route = [], stops = [], photos = [],
   markers = [], trail = [],
   selectedStop, onStop, onPhoto, onLive, labels = false, highlight = null,
-  editing = false, onMapClick, onStopMove, places = [], onPickPlace,
+  editing = false, placing = false, onMapClick, onStopMove, places = [], onPickPlace,
   attractions = null, onPickAttraction, children,
 }: any) {
-  const holder = useRef(null)
-  const [map, setMap] = useState(null)
+  const holder = useRef<HTMLDivElement>(null)
+  const [map, setMap] = useState<any>(null)
   const [moving, setMoving] = useState(false)     // any camera movement
   const [dragging, setDragging] = useState(false)  // the user's hand, specifically
 
@@ -271,22 +270,22 @@ const MapCanvas = memo(function MapCanvas({
   // edits it, clicking bare map creates one.
   const clickRef = useRef(onMapClick); clickRef.current = onMapClick
   useEffect(() => {
-    if (!map || !editing) return
+    if (!map || (!editing && !placing)) return
     const h = e => clickRef.current?.([e.lngLat.lng, e.lngLat.lat])
     map.on('click', h)
     return () => map.off('click', h)
-  }, [map, editing])
+  }, [map, editing, placing])
 
   /* ---- overlays --------------------------------------------------------- */
   // Photos are grouped per stop so a busy corner shows one tidy stack, not a pile.
   const groups = useMemo(() => {
-    const byStop = new Map(), loose = []
+    const byStop = new Map<string, any[]>(), loose: any[] = []
     photos.forEach(p => {
       if (!p.stopId) { if (validLngLat(p.lng, p.lat)) loose.push(p); return }
       if (!byStop.has(p.stopId)) byStop.set(p.stopId, [])
-      byStop.get(p.stopId).push(p)
+      byStop.get(p.stopId)!.push(p)
     })
-    const out = []
+    const out: any[] = []
     byStop.forEach((items, stopId) => {
       const s = stops.find(x => x.id === stopId) || items.find(p => validLngLat(p.lng, p.lat))
       if (!s) return
@@ -299,7 +298,7 @@ const MapCanvas = memo(function MapCanvas({
 
   return (
     <div className={'mapcanvas' + (moving ? ' busy' : '') + (dragging ? ' drag' : '')
-                     + (editing ? ' editing' : '')} ref={holder}>
+                     + (editing ? ' editing' : '') + (placing ? ' placing' : '')} ref={holder}>
       {map && stops.map(s => (
         <MapMarker key={s.id} map={map} lng={s.lng} lat={s.lat}
                    draggable={editing} onDragEnd={p => onStopMove?.(s.id, p)}>

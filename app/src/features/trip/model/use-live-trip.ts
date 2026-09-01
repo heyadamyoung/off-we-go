@@ -8,8 +8,8 @@ import { useDaylight } from '../../map'
 export default function useLiveTrip({ tripId, route, stops, family, mapOverride }) {
   /* Where the phones are. Fixes arrive on their own channel and move only the
      markers; nothing else is refetched for them. */
-  const [phones, setPhones] = useState([])
-  const [fixes, setFixes] = useState([])
+  const [phones, setPhones] = useState<any[]>([])
+  const [fixes, setFixes] = useState<any[]>([])
   const [liveReady, setLiveReady] = useState(false)
   useEffect(() => {
     let alive = true, stop = () => {}
@@ -27,12 +27,12 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
   }, [tripId])
 
   const latestByPhone = useMemo(() => {
-    const m = new Map()
+    const m = new Map<string, any>()
     for (const f of fixes) { const cur = m.get(f.deviceId); if (!cur || f.at > cur.at) m.set(f.deviceId, f) }
     return m
   }, [fixes])
   const latestFix = useMemo(() => {
-    let best = null
+    let best: any = null
     for (const f of latestByPhone.values()) if (!best || f.at > best.at) best = f
     return best
   }, [latestByPhone])
@@ -49,8 +49,15 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
     const s = stops.find(x => x.status === 'now') || stops.find(x => x.status === 'next') || stops[0]
     return s ? [s.lng, s.lat] : [4.876, 52.367]
   }, [latestFix, track, stops])
-  const sun = useDaylight(live)
-  const mapTheme = mapOverride || sun.base
+  const daylight = useDaylight(live)
+  const mapTheme = mapOverride || daylight.base
+  /* The wash was drawn for the basemap the sun would have chosen. Laid over the
+     other one it only muddies it — a bright noon wash turns the dark base
+     brown — so when the two disagree the wash steps aside and the map simply
+     keeps the colour of the chosen theme. */
+  const sun = useMemo(
+    () => (mapTheme === daylight.base ? daylight : { ...daylight, alpha: 0 }),
+    [mapTheme, daylight])
 
   // Kilometres from the phones when they have reported today, else the drawn route.
   const km = useMemo(() => trailKm(fixes) || routeKm(track), [fixes, track])

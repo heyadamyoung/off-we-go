@@ -4,14 +4,14 @@ import { Marker } from 'maplibre-gl'
 import { clamp } from '../../../shared/lib/numbers'
 
 function MapMarker({ map, lng, lat, draggable = false, onDragEnd, children }: any) {
-  const elRef = useRef(null)
+  const elRef = useRef<any>(null)
   if (!elRef.current && typeof document !== 'undefined') {
     const d = document.createElement('div')
     d.style.width = '0'
     d.style.height = '0'
     elRef.current = d
   }
-  const mk = useRef(null)
+  const mk = useRef<any>(null)
   const dragRef = useRef(onDragEnd); dragRef.current = onDragEnd
 
   useEffect(() => {

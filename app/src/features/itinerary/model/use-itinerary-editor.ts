@@ -61,7 +61,7 @@ export default function useItineraryEditor({
   const dayForNewStop = day === ALL_DAYS ? (days[0] || '') : (day || '')
 
   const onMapClick = useCallback((lngLat: Coordinates) => {
-    if (routeDraft) { setRouteDraft(r => [...r, lngLat]); return }
+    if (routeDraft) { setRouteDraft(r => [...(r || []), lngLat]); return }
     setDraft(d => (d && !d.id)
       ? { ...d, lng: lngLat[0], lat: lngLat[1] }            // reposition the pending one
       : { name: '', icon: 'pin', status: 'planned', day: dayForNewStop,
@@ -79,7 +79,7 @@ export default function useItineraryEditor({
     if (enriched.current || !stops.length) return
     enriched.current = true
     let alive = true
-    enrichStops(stops).then(found => {
+    enrichStops(stops).then((found: any[]) => {
       if (!alive || !found.length) return
       setStops(list => list.map(s => {
         const p = found.find(f => f.id === s.id)
@@ -153,15 +153,15 @@ export default function useItineraryEditor({
       const pl = await describePlace({ lng: draft.lng, lat: draft.lat, name: draft.name })
       if (!pl) { toast('Nothing found at that spot'); return }
       const image = pl.image || (pl.pageTitle ? await imageForPage(pl.pageTitle).catch(() => null) : null)
-      setDraft(d => ({
+      setDraft(d => (d ? {
         ...d,
         name: (d.name || '').trim() || pl.name,
         kind: d.kind || pl.kind || '',
         icon: d.icon && d.icon !== 'pin' ? d.icon : pl.icon,
         note: (d.note || '').trim() || pl.note || '',
-        src: d.src || image || null,
-        sourceUrl: d.sourceUrl || pl.source || null,
-      }))
+        src: d.src || image || undefined,
+        sourceUrl: d.sourceUrl || pl.source || undefined,
+      } : d))
       toast('Filled in from ' + pl.name)
     } catch (e) {
       toast(appErrorMessage(e, 'lookup-place'), 'error')
@@ -215,7 +215,7 @@ export default function useItineraryEditor({
           name: draft.name, kind: draft.kind, icon: draft.icon, day: draft.day,
           time: draft.time, status: draft.status, note: draft.note,
           lng: draft.lng, lat: draft.lat, src: draft.src || null,
-          sourceUrl: draft.sourceUrl || null,
+          sourceUrl: draft.sourceUrl || undefined,
         })
         setStops(list => list.map(s => (s.id === draft.id ? { ...s, ...saved } : s)))
         toast('Stop saved')
@@ -282,9 +282,9 @@ export default function useItineraryEditor({
   const addAttraction = useCallback(async (poi: Attraction) => {
     try {
       const saved = await createStop(tripId, {
-        name: poi.n, kind: poi.d || '', icon: ICON_FOR_KIND[poi.k] || 'pin', status: 'planned',
+        name: poi.n, kind: poi.d || '', icon: ICON_FOR_KIND[poi.k || ''] || 'pin', status: 'planned',
         day: dayForNewStop, note: poi.note || '', lng: poi.lng, lat: poi.lat,
-        src: poi.image || null, sourceUrl: poi.source || null, seq: stops.length,
+        src: poi.image || null, sourceUrl: poi.source || undefined, seq: stops.length,
       })
       setStops(list => [...list, saved])
       toast(`${poi.n} added to the trip`)

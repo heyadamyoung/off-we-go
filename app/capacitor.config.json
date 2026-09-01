@@ -1,8 +1,8 @@
 {
   "appId": "ai.threadway.wayfare",
   "appName": "Off We Go",
-  "webDir": "dist",
-  "backgroundColor": "#0a0c10",
+  "webDir": "dist/client",
+  "backgroundColor": "#10141C",
   "ios": {
     "contentInset": "never",
     "preferredContentMode": "mobile"

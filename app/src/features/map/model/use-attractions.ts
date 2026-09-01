@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { hasBackend, loadAttractions } from '../../../backend'
 import { attractionsInCell, cellsCovering, isHeadline } from '../api/attractions'
 
-const EMPTY_FC = { type: 'FeatureCollection', features: [] }
+const EMPTY_FC = { type: 'FeatureCollection', features: [] as any[] }
 
 /* Which attraction cells the screen is touching, and everything ever fetched.
 
@@ -127,7 +127,8 @@ function useAttractions(view, enabled) {
     return () => { alive = false; clearTimeout(timer) }
   }, [view, enabled, dbUp, dbBlankHere])
 
-  return { data, filling, count: data.features.length }
+  const shown = enabled ? data : EMPTY_FC
+  return { data: shown, filling: enabled ? filling : 0, count: shown.features.length }
 }
 
 export { EMPTY_FC }

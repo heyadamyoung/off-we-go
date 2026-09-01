@@ -40,7 +40,7 @@ const Img = memo(function Img({ item, w = 800, h = 600, className, style, alt = 
   return (
     <img className={cls} style={style} src={src} alt={alt} draggable={false}
       loading={eager ? 'eager' : 'lazy'} decoding="async"
-      fetchPriority={eager ? 'high' : undefined}
+      {...(eager ? { fetchpriority: 'high' } : {})}
       onLoad={() => { SEEN.add(src); setReady(true) }}
       onError={() => {
         if (item.src) return

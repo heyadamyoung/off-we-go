@@ -117,7 +117,7 @@ export async function describePlace({ lng, lat, name, radius = 250, strict = fal
    rather than being given a photograph of the building next door. */
 export async function enrichStops(stops: any[], { onOne }: any = {}) {
   const need = stops.filter(s => !s.src && s.name)
-  const found = []
+  const found: any[] = []
   await Promise.all(need.map(async stop => {
     try {
       const pl = await describePlace({

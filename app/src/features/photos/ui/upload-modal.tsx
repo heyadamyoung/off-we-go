@@ -4,19 +4,19 @@ import { photoPlacement, preparePhotoFilesForUpload } from '../../../mobile-phot
 import { MapCanvas } from '../../map'
 import { coordinateLabel, validLngLat } from '../../../shared/lib/geo'
 import Icon from '../../../shared/ui/icon'
-import Modal from '../../../shared/ui/modal'
+import Sheet from '../../../shared/ui/sheet'
 import { appErrorMessage } from '../../../user-messages-core'
 
 const noop = () => {}
 
 function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
-  const [files, setFiles] = useState([])
+  const [files, setFiles] = useState<any[]>([])
   const [selected, setSelected] = useState(0)
   const fileUrls = useRef([])
   const [caption, setCaption] = useState('')
-  const [devicePoint, setDevicePoint] = useState(null)
+  const [devicePoint, setDevicePoint] = useState<any>(null)
   const [preparing, setPreparing] = useState(false)
-  const fileRef = useRef(null)
+  const fileRef = useRef<any>(null)
   const mountedRef = useRef(true)
   const selectionRef = useRef(0)
   const fallbackPoint = devicePoint || live
@@ -110,56 +110,78 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
   }, [])
 
   return (
-    <Modal title="Add a photo" onClose={onClose} className="uploadmodal">
-      <div className="mb">
-        {!files.length ? (
-          <div className="drop" onClick={preparing ? undefined : choose}>
-            <Icon n="upload" s={26} c="var(--ink3)" />
-            <b>{preparing ? 'Reading photo locations…'
-              : isNativeApp ? 'Choose photos from your photo library' : 'Choose photos from this device'}</b>
-            <span>{preparing ? 'HEIC photos are converted securely on this device.'
-              : "Select up to 20; each photo's map position will be shown before upload"}</span>
+    <Sheet wide title="Add photos" onClose={onClose}
+           footer={<>
+             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+             <button className="btn btn-accent" disabled={!files.length || busy || preparing}
+                     onClick={submit}>
+               {busy ? `Uploading ${files.length}…` : `Add ${files.length || ''} to the map`}
+             </button>
+           </>}>
+      {!files.length ? (
+        <button className="flex flex-col items-center gap-1.5 rounded-2xl border-[1.5px] border-dashed
+                           border-line2 px-5 py-7 text-center text-muted hover:border-accent
+                           hover:bg-accent-soft"
+                onClick={preparing ? undefined : choose}>
+          <Icon n="upload" s={26} />
+          <b className="text-sm text-ink">{preparing ? 'Reading photo locations…'
+            : isNativeApp ? 'Choose photos from your photo library' : 'Choose photos from this device'}</b>
+          <span className="text-xs">{preparing ? 'HEIC photos are converted securely on this device.'
+            : "Up to 20 at a time. Each photo's map position is shown before it uploads."}</span>
+        </button>
+      ) : (
+        <>
+          <div className="previews grid max-h-[260px] grid-cols-3 gap-2 overflow-auto">
+            {files.map((file, i) => (
+              <button key={file.url} onClick={() => setSelected(i)}
+                      className={'relative overflow-hidden rounded-xl border-2 ' +
+                        (i === selected ? 'on border-accent' : 'border-transparent')}
+                      aria-label={`Inspect selected photo ${i + 1}`}>
+                <img className="preview h-28 w-full object-cover" src={file.url} alt={`Selected ${i + 1}`} />
+                <span className="absolute bottom-1 right-1 rounded-full bg-black/75 px-1.5 py-0.5
+                                 text-[10px] font-extrabold text-white">
+                  {placements[i]?.hasEmbeddedGps ? 'GPS' : 'No GPS'}
+                </span>
+              </button>
+            ))}
           </div>
-        ) : <>
-          <div className="previews">{files.map((file, i) => (
-            <button key={file.url} className={i === selected ? 'on' : ''} onClick={() => setSelected(i)}
-                    aria-label={`Inspect selected photo ${i + 1}`}>
-              <img className="preview" src={file.url} alt={`Selected ${i + 1}`} />
-              <span>{placements[i]?.hasEmbeddedGps ? 'GPS' : 'No GPS'}</span>
-            </button>
-          ))}</div>
-          <button className="btn choosephotos" disabled={preparing} onClick={choose}>Choose different photos</button>
-        </>}
-        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pick} />
-        <div className="field">
-          <label>Caption</label>
-          <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="What is happening here?" />
-        </div>
-        {placement && previewView && previewPhoto && <div className="uploadinspect">
-          <div className="uploadmap">
+          <div>
+            <button className="mini" disabled={preparing} onClick={choose}>Choose different photos</button>
+          </div>
+        </>
+      )}
+      <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pick} />
+      <label className="field">Caption
+        <input value={caption} onChange={e => setCaption(e.target.value)}
+               placeholder="What is happening here?" />
+      </label>
+      {placement && previewView && previewPhoto && (
+        <div className="grid overflow-hidden rounded-xl border border-line bg-raised
+                        sm:grid-cols-[minmax(0,1.35fr)_minmax(180px,.65fr)]">
+          <div className="relative h-[190px] overflow-hidden">
             <MapCanvas theme={theme} tint={tint} interactive={false} view={previewView} onView={noop}
               route={[]} stops={previewStop ? [previewStop] : []} photos={[previewPhoto]} />
           </div>
-          <div className="uplocation">
-            <b><Icon n="pin" s={14} /> {placement.hasEmbeddedGps ? 'Embedded photo GPS' : 'No embedded GPS'}</b>
-            <strong>{coordinateLabel(placement.previewPoint)}</strong>
+          <div className="flex flex-col justify-center gap-1.5 p-3.5">
+            <b className="flex items-center gap-1.5 text-xs text-accent">
+              <Icon n="pin" s={14} /> {placement.hasEmbeddedGps ? 'Embedded photo GPS' : 'No embedded GPS'}
+            </b>
+            <strong className="tnum text-sm">{coordinateLabel(placement.previewPoint)}</strong>
             {placement.source === 'history'
-              ? <p>Trip history will be checked first; the {placement.fallbackSource === 'live'
+              ? <p className="hint">Trip history will be checked first; the {placement.fallbackSource === 'live'
                 ? 'current phone position' : 'trip position'} shown here is the fallback.</p>
-              : <p>{placement.stopName ? `This will be grouped at ${placement.stopName}.`
+              : <p className="hint">{placement.stopName ? `This will be grouped at ${placement.stopName}.`
                 : placement.source === 'exif' ? 'This is where the photo was taken.'
                   : placement.source === 'live' ? 'This is the current phone position.'
                     : 'This is the trip’s latest known position.'}</p>}
           </div>
-        </div>}
-        <div className="linkrow">
-          <button className="btn" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
-          <button className="btn pri" style={{ flex: 1 }} disabled={!files.length || busy || preparing} onClick={submit}>
-            {busy ? `Uploading ${files.length}…` : `Add ${files.length || ''} to the map`}
-          </button>
         </div>
-      </div>
-    </Modal>
+      )}
+      <p className="hint">
+        Photos go on the map for everyone on the trip, under the day they were taken. Followers can
+        like and comment; only travellers can add or remove photos.
+      </p>
+    </Sheet>
   )
 }
 

@@ -5,4 +5,4 @@ export {
   imageForPage,
   radiusForView,
 } from './api/nearby-places'
-export { AttractionCard, SightsView } from './ui/sights'
+export { AttractionCard, SightsList } from './ui/sights'

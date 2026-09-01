@@ -1,238 +1,181 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo } from 'react'
+import { Brandmark } from '../../../shared/ui/brand'
 import Icon from '../../../shared/ui/icon'
-import Img from '../../../shared/ui/img'
-import { ALL_DAYS } from '../../../shared/constants/trip'
+import type { TripView } from '../../../trip-search-core'
 
-const LivePill = memo(function LivePill({ resetKey }: any) {
-  const [ago, setAgo] = useState(0)
-  useEffect(() => { setAgo(0) }, [resetKey])
-  useEffect(() => {
-    const id = setInterval(() => setAgo(a => a + 1), 1000)
-    return () => clearInterval(id)
-  }, [])
-  /* Capped at 99 minutes and rendered in a fixed-width slot. The label goes
-     "now" then "5s" then "12m", and each is a different width, so every tick
-     nudged the People button sideways. */
-  const mins = Math.min(99, Math.floor(ago / 60))
-  const label = ago < 5 ? 'now' : ago < 60 ? `${ago}s` : `${mins}m`
-  return <div className="tlive"><span className="d" />LIVE<span className="n">{label}</span></div>
-})
+export const VIEWS: Array<[TripView, string, string]> = [
+  ['map', 'Map', 'map'],
+  ['timeline', 'Timeline', 'list'],
+  ['photos', 'Photos', 'grid'],
+  ['sights', 'Sights nearby', 'star'],
+  ['people', 'People', 'people'],
+]
 
-const PresenceFaces = memo(function PresenceFaces({ viewers = [] }: any) {
-  if (!viewers.length) return null
-  const shown = viewers.slice(0, 3)
-  const names = viewers.map(person => person.name).join(', ')
+/* The mark sits beside the title block rather than above it: stacked, it had to
+   shrink to the height of a line of small caps, which is exactly the size at
+   which this particular drawing stops being readable. */
+export const TripTitle = memo(function TripTitle({ title, sub }: { title: string; sub: string }) {
   return (
-    <div className="tpresence" aria-label={`Viewing now: ${names}`}>
-      {shown.map(person => person.avatar
-        ? <img key={person.id || person.name} src={person.avatar} alt=""
-               title={`${person.name} is viewing now`} />
-        : <span key={person.id || person.name} className="ini"
-                title={`${person.name} is viewing now`}>{(person.name || '?')[0]}</span>)}
-      {viewers.length > shown.length && <span className="more">+{viewers.length - shown.length}</span>}
-    </div>
-  )
-})
-
-const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount, nowStop, nextStop,
-                                     liveKey, onPeople, tab, setTab, onUpload, theme, onToggleTheme,
-                                     sunPhase, canEdit, editing, onToggleEdit, me, onSignOut,
-                                     onHome, attractionsOn, onToggleAttractions, viewers }: any) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!menuOpen) return
-    const closeFromOutside = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
-    }
-    const closeFromKeyboard = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', closeFromOutside)
-    document.addEventListener('keydown', closeFromKeyboard)
-    return () => {
-      document.removeEventListener('pointerdown', closeFromOutside)
-      document.removeEventListener('keydown', closeFromKeyboard)
-    }
-  }, [menuOpen])
-
-  const chooseMenuAction = (action: () => void) => {
-    setMenuOpen(false)
-    action()
-  }
-  const Item = ({ children, hot = false }: any) => <><span className="dot">·</span><span className={hot ? 'hot' : ''}>{children}</span></>
-  return (
-    <header className="ticker">
-      <div className="tmenu" ref={menuRef}>
-        <button className="tlogo" type="button" aria-label="Open menu" aria-haspopup="menu"
-                aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}>
-          <span className="mk brand"><img src="/offwego-icon.png" alt="" /></span>
-          <span className="wm">Off We Go</span>
-        </button>
-        {menuOpen && (
-          <div className="tmenu-pop" role="menu" aria-label="Off We Go menu">
-            <div className="tmenu-account">
-              <span>{me?.avatar
-                ? <img src={me.avatar} alt="" />
-                : (me?.name || 'You').slice(0, 1).toUpperCase()}</span>
-              <div><small>Signed in as</small><b>{me?.name || 'You'}</b></div>
-            </div>
-            {onHome && (
-              <button type="button" role="menuitem" onClick={() => chooseMenuAction(onHome)}>
-                <Icon n="map" s={16} />All trips
-              </button>
-            )}
-            <button type="button" role="menuitem" onClick={() => chooseMenuAction(onPeople)}>
-              <Icon n="users" s={16} />People
-            </button>
-            <button type="button" role="menuitem" onClick={() => chooseMenuAction(onUpload)}>
-              <Icon n="camera" s={16} />Add a photo
-            </button>
-            {onSignOut && (
-              <button className="signout" type="button" role="menuitem"
-                      onClick={() => chooseMenuAction(onSignOut)}>
-                <Icon n="logout" s={16} />Sign out
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="tflow">
-<span className="crew">{(trip.crew || '').toUpperCase()}</span>
-        <Item>{trip.title}</Item>
-        {trip.dates ? <Item hot>{trip.dates}</Item> : null}
-        <Item>{km.toFixed(1)} km walked</Item>
-        <Item>{doneCount} of {stopCount} stops</Item>
-        <Item>{photoCount} photos</Item>
-        {nowStop && <Item hot>NOW AT {(nowStop.name || '').toUpperCase()}</Item>}
-        {nextStop && <Item>next: {nextStop.name}</Item>}
-      </div>
-      <div className="tright">
-        <nav className="tnav">
-          {[['map', 'map'], ['timeline', 'list'], ['photos', 'grid'],
-            ['sights', 'star'], ['family', 'users']].map(([k, ic]) => (
-            <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} title={k}>
-              <Icon n={ic} s={15} />
-            </button>
-          ))}
-        </nav>
-        {canEdit && (
-          <button className={'tbtn ghost' + (editing ? ' on' : '')} onClick={onToggleEdit}
-                  title={editing ? 'Done editing' : 'Edit the itinerary'}>
-            <Icon n={editing ? 'check' : 'edit'} s={15} />
-          </button>
-        )}
-        <button className={'tbtn ghost pref attr' + (attractionsOn ? ' on' : '')} onClick={onToggleAttractions}
-                title={attractionsOn ? 'Hide attractions on the map' : 'Show attractions on the map'}>
-          <Icon n="pin" s={15} />
-        </button>
-        <button className="tbtn ghost" onClick={onUpload} title="Add a photo"><Icon n="camera" s={15} /></button>
-        <button className="tbtn ghost pref theme" onClick={onToggleTheme}
-                title={sunPhase ? `Theme · the map is following ${sunPhase} where the family is`
-                                : 'Theme'}>
-          <Icon n={theme === 'dark' ? 'sun' : 'moon'} s={15} />
-        </button>
-        <LivePill resetKey={liveKey} />
-        <PresenceFaces viewers={viewers} />
-        <button className="tbtn hot people-action" onClick={onPeople} title="People" aria-label="People">
-          <Icon n="users" s={14} c="#0a0c10" w={2.2} /><span className="lbl">People</span>
-          {viewers?.length ? <span className="pcnt" aria-hidden="true">{viewers.length}</span> : null}
-        </button>
+    <header className="absolute left-7 top-6 z-10 flex items-center gap-4">
+      <Brandmark size={62} />
+      <div className="flex flex-col gap-1">
+        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-faint">Off We Go</div>
+        <h1 className="m-0 text-[34px] font-extrabold leading-none tracking-[-.02em]
+                       max-sm:text-2xl">{title}</h1>
+        <div className="text-sm text-muted max-sm:hidden">{sub}</div>
       </div>
     </header>
   )
 })
 
-const HeroCard = memo(function HeroCard({ stop, photos, onClose, openViewer, toast }: any) {
-  const here = photos.filter(p => p.stopId === stop.id)
-  const label = stop.status === 'now' ? 'Happening now' : stop.status === 'done' ? 'Visited'
-              : stop.status === 'next' ? 'Up next' : 'Planned'
+interface ClusterProps {
+  view: TripView
+  onView: (view: TripView) => void
+  canEdit: boolean
+  editing: boolean
+  placing: boolean
+  following: boolean
+  theme: string
+  attractions: boolean
+  onAttractions: () => void
+  onSettings: () => void
+  onPlace: () => void
+  onFollow: () => void
+  onAdd: () => void
+  onTheme: () => void
+  onEdit: () => void
+}
+
+export const TripCluster = memo(function TripCluster(props: ClusterProps) {
+  const night = props.theme !== 'light'
+  const actions: Array<[string, string, string, boolean, () => void]> = [
+    ['settings', 'Trip settings', 'cog', false, props.onSettings],
+    ['pin', 'Place a pin', 'pinplus', props.placing, props.onPlace],
+    ['attractions', props.attractions ? 'Hide attractions' : 'Show attractions', 'museum',
+      props.attractions, props.onAttractions],
+    ['live', 'Follow live position', 'locate', props.following, props.onFollow],
+    ['add', 'Add photos', 'camera', false, props.onAdd],
+    ['theme', night ? 'Day map' : 'Night map', night ? 'sun' : 'moon', false, props.onTheme],
+  ]
+  if (props.canEdit) {
+    actions.unshift(['edit', props.editing ? 'Done editing' : 'Edit the itinerary', 'pencil',
+      props.editing, props.onEdit])
+  }
   return (
-    <div className="herocard">
-      <Img className="hero" item={stop} w={800} h={400} eager />
-      <button className="x" onClick={onClose}><Icon n="x" s={15} c="#fff" w={2} /></button>
-      <div className="bd">
-        <div className="ey"><span>{label}</span>
-          <em>{[stop.day, stop.time].filter(Boolean).join(' · ')}</em></div>
-        <h2>{stop.name}</h2>
-        <p>{stop.note}</p>
-        {here.length > 0 && (
-          <div className="thumbrow">
-            {here.slice(0, 4).map((p, i) => (
-              <button key={p.id} onClick={() => openViewer(here, i)}><Img item={p} w={200} h={160} /></button>
-            ))}
-            {here.length > 4 && (
-              <button className="rest" onClick={() => openViewer(here, 4)}>+{here.length - 4}</button>
-            )}
-          </div>
-        )}
-        <div className="btns">
-          <button className="wbtn hot" disabled={!here.length} onClick={() => openViewer(here, 0)}>
-            <Icon n="camera" s={15} c="#0a0c10" w={2.2} />
-            {here.length ? `See ${here.length} photo${here.length === 1 ? '' : 's'}` : 'No photos yet'}
-          </button>
-          <a className="wbtn" title="Open in Google Maps" target="_blank" rel="noopener noreferrer"
-             href={`https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lng}`}>
-            <Icon n="map" s={16} />
-          </a>
-          <button className="wbtn" onClick={() => toast('Saved to favourites')}><Icon n="heart" s={16} /></button>
-          <button className="wbtn" onClick={() => toast('Note sent to the family')}><Icon n="send" s={16} /></button>
-        </div>
-      </div>
+    <div className="glass flex items-center gap-0.5 rounded-xl p-1">
+      {VIEWS.map(([key, label, icon]) => (
+        <button key={key} data-tip={label} aria-label={label} title={key}
+                className={'tb' + (props.view === key ? ' active' : '')}
+                onClick={() => props.onView(key)}>
+          <Icon n={icon} s={18} />
+        </button>
+      ))}
+      <span className="mx-1 h-5 w-px bg-line2" />
+      {actions.map(([key, label, icon, on, run]) => (
+        <button key={key} data-tip={label} aria-label={label}
+                className={'tb' + (on ? ' on' : '')} onClick={run}>
+          <Icon n={icon} s={18} />
+        </button>
+      ))}
     </div>
   )
 })
 
-const Filmstrip = memo(function Filmstrip({ stops, photos, byName, selected, onSelect, day, setDay,
-                                            days, openViewer, query, setQuery }: any) {
+/* The one thing on the screen that is happening right now. Clicking it takes
+   the map back to the travellers, wherever the map had wandered to. */
+export const NowCapsule = memo(function NowCapsule(
+  { text, meta, onClick }: { text: string; meta?: string; onClick: () => void },
+) {
   return (
-    <div className="filmstrip">
-      <div className="fh">
-        <div className="fdays">
-          <button className={day === ALL_DAYS ? 'on' : ''} onClick={() => setDay(ALL_DAYS)}>ALL DAYS</button>
-          {days.map(d => (
-            <button key={d} className={day === d ? 'on' : ''} onClick={() => setDay(d)}>{d.toUpperCase()}</button>
-          ))}
-        </div>
-        <label className="fsearch">
-          <Icon n="search" s={14} c="var(--ink3)" />
-          <input value={query} placeholder="Search stops and captions"
-                 onChange={e => setQuery(e.target.value)} />
-          {query && <button onClick={() => setQuery('')} title="Clear"><Icon n="x" s={13} w={2} /></button>}
-        </label>
-      </div>
-      <div className="frow">
-        {stops.map((s, ci) => {
-          const here = photos.filter(p => p.stopId === s.id)
-          const cover = here[0] || s
-          return (
-            <div key={s.id} className={'fcard' + (selected === s.id ? ' on' : '') + (s.status === 'now' ? ' now' : '')}
-                 onClick={() => onSelect(s.id)}>
-              <div className="ph">
-                <Img item={cover} w={420} h={220} eager={ci < 4} />
-                {here.length > 0 && (
-                  <button className="open" onClick={e => { e.stopPropagation(); openViewer(here, 0) }}
-                          title={`Open ${here.length} photo${here.length === 1 ? '' : 's'}`}>
-                    <Icon n="expand" s={14} c="#fff" w={2} />
-                  </button>
-                )}
-                {here.length > 0 && <img className="av" src={byName(here[0].by).avatar} alt="" loading="lazy" decoding="async" />}
-                {s.status === 'now' && <span className="nw">NOW</span>}
-              </div>
-              <div className="t">
-                <b>{s.name}</b>
-                {/* A stop added from the map may have no day or time yet, and the
-                    old hardcoded "Sat" special case crashed on the first one. */}
-                <span>{[s.day, s.time].filter(Boolean).join(' · ') || 'No time set'}
-                  {here.length ? ` · ${here.length} photo${here.length === 1 ? '' : 's'}` : ''}</span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+    <button className="glass absolute bottom-[216px] left-1/2 z-[4] flex -translate-x-1/2 items-center
+                       gap-3.5 whitespace-nowrap rounded-full py-2.5 pl-4 pr-5"
+            onClick={onClick}>
+      <span className="size-2.5 rounded-full bg-accent
+                       shadow-[0_0_0_4px_var(--c-accent-soft),0_0_18px_var(--c-glow)]" />
+      <b className="text-[15px] font-bold">{text}</b>
+      {meta && <>
+        <span className="h-4 w-px bg-line2" />
+        <span className="tnum text-[13px] text-muted">{meta}</span>
+      </>}
+    </button>
+  )
+})
+
+export const ScopeToggle = memo(function ScopeToggle(
+  { here, whole, onHere, onWhole, shifted }:
+  { here: string; whole: boolean; onHere: () => void; onWhole: () => void; shifted: boolean },
+) {
+  const button = 'rounded-full px-3.5 py-1.5 text-[12.5px] font-bold text-muted'
+  return (
+    <div className={'glass absolute bottom-[212px] z-[4] flex rounded-full p-1 transition-[left] ' +
+      (shifted ? 'left-[492px] max-lg:left-4' : 'left-4')}>
+      <button className={button + (whole ? '' : ' bg-ink text-canvas')} onClick={onHere}>{here}</button>
+      <button className={button + (whole ? ' bg-ink text-canvas' : '')} onClick={onWhole}>Whole trip</button>
     </div>
   )
 })
 
-export { Filmstrip, HeroCard, Ticker }
+export const MapControls = memo(function MapControls(
+  { following, onFollow, onZoom, onFit }:
+  { following: boolean; onFollow: () => void; onZoom: (by: number) => void; onFit: () => void },
+) {
+  const button = 'wc grid size-10 place-items-center border-b border-line text-ink last:border-b-0 hover:bg-raised2'
+  return (
+    <div className="wctl glass absolute bottom-[212px] right-4 z-[4] flex flex-col overflow-hidden rounded-xl">
+      <button className={button + (following ? ' on bg-accent text-accent-ink' : '')}
+              title="Follow the travellers" onClick={onFollow}><Icon n="locate" s={17} /></button>
+      <button className={button} title="Zoom in" onClick={() => onZoom(1)}><Icon n="plus" s={17} /></button>
+      <button className={button} title="Zoom out" onClick={() => onZoom(-1)}><Icon n="minus" s={17} /></button>
+      <button className={button} title="Fit the whole trip" onClick={onFit}><Icon n="expand" s={16} /></button>
+    </div>
+  )
+})
 
+export const PlaceHint = memo(function PlaceHint(
+  { what, onCancel }: { what: string; onCancel: () => void },
+) {
+  return (
+    <div className="glass absolute left-1/2 top-6 z-[8] flex -translate-x-1/2 items-center gap-3
+                    whitespace-nowrap rounded-full py-2 pl-4 pr-2 text-[13px]">
+      <Icon n="pinplus" s={14} />
+      <span className="text-muted">{what} · Esc cancels</span>
+      <button className="rounded-full bg-raised2 px-3 py-1.5 text-xs font-bold" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  )
+})
+
+/* What edit mode is for, and the way out of it. Hidden on a narrow screen:
+   there is no room for a sentence beside a map that small. */
+export function EditHint({ routeDraft, setRouteDraft, saveRoute, searchPlaces, places, setPlaces, route }) {
+  return (
+    <div className="edithint glass absolute bottom-[212px] left-1/2 z-[8] flex -translate-x-1/2 items-center gap-2.5
+                    whitespace-nowrap rounded-full px-4 py-2 text-[12.5px] max-md:hidden">
+      <b className="text-[11px] font-extrabold uppercase tracking-[.06em] text-accent">
+        {routeDraft ? 'Route' : 'Edit mode'}
+      </b>
+      {routeDraft ? (
+        <>
+          <span className="text-muted">
+            Click to extend the line · {routeDraft.length} point{routeDraft.length === 1 ? '' : 's'}
+          </span>
+          <button className="mini" disabled={!routeDraft.length}
+                  onClick={() => setRouteDraft(current => current.slice(0, -1))}>Undo</button>
+          <button className="mini" onClick={() => setRouteDraft([])}>Clear</button>
+          <button className="mini" onClick={() => setRouteDraft(null)}>Cancel</button>
+          <button className="mini mini-accent" onClick={saveRoute}>Save route</button>
+        </>
+      ) : (
+        <>
+          <span className="text-muted">Click the map to add a stop, or drag a pin to move it.</span>
+          <button className="mini" onClick={searchPlaces}>Find places</button>
+          {places.length > 0 && (
+            <button className="mini" onClick={() => setPlaces([])}>Hide {places.length}</button>
+          )}
+          <button className="mini" onClick={() => setRouteDraft(route.slice())}>Edit route</button>
+        </>
+      )}
+    </div>
+  )
+}

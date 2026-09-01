@@ -10,8 +10,8 @@ export function formatRange(startsOn?: string, endsOn?: string) {
   const start = onDay(startsOn)
   const end = onDay(endsOn)
   if (!start && !end) return ''
-  if (start && !end) return `from ${start.getDate()} ${MONTH[start.getMonth()]}`
-  if (!start && end) return `until ${end.getDate()} ${MONTH[end.getMonth()]}`
+  if (!start) return `until ${end!.getDate()} ${MONTH[end!.getMonth()]}`
+  if (!end) return `from ${start.getDate()} ${MONTH[start.getMonth()]}`
 
   const sameYear = start.getFullYear() === end.getFullYear()
   if (sameYear && start.getMonth() === end.getMonth()) {

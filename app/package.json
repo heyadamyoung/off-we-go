@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test:privacy": "node scripts/check-repository-privacy.mjs",
-    "test:unit": "tsx --test tests/source-architecture.test.js tests/app-routes.test.js tests/mobile-tracking.test.js tests/live-map-view.test.js tests/vps-api-client.test.js tests/logto-experience.test.js tests/login-core.test.js tests/auth-messages.test.js tests/user-messages.test.js tests/migration-core.test.js tests/deployment-guard.test.js tests/ios-release-config.test.js tests/repository-privacy.test.js tests/brand-icons.test.js",
+    "test:unit": "tsx --test tests/source-architecture.test.js tests/globe-core.test.js tests/trip-ui-core.test.js tests/app-routes.test.js tests/mobile-tracking.test.js tests/live-map-view.test.js tests/vps-api-client.test.js tests/logto-experience.test.js tests/login-core.test.js tests/auth-messages.test.js tests/user-messages.test.js tests/migration-core.test.js tests/deployment-guard.test.js tests/ios-release-config.test.js tests/repository-privacy.test.js tests/brand-icons.test.js",
     "test:server": "node --test server/test/*.test.js",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
@@ -40,6 +40,9 @@
     "@fastify/multipart": "9",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@tanstack/react-router": "1.170.32",
+    "@tanstack/react-start": "1.168.49",
     "exifr": "7.1.3",
     "fastify": "5",
     "heic-to": "1.5.2",
@@ -50,6 +53,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sharp": "~0.35.4",
+    "tailwindcss": "4.3.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -58,9 +62,9 @@
     "@types/node": "^26.4.0",
     "@types/react": "18",
     "@types/react-dom": "18",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vite": "^6.4.3"
+    "vite": "^8.2.2"
   }
 }

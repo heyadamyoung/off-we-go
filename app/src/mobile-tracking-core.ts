@@ -41,10 +41,10 @@ function validConfig(value) {
 export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Date.now }: any) {
   if (!driver || !storage || !fetchFn) throw new Error('A location driver, persistent storage and fetch are required')
 
-  let config = null
-  let watcherId = null
-  let queue = null
-  let flushing = null
+  let config: any = null
+  let watcherId: any = null
+  let queue: any[] | null = null
+  let flushing: any = null
   let retryAt = 0
   const listeners = new Set<(state: any) => void>()
   let state = {
@@ -59,7 +59,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
 
   const saveQueue = async () => {
     await storage.set({ key: QUEUE_KEY, value: JSON.stringify(queue) })
-    publish({ queued: queue.length })
+    publish({ queued: queue!.length })
   }
 
   const loadQueue = async () => {
@@ -77,7 +77,7 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
     return queue
   }
 
-  const forget = async (error = null) => {
+  const forget = async (error: string | null = null) => {
     if (watcherId) await driver.removeWatcher({ id: watcherId })
     watcherId = null
     config = null
@@ -93,13 +93,13 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
     if (flushing) return flushing
     flushing = (async () => {
       await loadQueue()
-      while (queue.length && config) {
+      while (queue!.length && config) {
         if (now() < retryAt) {
           const seconds = Math.max(1, Math.ceil((retryAt - now()) / 1000))
           publish({ status: 'waiting', error: `Location service rate limited; retrying in ${seconds} seconds` })
           break
         }
-        const fix = queue[0]
+        const fix = queue![0]
         try {
           const response = await fetchFn(config.endpoint, {
             method: 'POST',
@@ -123,14 +123,14 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
             return
           }
           if (!response.ok && DISCARDABLE_STATUSES.has(response.status)) {
-            queue.shift()
+            queue!.shift()
             await saveQueue()
             publish({ status: 'error', error: `A location was rejected (${response.status}) and removed from the queue` })
             continue
           }
           if (!response.ok) throw new Error(`Location service returned ${response.status}`)
           retryAt = 0
-          queue.shift()
+          queue!.shift()
           await saveQueue()
           publish({ status: 'tracking', lastSentAt: fix.at, error: null })
         } catch (error) {
@@ -153,8 +153,8 @@ export function createMobileTracker({ driver, storage, fetch: fetchFn, now = Dat
       return
     }
     await loadQueue()
-    queue.push(fix)
-    if (queue.length > MAX_QUEUED_FIXES) queue.splice(0, queue.length - MAX_QUEUED_FIXES)
+    queue!.push(fix)
+    if (queue!.length > MAX_QUEUED_FIXES) queue!.splice(0, queue!.length - MAX_QUEUED_FIXES)
     await saveQueue()
     publish({ status: 'waiting', error: null })
     await flush()

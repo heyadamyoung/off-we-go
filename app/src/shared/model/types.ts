@@ -123,10 +123,35 @@ export interface Trip {
   slug?: string
 }
 
+export interface TripPlace {
+  name: string
+  lng: number
+  lat: number
+  status?: string
+}
+
 export interface TripSummary extends Trip {
   id: Id
   slug: string
   role: 'owner' | 'editor' | 'viewer' | string
+  /** the trip's stops, capped, so the home globe can draw its arc */
+  places?: TripPlace[]
+  stopCount?: number
+  photoCount?: number
+  memberCount?: number
+}
+
+/** Your own profile, which carries more than the one other people can see. */
+export interface MyProfile extends Person {
+  email?: string
+  homePlace?: string | null
+  homeLat?: number | null
+  homeLng?: number | null
+  timeZone?: string | null
+  preferences?: Record<string, unknown>
+  joinedAt?: string | null
+  tripCount?: number
+  photoCount?: number
 }
 
 export interface TripLandingData {
@@ -134,6 +159,12 @@ export interface TripLandingData {
   email?: string
   trips: TripSummary[]
   invites: PendingInvite[]
+}
+
+export interface AccountArchive {
+  exportedAt: string
+  profile: MyProfile | null
+  trips: Array<Record<string, unknown>>
 }
 
 export interface TripData {

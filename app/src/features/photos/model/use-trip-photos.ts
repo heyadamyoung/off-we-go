@@ -77,7 +77,7 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
     setPhotos(list => list.map(p => (p.id === id ? { ...p, ...fields } : p)))
     try { await updatePhoto(tripId, id, fields); toast('Photo changes saved') }
     catch (e) {
-      setPhotos(list => list.map(p => (p.id === id ? before : p)))
+      if (before) setPhotos(list => list.map(p => (p.id === id ? before : p)))
       toast(appErrorMessage(e, 'save-photo'), 'error')
     }
   }, [tripId, photos, toast])

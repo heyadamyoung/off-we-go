@@ -1,2 +1,2 @@
-export { default as TripLanding } from './onboarding'
-export { default as TripApp } from './trip-app'
+export { default as TripPage } from './ui/trip-page'
+export { withFace } from './model/faces'

@@ -24,7 +24,7 @@ const coordinate = value => {
   if (parts.length !== 3) return null
   const [degrees, minutes, seconds] = parts.map(ratio)
   if ([degrees, minutes, seconds].some(part => part == null)) return null
-  return Math.abs(degrees) + minutes / 60 + seconds / 3600
+  return Math.abs(degrees!) + minutes! / 60 + seconds! / 3600
 }
 
 const captureTime = (value, offset) => {
@@ -67,7 +67,7 @@ const attachMetadata = (file, metadata) => {
 
 export async function readPhotoFilesMetadata(files, { parseExif = parseExifFile }: any = {}) {
   await Promise.all((files || []).map(async file => {
-    let parsed = null
+    let parsed: any = null
     try { parsed = metadataFromExif(await parseExif(file)) } catch { /* no readable EXIF block */ }
     const existing = metadataFromExif(file?.offwegoMetadata)
     attachMetadata(file, parsed || existing ? { ...parsed, ...existing } : null)
@@ -87,7 +87,7 @@ export async function preparePhotoFilesForUpload(files, {
     isHeic ||= converter.isHeic
     convertHeic ||= file => converter.heicTo({ blob: file, type: 'image/jpeg', quality: 0.9 })
   }
-  const prepared = []
+  const prepared: File[] = []
   for (const file of files || []) {
     if (!looksLikeHeic(file) || !await isHeic(file)) { prepared.push(file); continue }
     const result = await convertHeic(file)
@@ -152,7 +152,7 @@ export function photoPlacement(file, { live, stops, fallbackSource = 'live' }) {
   const point = exifPoint || (needsHistory ? null : live)
   const fallbackPoint = needsHistory ? live : null
   const previewPoint = point || fallbackPoint
-  let stop = null, best = 400
+  let stop: any = null, best = 400
   if (point) stops.forEach(candidate => {
     const distance = metres([candidate.lng, candidate.lat], point)
     if (distance < best) { best = distance; stop = candidate }

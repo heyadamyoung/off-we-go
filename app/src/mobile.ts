@@ -112,7 +112,7 @@ export async function pickNativePhotos() {
   return galleryPhotosToFiles(selected.photos, { fetch: globalThis.fetch.bind(globalThis) })
 }
 
-let appUrlListener = null
+let appUrlListener: any = null
 let nativeOidcPending = false
 let nativeLoginState: NativeLoginState | null = null
 const nativeLoginListeners = new Set<(state: NativeLoginState) => void>()

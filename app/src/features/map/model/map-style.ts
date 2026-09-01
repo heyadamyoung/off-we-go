@@ -1,5 +1,5 @@
-const ACCENT = '#ff7a3d'
-const TRAIL = '#3ecf8e'    // where the phones actually went, as distinct from the route drawn by hand
+const ACCENT = '#F5B84A'
+const TRAIL = '#6FD3A8'    // where the phones actually went, as distinct from the route drawn by hand
 
 const STYLE = {
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',

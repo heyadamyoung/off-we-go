@@ -10,7 +10,7 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
   const photo = list[index]
   const stop = stops.find(s => s.id === photo?.stopId)
   const [draft, setDraft] = useState('')
-  const inputRef = useRef(null)
+  const inputRef = useRef<any>(null)
 
   useEffect(() => {
     const onKey = e => {

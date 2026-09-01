@@ -8,3 +8,4 @@ export {
 export { useDaylight } from './model/daylight'
 export { default as useAttractions } from './model/use-attractions'
 export { default as MapCanvas } from './ui/map-canvas'
+export { MapMarker } from './ui/map-marker'

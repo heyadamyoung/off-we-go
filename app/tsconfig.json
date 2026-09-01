@@ -9,7 +9,7 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "noImplicitAny": false,
-    "strictNullChecks": false,
+    "strictNullChecks": true,
     "useUnknownInCatchVariables": false,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

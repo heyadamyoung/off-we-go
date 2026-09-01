@@ -36,9 +36,16 @@ test('source modules stay below the 400-line review boundary', async () => {
   )
 })
 
+/* The router owns two naming conventions we do not get to choose: route files
+   are named after the URL they serve (`trips.$slug.tsx`, `__root.tsx`), and the
+   route tree is generated. Everything we write by hand is still kebab-case. */
+const routerOwned = file =>
+  file.split(path.sep).includes('routes') || file.endsWith('.gen.ts')
+
 test('TypeScript source filenames use kebab-case', async () => {
   const invalidNames = (await sourceFiles(sourceRoot))
     .map(file => path.relative(appRoot, file))
+    .filter(file => !routerOwned(file))
     .filter(file => !/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.d)?\.(?:ts|tsx)$/.test(path.basename(file)))
 
   assert.deepEqual(

@@ -64,7 +64,7 @@ export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }
   ].map(p => [p.pageid, p])).values()].slice(0, MAX_CANDIDATES)
 
   const away = new Map(candidates.map(p => [p.pageid, Math.round(p.dist)]))
-  const detail = []
+  const detail: any[] = []
   for (let i = 0; i < candidates.length; i += BATCH) {
     const batch = candidates.slice(i, i + BATCH)
     const json = await ask({
@@ -73,7 +73,7 @@ export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }
       exintro: '1', explaintext: '1', exsentences: '2', exlimit: 'max',
       piprop: 'thumbnail', pithumbsize: '800', pvipdays: '14',
     }, signal)
-    detail.push(...Object.values(json.query?.pages || {}))
+    detail.push(...Object.values<any>(json.query?.pages || {}))
     if (i + BATCH < candidates.length) await pause(80)   // be a good citizen
   }
 
@@ -103,7 +103,7 @@ export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }
       }
     })
     .filter(p => !p.skip)
-    .sort((a, b) => (b.readers - a.readers) || (a.metres - b.metres))
+    .sort((a, b) => (b.readers - a.readers) || ((a.metres ?? 0) - (b.metres ?? 0)))
 
   // Coordinates come from pass one; pass two is not asked for them again.
   for (const p of places) {

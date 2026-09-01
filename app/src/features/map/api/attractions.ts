@@ -7,7 +7,7 @@ const CELL_DEG = 0.12                       // ~13 km of latitude, so 10 km circ
 const lngStepAt = lat => CELL_DEG / Math.max(0.2, Math.cos((lat * Math.PI) / 180))
 
 export function cellsCovering({ west, south, east, north }: any, { limit = 12, centre }: any = {}) {
-  const cells = []
+  const cells: Array<{ key: string; lat: number; lng: number }> = []
   const row0 = Math.floor(south / CELL_DEG), row1 = Math.floor(north / CELL_DEG)
   for (let row = row0; row <= row1 && cells.length < 4000; row++) {
     const lat = (row + 0.5) * CELL_DEG

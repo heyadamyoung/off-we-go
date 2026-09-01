@@ -29,7 +29,7 @@ export function nativeAppUrlFromUrl(value) {
   if (!parsed || !['http:', 'https:'].includes(parsed.url.protocol) || parsed.url.pathname !== '/auth/native') return null
   const destination = new URL('wayfare://auth')
   if (parsed.token) destination.searchParams.set('token', parsed.token)
-  else destination.searchParams.set('error', parsed.error)
+  else destination.searchParams.set('error', parsed.error || 'unknown')
   return destination.href
 }
 
