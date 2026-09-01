@@ -52,7 +52,10 @@ while IFS= read -r -d '' shell_script; do
   sed -i 's/\r$//' "$shell_script"
 done < <(find "$staged_app/deploy" -type f -name '*.sh' -print0)
 
-for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web deploy/Caddyfile; do
+# Everything the two image builds read. A release that omits one of these
+# is rejected here, with the missing name, rather than failing minutes
+# later as an unreadable docker cache-key error.
+for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public deploy/Caddyfile; do
   if [[ ! -e "$staged_app/$required_path" ]]; then
     echo "Release is missing app/$required_path." >&2
     exit 66

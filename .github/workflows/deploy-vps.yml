@@ -98,15 +98,19 @@ jobs:
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
         run: |
+          # tar's exit code is invisible without this: a file renamed out from
+          # under the list below would stream a short archive and fail only
+          # later, inside the docker build on the VPS.
+          set -o pipefail
           tar -czf - \
             app/.dockerignore \
             app/.env.vps.example \
             app/Dockerfile.web \
             app/docker-compose.yml \
-            app/index.html \
             app/package.json \
             app/pnpm-lock.yaml \
-            app/vite.config.js \
+            app/tsconfig.json \
+            app/vite.config.ts \
             app/public \
             app/src \
             app/server \

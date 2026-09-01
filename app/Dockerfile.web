@@ -6,6 +6,11 @@ RUN pnpm install --frozen-lockfile
 COPY vite.config.ts tsconfig.json ./
 COPY public ./public
 COPY src ./src
+# Start prerenders the SPA shell by booting a server on "localhost" and
+# fetching it back. In this image "localhost" resolves to ::1 first, while
+# node's fetch dials 127.0.0.1 — so the prerender connects to nothing and the
+# build dies. Pinning IPv4 puts both ends on the same address.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
 RUN pnpm build
