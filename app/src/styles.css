@@ -14,6 +14,7 @@
   color-scheme: dark;
   --c-bg: #10141C;
   --c-panel: rgb(16 20 28 / 0.8);
+  --c-panel-strong: rgb(19 24 33 / 0.96);
   --c-panel-solid: #151A24;
   --c-raised: #1B2130;
   --c-raised-2: #242B3B;
@@ -38,6 +39,7 @@
   color-scheme: light;
   --c-bg: #E9ECF1;
   --c-panel: rgb(255 255 255 / 0.86);
+  --c-panel-strong: rgb(255 255 255 / 0.97);
   --c-panel-solid: #FFFFFF;
   --c-raised: #FFFFFF;
   --c-raised-2: #EEF1F6;
@@ -62,6 +64,7 @@
 
   --color-canvas: var(--c-bg);
   --color-panel: var(--c-panel);
+  --color-strong: var(--c-panel-strong);
   --color-solid: var(--c-panel-solid);
   --color-raised: var(--c-raised);
   --color-raised2: var(--c-raised-2);
@@ -116,6 +119,7 @@
    not share 390 pixels — and every floating control has to move with it. */
 :root {
   --trip-bar: calc(196px + env(safe-area-inset-bottom, 0px));
+  --trip-top: calc(116px + env(safe-area-inset-top, 0px));
   --trip-1: calc(var(--trip-bar) + 16px);
   --trip-2: calc(var(--trip-1) + 46px);
   --trip-3: calc(var(--trip-2) + 42px);
@@ -132,6 +136,16 @@
     background: var(--c-panel);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--c-line);
+    box-shadow: var(--c-shadow);
+  }
+
+  /* Glass is right for a control with a word or two on it. A panel of reading
+     matter over a moving map is not that: it needs a surface, not a tint. */
+  .sheet {
+    background: var(--c-panel-strong);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
     border: 1px solid var(--c-line);
     box-shadow: var(--c-shadow);
   }
@@ -446,7 +460,7 @@
 
 /* The stop editor, which takes the place the detail card would occupy. */
 .editor {
-  position: absolute; left: 28px; top: 116px; width: 384px; z-index: 18; border-radius: 18px;
+  position: absolute; left: 28px; top: var(--trip-top); width: 384px; z-index: 18; border-radius: 18px;
   border: 1px solid var(--c-line); background: var(--c-panel-solid); box-shadow: var(--c-shadow);
   max-height: calc(100% - 260px); display: flex; flex-direction: column; animation: rise .22s ease;
 }

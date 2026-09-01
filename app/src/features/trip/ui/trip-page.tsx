@@ -260,10 +260,15 @@ function Trip({ data, busyEditing }:
                       [background:linear-gradient(to_bottom,var(--c-bg)_0%,transparent_26%,transparent_58%,var(--c-bg)_100%)]" />
 
       {/* One top bar rather than two islands laid out from opposite edges that
-          met in the middle of a phone. The actions wrap to their own line below
-          the title there, and sit beside it above 640px. */}
-      <div className="absolute inset-x-4 top-4 z-10 flex flex-wrap items-center gap-2
-                      sm:inset-x-7 sm:top-6 sm:flex-nowrap sm:items-start sm:gap-3">
+          met in the middle of a phone. On a phone it is a real bar, anchored to
+          the top edge on its own surface, with the actions on a second line and
+          the panels opening directly beneath it; above 640px it goes back to
+          floating over the map, which is where there is room for it. */}
+      <div className="absolute inset-x-0 top-0 z-10 flex h-[var(--trip-top)] flex-wrap
+                      items-center gap-2 border-b border-line bg-strong px-4 pb-2
+                      pt-[calc(0.75rem+env(safe-area-inset-top,0px))] backdrop-blur-[22px]
+                      sm:inset-x-7 sm:top-6 sm:h-auto sm:flex-nowrap sm:items-start sm:gap-3
+                      sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0 sm:backdrop-blur-none">
         <TripTitle title={trip.title} sub={subtitle} />
 
         <div className="order-3 flex w-full min-w-0 items-center gap-2.5 sm:order-2 sm:w-auto">

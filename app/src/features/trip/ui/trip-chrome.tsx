@@ -71,7 +71,9 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
      first because they are the ones people reach for. The panel keeps its edge
      and only the row inside it fades, which is what says "there is more". */
   return (
-    <div className="glass flex min-w-0 items-center rounded-xl p-1">
+    <div className="glass flex min-w-0 items-center rounded-xl p-1
+                    max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none
+                    max-sm:backdrop-blur-none">
       <div className="flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none]
                       max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-26px),transparent)]
                       max-sm:[&::-webkit-scrollbar]:hidden">

@@ -26,7 +26,7 @@ function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }: any) {
   const source = more?.source || `https://en.wikipedia.org/?curid=${poi.id}`
 
   return (
-    <div className="acard glass rise absolute bottom-[212px] left-1/2 z-[9] w-[320px] -translate-x-1/2
+    <div className="acard sheet rise absolute bottom-[var(--trip-1)] left-1/2 z-[9] w-[320px] -translate-x-1/2
                     overflow-hidden rounded-2xl">
       <button className="ax absolute right-2.5 top-2.5 z-10 grid size-7 place-items-center rounded-lg
                          bg-black/60 text-white" onClick={onClose} title="Close">

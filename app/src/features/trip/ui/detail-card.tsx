@@ -26,9 +26,9 @@ export default function DetailCard(props: DetailCardProps) {
     : item.status === 'done' ? 'Done' : item.status === 'now' ? 'Happening now' : 'Planned'
 
   return (
-    <div className={'detailcard glass rise absolute top-[116px] z-[7] flex w-[360px] flex-col ' +
+    <div className={'detailcard sheet rise absolute top-[var(--trip-top)] z-[7] flex w-[360px] flex-col ' +
       'overflow-hidden ' +
-      'rounded-[18px] transition-[left] max-lg:inset-x-4 max-lg:bottom-[204px] max-lg:top-auto ' +
+      'rounded-[18px] transition-[left] max-lg:inset-x-4 max-lg:bottom-[var(--trip-1)] max-lg:top-auto ' +
       'max-lg:w-auto ' + (props.shifted ? 'left-[492px] max-lg:left-4' : 'left-7')}>
       <div className="relative h-[170px] flex-none overflow-hidden bg-raised2">
         {photo || stop?.src

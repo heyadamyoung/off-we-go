@@ -39,9 +39,11 @@ export default function TripPanel(props: PanelProps) {
       : null
 
   return (
-    <aside className="glass rise absolute bottom-[212px] left-7 top-[116px] z-[6] flex w-[440px]
-                      flex-col overflow-hidden rounded-[18px]
-                      max-lg:inset-x-4 max-lg:bottom-[204px] max-lg:top-24 max-lg:w-auto">
+    <aside className="sheet rise absolute bottom-[var(--trip-1)] left-7 top-[var(--trip-top)] z-[6] flex
+                      w-[440px] flex-col overflow-hidden rounded-[18px]
+                      max-lg:inset-x-4 max-lg:w-auto
+                      max-sm:inset-x-0 max-sm:bottom-[var(--trip-bar)] max-sm:rounded-none
+                      max-sm:border-x-0">
       <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
         <div>
           <h2 className="m-0 text-[22px] font-extrabold tracking-[-.02em]">{title}</h2>
