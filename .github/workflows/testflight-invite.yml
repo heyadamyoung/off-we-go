@@ -1,0 +1,46 @@
+name: Invite a TestFlight tester
+
+# Adding a tester is a two-field job that otherwise means a trip through App
+# Store Connect. The key is already a secret here, so the trip is a dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: The tester's email address
+        required: true
+        type: string
+      name:
+        description: Their name, if you want Apple to show one
+        required: false
+        type: string
+      group:
+        description: The group to add them to (defaults to the external group)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  invite:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Add them to the group
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+          TESTER_EMAIL: ${{ inputs.email }}
+          TESTER_NAME: ${{ inputs.name }}
+          TESTER_GROUP: ${{ inputs.group }}
+        run: node scripts/testflightInvite.mjs
