@@ -33,7 +33,9 @@ test('the following camera zooms in on one GPS emitter', () => {
     { ready: true, duration: 560 },
   )
 
-  assert.deepEqual(view, { center: [-104.617, 50.4548], zoom: 15, ms: 560 })
+  // focus, so the traveller lands in the middle of the map that is visible
+  // rather than the middle of a container a third of which is behind chrome.
+  assert.deepEqual(view, { center: [-104.617, 50.4548], zoom: 15, ms: 560, focus: true })
 })
 
 /* The map runs the full height of the screen with the chrome floating on top,
