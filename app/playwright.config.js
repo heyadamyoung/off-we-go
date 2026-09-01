@@ -3,7 +3,11 @@ import { defineConfig, devices } from '@playwright/test'
 /* The suite runs against the production build in sample mode — no credentials,
    no database — so it exercises the real bundle and needs nothing set up.
    With VITE_API_URL present the app would show a sign-in gate instead, which
-   is why the web server is started with them explicitly cleared. */
+   is why the web server is started with them explicitly cleared.
+
+   It is served the way Caddy serves it rather than by `vite preview`, which
+   server-renders each request: that hid a hydration failure in the prerendered
+   index.html the deployed site actually sends. */
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.js',
@@ -19,7 +23,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'pnpm build && pnpm preview --port 4180 --strictPort',
+    command: 'pnpm build && node scripts/serve-release.mjs dist/client 4180',
     url: 'http://localhost:4180',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

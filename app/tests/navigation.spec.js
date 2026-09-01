@@ -151,6 +151,22 @@ test('a failed sign-in return explains itself rather than looping', async ({ pag
   await expect(page.getByRole('link', { name: 'Sign in on the website instead' })).toBeVisible()
 })
 
+/* The shell is prerendered into index.html and hydrated on arrival. When the
+   two disagree React throws the prerendered markup away and rebuilds the page
+   from scratch — which still looks right, so nothing catches it but this. */
+test('the prerendered shell hydrates instead of being thrown away', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(String(error)))
+  await page.goto('/')
+  // Hydration runs once the bundle has landed, which is well after `goto`
+  // resolves — assert too early and this passes against a broken build.
+  await expect(page.locator('#root')).not.toBeEmpty()
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(500)
+  const react = errors.filter(message => /Minified React error|hydrat/i.test(message))
+  expect(react, 'React rejected the prerendered shell and client-rendered instead').toEqual([])
+})
+
 test('form controls do not trigger Safari focus zoom on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/profile')
