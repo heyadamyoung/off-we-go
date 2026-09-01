@@ -109,12 +109,12 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   await repository.createMcpAuthorizationCode({
     hash: 'oauth-code-hash', userId: user.id, clientId: oauthClient.id,
     redirectUri: oauthClient.redirectUris[0], scopes: ['trips:read'],
-    resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge', expiresAt,
+    resource: 'https://offwego.example.com/mcp', codeChallenge: 'challenge', expiresAt,
   })
   const oauthCode = await repository.redeemMcpAuthorizationCode({
     codeHash: 'oauth-code-hash', now: new Date('2027-01-01T00:01:00Z'),
     clientId: oauthClient.id, redirectUri: oauthClient.redirectUris[0],
-    resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge',
+    resource: 'https://offwego.example.com/mcp', codeChallenge: 'challenge',
     accessHash: 'oauth-access-hash', refreshHash: 'oauth-refresh-hash',
     accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
   })
@@ -123,7 +123,7 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   assert.equal(await repository.redeemMcpAuthorizationCode({
     codeHash: 'oauth-code-hash', now: new Date('2027-01-01T00:02:00Z'),
     clientId: oauthClient.id, redirectUri: oauthClient.redirectUris[0],
-    resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge',
+    resource: 'https://offwego.example.com/mcp', codeChallenge: 'challenge',
     accessHash: 'unused-access', refreshHash: 'unused-refresh',
     accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
   }), null)
@@ -134,7 +134,7 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   assert.equal(
     (await repository.rotateMcpRefreshToken({
       refreshHash: 'oauth-refresh-hash', now: new Date('2027-01-01T00:01:00Z'),
-      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      clientId: oauthClient.id, resource: 'https://offwego.example.com/mcp',
       accessHash: 'oauth-access-rotated', replacementRefreshHash: 'oauth-refresh-rotated',
       accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
     })).clientId,
@@ -147,7 +147,7 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   )
   assert.equal(await repository.rotateMcpRefreshToken({
     refreshHash: 'oauth-refresh-hash', now: new Date('2027-01-01T00:03:00Z'),
-    clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+    clientId: oauthClient.id, resource: 'https://offwego.example.com/mcp',
     accessHash: 'unused-access-replay', replacementRefreshHash: 'unused-refresh-replay',
     accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
   }), null)
@@ -157,11 +157,11 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
     await repository.createMcpAuthorizationCode({
       hash: `code-${suffix}`, userId: user.id, clientId: oauthClient.id,
       redirectUri: oauthClient.redirectUris[0], scopes: ['trips:read'],
-      resource: 'https://wayfare.example.com/mcp', codeChallenge: 'challenge', expiresAt,
+      resource: 'https://offwego.example.com/mcp', codeChallenge: 'challenge', expiresAt,
     })
     return repository.redeemMcpAuthorizationCode({
       codeHash: `code-${suffix}`, now: new Date('2027-01-01T00:01:00Z'), clientId: oauthClient.id,
-      redirectUri: oauthClient.redirectUris[0], resource: 'https://wayfare.example.com/mcp',
+      redirectUri: oauthClient.redirectUris[0], resource: 'https://offwego.example.com/mcp',
       codeChallenge: 'challenge', accessHash: `access-${suffix}`, refreshHash: `refresh-${suffix}`,
       accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
     })
@@ -169,20 +169,20 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   await issueGrant('concurrent-replay')
   await repository.rotateMcpRefreshToken({
     refreshHash: 'refresh-concurrent-replay', now: new Date('2027-01-01T00:02:00Z'),
-    clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+    clientId: oauthClient.id, resource: 'https://offwego.example.com/mcp',
     accessHash: 'access-descendant', replacementRefreshHash: 'refresh-descendant',
     accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
   })
   await Promise.all([
     repository.rotateMcpRefreshToken({
       refreshHash: 'refresh-descendant', now: new Date('2027-01-01T00:03:00Z'),
-      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      clientId: oauthClient.id, resource: 'https://offwego.example.com/mcp',
       accessHash: 'access-grandchild', replacementRefreshHash: 'refresh-grandchild',
       accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
     }),
     repository.rotateMcpRefreshToken({
       refreshHash: 'refresh-concurrent-replay', now: new Date('2027-01-01T00:03:00Z'),
-      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      clientId: oauthClient.id, resource: 'https://offwego.example.com/mcp',
       accessHash: 'unused-replay', replacementRefreshHash: 'unused-replay-refresh',
       accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
     }),
@@ -193,7 +193,7 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   await Promise.all([
     repository.rotateMcpRefreshToken({
       refreshHash: 'refresh-concurrent-revoke', now: new Date('2027-01-01T00:03:00Z'),
-      clientId: oauthClient.id, resource: 'https://wayfare.example.com/mcp',
+      clientId: oauthClient.id, resource: 'https://offwego.example.com/mcp',
       accessHash: 'access-after-revoke-race', replacementRefreshHash: 'refresh-after-revoke-race',
       accessExpiresAt: expiresAt, refreshExpiresAt: new Date('2027-01-31T00:00:00Z'),
     }),

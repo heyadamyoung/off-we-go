@@ -15,7 +15,7 @@ function createOidcProvider(identity = {
       authorization = input
       const url = new URL('https://identity.example.com/oidc/auth')
       for (const [key, value] of Object.entries({
-        client_id: 'wayfare-web', redirect_uri: input.redirectUri,
+        client_id: 'offwego-web', redirect_uri: input.redirectUri,
         response_type: 'code', scope: 'openid profile email', state: input.state,
         nonce: input.nonce, code_challenge: input.codeChallenge,
         code_challenge_method: 'S256',
@@ -43,7 +43,7 @@ test('an invited user can complete OIDC authorization code with PKCE and exchang
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
 
   const started = await app.inject({ method: 'GET', url: '/api/auth/oidc/start?client=web' })
@@ -51,7 +51,7 @@ test('an invited user can complete OIDC authorization code with PKCE and exchang
   const authorization = new URL(started.headers.location)
   assert.equal(authorization.origin, 'https://identity.example.com')
   assert.equal(authorization.pathname, '/oidc/auth')
-  assert.equal(authorization.searchParams.get('redirect_uri'), 'https://wayfare.example.com/api/auth/oidc/callback')
+  assert.equal(authorization.searchParams.get('redirect_uri'), 'https://offwego.example.com/api/auth/oidc/callback')
   assert.equal(authorization.searchParams.get('response_type'), 'code')
   assert.equal(authorization.searchParams.get('scope'), 'openid profile email')
   assert.equal(authorization.searchParams.get('code_challenge_method'), 'S256')
@@ -64,7 +64,7 @@ test('an invited user can complete OIDC authorization code with PKCE and exchang
     method: 'GET', url: `/api/auth/oidc/callback?code=provider-code&state=${encodeURIComponent(state)}`,
   })
   assert.equal(callback.statusCode, 302)
-  const handoff = new URL(callback.headers.location, 'https://wayfare.example.com')
+  const handoff = new URL(callback.headers.location, 'https://offwego.example.com')
   assert.equal(handoff.pathname, '/auth/callback')
   assert.match(handoff.searchParams.get('token'), /^[A-Za-z0-9_-]{32,}$/)
 
@@ -96,7 +96,7 @@ test('OIDC sign-in rejects an identity whose email was not verified by the provi
       issuer: 'https://identity.example.com/oidc', subject: 'identity-user-1',
       email: 'owner@example.com', emailVerified: false,
     }),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const started = await app.inject({ method: 'GET', url: '/api/auth/oidc/start' })
   const state = new URL(started.headers.location).searchParams.get('state')
@@ -117,7 +117,7 @@ test('a cancelled native provider flow returns an actionable error to the app', 
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const verifier = 'native-device-verifier-that-is-long-enough-1234567890'
   const challenge = createHash('sha256').update(verifier).digest('base64url')
@@ -144,7 +144,7 @@ test('a linked OIDC subject keeps the same Off We Go account after its provider 
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(identity),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const signIn = async () => {
     const started = await app.inject({ method: 'GET', url: '/api/auth/oidc/start' })
@@ -174,7 +174,7 @@ test('native OIDC sign-in returns through the app universal-link handoff', async
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const verifier = 'native-device-verifier-that-is-long-enough-1234567890'
   const challenge = createHash('sha256').update(verifier).digest('base64url')
@@ -206,7 +206,7 @@ test('a web OIDC handoff cannot be exchanged from a second browser', async () =>
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const started = await app.inject({ method: 'GET', url: '/api/auth/oidc/start' })
   const state = new URL(started.headers.location).searchParams.get('state')
@@ -228,7 +228,7 @@ test('OIDC authorization starts are throttled per network address', async () => 
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     authRateLimit: { maxPerEmail: 3, maxPerIp: 2, windowMs: 60_000 },
     clock: () => new Date('2027-01-01T00:00:00Z'),
   })
@@ -244,14 +244,14 @@ test('OIDC authorization starts are throttled per network address', async () => 
 test('OIDC logout ends the provider session and uses a fixed safe return', async () => {
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository(), mailer: { async send() {} }, identityProvider: createOidcProvider(),
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const web = await app.inject({ method: 'GET', url: '/api/auth/oidc/logout?return=https://evil.example' })
   assert.equal(web.statusCode, 302)
-  assert.equal(new URL(web.headers.location).searchParams.get('post_logout_redirect_uri'), 'https://wayfare.example.com/')
+  assert.equal(new URL(web.headers.location).searchParams.get('post_logout_redirect_uri'), 'https://offwego.example.com/')
   const native = await app.inject({ method: 'GET', url: '/api/auth/oidc/logout?client=native' })
   assert.equal(new URL(native.headers.location).searchParams.get('post_logout_redirect_uri'),
-    'https://wayfare.example.com/auth/native?logout=1')
+    'https://offwego.example.com/auth/native?logout=1')
   await app.close()
 })
 
@@ -260,7 +260,7 @@ test('magic-link authentication is unavailable', async () => {
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const requested = await app.inject({
     method: 'POST', url: '/api/auth/magic-link', payload: { email: 'owner@example.com' },
@@ -304,7 +304,7 @@ test('custom password sign-in completes the Logto interaction without exposing h
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider, experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
 
   const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
@@ -356,7 +356,7 @@ test('custom account creation sends a Logto verification code without requiring 
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['invited@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(), experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
   const cookie = loginCookie(started)
@@ -390,7 +390,7 @@ test('account creation reserves a normalized unique profile handle before contac
   const app = await moduleUnderTest.buildServer({
     repository, mailer: { async send() {} },
     identityProvider: createOidcProvider(), experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const first = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
   const second = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
@@ -438,7 +438,7 @@ test('account creation rejects malformed and impersonating profile handles', asy
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository(), mailer: { async send() {} },
     identityProvider: createOidcProvider(), experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
   await app.inject({
@@ -486,7 +486,7 @@ test('account creation binds the reserved handle to the new global profile', asy
   }
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository(), mailer: { async send() {} }, identityProvider, experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
   const interaction = started.json().interaction
@@ -540,7 +540,7 @@ test('custom account creation translates Logto failures into safe actionable err
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository(), mailer: { async send() {} },
     identityProvider: createOidcProvider(), experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const started = await app.inject({ method: 'POST', url: '/api/auth/experience/start' })
   const interaction = started.json().interaction
@@ -581,7 +581,7 @@ test('custom password checks are throttled per email before reaching Logto', asy
   const app = await moduleUnderTest.buildServer({
     repository: createMemoryRepository({ allowedEmails: ['owner@example.com'] }),
     mailer: { async send() {} }, identityProvider: createOidcProvider(), experienceFetch,
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     authRateLimit: { maxPerEmail: 2, maxPerIp: 20, windowMs: 60_000 },
   })
   const statuses = []

@@ -11,7 +11,7 @@ test('account deletion removes the user, sole-owned trip content, private files 
     repository,
     fileStore: { async remove(path) { removed.push(path) } },
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const headers = { authorization: await authenticate(repository, 'owner@example.com') }
   const trip = (await app.inject({ method: 'POST', url: '/api/trips', headers, payload: { title: 'Private trip' } })).json()
@@ -38,7 +38,7 @@ test('account deletion retries private-file removal after a filesystem failure a
   const options = {
     repository, fileStore,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     clock: () => now,
   }
   const app = await buildServer(options)

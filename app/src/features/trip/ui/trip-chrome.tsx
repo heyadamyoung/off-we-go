@@ -66,7 +66,7 @@ const Ticker = memo(function Ticker({ trip, km, doneCount, stopCount, photoCount
       <div className="tmenu" ref={menuRef}>
         <button className="tlogo" type="button" aria-label="Open menu" aria-haspopup="menu"
                 aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}>
-          <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+          <span className="mk brand"><img src="/offwego-icon.png" alt="" /></span>
           <span className="wm">Off We Go</span>
         </button>
         {menuOpen && (

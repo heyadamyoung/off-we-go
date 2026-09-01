@@ -12,7 +12,7 @@ function git(cwd, ...args) {
 }
 
 function fixture() {
-  const cwd = mkdtempSync(path.join(os.tmpdir(), 'wayfare-privacy-'));
+  const cwd = mkdtempSync(path.join(os.tmpdir(), 'offwego-privacy-'));
   git(cwd, 'init', '--quiet');
   git(cwd, 'config', 'user.name', 'Privacy Test');
   git(cwd, 'config', 'user.email', 'privacy@example.com');

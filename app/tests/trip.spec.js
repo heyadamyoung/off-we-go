@@ -37,8 +37,8 @@ async function open(page) {
   }
   // Cancel the initial follow animation as well as disabling future ones. If it
   // is left running, its moveend can race a camera action performed by a test.
-  await page.evaluate(() => window.__wayfareMap?.stop())
-  await expect.poll(() => page.evaluate(() => !window.__wayfareMap?.isMoving())).toBe(true)
+  await page.evaluate(() => window.__offwegoMap?.stop())
+  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
 }
 
 const stopNames = page =>
@@ -102,7 +102,7 @@ test('the sign-in screen gives the Off We Go icon enough room to be legible', as
   const size = await page.evaluate(() => {
     const screen = document.createElement('div')
     screen.className = 'bootIn'
-    screen.innerHTML = '<span class="mk brand"><img src="/wayfare-icon.png" alt=""></span>'
+    screen.innerHTML = '<span class="mk brand"><img src="/offwego-icon.png" alt=""></span>'
     document.body.append(screen)
     const box = screen.querySelector('.mk').getBoundingClientRect()
     screen.remove()
@@ -120,7 +120,7 @@ test('the OIDC sign-in action stays inside an older iPhone viewport', async ({ p
     root.innerHTML = `
       <div class="boot">
         <div class="bootIn wide">
-          <span class="mk brand"><img src="/wayfare-icon.png" alt=""></span>
+          <span class="mk brand"><img src="/offwego-icon.png" alt=""></span>
           <b>Sign in to Off We Go</b>
           <p>Continue to Off We Go ID to sign in securely.</p>
           <button class="btn pri" type="button">Continue to sign in</button>
@@ -198,7 +198,7 @@ async function centreOnStop(page, name) {
     const c = { x: q.x + q.width / 2, y: q.y + q.height / 2 }
     return {
       point: p.contains(document.elementFromPoint(c.x, c.y)) ? c : null,
-      moving: window.__wayfareMap?.isMoving() ?? true,
+      moving: window.__offwegoMap?.isMoving() ?? true,
     }
   }, name)
   let previous = null
@@ -477,7 +477,7 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
   await page.mouse.down()
   for (let i = 1; i <= 25; i++) await page.mouse.move(cx - i * 8, cy - i * 3)
   await page.mouse.up()
-  await expect.poll(() => page.evaluate(() => !window.__wayfareMap?.isMoving())).toBe(true)
+  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
   expect(await page.locator('.herocard h2').textContent()).toBe(after)
 })
 
@@ -550,7 +550,7 @@ test('uploading a geotagged iPhone photo brings its map pin into view', async ({
     const file = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'edinburgh.jpg', {
       type: 'image/jpeg',
     })
-    Object.defineProperty(file, 'wayfareMetadata', {
+    Object.defineProperty(file, 'offwegoMetadata', {
       value: { lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z' },
     })
     const transfer = new DataTransfer()
@@ -562,7 +562,7 @@ test('uploading a geotagged iPhone photo brings its map pin into view', async ({
   await page.getByRole('button', { name: 'Add 1 to the map' }).click()
   await expect(page.locator('.modal')).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => {
-    const center = window.__wayfareMap.getCenter()
+    const center = window.__offwegoMap.getCenter()
     return [Number(center.lng.toFixed(4)), Number(center.lat.toFixed(4))]
   })).toEqual([-3.1883, 55.9533])
 })
@@ -641,7 +641,7 @@ test('the map keeps something painted through zoom and pan', async ({ page }) =>
   await page.mouse.down()
   for (let i = 1; i <= 25; i++) await page.mouse.move(cx - i * 9, cy - i * 4)
   await page.mouse.up()
-  await expect.poll(() => page.evaluate(() => !window.__wayfareMap?.isMoving())).toBe(true)
+  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
   expect(await painted()).toBe(100)
 })
 
@@ -659,11 +659,11 @@ test('theme choice survives a reload', async ({ page }) => {
 test('theme swaps disable MapLibre style diffing for incompatible sprite atlases', async ({ page }) => {
   await open(page)
   await page.evaluate(() => {
-    const map = window.__wayfareMap
+    const map = window.__offwegoMap
     const setStyle = map.setStyle.bind(map)
-    window.__wayfareSetStyleOptions = undefined
+    window.__offwegoSetStyleOptions = undefined
     map.setStyle = (style, options) => {
-      window.__wayfareSetStyleOptions = options
+      window.__offwegoSetStyleOptions = options
       return setStyle(style, options)
     }
   })
@@ -673,12 +673,12 @@ test('theme swaps disable MapLibre style diffing for incompatible sprite atlases
 
   // The map follows daylight until the first manual override. If that override
   // chooses the style already on screen, the next click guarantees a real swap.
-  if (await page.evaluate(() => window.__wayfareSetStyleOptions === undefined)) {
+  if (await page.evaluate(() => window.__offwegoSetStyleOptions === undefined)) {
     await themeButton.click()
   }
 
   await expect.poll(() => page.evaluate(
-    () => window.__wayfareSetStyleOptions?.diff ?? null,
+    () => window.__offwegoSetStyleOptions?.diff ?? null,
   )).toBe(false)
 })
 
@@ -813,7 +813,7 @@ test('attractions are drawn across the map and open into a card', async ({ page 
   await open(page)
   // Drawn by the map itself, not as elements, so ask the map what it rendered.
   const dots = async () => page.evaluate(() => {
-    const m = window.__wayfareMap
+    const m = window.__offwegoMap
     return m?.getLayer('attr-dot') ? m.queryRenderedFeatures({ layers: ['attr-dot'] }).length : 0
   })
   await expect.poll(dots, { timeout: 40_000, intervals: [1000] }).toBeGreaterThan(40)
@@ -821,16 +821,16 @@ test('attractions are drawn across the map and open into a card', async ({ page 
   // They follow the map anywhere, not just where the trip already goes.
   await page.mouse.move(700, 500)
   await page.mouse.down(); await page.mouse.move(660, 470, { steps: 8 }); await page.mouse.up()
-  await page.evaluate(() => window.__wayfareMap.jumpTo({ center: [-3.1883, 55.9533], zoom: 13.5 }))
+  await page.evaluate(() => window.__offwegoMap.jumpTo({ center: [-3.1883, 55.9533], zoom: 13.5 }))
   await expect.poll(dots, { timeout: 60_000, intervals: [1500] }).toBeGreaterThan(30)
 
-  const names = await page.evaluate(() => window.__wayfareMap
+  const names = await page.evaluate(() => window.__offwegoMap
     .queryRenderedFeatures({ layers: ['attr-dot'] }).map(f => f.properties.n).join(' | '))
   expect(names).toMatch(/Castle|Museum|Monument|Gallery|Park/)
 
   // A pin opens a card with the three things worth knowing.
   const hit = await page.evaluate(() => {
-    const m = window.__wayfareMap, c = m.getCanvas()
+    const m = window.__offwegoMap, c = m.getCanvas()
     const fs = m.queryRenderedFeatures({ layers: ['attr-dot'] })
     let best = null, bd = Infinity
     for (const f of fs) {

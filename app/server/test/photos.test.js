@@ -19,7 +19,7 @@ async function post(url, body, token) {
 
 test('a photo upload stores resized derivatives and returns an expiring private URL', async t => {
   assert.ok(filesModule?.createDiskFileStore, 'the VPS photo store has not been implemented')
-  const directory = await mkdtemp(join(tmpdir(), 'wayfare-photos-'))
+  const directory = await mkdtemp(join(tmpdir(), 'offwego-photos-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
 
   const sent = []
@@ -28,7 +28,7 @@ test('a photo upload stores resized derivatives and returns an expiring private 
     repository,
     fileStore: filesModule.createDiskFileStore({ directory }),
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
   await app.listen({ host: '127.0.0.1', port: 0 })
@@ -60,7 +60,7 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   assert.equal(photo.lng, -3.1883)
   assert.equal(photo.lat, 55.9533)
   assert.equal(photo.locationSource, 'exif')
-  assert.match(photo.src, /^https:\/\/wayfare\.example\.com\/api\/media\//)
+  assert.match(photo.src, /^https:\/\/offwego\.example\.com\/api\/media\//)
 
   // The signed URL must also work inside Capacitor, where a root-relative URL
   // would incorrectly resolve to capacitor://localhost.

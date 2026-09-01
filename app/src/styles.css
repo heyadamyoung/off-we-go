@@ -99,7 +99,7 @@ img{display:block}
 
 /* ---------------- stage ---------------- */
 .stagewrap{flex:1;position:relative;min-height:0;overflow:hidden;background:var(--bg3)}
-.mapcanvas{position:absolute;inset:0}
+.mapcanvas{position:absolute;inset:0;overflow:hidden}
 .mapcanvas canvas{outline:none}
 /* the GL canvas paints the basemap; markers are DOM on top of it */
 .maplibregl-marker{will-change:transform}

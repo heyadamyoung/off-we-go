@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: wayfare-production
+  group: off-we-go-production
   cancel-in-progress: false
 
 jobs:
@@ -26,13 +26,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: wayfare_test
+          POSTGRES_DB: offwego_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d wayfare_test"
+          --health-cmd "pg_isready -U postgres -d offwego_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -59,7 +59,7 @@ jobs:
 
       - name: Run server tests
         env:
-          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/wayfare_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/offwego_test
         run: pnpm test:server
 
       - name: Build the web app

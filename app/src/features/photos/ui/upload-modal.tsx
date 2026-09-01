@@ -73,7 +73,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
     setBusy(true)
     try {
       for (let i = 0; i < files.length; i++) {
-        const meta = files[i].file.wayfareMetadata
+        const meta = files[i].file.offwegoMetadata
         const resolved = placements[i]
         await onAdd({
           file: files[i].file, caption: caption.trim() || 'Untitled',

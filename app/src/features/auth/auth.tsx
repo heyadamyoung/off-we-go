@@ -102,7 +102,7 @@ function SignInScreen({ notify }: { notify: (notice: ToastNotice) => void }) {
   return (
     <div className="boot">
       <div className="bootIn wide authCard">
-        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+        <span className="mk brand"><img src="/offwego-icon.png" alt="" /></span>
         <b>{mode === 'signin' ? 'Welcome back' : phase === 'details' ? 'Create your account' : 'Check your email'}</b>
         <p>{mode === 'signin'
           ? 'Sign in to plan the trip and keep everyone together.'
@@ -173,7 +173,7 @@ function NativeLoginHandoff() {
   return (
     <div className="boot">
       <div className="bootIn wide">
-        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+        <span className="mk brand"><img src="/offwego-icon.png" alt="" /></span>
         <b>{error ? 'Sign-in did not finish' : appUrl ? 'Open Off We Go' : 'That sign-in return is invalid'}</b>
         <p>{error || (appUrl
           ? 'Your secure sign-in returned in this browser. Tap below to finish in the Off We Go app.'

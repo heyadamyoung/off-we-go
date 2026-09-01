@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
 import { buildServer } from '../server/src/app.js'
 import { createMemoryRepository } from '../server/test/memory-repository.js'
 
-const root = 'https://wayfare.example.com'
+const root = 'https://offwego.example.com'
 
 async function disclosureContrast(page, foreground, background) {
   const [color, surface] = await Promise.all([
@@ -40,8 +40,8 @@ async function hostConsent() {
     publicUrl: root,
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  app.get('/wayfare-icon.png', async (_request, reply) => reply.type('image/png')
-    .send(await readFile(new URL('../public/wayfare-icon.png', import.meta.url))))
+  app.get('/offwego-icon.png', async (_request, reply) => reply.type('image/png')
+    .send(await readFile(new URL('../public/offwego-icon.png', import.meta.url))))
   const registration = await app.inject({
     method: 'POST',
     url: '/oauth/register',
@@ -53,7 +53,7 @@ async function hostConsent() {
       response_types: ['code'],
     },
   })
-  const verifier = 'wayfare-test-pkce-verifier-that-is-more-than-forty-three-characters'
+  const verifier = 'offwego-test-pkce-verifier-that-is-more-than-forty-three-characters'
   const query = new URLSearchParams({
     response_type: 'code',
     client_id: registration.json().client_id,

@@ -5,7 +5,7 @@ import { buildServer } from '../src/app.js'
 import { createMemoryRepository } from './memory-repository.js'
 import { authenticate } from './auth-helper.js'
 
-const root = 'https://wayfare.example.com'
+const root = 'https://offwego.example.com'
 
 const form = values => ({
   headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -42,7 +42,7 @@ async function registerClient(app) {
 const pkce = verifier => createHash('sha256').update(verifier).digest('base64url')
 
 async function authorize(app, authorization, clientId, scopes = 'trips:read trips:write') {
-  const verifier = 'wayfare-test-pkce-verifier-that-is-more-than-forty-three-characters'
+  const verifier = 'offwego-test-pkce-verifier-that-is-more-than-forty-three-characters'
   const query = new URLSearchParams({
     response_type: 'code', client_id: clientId,
     redirect_uri: 'http://127.0.0.1:3210/callback',
@@ -150,7 +150,7 @@ test('describes an unverified redirect without upgrading the client identity', a
   const query = new URLSearchParams({
     response_type: 'code', client_id: registration.json().client_id,
     redirect_uri: 'https://client.example/callback', scope: 'trips:read', state: 'client-state',
-    code_challenge: pkce('wayfare-test-pkce-verifier-that-is-more-than-forty-three-characters'),
+    code_challenge: pkce('offwego-test-pkce-verifier-that-is-more-than-forty-three-characters'),
     code_challenge_method: 'S256', resource: `${root}/mcp`,
   })
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
@@ -209,7 +209,7 @@ test('throttles unauthenticated dynamic client registration', async () => {
 test('a user can decline an authorization request without signing in', async () => {
   const { app } = await fixture()
   const client = await registerClient(app)
-  const verifier = 'another-wayfare-pkce-verifier-that-is-long-enough-for-oauth'
+  const verifier = 'another-offwego-pkce-verifier-that-is-long-enough-for-oauth'
   const query = new URLSearchParams({
     response_type: 'code', client_id: client.client_id,
     redirect_uri: 'http://127.0.0.1:3210/callback', scope: 'trips:read', state: 'decline-state',

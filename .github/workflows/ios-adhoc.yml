@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: wayfare-ios-adhoc
+  group: off-we-go-ios-adhoc
   cancel-in-progress: false
 
 jobs:
@@ -51,11 +51,11 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/wayfare-adhoc-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/off-we-go-adhoc-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
-          CERTIFICATE_PATH="$RUNNER_TEMP/wayfare-distribution.p12"
+          CERTIFICATE_PATH="$RUNNER_TEMP/off-we-go-distribution.p12"
           PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
-          APP_STORE_PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_App_Store_CI.mobileprovision"
+          APP_STORE_PROFILE_PATH="$PROFILE_DIRECTORY/OffWeGo_App_Store_CI.mobileprovision"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
           mkdir -p "$PROFILE_DIRECTORY"
@@ -76,7 +76,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
           IOS_ADHOC_DEVICES: ${{ secrets.IOS_ADHOC_DEVICES }}
         run: |
-          DEVICES_PATH="$RUNNER_TEMP/wayfare-adhoc-devices.json"
+          DEVICES_PATH="$RUNNER_TEMP/off-we-go-adhoc-devices.json"
           node scripts/iosAdHocDevices.mjs "$IOS_ADHOC_DEVICES" > "$DEVICES_PATH"
           echo "IOS_ADHOC_DEVICES_PATH=$DEVICES_PATH" >> "$GITHUB_ENV"
           if ! command -v fastlane >/dev/null 2>&1; then
@@ -91,26 +91,26 @@ jobs:
 
       - name: Archive Off We Go
         run: >-
-          node scripts/iosArchive.mjs "$RUNNER_TEMP/Wayfare.xcarchive"
+          node scripts/iosArchive.mjs "$RUNNER_TEMP/OffWeGo.xcarchive"
           "$APPLE_TEAM_ID" "$GITHUB_RUN_NUMBER" "$WAYFARE_DOMAIN"
 
       - name: Export the signed IPA
         run: |
           xcodebuild \
             -exportArchive \
-            -archivePath "$RUNNER_TEMP/Wayfare.xcarchive" \
-            -exportPath "$RUNNER_TEMP/WayfareAdHoc" \
+            -archivePath "$RUNNER_TEMP/OffWeGo.xcarchive" \
+            -exportPath "$RUNNER_TEMP/OffWeGoAdHoc" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Verify every registered device is authorized
         env:
           IOS_ADHOC_DEVICES: ${{ secrets.IOS_ADHOC_DEVICES }}
         run: |
-          IPA_PATH="$(find "$RUNNER_TEMP/WayfareAdHoc" -type f -name '*.ipa' -print -quit)"
+          IPA_PATH="$(find "$RUNNER_TEMP/OffWeGoAdHoc" -type f -name '*.ipa' -print -quit)"
           test -n "$IPA_PATH"
-          mkdir -p "$RUNNER_TEMP/WayfareVerify"
-          unzip -q "$IPA_PATH" -d "$RUNNER_TEMP/WayfareVerify"
-          APP_PATH="$(find "$RUNNER_TEMP/WayfareVerify/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          mkdir -p "$RUNNER_TEMP/OffWeGoVerify"
+          unzip -q "$IPA_PATH" -d "$RUNNER_TEMP/OffWeGoVerify"
+          APP_PATH="$(find "$RUNNER_TEMP/OffWeGoVerify/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$APP_PATH"
           security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$RUNNER_TEMP/EmbeddedProfile.plist"
           node scripts/iosAdHocDevices.mjs "$IOS_ADHOC_DEVICES" \

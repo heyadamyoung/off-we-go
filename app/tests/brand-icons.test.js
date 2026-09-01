@@ -8,7 +8,7 @@ import test from 'node:test';
 import sharp from 'sharp';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const sourcePath = path.join(appRoot, 'public', 'wayfare-logo-transparent-teal-road.png');
+const sourcePath = path.join(appRoot, 'public', 'offwego-logo-transparent-teal-road.png');
 
 function parseIco(buffer) {
   assert.deepEqual([...buffer.subarray(0, 4)], [0, 0, 1, 0]);
@@ -53,7 +53,7 @@ test('generates the approved brand icon for every web and native launcher surfac
 
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
 
-  const webMark = await sharp(path.join(outputRoot, 'public', 'wayfare-icon.png')).metadata();
+  const webMark = await sharp(path.join(outputRoot, 'public', 'offwego-icon.png')).metadata();
   assert.deepEqual(
     { width: webMark.width, height: webMark.height, hasAlpha: webMark.hasAlpha },
     { width: 512, height: 512, hasAlpha: true },

@@ -10,7 +10,7 @@ test('a registered phone can report an idempotent GPS fix that its trip can read
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
     clock: () => new Date('2027-06-04T13:21:00.000Z'),
   })
@@ -74,7 +74,7 @@ test('GPS ingestion rejects a phone that exceeds its configured burst limit', as
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     clock: () => new Date('2027-06-04T13:21:00.000Z'),
     ingestRateLimit: { max: 2, windowMs: 60_000 },
   })

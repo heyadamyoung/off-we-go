@@ -10,7 +10,7 @@ test('a trip member can comment on and like a photo, then undo both', async () =
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
   const authorization = await authenticate(repository, 'owner@example.com')

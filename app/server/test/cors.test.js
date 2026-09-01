@@ -6,7 +6,7 @@ import { createMemoryRepository } from './memory-repository.js'
 test('the iOS WKWebView origin can preflight authenticated VPS requests but arbitrary sites cannot', async () => {
   const app = await buildServer({
     repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const allowed = await app.inject({
     method: 'OPTIONS', url: '/api/trips/current',
@@ -31,7 +31,7 @@ test('the iOS WKWebView origin can preflight authenticated VPS requests but arbi
 test('the Android WebView origin can preflight authenticated VPS requests', async () => {
   const app = await buildServer({
     repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const response = await app.inject({
     method: 'OPTIONS', url: '/api/trips',

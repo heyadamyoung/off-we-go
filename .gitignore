@@ -3,13 +3,13 @@
 !app/public/apple-touch-icon.png
 !app/public/icon-192.png
 !app/public/icon-512.png
-!app/public/wayfare-logo-transparent-teal-road.png
+!app/public/offwego-logo-transparent-teal-road.png
 .env*
 !.env.example
 !.env.*.example
 .playwright-mcp/
 .tmp/
-wayfare-deploy-*.tgz
+off-we-go-deploy-*.tgz
 dist/
 node_modules/
 playwright-report/

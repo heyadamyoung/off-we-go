@@ -14,11 +14,11 @@ test('selected photo thumbnails reveal their location source and expected map pl
 
   await page.locator('.modal input[type="file"]').evaluate(input => {
     const tagged = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'tagged.jpg', { type: 'image/jpeg' })
-    Object.defineProperty(tagged, 'wayfareMetadata', { value: {
+    Object.defineProperty(tagged, 'offwegoMetadata', { value: {
       lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z',
     } })
     const untagged = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'untagged.jpg', { type: 'image/jpeg' })
-    Object.defineProperty(untagged, 'wayfareMetadata', { value: {
+    Object.defineProperty(untagged, 'offwegoMetadata', { value: {
       takenAt: '2026-08-30T12:00:00.000Z',
     } })
     const transfer = new DataTransfer()

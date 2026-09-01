@@ -58,8 +58,8 @@ export function metadataFromExif(exif) {
 }
 
 const attachMetadata = (file, metadata) => {
-  const current = Object.getOwnPropertyDescriptor(file, 'wayfareMetadata')
-  if (metadata && (!current || current.configurable)) Object.defineProperty(file, 'wayfareMetadata', {
+  const current = Object.getOwnPropertyDescriptor(file, 'offwegoMetadata')
+  if (metadata && (!current || current.configurable)) Object.defineProperty(file, 'offwegoMetadata', {
     value: metadata, enumerable: false, configurable: true,
   })
   return file
@@ -69,7 +69,7 @@ export async function readPhotoFilesMetadata(files, { parseExif = parseExifFile 
   await Promise.all((files || []).map(async file => {
     let parsed = null
     try { parsed = metadataFromExif(await parseExif(file)) } catch { /* no readable EXIF block */ }
-    const existing = metadataFromExif(file?.wayfareMetadata)
+    const existing = metadataFromExif(file?.offwegoMetadata)
     attachMetadata(file, parsed || existing ? { ...parsed, ...existing } : null)
   }))
   return files
@@ -94,7 +94,7 @@ export async function preparePhotoFilesForUpload(files, {
     const jpeg = Array.isArray(result) ? result[0] : result
     const name = /\.hei[cf]$/i.test(file.name) ? file.name.replace(/\.hei[cf]$/i, '.jpg') : `${file.name}.jpg`
     const converted = new File([jpeg], name, { type: 'image/jpeg', lastModified: file.lastModified })
-    attachMetadata(converted, file.wayfareMetadata)
+    attachMetadata(converted, file.offwegoMetadata)
     prepared.push(converted)
   }
   return prepared
@@ -109,7 +109,7 @@ export async function galleryPhotosToFiles(photos, {
     const response = await fetchFn(photo.webPath)
     if (!response.ok) throw new Error('The selected photo could not be read')
     const blob = await response.blob()
-    const file = new File([blob], `wayfare-${stamp}-${index + 1}.jpg`, {
+    const file = new File([blob], `offwego-${stamp}-${index + 1}.jpg`, {
       type: 'image/jpeg',
       lastModified: stamp,
     })
@@ -143,7 +143,7 @@ export function photoUploadMetadata(input, { by, nextSequence }) {
 }
 
 export function photoPlacement(file, { live, stops, fallbackSource = 'live' }) {
-  const metadata = file?.wayfareMetadata
+  const metadata = file?.offwegoMetadata
   const metadataLng = number(metadata?.lng), metadataLat = number(metadata?.lat)
   const hasEmbeddedGps = metadataLng != null && metadataLat != null
     && Math.abs(metadataLng) <= 180 && Math.abs(metadataLat) <= 90

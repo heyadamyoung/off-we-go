@@ -19,7 +19,7 @@ test('a photo without EXIF coordinates is placed from the uploader GPS trail by 
       async remove() {}, async read() { return Buffer.from('image') },
     },
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     clock: () => new Date('2027-06-04T13:25:00.000Z'),
   })
   await app.listen({ host: '127.0.0.1', port: 0 })
@@ -58,7 +58,7 @@ test('a photo without EXIF coordinates or a matching trail uses its displayed fa
       async remove() {}, async read() { return Buffer.from('image') },
     },
     mailer: { async send() {} },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   await app.listen({ host: '127.0.0.1', port: 0 })
   t.after(() => app.close())

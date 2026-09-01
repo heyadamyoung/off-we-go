@@ -85,7 +85,7 @@ function TripLanding({ email, trips = [], invites = [], onChanged, notify }: Tri
     <main className="tripLanding">
       <div className="tripLandingIn">
         <header className="landingHead">
-          <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+          <span className="mk brand"><img src="/offwego-icon.png" alt="" /></span>
           <div><span className="eyebrow">OFF WE GO</span><h1>Your trips</h1>
             {email && <p>Signed in as {email}</p>}
           </div>

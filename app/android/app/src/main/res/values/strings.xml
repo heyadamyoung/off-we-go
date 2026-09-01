@@ -5,6 +5,6 @@
     <string name="package_name">ai.threadway.wayfare</string>
     <string name="custom_url_scheme">ai.threadway.wayfare</string>
     <string name="capacitor_background_geolocation_notification_channel_name">Trip location sharing</string>
-    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_wayfare_tracking</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_offwego_tracking</string>
     <string name="capacitor_background_geolocation_notification_color">#E9B968</string>
 </resources>

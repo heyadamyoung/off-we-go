@@ -9,7 +9,7 @@ async function setup(fileStore = null) {
   const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
     repository, fileStore, mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const authorization = await authenticate(repository, 'owner@example.com')
   const user = await repository.findUserByEmail('owner@example.com')
@@ -169,6 +169,6 @@ test('an owner can upload a private avatar and attach it to their global profile
   assert.equal(replaced.statusCode, 201)
   assert.deepEqual(removed, [firstPath])
   const loaded = await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization } })
-  assert.match(loaded.json().me.avatar, /^https:\/\/wayfare\.example\.com\/api\/media\//)
+  assert.match(loaded.json().me.avatar, /^https:\/\/offwego\.example\.com\/api\/media\//)
   await app.close()
 })

@@ -6,7 +6,7 @@ import { createMemoryRepository } from './memory-repository.js'
 test('the VPS publishes the Apple association for secure auth universal links', async () => {
   const app = await buildServer({
     repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     appleTeamId: 'A1B2C3D4E5', appleBundleId: 'ai.threadway.wayfare',
   })
   const response = await app.inject({ method: 'GET', url: '/.well-known/apple-app-site-association' })
@@ -27,7 +27,7 @@ test('the VPS publishes the Apple association for secure auth universal links', 
 test('the VPS publishes the Android association for secure auth app links', async () => {
   const app = await buildServer({
     repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
     androidPackageName: 'ai.threadway.wayfare',
     androidCertFingerprints: [
       '12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90:AB:CD:EF',

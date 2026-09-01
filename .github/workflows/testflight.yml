@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: wayfare-testflight
+  group: off-we-go-testflight
   cancel-in-progress: false
 
 jobs:
@@ -61,11 +61,11 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/wayfare-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/off-we-go-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
-          CERTIFICATE_PATH="$RUNNER_TEMP/wayfare-distribution.p12"
+          CERTIFICATE_PATH="$RUNNER_TEMP/off-we-go-distribution.p12"
           PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
-          PROFILE_PATH="$PROFILE_DIRECTORY/Wayfare_App_Store_CI.mobileprovision"
+          PROFILE_PATH="$PROFILE_DIRECTORY/OffWeGo_App_Store_CI.mobileprovision"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
           mkdir -p "$PROFILE_DIRECTORY"
@@ -88,15 +88,15 @@ jobs:
 
       - name: Archive Off We Go
         run: >-
-          node scripts/iosArchive.mjs "$RUNNER_TEMP/Wayfare.xcarchive"
+          node scripts/iosArchive.mjs "$RUNNER_TEMP/OffWeGo.xcarchive"
           "$APPLE_TEAM_ID" "$GITHUB_RUN_NUMBER" "$WAYFARE_DOMAIN"
 
       - name: Upload to App Store Connect
         run: |
           xcodebuild \
             -exportArchive \
-            -archivePath "$RUNNER_TEMP/Wayfare.xcarchive" \
-            -exportPath "$RUNNER_TEMP/WayfareExport" \
+            -archivePath "$RUNNER_TEMP/OffWeGo.xcarchive" \
+            -exportPath "$RUNNER_TEMP/OffWeGoExport" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -authenticationKeyPath "$APP_STORE_CONNECT_KEY_PATH" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \

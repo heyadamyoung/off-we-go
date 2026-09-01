@@ -81,11 +81,11 @@ test('API errors expose their HTTP status so the app can distinguish an empty ac
 
 test('OIDC continuation only returns to the same-origin OAuth authorization page', () => {
   assert.equal(
-    moduleUnderTest.safeOAuthContinuation('/oauth/authorize?client_id=abc', 'https://wayfare.example.com'),
+    moduleUnderTest.safeOAuthContinuation('/oauth/authorize?client_id=abc', 'https://offwego.example.com'),
     '/oauth/authorize?client_id=abc',
   )
-  assert.equal(moduleUnderTest.safeOAuthContinuation('https://evil.example/oauth/authorize', 'https://wayfare.example.com'), null)
-  assert.equal(moduleUnderTest.safeOAuthContinuation('/account', 'https://wayfare.example.com'), null)
+  assert.equal(moduleUnderTest.safeOAuthContinuation('https://evil.example/oauth/authorize', 'https://offwego.example.com'), null)
+  assert.equal(moduleUnderTest.safeOAuthContinuation('/account', 'https://offwego.example.com'), null)
 })
 
 test('the API client restores a session from asynchronous native secure storage', async () => {

@@ -10,7 +10,7 @@ function UserProfile({ profile }: UserProfileProps) {
     <main className="tripLanding">
       <div className="tripLandingIn userProfilePage">
         <header className="landingHead">
-          <a className="mk brand" href="/" aria-label="All trips"><img src="/wayfare-icon.png" alt="" /></a>
+          <a className="mk brand" href="/" aria-label="All trips"><img src="/offwego-icon.png" alt="" /></a>
           <div><span className="eyebrow">OFF WE GO</span><h1>{profile.name}</h1>
             <p>@{profile.handle}</p>
           </div>
@@ -38,7 +38,7 @@ export function UserProfileUnavailable({ error, onRetry }: UserProfileUnavailabl
     <main className="tripLanding">
       <div className="tripLandingIn userProfilePage">
         <header className="landingHead">
-          <a className="mk brand" href="/" aria-label="All trips"><img src="/wayfare-icon.png" alt="" /></a>
+          <a className="mk brand" href="/" aria-label="All trips"><img src="/offwego-icon.png" alt="" /></a>
           <div><span className="eyebrow">OFF WE GO</span>
             <h1>{missing ? 'Profile unavailable' : 'Profile could not load'}</h1>
           </div>

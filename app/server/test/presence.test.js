@@ -11,7 +11,7 @@ test('trip presence shows active people once, survives another tab closing, and 
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
     clock: () => now,
   })
@@ -73,7 +73,7 @@ test('trip presence is available only to trip members', async () => {
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
   const owner = await authenticate(repository, 'owner@example.com')

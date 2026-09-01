@@ -20,7 +20,7 @@ test('native OIDC sign-in opens the system browser with a native-bound authoriza
   let opened = null
   let stored = null
   await moduleUnderTest.beginOidcLogin({
-    apiBaseUrl: 'https://wayfare.example.com/api', native: true,
+    apiBaseUrl: 'https://offwego.example.com/api', native: true,
     location: { assign() { throw new Error('native login must not navigate the app webview') } },
     browser: { async open(options) { opened = options } },
     storage: { async setItem(key, value) { stored = { key, value } } },
@@ -30,7 +30,7 @@ test('native OIDC sign-in opens the system browser with a native-bound authoriza
   assert.equal(stored.key, moduleUnderTest.NATIVE_OIDC_VERIFIER_KEY)
   assert.match(stored.value, /^[A-Za-z0-9_-]{43}$/)
   const url = new URL(opened.url)
-  assert.equal(url.origin + url.pathname, 'https://wayfare.example.com/api/auth/oidc/start')
+  assert.equal(url.origin + url.pathname, 'https://offwego.example.com/api/auth/oidc/start')
   assert.equal(url.searchParams.get('client'), 'native')
   assert.equal(url.searchParams.get('challenge'), createHash('sha256').update(stored.value).digest('base64url'))
 })
@@ -45,12 +45,12 @@ test('OIDC logout uses full-page navigation on web and the system browser on nat
 
   let opened = null
   await moduleUnderTest.beginOidcLogout({
-    apiBaseUrl: 'https://wayfare.example.com/api', native: true,
+    apiBaseUrl: 'https://offwego.example.com/api', native: true,
     location: { assign() { throw new Error('native must not navigate webview') } },
     browser: { async open(options) { opened = options } },
   })
   assert.deepEqual(opened, {
-    url: 'https://wayfare.example.com/api/auth/oidc/logout?client=native',
+    url: 'https://offwego.example.com/api/auth/oidc/logout?client=native',
     presentationStyle: 'popover',
   })
 })

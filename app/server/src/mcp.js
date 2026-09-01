@@ -124,10 +124,10 @@ function consentPage({ client, requestToken, scopes, root, redirectUri, continua
 </head>
 <body>
 <main>
-  <div class="brand"><img src="/wayfare-icon.png" alt=""><span>Off We Go</span></div>
+  <div class="brand"><img src="/offwego-icon.png" alt=""><span>Off We Go</span></div>
   <section class="card">
     <div class="top">
-      <div class="apps"><span class="app">${escapeHtml(client.clientName.slice(0, 1).toUpperCase())}</span><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M15 8l4 4-4 4"/></svg><span class="app w"><img src="/wayfare-icon.png" alt="Off We Go"></span></div>
+      <div class="apps"><span class="app">${escapeHtml(client.clientName.slice(0, 1).toUpperCase())}</span><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M15 8l4 4-4 4"/></svg><span class="app w"><img src="/offwego-icon.png" alt="Off We Go"></span></div>
       <div class="unverified">Unverified client</div>
       <h1>Connect ${name} to Off We Go?</h1>
       <p class="sub">This lets the MCP client act on your trips with the permissions below.</p>

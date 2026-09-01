@@ -10,7 +10,7 @@ test('an invited account must explicitly accept before it can read the trip', as
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
   const owner = await authenticate(repository, 'owner@example.com')
@@ -27,7 +27,7 @@ test('an invited account must explicitly accept before it can read the trip', as
   assert.equal(invited.json().mailed, true)
   assert.equal(sent.at(-1).to, 'friend@example.com')
   assert.equal(sent.at(-1).kind, 'trip-invitation')
-  assert.equal(sent.at(-1).appUrl, 'https://wayfare.example.com/')
+  assert.equal(sent.at(-1).appUrl, 'https://offwego.example.com/')
   assert.equal(sent.at(-1).webUrl, undefined, 'trip invitations must not contain a sign-in token')
 
   const viewer = await authenticate(repository, 'friend@example.com')
@@ -81,7 +81,7 @@ test('only owners manage invitations and revoking a claimed invitation removes t
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
   const owner = await authenticate(repository, 'owner@example.com')
@@ -118,7 +118,7 @@ test('an owner can remove a claimed member but cannot remove the trip owner', as
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
   })
   const owner = await authenticate(repository, 'owner@example.com')
   const trip = (await app.inject({

@@ -10,7 +10,7 @@ test('health reports unavailable when PostgreSQL or upload storage is not writab
     repository,
     fileStore: { async ready() {}, async remove() {} },
     mailer: { async send() {} },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
 

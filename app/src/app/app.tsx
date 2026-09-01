@@ -17,7 +17,7 @@ function Boot({ error, onRetry }: BootProps) {
   return (
     <div className="boot">
       <div className="bootIn">
-        <span className="mk brand"><img src="/wayfare-icon.png" alt="" /></span>
+        <span className="mk brand"><img src="/offwego-icon.png" alt="" /></span>
         {error ? (
           <>
             <b>Your trips would not load</b>

@@ -10,7 +10,7 @@ async function signedInApp() {
   const app = await buildServer({
     repository,
     mailer: { async send(message) { sent.push(message) } },
-    publicUrl: 'https://wayfare.example.com',
+    publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
   return { app, repository, authorization: await authenticate(repository, 'owner@example.com') }

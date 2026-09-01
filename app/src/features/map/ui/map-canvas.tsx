@@ -54,7 +54,7 @@ const MapCanvas = memo(function MapCanvas({
     setMap(m)
     // A handle for the test suite: the attraction layer is drawn by the GPU,
     // so there is no element to select and assert against.
-    if (interactive) window.__wayfareMap = m
+    if (interactive) window.__offwegoMap = m
     return () => { m.remove(); setMap(null) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

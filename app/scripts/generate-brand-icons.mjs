@@ -127,7 +127,7 @@ export async function generateBrandIcons({ sourcePath, outputRoot }) {
   const monochrome = await monochromeMaster(sourcePath);
   const publicDirectory = path.join(outputRoot, 'public');
 
-  await writeAsset(path.join(publicDirectory, 'wayfare-icon.png'), await transparentIcon(sourcePath, 512));
+  await writeAsset(path.join(publicDirectory, 'offwego-icon.png'), await transparentIcon(sourcePath, 512));
 
   for (const [filename, size] of [
     ['apple-touch-icon.png', 180],
@@ -164,7 +164,7 @@ function argumentValue(name) {
 }
 
 if (path.resolve(process.argv[1] || '') === modulePath) {
-  const sourcePath = path.resolve(argumentValue('--source') || path.join(appRoot, 'public', 'wayfare-logo-transparent-teal-road.png'));
+  const sourcePath = path.resolve(argumentValue('--source') || path.join(appRoot, 'public', 'offwego-logo-transparent-teal-road.png'));
   const outputRoot = path.resolve(argumentValue('--output-root') || appRoot);
   await generateBrandIcons({ sourcePath, outputRoot });
 }

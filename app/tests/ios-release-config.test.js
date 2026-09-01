@@ -10,7 +10,7 @@ test('archive arguments leave dependency bundle identifiers untouched', async ()
   const { createArchiveArguments } = await import('../scripts/iosArchive.mjs');
 
   assert.deepEqual(createArchiveArguments({
-    archivePath: '/tmp/Wayfare.xcarchive',
+    archivePath: '/tmp/OffWeGo.xcarchive',
     teamId: 'R65UN25Q64',
     buildNumber: '42',
     domain: 'offwego.to',
@@ -19,7 +19,7 @@ test('archive arguments leave dependency bundle identifiers untouched', async ()
     '-scheme', 'App',
     '-configuration', 'Release',
     '-destination', 'generic/platform=iOS',
-    '-archivePath', '/tmp/Wayfare.xcarchive',
+    '-archivePath', '/tmp/OffWeGo.xcarchive',
     'DEVELOPMENT_TEAM=R65UN25Q64',
     'CURRENT_PROJECT_VERSION=42',
     'WAYFARE_DOMAIN=offwego.to',

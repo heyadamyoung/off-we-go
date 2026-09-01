@@ -343,14 +343,14 @@ test('Android sends background fixes through native HTTP after the WebView is th
     nativeHttp, platform: 'android', webFetch: async () => { throw new Error('WebView fetch used') },
   })
 
-  const response = await backgroundFetch('https://wayfare.example.com/api/ingest/track', {
+  const response = await backgroundFetch('https://offwego.example.com/api/ingest/track', {
     method: 'POST',
     headers: { authorization: 'Bearer device-token', 'content-type': 'application/json' },
     body: JSON.stringify({ _type: 'location', lat: 51, lon: -1, tst: 1_800_000_000 }),
   })
 
   assert.deepEqual(request, {
-    url: 'https://wayfare.example.com/api/ingest/track',
+    url: 'https://offwego.example.com/api/ingest/track',
     method: 'POST',
     headers: { authorization: 'Bearer device-token', 'content-type': 'application/json' },
     data: { _type: 'location', lat: 51, lon: -1, tst: 1_800_000_000 },
@@ -370,10 +370,10 @@ test('Apple Photos selections become uploadable JPEG files in selection order', 
   ], { fetch, stamp: 1_788_000_000_000 })
 
   assert.deepEqual(files.map(file => ({ name: file.name, type: file.type, size: file.size })), [
-    { name: 'wayfare-1788000000000-1.jpg', type: 'image/jpeg', size: 3 },
-    { name: 'wayfare-1788000000000-2.jpg', type: 'image/jpeg', size: 3 },
+    { name: 'offwego-1788000000000-1.jpg', type: 'image/jpeg', size: 3 },
+    { name: 'offwego-1788000000000-2.jpg', type: 'image/jpeg', size: 3 },
   ])
-  assert.deepEqual(files[0].wayfareMetadata, {
+  assert.deepEqual(files[0].offwegoMetadata, {
     lat: 52.370216,
     lng: 4.895168,
     takenAt: new Date(2026, 7, 30, 14, 20, 0).toISOString(),
@@ -413,8 +413,8 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
       DateTimeOriginal: '2026:08:30 14:20:00',
     },
   }], { fetch, stamp: 1_788_000_000_000 })
-  assert.equal(Number(android[0].wayfareMetadata.lat.toFixed(6)), 52.370216)
-  assert.equal(Number(android[0].wayfareMetadata.lng.toFixed(6)), 4.884517)
+  assert.equal(Number(android[0].offwegoMetadata.lat.toFixed(6)), 52.370216)
+  assert.equal(Number(android[0].offwegoMetadata.lng.toFixed(6)), 4.884517)
 
   assert.ok(mobilePhotos.readPhotoFilesMetadata, 'browser photo EXIF reading has not been implemented')
   const browserFile = new File([new Uint8Array([1, 2, 3])], 'iphone.heic', { type: 'image/heic' })
@@ -427,7 +427,7 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
       }
     },
   })
-  assert.deepEqual(browserFile.wayfareMetadata, {
+  assert.deepEqual(browserFile.offwegoMetadata, {
     lat: -33.8568, lng: 151.2153, takenAt: '2026-08-30T04:20:00.000Z',
   })
 
@@ -439,7 +439,7 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
   })
   assert.equal(converted[0].name, 'iphone.jpg')
   assert.equal(converted[0].type, 'image/jpeg')
-  assert.deepEqual(converted[0].wayfareMetadata, {
+  assert.deepEqual(converted[0].offwegoMetadata, {
     lat: -33.8568, lng: 151.2153, takenAt: '2026-08-30T04:20:00.000Z',
   })
 
@@ -451,22 +451,22 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
   } }).toBuffer()
   const actualExif = new Uint8Array(jpeg)
   await mobilePhotos.readPhotoFilesMetadata([actualExif])
-  assert.equal(actualExif.wayfareMetadata.lat, -33.8568)
-  assert.equal(Number(actualExif.wayfareMetadata.lng.toFixed(4)), 151.2153)
+  assert.equal(actualExif.offwegoMetadata.lat, -33.8568)
+  assert.equal(Number(actualExif.offwegoMetadata.lng.toFixed(4)), 151.2153)
 })
 
 test('photo placement distinguishes embedded GPS from a displayed fallback position', () => {
   assert.ok(mobilePhotos.photoPlacement, 'photo placement inspection has not been implemented')
   const stops = [{ id: 'edinburgh', name: 'Edinburgh', lng: -3.1880, lat: 55.9530 }]
 
-  assert.deepEqual(mobilePhotos.photoPlacement({ wayfareMetadata: {
+  assert.deepEqual(mobilePhotos.photoPlacement({ offwegoMetadata: {
     lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z',
   } }, { live: [4.8686, 52.3664], stops }), {
     point: [-3.1883, 55.9533], fallbackPoint: null, previewPoint: [-3.1883, 55.9533],
     stopId: 'edinburgh', stopName: 'Edinburgh', source: 'exif', hasEmbeddedGps: true,
   })
 
-  assert.deepEqual(mobilePhotos.photoPlacement({ wayfareMetadata: {
+  assert.deepEqual(mobilePhotos.photoPlacement({ offwegoMetadata: {
     takenAt: '2026-08-31T12:00:00.000Z',
   } }, { live: [4.8686, 52.3664], stops, fallbackSource: 'approximate' }), {
     point: null, fallbackPoint: [4.8686, 52.3664], previewPoint: [4.8686, 52.3664],
@@ -474,10 +474,10 @@ test('photo placement distinguishes embedded GPS from a displayed fallback posit
   })
 })
 
-test('a Off We Go OIDC callback exposes the one-time login handoff', () => {
+test('an Off We Go OIDC callback exposes the one-time login handoff', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
-  assert.equal(loginHandoffFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
-  assert.equal(loginHandoffFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), token)
+  assert.equal(loginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), token)
+  assert.equal(loginHandoffFromUrl(`https://offwego.example.com/auth/native?token=${token}`), token)
   assert.equal(loginHandoffFromUrl(`wayfare://auth?token=${token}`), token)
   assert.equal(loginHandoffFromUrl('https://example.com/not-a-login'), null)
   assert.equal(loginHandoffFromUrl(`other-app://auth?token=${token}`), null)
@@ -485,24 +485,24 @@ test('a Off We Go OIDC callback exposes the one-time login handoff', () => {
 
 test('the website exchanges only its callback and leaves a native handoff token untouched', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
-  assert.equal(browserLoginHandoffFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), token)
-  assert.equal(browserLoginHandoffFromUrl(`https://wayfare.example.com/auth/native?token=${token}`), null)
+  assert.equal(browserLoginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), token)
+  assert.equal(browserLoginHandoffFromUrl(`https://offwego.example.com/auth/native?token=${token}`), null)
   assert.equal(browserLoginHandoffFromUrl(`wayfare://auth?token=${token}`), null)
 })
 
 test('an Outlook browser handoff produces an explicit Off We Go app URL', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   assert.equal(
-    nativeAppUrlFromUrl(`https://wayfare.example.com/auth/native?token=${token}`),
+    nativeAppUrlFromUrl(`https://offwego.example.com/auth/native?token=${token}`),
     `wayfare://auth?token=${token}`,
   )
-  assert.equal(nativeAppUrlFromUrl(`https://wayfare.example.com/auth/callback?token=${token}`), null)
+  assert.equal(nativeAppUrlFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), null)
 })
 
 test('native OIDC handoff reports progress and contains exchange failures', async () => {
   const states = []
   const handled = await completeNativeLogin(
-    'https://wayfare.example.com/auth/callback?token=one-time-login-token-at-least-thirty-two-characters',
+    'https://offwego.example.com/auth/callback?token=one-time-login-token-at-least-thirty-two-characters',
     { async exchangeLoginHandoff() { throw new Error('The sign-in handoff expired') } },
     state => states.push(state),
   )
@@ -517,7 +517,7 @@ test('native OIDC handoff reports progress and contains exchange failures', asyn
 test('native OIDC cancellation returns an error without attempting token exchange', async () => {
   const states = []
   const message = 'Sign-in was cancelled or could not be completed'
-  const url = `https://wayfare.example.com/auth/native?error=${encodeURIComponent(message)}`
+  const url = `https://offwego.example.com/auth/native?error=${encodeURIComponent(message)}`
   const expectedAppUrl = new URL('wayfare://auth')
   expectedAppUrl.searchParams.set('error', message)
   assert.equal(nativeAppUrlFromUrl(url), expectedAppUrl.href)
