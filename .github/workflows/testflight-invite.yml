@@ -1,4 +1,4 @@
-name: Invite a TestFlight tester
+name: TestFlight testers and build status
 
 # Adding a tester is a two-field job that otherwise means a trip through App
 # Store Connect. The key is already a secret here, so the trip is a dispatch.
@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       email:
-        description: The tester's email address
-        required: true
+        description: The tester's email address — leave empty to just report build status
+        required: false
         type: string
       name:
         description: Their name, if you want Apple to show one
@@ -34,7 +34,17 @@ jobs:
         with:
           node-version: 22
 
+      - name: Report what App Store Connect makes of recent builds
+        if: ${{ inputs.email == '' }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+        run: node scripts/testflightStatus.mjs
+
       - name: Add them to the group
+        if: ${{ inputs.email != '' }}
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
