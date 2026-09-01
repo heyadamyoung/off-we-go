@@ -7,6 +7,17 @@ import test from 'node:test';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/* The compose check needs docker to read the file the way the VPS will, and the
+   macOS runner that builds the iOS beta has none. It skips there rather than
+   failing — but the deployment pipeline, which does have docker and is the
+   place this guard exists for, sets REQUIRE_DOCKER=1 so a silent skip cannot
+   pass for a green deployment check. */
+const dockerAvailable = spawnSync('docker', ['--version'], { encoding: 'utf8' }).status === 0;
+
+test('docker is present wherever the deployment guard is required', { skip: !process.env.REQUIRE_DOCKER }, () => {
+  assert.equal(dockerAvailable, true, 'REQUIRE_DOCKER is set but docker is not installed');
+});
+
 test('the deployment SSH entrypoint rejects arbitrary commands', () => {
   const result = spawnSync('bash', ['-lc', './deploy/github-deploy.sh'], {
     cwd: appRoot,
@@ -21,7 +32,9 @@ test('the deployment SSH entrypoint rejects arbitrary commands', () => {
   assert.match(result.stderr, /refusing unauthorized deploy command/i);
 });
 
-test('production compose runs a private pinned Logto service behind the existing web proxy', () => {
+test('production compose runs a private pinned Logto service behind the existing web proxy', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
   const result = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
     cwd: appRoot,
     env: {

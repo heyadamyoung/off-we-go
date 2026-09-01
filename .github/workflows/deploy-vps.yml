@@ -55,7 +55,8 @@ jobs:
         run: pnpm test:unit
 
       - name: Test the restricted deployment entrypoint
-        run: node --test tests/deployment-guard.test.js
+        # This runner has docker, so the compose check must run rather than skip.
+        run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
 
       - name: Run server tests
         env:
