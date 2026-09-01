@@ -14,10 +14,13 @@ interface TripBarProps {
   onDay: (day: string) => void
   onQuery: (query: string) => void
   onSelect: (item: TripItem) => void
+  /* A phone showing a panel has no room for the bar underneath it, and the bar
+     is the same day in a second form — the panel says it better. */
+  behindPanel?: boolean
 }
 
 const TripBar = memo(function TripBar({
-  items, days, day, liveDay, selected, query, onDay, onQuery, onSelect,
+  items, days, day, liveDay, selected, query, onDay, onQuery, onSelect, behindPanel,
 }: TripBarProps) {
   const chips = useRef<HTMLDivElement>(null)
 
@@ -28,8 +31,9 @@ const TripBar = memo(function TripBar({
   }, [day])
 
   return (
-    <div className="glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col
-                    border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px]">
+    <div className={'glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col ' +
+                    'border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px] ' +
+                    (behindPanel ? 'max-sm:hidden' : '')}>
       {/* The day chips and the search box each want the full width of a phone,
           so below 640px they take a line each instead of splitting one. */}
       <div className="flex items-center justify-between gap-4 px-4 pb-1.5 pt-2.5

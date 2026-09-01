@@ -42,8 +42,8 @@ export default function TripPanel(props: PanelProps) {
     <aside className="sheet rise absolute bottom-[var(--trip-1)] left-7 top-[var(--trip-top)] z-[6] flex
                       w-[440px] flex-col overflow-hidden rounded-[18px]
                       max-lg:inset-x-4 max-lg:w-auto
-                      max-sm:inset-x-0 max-sm:bottom-[var(--trip-bar)] max-sm:rounded-none
-                      max-sm:border-x-0">
+                      max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-none max-sm:border-x-0
+                      max-sm:border-b-0">
       <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
         <div>
           <h2 className="m-0 text-[22px] font-extrabold tracking-[-.02em]">{title}</h2>
@@ -57,7 +57,8 @@ export default function TripPanel(props: PanelProps) {
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-2 pb-4 pt-2">
+      <div className="flex-1 overflow-y-auto px-2 pb-4 pt-2
+                      max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
         {props.view === 'timeline' && <Timeline {...props} />}
         {props.view === 'photos' && <Photos {...props} />}
         {props.view === 'sights' && <SightsList {...props.sights} />}

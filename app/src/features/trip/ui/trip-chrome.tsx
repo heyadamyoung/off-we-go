@@ -99,20 +99,32 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
 /* The one thing on the screen that is happening right now. Clicking it takes
    the map back to the travellers, wherever the map had wandered to. */
 export const NowCapsule = memo(function NowCapsule(
-  { text, meta, onClick }: { text: string; meta?: string; onClick: () => void },
+  { text, meta, tone, onClick }: {
+    text: string
+    meta?: string
+    tone: 'waiting' | 'heading' | 'approaching' | 'arrived' | 'complete'
+    onClick: () => void
+  },
 ) {
+  const dot = tone === 'arrived' || tone === 'complete'
+    ? 'bg-trail shadow-[0_0_0_4px_var(--c-accent-soft),0_0_18px_var(--c-glow)]'
+    : tone === 'waiting'
+      ? 'bg-faint shadow-[0_0_0_4px_var(--c-line)]'
+      : `bg-accent shadow-[0_0_0_4px_var(--c-accent-soft),0_0_18px_var(--c-glow)]${
+        tone === 'approaching' ? ' animate-pulse' : ''}`
   return (
     <button className="glass absolute bottom-[var(--trip-2)] left-1/2 z-[4] flex max-w-[calc(100%-7.5rem)] sm:max-w-[calc(100%-2rem)]
                        -translate-x-1/2 items-center gap-3.5 overflow-hidden whitespace-nowrap
                        rounded-full py-2.5 pl-4 pr-5 sm:bottom-[var(--trip-1)]"
-            onClick={onClick}>
-      <span className="size-2.5 rounded-full bg-accent
-                       shadow-[0_0_0_4px_var(--c-accent-soft),0_0_18px_var(--c-glow)]" />
-      <b className="truncate text-[15px] font-bold">{text}</b>
-      {meta && <>
-        <span className="h-4 w-px bg-line2 max-sm:hidden" />
-        <span className="tnum truncate text-[13px] text-muted max-sm:hidden">{meta}</span>
-      </>}
+            aria-label={[text, meta].filter(Boolean).join('. ')} onClick={onClick}>
+      <span className={`size-2.5 shrink-0 rounded-full ${dot}`} />
+      <span className="flex min-w-0 items-center gap-3.5 max-sm:flex-col max-sm:items-start max-sm:gap-0.5">
+        <b className="truncate text-[15px] font-bold" aria-live="polite">{text}</b>
+        {meta && <>
+          <span className="h-4 w-px shrink-0 bg-line2 max-sm:hidden" />
+          <span className="tnum truncate text-[13px] text-muted">{meta}</span>
+        </>}
+      </span>
     </button>
   )
 })

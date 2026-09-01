@@ -70,7 +70,6 @@ function Trip({ data, busyEditing }:
   const [attraction, setAttractionCard] = useState<any>(null)
   const viewers = useTripPresence(tripId, family)
 
-  const day = search.day || stops.find(stop => stop.status === 'now')?.day || ALL_DAYS
   const view: TripView = search.view || 'map'
   const selected = search.sel
   const query = search.q || ''
@@ -105,9 +104,14 @@ function Trip({ data, busyEditing }:
   }))
   const viewRef = useRef(mapView); viewRef.current = mapView
 
+  const ordered = useMemo(
+    () => [...stops].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)), [stops])
   const {
-    phones, setPhones, track, live, livePoints, liveReady, sun, mapTheme, km, markers, trail,
-  } = useLiveTrip({ tripId, route, stops, family, mapOverride })
+    phones, setPhones, track, live, livePoints, liveReady, sun, mapTheme, markers, trail,
+    progress, progressCopy,
+  } = useLiveTrip({ tripId, route, stops: ordered, family, mapOverride })
+  const liveStop = progress.currentStop || progress.destination
+  const day = search.day || liveStop?.day || ALL_DAYS
 
   const {
     photos, setPhotos, comments, likes, viewer, viewerList,
@@ -115,8 +119,6 @@ function Trip({ data, busyEditing }:
     changePhoto, removePhoto, removeComment,
   } = useTripPhotos({ data, tripId, me, toast, setSelected: selectId })
 
-  const ordered = useMemo(
-    () => [...stops].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)), [stops])
   const days = useMemo(() => daysOf(ordered), [ordered])
 
   const {
@@ -146,9 +148,7 @@ function Trip({ data, busyEditing }:
       || tripItems({ stops: ordered, photos, day: ALL_DAYS }).find(item => item.id === selected),
     [items, ordered, photos, selected])
 
-  const liveDay = stops.find(stop => stop.status === 'now')?.day
-  const nowStop = stops.find(stop => stop.status === 'now')
-  const nextStop = stops.find(stop => stop.status === 'next')
+  const liveDay = liveStop?.day
 
   const onMapView = useCallback((next: MapView, options?: { user?: boolean }) => {
     if (options?.user) setFollowing(false)
@@ -337,11 +337,12 @@ function Trip({ data, busyEditing }:
                         text-xs text-muted">Finding attractions… {attrCount}</div>
       )}
 
-      {nowStop && !panelOpen && (
-        <NowCapsule text={`Now at ${nowStop.name}`}
-          meta={[nextStop ? `next: ${nextStop.name}` : null, `${km.toFixed(1)} km`]
-            .filter(Boolean).join(' · ')}
-          onClick={() => { setFollowing(true); patch({ sel: nowStop.id, day: nowStop.day }) }} />
+      {!panelOpen && (
+        <NowCapsule text={progressCopy.text} meta={progressCopy.meta} tone={progressCopy.tone}
+          onClick={() => {
+            setFollowing(true)
+            if (liveStop) patch({ sel: liveStop.id, day: liveStop.day })
+          }} />
       )}
 
       <ScopeToggle shifted={panelOpen} whole={day === ALL_DAYS}
@@ -356,6 +357,7 @@ function Trip({ data, busyEditing }:
         }} />
 
       <TripBar items={items} days={days} day={day} liveDay={liveDay} selected={selected}
+        behindPanel={panelOpen}
         query={query} onDay={value => patch({ day: value, sel: undefined })}
         onQuery={value => patch({ q: value || undefined })} onSelect={select} />
 
