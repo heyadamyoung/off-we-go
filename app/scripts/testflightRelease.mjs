@@ -26,7 +26,10 @@ export function buildToken({ keyId, issuerId, privateKey, now = Date.now() }) {
   return `${header}.${payload}.${base64url(signature)}`;
 }
 
-/** Which groups to hand the build to: the ones named, or every internal one. */
+/* Which groups to hand the build to. Internal groups are not among them: Apple
+   gives those every processed build on its own, and refuses the request with
+   "Cannot add internal group to a build" if you ask. External groups are the
+   ones that need adding — and, the first time a version goes out, reviewing. */
 export function chooseGroups(groups, wanted = []) {
   const named = wanted.map(name => name.trim().toLowerCase()).filter(Boolean);
   const all = (groups || []).map(group => ({
@@ -34,8 +37,9 @@ export function chooseGroups(groups, wanted = []) {
     name: group.attributes?.name || '',
     internal: !!group.attributes?.isInternalGroup,
   }));
-  if (!named.length) return all.filter(group => group.internal);
-  return all.filter(group => named.includes(group.name.toLowerCase()));
+  const external = all.filter(group => !group.internal);
+  if (!named.length) return external;
+  return external.filter(group => named.includes(group.name.toLowerCase()));
 }
 
 /** The build this run produced, if App Store Connect has finished with it. */
@@ -94,15 +98,15 @@ async function main() {
   }
 
   const groups = await api(`/apps/${app.id}/betaGroups?limit=200`, token);
-  const chosen = chooseGroups(groups?.data, wanted);
-  const available = (groups?.data || [])
-    .map(group => `${group.attributes?.name}${group.attributes?.isInternalGroup ? ' (internal)' : ' (external)'}`);
-  console.log(`groups on this app: ${available.join(', ') || 'none'}`);
+  const all = groups?.data || [];
+  console.log(`groups on this app: ${all
+    .map(group => `${group.attributes?.name}${group.attributes?.isInternalGroup ? ' (internal)' : ' (external)'}`)
+    .join(', ') || 'none'}`);
+  console.log(`internal testers have build ${buildNumber} already — Apple gives them every build`);
 
+  const chosen = chooseGroups(all, wanted);
   if (!chosen.length) {
-    console.log('::warning::No group to distribute to, so no tester will see this build.');
-    console.log('Create an internal TestFlight group and add your testers to it, or set the');
-    console.log('TESTFLIGHT_GROUPS repository variable to the group you want.');
+    console.log('::warning::No external group to release to; only internal testers can install this.');
     return;
   }
 
@@ -111,7 +115,25 @@ async function main() {
       method: 'POST',
       body: JSON.stringify({ data: [{ type: 'builds', id: build.id }] }),
     });
-    console.log(`build ${buildNumber} → ${group.name}${group.internal ? '' : ' (external: Apple review still applies)'}`);
+    console.log(`build ${buildNumber} → ${group.name}`);
+  }
+
+  /* An external group cannot install a build Apple has not passed. The first
+     build of a version waits for review; later ones usually go straight
+     through, and asking twice is not an error worth failing a release for. */
+  try {
+    await api('/betaAppReviewSubmissions', token, {
+      method: 'POST',
+      body: JSON.stringify({
+        data: {
+          type: 'betaAppReviewSubmissions',
+          relationships: { build: { data: { type: 'builds', id: build.id } } },
+        },
+      }),
+    });
+    console.log(`build ${buildNumber} submitted for beta review`);
+  } catch (error) {
+    console.log(`beta review not submitted: ${error.message}`);
   }
 }
 

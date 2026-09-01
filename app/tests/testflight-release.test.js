@@ -38,13 +38,16 @@ const groups = [
   { id: '3', attributes: { name: 'Team', isInternalGroup: true } },
 ]
 
-test('with no group named, every internal group gets the build', () => {
-  assert.deepEqual(chooseGroups(groups).map(group => group.name), ['Family', 'Team'])
+/* Apple refuses "Cannot add internal group to a build" — internal testers get
+   every processed build without being asked, and only external groups need
+   the build attaching to them. */
+test('internal groups are left alone, because Apple hands them the build itself', () => {
+  assert.deepEqual(chooseGroups(groups).map(group => group.name), ['Early access'])
+  assert.deepEqual(chooseGroups(groups, ['Team', 'Family']), [], 'naming an internal group changes nothing')
 })
 
-test('naming a group picks it, whatever its case, and external stays possible', () => {
+test('naming an external group picks it, whatever its case', () => {
   assert.deepEqual(chooseGroups(groups, ['early access']).map(group => group.id), ['2'])
-  assert.deepEqual(chooseGroups(groups, ['Team', 'Family']).map(group => group.id), ['1', '3'])
   assert.deepEqual(chooseGroups(groups, ['Nobody']), [])
   assert.deepEqual(chooseGroups([], []), [])
 })
