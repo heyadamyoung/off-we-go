@@ -115,6 +115,22 @@ test('the iOS app declares that it does not use non-exempt encryption', async ()
   );
 });
 
+test('every native iOS build configuration supports iOS 15 or later', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const [podfile, project] = await Promise.all([
+    readFile(path.join(appRoot, 'ios/App/Podfile'), 'utf8'),
+    readFile(path.join(appRoot, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8'),
+  ]);
+
+  const podfileTarget = podfile.match(/platform :ios, '(\d+(?:\.\d+)*)'/)?.[1];
+  const projectTargets = [...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = (\d+(?:\.\d+)*);/g)]
+    .map((match) => match[1]);
+
+  assert.equal(podfileTarget, '15.0');
+  assert.ok(projectTargets.length > 0, 'The Xcode project must declare an iOS deployment target');
+  assert.deepEqual([...new Set(projectTargets)], ['15.0']);
+});
+
 test('the native app uses Capacitor HTTP so authentication survives WebView suspension', async () => {
   const config = await import('node:fs/promises').then(({ readFile }) =>
     readFile(path.join(appRoot, 'capacitor.config.json'), 'utf8'),

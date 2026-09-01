@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { loadLive, subscribeToPositions } from '../../../backend'
 import { mergeLiveFixes } from '../../../live-positions-core'
 import { agoLabel, routeKm, trailKm } from '../../../shared/lib/geo'
+import type { Coordinates } from '../../../shared/model/types'
 import { useDaylight } from '../../map'
 
 export default function useLiveTrip({ tripId, route, stops, family, mapOverride }) {
@@ -9,16 +10,19 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
      markers; nothing else is refetched for them. */
   const [phones, setPhones] = useState([])
   const [fixes, setFixes] = useState([])
+  const [liveReady, setLiveReady] = useState(false)
   useEffect(() => {
     let alive = true, stop = () => {}
+    setLiveReady(false)
     loadLive(tripId)
       .then(r => {
         if (!alive) return
         setPhones(r.devices)
         setFixes(r.fixes)
+        setLiveReady(true)
         stop = subscribeToPositions(tripId, fix => setFixes(list => mergeLiveFixes(list, [fix])), r.cursor)
       })
-      .catch(() => {})
+      .catch(() => { if (alive) setLiveReady(true) })
     return () => { alive = false; stop() }
   }, [tripId])
 
@@ -52,8 +56,12 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
   const km = useMemo(() => trailKm(fixes) || routeKm(track), [fixes, track])
 
   // One marker per phone heard from in the last day; none reporting, one for the family.
+  const fresh = useMemo(
+    () => [...latestByPhone.values()].filter(f => Date.now() - f.at.getTime() < 24 * 3600_000),
+    [latestByPhone],
+  )
+  const livePoints: Coordinates[] = useMemo(() => fresh.map(f => [f.lng, f.lat]), [fresh])
   const markers = useMemo(() => {
-    const fresh = [...latestByPhone.values()].filter(f => Date.now() - f.at.getTime() < 24 * 3600_000)
     if (!fresh.length) {
       return [{ key: 'family', lng: live[0], lat: live[1], avatar: family[0]?.avatar || null,
                 name: family[0]?.name, title: 'The family is here' }]
@@ -65,7 +73,7 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
       return { key: f.deviceId, lng: f.lng, lat: f.lat, avatar: who?.avatar || null, name,
                title: `${name} · ${agoLabel(f.at)}` }
     })
-  }, [latestByPhone, phones, family, live])
+  }, [fresh, phones, family, live])
 
   // Each phone's path over the last day, poor fixes left out so the line does not spike.
   const trail = useMemo(() => {
@@ -77,7 +85,7 @@ export default function useLiveTrip({ tripId, route, stops, family, mapOverride 
     }
     return [...by.values()].filter(l => l.length > 1)
   }, [fixes])
-  return { phones, setPhones, fixes, track, live, sun, mapTheme, km, markers, trail }
+  return { phones, setPhones, fixes, track, live, livePoints, liveReady, sun, mapTheme, km, markers, trail }
 }
 
 

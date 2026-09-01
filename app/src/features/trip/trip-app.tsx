@@ -19,6 +19,7 @@ import useTripPresence from './model/use-trip-presence'
 import type { MapView, Person, TripData } from '../../shared/model/types'
 import { appErrorMessage } from '../../user-messages-core'
 import ToastNoticeView, { type ToastNotice } from '../../shared/ui/toast'
+import { liveFollowView } from '../../live-map-view-core'
 
 interface TripAppProps {
   data: TripData
@@ -85,7 +86,7 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
   useEffect(() => () => window.clearTimeout(toastT.current), [])
 
   const {
-    phones, setPhones, track, live, sun, mapTheme, km, markers, trail,
+    phones, setPhones, track, live, livePoints, liveReady, sun, mapTheme, km, markers, trail,
   } = useLiveTrip({ tripId, route, stops, family, mapOverride })
 
   const {
@@ -136,8 +137,10 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
   }, [tripId, onReload])
 
   useEffect(() => {
-    if (following) setView(v => ({ center: live, zoom: v.zoom, ms: 900 }))
-  }, [live, following])
+    if (!following || !liveReady) return
+    setView(current => liveFollowView(current, livePoints, { ready: true, duration: 900 })
+      || { center: live, zoom: current.zoom, ms: 900 })
+  }, [live, livePoints, liveReady, following])
 
   // Search wins over the day filter: a query searches the whole trip, matching a
   // stop's own text or the caption of any photo taken there.
@@ -201,8 +204,11 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
   const toggleFollow = useCallback(() => {
     const next = !following
     setFollowing(next)
-    if (next) setView({ center: live, zoom: Math.max(viewRef.current.zoom, 15), ms: 560 })
-  }, [following, live])
+    if (next) {
+      setView(current => liveFollowView(current, livePoints, { ready: liveReady, duration: 560 })
+        || { center: live, zoom: Math.max(current.zoom, 15), ms: 560 })
+    }
+  }, [following, live, livePoints, liveReady])
 
   const toggleTheme = useCallback(() => {
     const next = theme === 'dark' ? 'light' : 'dark'
