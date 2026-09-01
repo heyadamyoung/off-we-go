@@ -185,11 +185,15 @@ export async function removeMember(tripId: Id, profileId: Id): Promise<unknown> 
 
 export async function uploadPhoto(tripId: Id, file: File, meta: Partial<TripPhoto & UploadInput> = {}): Promise<TripPhoto> {
   if (isSample(tripId)) {
-    const photo = { id: uid(), by: '', src: URL.createObjectURL(file), seq: sampleTrip().photos.length, ...meta } as TripPhoto
+    const nextSequence = Math.max(sampleTrip().photos.length,
+      ...sampleTrip().photos.map(photo => (photo.seq ?? -1) + 1))
+    const photo = { id: uid(), by: '', src: URL.createObjectURL(file), seq: nextSequence, ...meta } as TripPhoto
     sampleTrip().photos.push(photo); return { ...photo }
   }
   const form = new FormData(); form.append('photo', file, file.name)
   const values = { stopId: meta.stopId, lng: meta.lng, lat: meta.lat, caption: meta.caption,
+    fallbackLng: meta.fallbackLng, fallbackLat: meta.fallbackLat,
+    fallbackLocationSource: meta.fallbackLocationSource,
     takenAt: meta.when || meta.takenAt, locationSource: meta.locationSource, uploadKey: meta.uploadKey }
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
   return authClient.request(`${tripPath(tripId)}/photos`, { method: 'POST', body: form })

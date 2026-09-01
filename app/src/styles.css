@@ -15,7 +15,7 @@
   --shadow:0 1px 2px rgba(16,24,40,.06), 0 14px 40px rgba(16,24,40,.13);
 }
 *{box-sizing:border-box}
-html,body,#root{height:100%;margin:0}
+html,body,#root{height:100%;width:100%;max-width:100%;margin:0;overflow-x:hidden}
 body{font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;background:var(--bg);
   color:var(--ink);-webkit-font-smoothing:antialiased;overscroll-behavior:none}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
@@ -30,7 +30,7 @@ img{display:block}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:9px}
 ::-webkit-scrollbar-track{background:transparent}
-.app{height:100%;display:flex;flex-direction:column;overflow:hidden}
+.app{height:100%;width:100%;max-width:100%;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .native-app .app{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
 
 /* ---------------- ticker ---------------- */
@@ -299,6 +299,7 @@ img{display:block}
 .rperson span{font-size:11.5px;color:var(--ink3)}
 .rperson span a{color:var(--hot);text-decoration:none}.rperson span a:hover{text-decoration:underline}
 .rperson .viewing-now{font-style:normal;color:var(--ok);font-weight:700}
+.rperson>div{flex:1;min-width:0;overflow-wrap:anywhere}
 .rperson em{margin-left:auto;font-style:normal;font-size:11px;color:var(--ink3);
   border:1px solid var(--line2);border-radius:99px;padding:2px 8px}
 .rperson.pend{opacity:.72}
@@ -626,12 +627,13 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 
 /* ---------------- modals ---------------- */
 .scrim{position:fixed;inset:0;background:rgba(4,6,10,.74);backdrop-filter:blur(3px);z-index:200;
-  display:grid;place-items:center;padding:20px}
+  display:grid;grid-template-columns:minmax(0,1fr);place-items:center;padding:20px;overflow:hidden}
 .modal{width:100%;max-width:440px;background:var(--bg1);border:1px solid var(--line2);border-radius:16px;
-  box-shadow:var(--shadow);overflow:hidden;animation:rise .2s ease}
-.modal .mh{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
+  max-height:100%;min-width:0;display:flex;flex-direction:column;box-shadow:var(--shadow);overflow:hidden;animation:rise .2s ease}
+.modal .mh{display:flex;flex:none;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
 .modal .mh b{font-size:16px;font-weight:800;letter-spacing:-.02em}
-.modal .mb{padding:18px;display:flex;flex-direction:column;gap:13px}
+.modal .mb{padding:18px;min-width:0;min-height:0;display:flex;flex-direction:column;gap:13px;
+  overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .modal .mb p{margin:0;font-size:13px;color:var(--ink2);line-height:1.55}
 .linkrow{display:flex;gap:8px}
 .linkrow input{flex:1;min-width:0;height:38px;border-radius:9px;background:var(--bg3);border:1px solid var(--line2);
@@ -650,6 +652,18 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 .drop span{font-size:12px}
 .previews{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-height:260px;overflow:auto}
 .preview{width:100%;height:112px;object-fit:cover;border-radius:10px}
+.previews button{position:relative;min-width:0;border:2px solid transparent;border-radius:12px;overflow:hidden}
+.previews button.on{border-color:var(--hot)}
+.previews button span{position:absolute;right:5px;bottom:5px;padding:2px 6px;border-radius:99px;
+  background:rgba(6,9,14,.76);color:#fff;font-size:10px;font-weight:800}
+.uploadmodal{max-width:620px}
+.uploadinspect{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(180px,.65fr);border:1px solid var(--line2);
+  border-radius:12px;overflow:hidden;background:var(--bg3)}
+.uploadmap{height:190px;position:relative;overflow:hidden}
+.uplocation{padding:14px;display:flex;flex-direction:column;justify-content:center;gap:7px;min-width:0}
+.uplocation b{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--hot)}
+.uplocation strong{font-size:14px;font-variant-numeric:tabular-nums}
+.uplocation p{font-size:12px!important;line-height:1.45!important}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label{font-size:12px;font-weight:700;color:var(--ink3)}
 .field input{height:38px;border-radius:9px;background:var(--bg3);border:1px solid var(--line2);padding:0 12px;
@@ -657,7 +671,8 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 .field input:focus{border-color:var(--hot)}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:300;background:var(--ink);
   color:var(--bg1);padding:11px 18px;border-radius:99px;font-size:13px;font-weight:700;box-shadow:var(--shadow);
-  display:flex;align-items:center;gap:9px;max-width:min(520px,calc(100vw - 28px));text-align:left;animation:rise .2s ease}
+  display:flex;align-items:center;gap:9px;max-width:min(520px,calc(100vw - 28px));text-align:left;animation:toast-rise .2s ease}
+@keyframes toast-rise{from{transform:translate(-50%,10px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
 .toast span{display:grid;place-items:center;flex:0 0 20px;width:20px;height:20px;border-radius:50%;background:var(--hot);color:#0a0c10;font-size:12px;font-weight:900}
 .toast.success{background:var(--ok-soft);color:var(--ok);border:1px solid var(--ok)}
 .toast.success span{background:transparent;color:var(--ok);border:1.5px solid currentColor}
@@ -690,6 +705,11 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
 }
 
 @media (max-width:620px){
+  /* iOS Safari zooms the visual viewport when a focused form control is below
+     16px. The zoom survives closing a modal, making the map look wider than
+     the phone and exposing a horizontal pan. Keep user pinch-zoom enabled and
+     prevent only that automatic focus zoom. */
+  #root input,#root select,#root textarea{font-size:16px}
   .bootIn .linkrow input{font-size:16px}
   .wctl{right:8px;top:8px;flex-direction:row}
   .tlogo{padding:0 12px;border-right:0}
@@ -711,6 +731,22 @@ body[data-theme=light] .tset input[type=date]{color-scheme:light}
   .apic{height:112px}
   .newtrip .linkrow{flex-direction:column;gap:10px}
   .sights{grid-template-columns:1fr}
+  .uploadinspect{grid-template-columns:1fr}
+  .uploadmap{height:180px}
+}
+
+@media (max-width:480px){
+  .scrim{padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right))
+    max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+  .modal .mb{padding:14px}
+  .mine{display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center}
+  .mine>.av{grid-column:1}
+  .mine>input{grid-column:2}
+  .mine>.field,.mine>.btn{grid-column:1/-1;min-width:0}
+  .mine>.btn,.modal .linkrow>.btn{width:100%}
+  .modal .linkrow{flex-direction:column}
+  .setup .kv{grid-template-columns:minmax(0,1fr) 38px}
+  .setup .kv>span{grid-column:1/-1}
 }
 
 /* A finger rather than a pointer gets a bigger target, where there is room. */

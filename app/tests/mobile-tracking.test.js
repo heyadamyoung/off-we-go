@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import sharp from 'sharp'
 import { createMobileTracker } from '../src/mobile-tracking-core.ts'
 import * as mobilePhotos from '../src/mobile-photos-core.ts'
 import {
@@ -394,6 +395,82 @@ test('an older photo without EXIF coordinates reaches the backend without the cu
     caption: 'Harbour', stopId: 'stop-1', lng: 4.9, lat: 52.3,
     locationSource: 'exif', uploadKey: 'photo-retry-key-1234',
     when: '2026-08-01T12:01:00.000Z', by: 'Maya', seq: 10,
+  })
+  assert.deepEqual(mobilePhotos.photoUploadMetadata({
+    caption: 'Fallback', fallbackLng: -104.617, fallbackLat: 50.4548,
+    fallbackLocationSource: 'approximate', when: '2026-08-01T12:02:00.000Z',
+  }, { by: 'Maya', nextSequence: 11 }), {
+    caption: 'Fallback', stopId: null, when: '2026-08-01T12:02:00.000Z', by: 'Maya', seq: 11,
+    fallbackLng: -104.617, fallbackLat: 50.4548, fallbackLocationSource: 'approximate',
+  })
+})
+
+test('photo metadata accepts Android rational GPS and browser file EXIF', async () => {
+  const android = await galleryPhotosToFiles([{
+    webPath: 'data:image/jpeg;base64,AQID', format: 'jpeg', exif: {
+      GPSLatitude: '52/1,22/1,127778/10000', GPSLatitudeRef: 'N',
+      GPSLongitude: '4/1,53/1,42605/10000', GPSLongitudeRef: 'E',
+      DateTimeOriginal: '2026:08:30 14:20:00',
+    },
+  }], { fetch, stamp: 1_788_000_000_000 })
+  assert.equal(Number(android[0].wayfareMetadata.lat.toFixed(6)), 52.370216)
+  assert.equal(Number(android[0].wayfareMetadata.lng.toFixed(6)), 4.884517)
+
+  assert.ok(mobilePhotos.readPhotoFilesMetadata, 'browser photo EXIF reading has not been implemented')
+  const browserFile = new File([new Uint8Array([1, 2, 3])], 'iphone.heic', { type: 'image/heic' })
+  await mobilePhotos.readPhotoFilesMetadata([browserFile], {
+    parseExif: async file => {
+      assert.equal(file, browserFile)
+      return {
+        latitude: -33.8568, longitude: 151.2153,
+        DateTimeOriginal: new Date('2026-08-30T04:20:00.000Z'),
+      }
+    },
+  })
+  assert.deepEqual(browserFile.wayfareMetadata, {
+    lat: -33.8568, lng: 151.2153, takenAt: '2026-08-30T04:20:00.000Z',
+  })
+
+  assert.ok(mobilePhotos.preparePhotoFilesForUpload, 'browser HEIC conversion has not been implemented')
+  const converted = await mobilePhotos.preparePhotoFilesForUpload([browserFile], {
+    parseExif: async () => ({ latitude: -33.8568, longitude: 151.2153 }),
+    isHeic: async () => true,
+    convertHeic: async () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }),
+  })
+  assert.equal(converted[0].name, 'iphone.jpg')
+  assert.equal(converted[0].type, 'image/jpeg')
+  assert.deepEqual(converted[0].wayfareMetadata, {
+    lat: -33.8568, lng: 151.2153, takenAt: '2026-08-30T04:20:00.000Z',
+  })
+
+  const jpeg = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: '#336699' },
+  }).jpeg().withExif({ IFD3: {
+    GPSLatitudeRef: 'S', GPSLatitude: '33/1 51/1 2448/100',
+    GPSLongitudeRef: 'E', GPSLongitude: '151/1 12/1 5508/100',
+  } }).toBuffer()
+  const actualExif = new Uint8Array(jpeg)
+  await mobilePhotos.readPhotoFilesMetadata([actualExif])
+  assert.equal(actualExif.wayfareMetadata.lat, -33.8568)
+  assert.equal(Number(actualExif.wayfareMetadata.lng.toFixed(4)), 151.2153)
+})
+
+test('photo placement distinguishes embedded GPS from a displayed fallback position', () => {
+  assert.ok(mobilePhotos.photoPlacement, 'photo placement inspection has not been implemented')
+  const stops = [{ id: 'edinburgh', name: 'Edinburgh', lng: -3.1880, lat: 55.9530 }]
+
+  assert.deepEqual(mobilePhotos.photoPlacement({ wayfareMetadata: {
+    lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z',
+  } }, { live: [4.8686, 52.3664], stops }), {
+    point: [-3.1883, 55.9533], fallbackPoint: null, previewPoint: [-3.1883, 55.9533],
+    stopId: 'edinburgh', stopName: 'Edinburgh', source: 'exif', hasEmbeddedGps: true,
+  })
+
+  assert.deepEqual(mobilePhotos.photoPlacement({ wayfareMetadata: {
+    takenAt: '2026-08-31T12:00:00.000Z',
+  } }, { live: [4.8686, 52.3664], stops, fallbackSource: 'approximate' }), {
+    point: null, fallbackPoint: [4.8686, 52.3664], previewPoint: [4.8686, 52.3664],
+    stopId: null, stopName: null, source: 'history', fallbackSource: 'approximate', hasEmbeddedGps: false,
   })
 })
 

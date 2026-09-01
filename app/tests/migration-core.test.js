@@ -21,3 +21,12 @@ test('legacy owner invitations are downgraded to an allowed non-owner invitation
   assert.equal(migration.legacyInviteRole('editor'), 'editor')
   assert.equal(migration.legacyInviteRole('viewer'), 'viewer')
 })
+
+test('legacy photo coordinates are imported only as a valid complete pair', () => {
+  assert.ok(migration?.legacyPhotoCoordinates, 'legacy coordinate validation has not been implemented')
+  assert.deepEqual(migration.legacyPhotoCoordinates('-104.617', '50.4548'), {
+    lng: -104.617, lat: 50.4548,
+  })
+  assert.deepEqual(migration.legacyPhotoCoordinates('-104.617', null), { lng: null, lat: null })
+  assert.deepEqual(migration.legacyPhotoCoordinates('181', '50'), { lng: null, lat: null })
+})

@@ -6,15 +6,39 @@ import { test, expect } from '@playwright/test'
    going blank mid-gesture. Each one is a regression guard, not a smoke test. */
 
 const MAP_READY = 9000
+const WIKIPEDIA_TESTS = new Set([
+  'finding a place fills in its name, description and picture',
+  'stops without a picture get a real one on load',
+  'the sights list shows real landmarks with a picture and a description',
+  'attractions are drawn across the map and open into a card',
+])
+
+// These cases have isolated sample state and can safely use separate contexts.
+// Keep Wikipedia-backed coverage together below because the public API throttles
+// concurrent callers; unrelated UI cases receive a complete empty API response.
+test.describe.configure({ mode: 'parallel' })
+test.beforeEach(async ({ page }, testInfo) => {
+  if (WIKIPEDIA_TESTS.has(testInfo.title)) return
+  await page.route('https://en.wikipedia.org/**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
+  }))
+})
 
 async function open(page) {
   await page.goto('/')
   await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
-  await page.waitForTimeout(3500)                 // let tiles and markers settle
+  await expect(page.locator('.mstop')).toHaveCount(8)
   const follow = page.locator('.wc.on')           // stop the camera drifting under us
-  if (await follow.count()) await follow.click()
-  await page.waitForTimeout(600)
+  if (await follow.count()) {
+    await follow.click()
+    await expect(follow).toHaveCount(0)
+  }
+  // Cancel the initial follow animation as well as disabling future ones. If it
+  // is left running, its moveend can race a camera action performed by a test.
+  await page.evaluate(() => window.__wayfareMap?.stop())
+  await expect.poll(() => page.evaluate(() => !window.__wayfareMap?.isMoving())).toBe(true)
 }
 
 const stopNames = page =>
@@ -166,17 +190,28 @@ const PHOTOLESS = 'Bikes in Vondelpark'
 
 async function centreOnStop(page, name) {
   await page.locator('.fdays button').first().click()      // all days
-  await page.waitForTimeout(400)
   await page.locator('.fcard', { hasText: name }).first().click()
-  await page.waitForTimeout(1800)
-  const pin = await page.evaluate(n => {
+  const pinCentre = () => page.evaluate(n => {
     const p = [...document.querySelectorAll('.mstop')].find(x => (x.textContent || '').includes(n))
     if (!p) return null
     const q = p.querySelector('.pin').getBoundingClientRect()
     const c = { x: q.x + q.width / 2, y: q.y + q.height / 2 }
-    return p.contains(document.elementFromPoint(c.x, c.y)) ? c : null
+    return {
+      point: p.contains(document.elementFromPoint(c.x, c.y)) ? c : null,
+      moving: window.__wayfareMap?.isMoving() ?? true,
+    }
   }, name)
-  return pin
+  let previous = null
+  await expect.poll(async () => {
+    const current = await pinCentre()
+    const stable = current?.point && previous
+      && Math.abs(current.point.x - previous.x) < 1
+      && Math.abs(current.point.y - previous.y) < 1
+      && !current.moving
+    previous = current?.point
+    return !!stable
+  }, { intervals: [50, 100, 200] }).toBe(true)
+  return (await pinCentre()).point
 }
 
 test('loads the trip with map, markers and filmstrip', async ({ page }) => {
@@ -200,18 +235,39 @@ test('a successful action shows a green toast with a green check mark', async ({
   await expect(toast.locator('span')).toHaveCSS('color', 'rgb(34, 197, 94)')
 })
 
+test('a toast stays horizontally centred throughout its entrance animation', async ({ page }) => {
+  await open(page)
+  await page.locator('.fcard').first().click()
+  const positions = await page.locator('.herocard .btns .wbtn').nth(2).evaluate(async button => {
+    button.click()
+    const toast = await new Promise(resolve => requestAnimationFrame(
+      () => resolve(document.querySelector('.toast.success')),
+    ))
+    const animation = toast.getAnimations()[0]
+    animation.pause()
+    const duration = Number(animation.effect.getTiming().duration)
+    const viewportCentre = document.documentElement.clientWidth / 2
+
+    return [0, duration / 2, duration - 0.01].map(currentTime => {
+      animation.currentTime = currentTime
+      const box = toast.getBoundingClientRect()
+      return { toastCentre: box.left + box.width / 2, viewportCentre }
+    })
+  })
+
+  for (const position of positions) {
+    expect(Math.abs(position.toastCentre - position.viewportCentre)).toBeLessThan(0.5)
+  }
+})
+
 test('fit the whole trip reveals every stop on the smallest phone viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 })
-  await page.goto('/')
-  await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
-  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
-  await page.waitForTimeout(3500)
+  await open(page)
 
   await page.getByTitle('Fit the whole trip').click({ timeout: 5000 })
-  await page.waitForTimeout(1000)
   await expect(page.locator('.herocard')).toHaveCount(0)
 
-  const allStopsInsideMap = await page.evaluate(() => {
+  const allStopsInsideMap = () => page.evaluate(() => {
     const map = document.querySelector('.mapcanvas').getBoundingClientRect()
     return [...document.querySelectorAll('.mstop .pin')].every(pin => {
       const box = pin.getBoundingClientRect()
@@ -219,7 +275,7 @@ test('fit the whole trip reveals every stop on the smallest phone viewport', asy
         && box.top >= map.top && box.bottom <= map.bottom
     })
   })
-  expect(allStopsInsideMap).toBe(true)
+  await expect.poll(allStopsInsideMap).toBe(true)
 })
 
 test('the header People action stays compact at tablet widths', async ({ page }) => {
@@ -249,6 +305,130 @@ test('the phone header controls reach the right edge', async ({ page }) => {
     return Math.round(header.right - controls.right)
   })
   expect(gap).toBeLessThanOrEqual(1)
+})
+
+test('the trip shell and map do not create a wider phone layout', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await open(page)
+
+  const layout = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    document: document.documentElement.scrollWidth,
+    boxes: Object.fromEntries(
+      ['.app', '.ticker', '.stagewrap', '.filmstrip'].map(selector => {
+        const element = document.querySelector(selector)
+        const rect = element.getBoundingClientRect()
+        return [selector, {
+          client: element.clientWidth,
+          scroll: element.scrollWidth,
+          left: rect.left,
+          right: rect.right,
+        }]
+      }),
+    ),
+    map: (() => {
+      const element = document.querySelector('.mapcanvas')
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, overflowX: getComputedStyle(element).overflowX }
+    })(),
+  }))
+
+  expect(layout.document).toBe(layout.viewport)
+  for (const [selector, width] of Object.entries(layout.boxes)) {
+    expect(width.left, selector).toBeGreaterThanOrEqual(0)
+    expect(width.right, selector).toBeLessThanOrEqual(layout.viewport)
+    expect(width.scroll, selector).toBeLessThanOrEqual(width.client)
+  }
+  expect(layout.map.width).toBe(layout.viewport)
+  expect(layout.map.overflowX).toBe('hidden')
+})
+
+test('phone form controls do not trigger Safari focus zoom', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await open(page)
+  const viewportMeta = await page.locator('meta[name="viewport"]').getAttribute('content')
+  expect(viewportMeta).toContain('width=device-width')
+  expect(viewportMeta).not.toMatch(/maximum-scale|user-scalable/i)
+  await page.getByRole('button', { name: 'People' }).click()
+
+  const name = page.locator('.mine input[placeholder="Your name"]')
+  await name.focus()
+  await expect(name).toBeFocused()
+
+  const fontSizes = await page.locator('.modal input, .modal select, .modal textarea').evaluateAll(
+    controls => controls.filter(control => !control.hidden)
+      .map(control => Number.parseFloat(getComputedStyle(control).fontSize)),
+  )
+
+  expect(fontSizes.length).toBeGreaterThan(0)
+  expect(fontSizes.every(size => size >= 16)).toBe(true)
+
+  await page.locator('.modal .mh button').click()
+  const layout = await page.evaluate(() => ({
+    viewport: window.visualViewport?.width ?? document.documentElement.clientWidth,
+    document: document.documentElement.scrollWidth,
+    app: document.querySelector('.app').getBoundingClientRect().width,
+    map: document.querySelector('.mapcanvas').getBoundingClientRect().width,
+  }))
+  expect(layout.document).toBe(layout.viewport)
+  expect(layout.app).toBe(layout.viewport)
+  expect(layout.map).toBe(layout.viewport)
+})
+
+test('the People modal fits without horizontal scrolling on an older iPhone', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await open(page)
+  await page.getByRole('button', { name: 'People' }).click()
+
+  // Real roster content, not a synthetic wide element: an email is the longest
+  // unbroken value this modal commonly receives.
+  await page.locator('.invite input[type=email]').fill(
+    'averylongunbrokeninvitationaddressforanolderiphone@example.com',
+  )
+  await page.locator('.invite .btn.pri').click()
+  await expect(page.locator('.rperson.pend')).toBeVisible()
+  await page.locator('.modal').evaluate(
+    modal => Promise.all(modal.getAnimations().map(animation => animation.finished)),
+  )
+
+  const widths = await page.evaluate(() => {
+    const modal = document.querySelector('.modal')
+    const body = document.querySelector('.modal .mb')
+    const rect = modal.getBoundingClientRect()
+    return {
+      viewport: document.documentElement.clientWidth,
+      viewportHeight: document.documentElement.clientHeight,
+      document: document.documentElement.scrollWidth,
+      modalClient: modal.clientWidth,
+      modalScroll: modal.scrollWidth,
+      bodyClient: body.clientWidth,
+      bodyScroll: body.scrollWidth,
+      bodyOverflowX: getComputedStyle(body).overflowX,
+      rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+    }
+  })
+
+  expect(widths.document).toBe(widths.viewport)
+  expect(widths.modalScroll).toBeLessThanOrEqual(widths.modalClient)
+  expect(widths.bodyScroll).toBeLessThanOrEqual(widths.bodyClient)
+  expect(widths.bodyOverflowX).toBe('hidden')
+  expect(widths.rect.left).toBeGreaterThanOrEqual(0)
+  expect(widths.rect.right).toBeLessThanOrEqual(widths.viewport)
+  expect(widths.rect.top).toBeGreaterThanOrEqual(0)
+  expect(widths.rect.bottom).toBeLessThanOrEqual(widths.viewportHeight)
+
+  const scrolling = await page.evaluate(() => {
+    const body = document.querySelector('.modal .mb')
+    const modal = document.querySelector('.modal')
+    body.scrollTop = 100
+    return {
+      modalHeight: modal.clientHeight,
+      viewportHeight: document.documentElement.clientHeight,
+      bodyScrollTop: body.scrollTop,
+    }
+  })
+  expect(scrolling.modalHeight).toBeLessThanOrEqual(scrolling.viewportHeight)
+  expect(scrolling.bodyScrollTop).toBeGreaterThan(0)
 })
 
 test('the Off We Go mark opens the app menu', async ({ page }) => {
@@ -297,7 +477,7 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
   await page.mouse.down()
   for (let i = 1; i <= 25; i++) await page.mouse.move(cx - i * 8, cy - i * 3)
   await page.mouse.up()
-  await page.waitForTimeout(1000)
+  await expect.poll(() => page.evaluate(() => !window.__wayfareMap?.isMoving())).toBe(true)
   expect(await page.locator('.herocard h2').textContent()).toBe(after)
 })
 
@@ -315,7 +495,6 @@ test('adding a stop creates exactly one', async ({ page }) => {
 
   await page.locator('.editor .f input').first().fill('Test Stop')
   await page.locator('.editor .btn.pri').click()
-  await page.waitForTimeout(1200)
 
   await expect(page.locator('.mstop')).toHaveCount(before + 1)
   expect(await page.locator('.mstop .lab').filter({ hasText: 'Test Stop' }).count()).toBe(1)
@@ -334,26 +513,21 @@ test('reordering moves a stop one place and back', async ({ page }) => {
   await expect(page.locator('.editor .eh b')).toHaveText('Edit stop')
 
   await page.locator('.editor .ef .ord').first().click()
-  await page.waitForTimeout(1000)
+  await expect.poll(() => stopNames(page)).not.toEqual(before)
   const moved = await stopNames(page)
-  expect(moved).not.toEqual(before)
   expect(moved.slice().sort()).toEqual(before.slice().sort())   // same set, new order
 
   await page.locator('.editor .ef .ord').nth(1).click()
-  await page.waitForTimeout(1000)
-  expect(await stopNames(page)).toEqual(before)
+  await expect.poll(() => stopNames(page)).toEqual(before)
 })
 
 test('search matches a stop by its photo caption', async ({ page }) => {
   await open(page)
   await page.locator('.fsearch input').fill('bitterballen')
-  await page.waitForTimeout(600)
-  const names = await stopNames(page)
-  expect(names).toEqual(['Foodhallen'])
+  await expect.poll(() => stopNames(page)).toEqual(['Foodhallen'])
 
   await page.locator('.fsearch input').fill('museum')
-  await page.waitForTimeout(600)
-  expect((await stopNames(page)).length).toBeGreaterThan(1)
+  await expect.poll(async () => (await stopNames(page)).length).toBeGreaterThan(1)
 })
 
 test('photo upload previews multiple Apple Photos selections and lets them be replaced', async ({ page }) => {
@@ -414,8 +588,7 @@ test('editing a caption shows immediately in the open viewer', async ({ page }) 
 
   const before = await page.locator('.vcap h2').textContent()
   await page.locator('.vedit input').fill('Recaptioned')
-  await page.waitForTimeout(900)
-  expect(await page.locator('.vcap h2').textContent()).toBe('Recaptioned')
+  await expect(page.locator('.vcap h2')).toHaveText('Recaptioned')
   expect(before).not.toBe('Recaptioned')
 })
 
@@ -429,7 +602,6 @@ test('deleting a photo removes it and keeps the viewer open', async ({ page }) =
   // clicked through the DOM: the control sits at the very bottom of a fixed
   // panel, which Playwright's actionability check treats as out of view
   await page.evaluate(() => document.querySelector('.vedit .del').click())
-  await page.waitForTimeout(1300)
   await expect(page.locator('.vfilm button')).toHaveCount(before - 1)
   await expect(page.locator('.viewer')).toBeVisible()
 })
@@ -461,7 +633,6 @@ test('the map keeps something painted through zoom and pan', async ({ page }) =>
 
   for (let i = 0; i < 4; i++) {
     await page.locator('.wctl .wc').first().click()
-    await page.waitForTimeout(220)
     expect(await painted()).toBe(100)
   }
   const box = await page.locator('.mapcanvas').boundingBox()
@@ -470,14 +641,15 @@ test('the map keeps something painted through zoom and pan', async ({ page }) =>
   await page.mouse.down()
   for (let i = 1; i <= 25; i++) await page.mouse.move(cx - i * 9, cy - i * 4)
   await page.mouse.up()
-  await page.waitForTimeout(900)
+  await expect.poll(() => page.evaluate(() => !window.__wayfareMap?.isMoving())).toBe(true)
   expect(await painted()).toBe(100)
 })
 
 test('theme choice survives a reload', async ({ page }) => {
   await open(page)
+  const before = await page.evaluate(() => document.body.dataset.theme)
   await page.locator('.tbtn.ghost[title^="Theme"]').click()
-  await page.waitForTimeout(2200)
+  await expect.poll(() => page.evaluate(() => document.body.dataset.theme)).not.toBe(before)
   const chosen = await page.evaluate(() => document.body.dataset.theme)
   await page.reload()
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
@@ -525,11 +697,14 @@ test('the roster lists people and takes an invite', async ({ page }) => {
   await expect(page.locator('.rperson')).toHaveCount(before)
 })
 
+test.describe('Wikipedia-backed discovery', () => {
+test.describe.configure({ mode: 'serial' })
+
 test('finding a place fills in its name, description and picture', async ({ page }) => {
   await open(page)
   await page.locator('.fdays button').first().click()
   await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
-  await page.waitForTimeout(1800)
+  await expect(page.locator('.herocard h2')).toHaveText('Rijksmuseum')
 
   await page.locator('.tbtn.ghost[title*="Edit"]').click()
   await page.getByRole('button', { name: 'Find places' }).click()
@@ -568,22 +743,22 @@ test('stops without a picture get a real one on load', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: 'Open Amsterdam Weekend' }).click()
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
-  await page.waitForTimeout(14_000)          // load, then the lookups land
   await page.locator('.fdays button').first().click()
-  await page.waitForTimeout(800)
 
   const names = await stopNames(page)
-  let real = 0
-  for (const n of names) {
-    await page.locator('.fcard', { hasText: n }).first().click()
-    await page.waitForTimeout(700)
-    const src = await page.locator('.herocard img.hero').getAttribute('src')
-    if (/wikimedia/.test(src || '')) real++
+  const enrichedCount = async () => {
+    let real = 0
+    for (const n of names) {
+      await page.locator('.fcard', { hasText: n }).first().click()
+      const src = await page.locator('.herocard img.hero').getAttribute('src')
+      if (/wikimedia/.test(src || '')) real++
+    }
+    return real
   }
   // Not all of them: two of the sample stops have no article and one is not a
   // place at all. Matching is strict on purpose — a wrong photograph of the
   // building next door is worse than the placeholder.
-  expect(real).toBeGreaterThanOrEqual(4)
+  await expect.poll(enrichedCount, { timeout: 30_000, intervals: [500] }).toBeGreaterThanOrEqual(4)
 })
 
 test('the sights list shows real landmarks with a picture and a description', async ({ page }) => {
@@ -592,17 +767,21 @@ test('the sights list shows real landmarks with a picture and a description', as
   // Reachable without entering edit mode: browsing and authoring are different jobs.
   await page.locator('.tnav button[title="sights"]').click()
   await expect(page.locator('.sight').first()).toBeVisible({ timeout: 30_000 })
-  await page.waitForTimeout(2500)          // the logo-led articles fill in after
 
   const cards = page.locator('.sight')
   expect(await cards.count()).toBeGreaterThan(15)
 
   // Every card carries the three things asked for: picture, name, description.
-  const shown = await cards.evaluateAll(els => els.map(e => ({
+  const shownCards = () => cards.evaluateAll(els => els.map(e => ({
     name: e.querySelector('.sname')?.textContent || '',
     note: (e.querySelector('p')?.textContent || '').trim(),
     pic: !!e.querySelector('.spic img'),
   })))
+  await expect.poll(async () => {
+    const shown = await shownCards()
+    return shown.filter(s => s.pic).length / shown.length
+  }, { timeout: 15_000 }).toBeGreaterThan(0.9)
+  const shown = await shownCards()
   expect(shown.filter(s => s.pic).length).toBeGreaterThan(shown.length * 0.9)
   expect(shown.every(s => s.name && s.note)).toBe(true)
 
@@ -671,4 +850,5 @@ test('attractions are drawn across the map and open into a card', async ({ page 
   // And the layer can be turned off.
   await page.locator('.tbtn.ghost[title*="Hide attractions"]').click()
   await expect(page.locator('.acard')).toHaveCount(0)
+})
 })

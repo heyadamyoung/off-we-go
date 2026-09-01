@@ -4,7 +4,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import 'maplibre-gl/dist/maplibre-gl.css'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
-import { lineOf } from '../../../shared/lib/geo'
+import { lineOf, validLngLat } from '../../../shared/lib/geo'
 import { EMPTY_FC } from '../model/use-attractions'
 import { ACCENT, TRAIL, STYLE, linesOf } from '../model/map-style'
 import { LiveMarker, MapMarker } from './map-marker'
@@ -282,13 +282,14 @@ const MapCanvas = memo(function MapCanvas({
   const groups = useMemo(() => {
     const byStop = new Map(), loose = []
     photos.forEach(p => {
-      if (!p.stopId) { loose.push(p); return }
+      if (!p.stopId) { if (validLngLat(p.lng, p.lat)) loose.push(p); return }
       if (!byStop.has(p.stopId)) byStop.set(p.stopId, [])
       byStop.get(p.stopId).push(p)
     })
     const out = []
     byStop.forEach((items, stopId) => {
-      const s = stops.find(x => x.id === stopId) || items[0]
+      const s = stops.find(x => x.id === stopId) || items.find(p => validLngLat(p.lng, p.lat))
+      if (!s) return
       items.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
       out.push({ key: 'g' + stopId, lng: s.lng, lat: s.lat, items })
     })

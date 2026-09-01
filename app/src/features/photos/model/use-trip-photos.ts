@@ -63,7 +63,10 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
 
   const addPhoto = useCallback(async (input: UploadInput) => {
     const saved = await uploadPhoto(tripId, input.file,
-      photoUploadMetadata(input, { by: me.name, nextSequence: photos.length }))
+      photoUploadMetadata(input, {
+        by: me.name,
+        nextSequence: Math.max(photos.length, ...photos.map(photo => (photo.seq ?? -1) + 1)),
+      }))
     setPhotos(list => [...list, saved])
     if (input.stopId) setSelected(input.stopId)
     return saved

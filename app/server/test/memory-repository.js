@@ -264,7 +264,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         by: profiles.get(member.profileId).displayName, when: input.takenAt || null,
         locationSource: input.locationSource || null,
         storagePath: input.storagePath, thumbPath: input.thumbPath, userId: user.id, clientKey: input.clientKey || null,
-        seq: trip.photos.length,
+        seq: Math.max(trip.photos.length, ...trip.photos.map(value => (value.seq ?? -1) + 1)),
       }
       trip.photos.push(photo)
       return photo
@@ -460,7 +460,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async findPositionNearCapture(user, tripId, capturedAt, toleranceMs) {
       const nearest = [...positions.values()]
-        .filter(fix => fix.tripId === tripId && devices.get(fix.deviceId)?.userId === user.id)
+        .filter(fix => fix.tripId === tripId && devices.get(fix.deviceId)?.userId === user.id
+          && (fix.accuracy == null || fix.accuracy <= 80))
         .map(fix => ({ ...fix, distance: Math.abs(fix.at.getTime() - capturedAt.getTime()) }))
         .filter(fix => fix.distance <= toleranceMs)
         .sort((a, b) => a.distance - b.distance)[0]

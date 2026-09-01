@@ -97,8 +97,8 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
   const addPhotoToMap = useCallback(async input => {
     const saved = await addPhoto(input)
     const stop = stops.find(value => value.id === saved.stopId)
-    const lng = saved.lng ?? stop?.lng
-    const lat = saved.lat ?? stop?.lat
+    const lng = stop?.lng ?? saved.lng
+    const lat = stop?.lat ?? saved.lat
     if (lng != null && lat != null) {
       setTab('map'); setFollowing(false)
       setView({ center: [lng, lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520 })
@@ -339,7 +339,8 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
                              viewers={viewers}
                              appLink={absoluteTripHref(trip.slug, window.location.origin,
                                String(import.meta.env.VITE_API_URL || ''))} />}
-      {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhotoToMap} live={live} stops={stops} toast={toast} />}
+      {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhotoToMap} live={live} stops={stops}
+                              toast={toast} theme={mapTheme} tint={sun} />}
       <ToastNoticeView notice={notice} />
     </div>
   )

@@ -36,6 +36,7 @@ export interface TripPhoto {
   by: string
   when?: string
   takenAt?: string
+  locationSource?: 'exif' | 'trail' | 'live' | 'manual' | 'approximate' | null
   caption?: string
   src?: string
   url?: string
@@ -199,10 +200,13 @@ export interface UploadInput {
   caption?: string
   lng?: number
   lat?: number
+  fallbackLng?: number
+  fallbackLat?: number
+  fallbackLocationSource?: 'live' | 'approximate'
   takenAt?: string
   when?: string
   uploadKey?: string
-  locationSource?: string
+  locationSource?: 'exif' | 'trail' | 'live' | 'manual' | 'approximate'
   order?: number
 }
 

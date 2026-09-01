@@ -685,7 +685,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const member = await pool.query('select display_name name from profiles where id=$1', [user.id])
       const result = await pool.query(`insert into photos
         (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,thumb_path,client_key,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,(select count(*) from photos where trip_id=$1)) returning *`, [
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,nextval('photo_order_seq')) returning *`, [
         tripId, input.stopId, user.id, input.lng, input.lat, input.caption, member.rows[0]?.name,
         input.takenAt, input.locationSource, input.storagePath, input.thumbPath, input.clientKey || null,
       ])
@@ -802,6 +802,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const result = await pool.query(`select p.lng,p.lat,p.recorded_at
         from positions p join devices d on d.id=p.device_id
         where p.trip_id=$1 and d.user_id=$2
+          and (p.accuracy is null or p.accuracy <= 80)
           and p.recorded_at between $3::timestamptz - ($4::bigint * interval '1 millisecond')
                                 and $3::timestamptz + ($4::bigint * interval '1 millisecond')
         order by abs(extract(epoch from (p.recorded_at-$3::timestamptz))), p.accuracy nulls last

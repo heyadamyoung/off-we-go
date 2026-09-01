@@ -634,22 +634,51 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       }
     }
 
-    let stored
-    try { stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes }) }
-    catch { return reply.code(400).send({ error: 'That file is not a readable image' }) }
+    const coordinatePair = (lngField, latField, label) => {
+      const lngPresent = fields[lngField] != null && String(fields[lngField]).trim() !== ''
+      const latPresent = fields[latField] != null && String(fields[latField]).trim() !== ''
+      if (lngPresent !== latPresent) return { error: `${label} longitude and latitude must be supplied together` }
+      if (!lngPresent) return { lng: null, lat: null }
+      const lng = finite(fields[lngField]), lat = finite(fields[latField])
+      if (lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
+        return { error: `${label} coordinates are invalid` }
+      }
+      return { lng, lat }
+    }
+    const supplied = coordinatePair('lng', 'lat', 'Photo')
+    if (supplied.error) return reply.code(400).send({ error: supplied.error })
+    const fallback = coordinatePair('fallbackLng', 'fallbackLat', 'Fallback')
+    if (fallback.error) return reply.code(400).send({ error: fallback.error })
+    const allowedLocationSources = new Set(['exif', 'trail', 'live', 'manual', 'approximate'])
+    const requestedLocationSource = String(fields.locationSource || '').trim() || null
+    if (requestedLocationSource && !allowedLocationSources.has(requestedLocationSource)) {
+      return reply.code(400).send({ error: 'The photo location source is invalid' })
+    }
+    const fallbackLocationSource = String(fields.fallbackLocationSource || 'live').trim()
+    if (!['live', 'approximate'].includes(fallbackLocationSource)) {
+      return reply.code(400).send({ error: 'The photo fallback location source is invalid' })
+    }
 
-    let lng = finite(fields.lng), lat = finite(fields.lat)
+    let lng = supplied.lng, lat = supplied.lat
     const takenAt = dateFrom(fields.takenAt)
     if (fields.takenAt && !takenAt) {
-      await fileStore.remove(stored.storagePath).catch(() => {})
-      await fileStore.remove(stored.thumbPath).catch(() => {})
       return reply.code(400).send({ error: 'The photo capture time is invalid' })
     }
-    let locationSource = fields.locationSource || null
+    let locationSource = requestedLocationSource
     if ((lng == null || lat == null) && takenAt && repository.findPositionNearCapture) {
       const matched = await repository.findPositionNearCapture(user, request.params.tripId, takenAt, 30 * 60_000)
       if (matched) { lng = matched.lng; lat = matched.lat; locationSource = 'trail' }
     }
+    if (lng == null || lat == null) {
+      if (fallback.lng != null && fallback.lat != null) {
+        lng = fallback.lng; lat = fallback.lat; locationSource = fallbackLocationSource
+      }
+    }
+    if (lng == null || lat == null) locationSource = null
+
+    let stored
+    try { stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes }) }
+    catch { return reply.code(400).send({ error: 'That file is not a readable image' }) }
     try {
       const photo = await repository.createPhoto(user, request.params.tripId, {
         ...stored,

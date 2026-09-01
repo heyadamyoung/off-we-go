@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapCanvas } from '../../map'
 import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
+import { coordinateLabel, validLngLat } from '../../../shared/lib/geo'
 
 function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, addComment, likes,
                        toggleLike, theme, tint, me, canEdit, onPhotoChange, onPhotoDelete,
@@ -36,7 +37,10 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
     }
   }, [index, list])
 
-  const mini = useMemo(() => ({ center: [photo?.lng ?? 0, photo?.lat ?? 0], zoom: 16 }), [photo?.lng, photo?.lat])
+  const mapPoint = stop && validLngLat(stop.lng, stop.lat)
+    ? [stop.lng, stop.lat] : validLngLat(photo?.lng, photo?.lat) ? [photo.lng, photo.lat] : null
+  const mini = useMemo(() => mapPoint ? ({ center: mapPoint, zoom: 16 }) : null,
+    [mapPoint?.[0], mapPoint?.[1]])
   const noop = useCallback(() => {}, [])
 
   if (!photo) return null
@@ -92,8 +96,8 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
             <p className="loc">
               <Icon n="pin" s={14} c="rgba(255,255,255,.5)" />
               {stop ? stop.name : ''}
-              {photo.lat != null && photo.lng != null
-                ? `${stop ? ' · ' : ''}${photo.lat.toFixed(4)} N, ${photo.lng.toFixed(4)} E` : ''}
+              {validLngLat(photo.lng, photo.lat)
+                ? `${stop ? ' · ' : ''}${coordinateLabel([photo.lng, photo.lat])}` : ''}
             </p>
           </div>
           <div className="ct">{index + 1} of {list.length} · uploaded from the trip</div>
@@ -110,11 +114,12 @@ function PhotoViewer({ list, index, setIndex, onClose, stops, byName, comments, 
 
       <div className="vside">
         <div className="vminimap">
-          <MapCanvas theme={theme} tint={tint} interactive={false} view={mini} onView={noop}
-            route={[]} stops={stop ? [stop] : []} photos={here} highlight={photo.id} />
+          {mini && <MapCanvas theme={theme} tint={tint} interactive={false} view={mini} onView={noop}
+            route={[]} stops={stop ? [stop] : []} photos={here} highlight={photo.id} />}
           <div className="cap">
-            <b>Taken here</b>
-            <span>{stop ? stop.name : 'On the move'} · {here.length} photo{here.length === 1 ? '' : 's'}</span>
+            <b>{mini ? 'Taken here' : 'Location unavailable'}</b>
+            <span>{mini ? (stop ? stop.name : 'On the move') : 'This photo has no coordinates'}
+              {mini ? ` · ${here.length} photo${here.length === 1 ? '' : 's'}` : ''}</span>
           </div>
         </div>
 

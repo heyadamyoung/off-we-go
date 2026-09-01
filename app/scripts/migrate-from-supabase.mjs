@@ -3,7 +3,9 @@ import sharp from 'sharp'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { legacyDate, legacyInviteRole, legacyPhotoRequest } from './legacyMigrationCore.mjs'
+import {
+  legacyDate, legacyInviteRole, legacyPhotoCoordinates, legacyPhotoRequest,
+} from './legacyMigrationCore.mjs'
 import { availableSlug, normalizeProfileHandle, slugBase } from '../server/src/slugs.js'
 
 const required = name => {
@@ -157,13 +159,14 @@ try {
           value.seq || 0, value.created_at])
       }
       for (const value of importedPhotos) {
+        const coordinates = legacyPhotoCoordinates(value.lng, value.lat)
         await target.query(`insert into photos(id,trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,thumb_path,seq,created_at)
           values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
           on conflict(id) do update set stop_id=excluded.stop_id,lng=excluded.lng,lat=excluded.lat,
           caption=excluded.caption,taken_by=excluded.taken_by,taken_at=excluded.taken_at,
           location_source=excluded.location_source,storage_path=excluded.storage_path,thumb_path=excluded.thumb_path,seq=excluded.seq`,
-        [value.id, value.trip_id, value.stop_id, owners.get(value.trip_id) || null, value.lng, value.lat,
-          value.caption, value.taken_by, legacyDate(value.taken_at), value.lng != null && value.lat != null ? 'manual' : null,
+        [value.id, value.trip_id, value.stop_id, owners.get(value.trip_id) || null, coordinates.lng, coordinates.lat,
+          value.caption, value.taken_by, legacyDate(value.taken_at), coordinates.lng != null ? 'manual' : null,
           value.storagePath, value.thumbPath, value.seq || 0, value.created_at])
       }
       for (const value of data.route.filter(value => knownTrips.has(value.trip_id))) {

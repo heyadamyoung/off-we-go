@@ -4,6 +4,15 @@ function metres(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a[1])) * Math.cos(r(b[1])) * Math.sin(dLng / 2) ** 2
   return 2 * R * Math.asin(Math.sqrt(h))
 }
+
+function validLngLat(lng, lat) {
+  return Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lng) <= 180 && Math.abs(lat) <= 90
+}
+
+function coordinateLabel([lng, lat], precision = 4) {
+  return `${Math.abs(lat).toFixed(precision)}° ${lat >= 0 ? 'N' : 'S'}, `
+    + `${Math.abs(lng).toFixed(precision)}° ${lng >= 0 ? 'E' : 'W'}`
+}
 function routeKm(coords) {
   let d = 0
   for (let i = 1; i < coords.length; i++) {
@@ -52,7 +61,7 @@ const lineOf = coords => ({
   geometry: { type: 'LineString', coordinates: coords },
 })
 
-export { agoLabel, lineOf, metres, routeKm, trailKm }
+export { agoLabel, coordinateLabel, lineOf, metres, routeKm, trailKm, validLngLat }
 
 
 

@@ -317,10 +317,19 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   assert.deepEqual(await repository.listPendingFileDeletions(new Date('2027-01-01T00:02:01Z')),
     [`${trip.id}/queued.thumb.jpg`])
 
-  await repository.createPhoto(user, trip.id, {
+  const mine = await repository.createPhoto(user, trip.id, {
     stopId: null, lng: -104.6, lat: 50.4, caption: 'Mine', takenAt: new Date('2027-01-02T01:00:00Z'),
     locationSource: 'trail', storagePath: `${trip.id}/mine.jpg`, thumbPath: `${trip.id}/mine.thumb.jpg`,
   })
+  assert.ok(mine.seq > queuedPhoto.seq, 'deleting a photo must not reuse its map ordering sequence')
+  const reloadedMine = (await repository.loadCurrentTrip(user, trip.slug)).photos.find(value => value.id === mine.id)
+  assert.equal(reloadedMine.lng, -104.6)
+  assert.equal(reloadedMine.lat, 50.4)
+  assert.equal(reloadedMine.locationSource, 'trail')
+  await assert.rejects(repository.createPhoto(user, trip.id, {
+    stopId: null, lng: -181, lat: 50.4, caption: 'Invalid coordinate',
+    storagePath: `${trip.id}/invalid.jpg`, thumbPath: `${trip.id}/invalid.thumb.jpg`,
+  }), error => error.code === '23514')
   await repository.createSession({ hash: 'delete-session', userId: user.id, expiresAt })
   assert.deepEqual((await repository.deleteAccount(user)).sort(),
     [`${trip.id}/mine.jpg`, `${trip.id}/mine.thumb.jpg`].sort())
