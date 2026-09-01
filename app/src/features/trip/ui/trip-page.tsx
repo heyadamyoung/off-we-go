@@ -340,24 +340,31 @@ function Trip({ data, busyEditing }:
                         text-xs text-muted">Finding attractions… {attrCount}</div>
       )}
 
-      {!panelOpen && (
-        <NowCapsule text={progressCopy.text} meta={progressCopy.meta} tone={progressCopy.tone}
-          onClick={() => {
-            setFollowing(true)
-            if (liveStop) patch({ sel: liveStop.id, day: liveStop.day })
+      {/* Along the bottom of the map, one line: where the day sits, what is
+          happening now, and the map's own controls. On a phone this is a real
+          flex row, so nothing floats at its own height over the middle of the
+          map; above 640px `contents` dissolves the row and each piece goes back
+          to the corner it was placed in. */}
+      <div className="absolute inset-x-3 bottom-[var(--trip-1)] z-[4] flex items-center gap-2 sm:contents">
+        <ScopeToggle shifted={panelOpen} whole={day === ALL_DAYS}
+          here={liveDay && day !== ALL_DAYS ? day : 'Today'}
+          onHere={() => patch({ day: liveDay || days[0], sel: undefined })}
+          onWhole={() => patch({ day: ALL_DAYS, sel: undefined })} />
+
+        {!panelOpen && (
+          <NowCapsule text={progressCopy.text} meta={progressCopy.meta} tone={progressCopy.tone}
+            onClick={() => {
+              setFollowing(true)
+              if (liveStop) patch({ sel: liveStop.id, day: liveStop.day })
+            }} />
+        )}
+
+        <MapControls following={following} onFollow={toggleFollow} onFit={fitAll}
+          onZoom={by => {
+            setFollowing(false)
+            setMapView(current => ({ center: current.center, zoom: clamp(current.zoom + by, 3, 18), ms: 300 }))
           }} />
-      )}
-
-      <ScopeToggle shifted={panelOpen} whole={day === ALL_DAYS}
-        here={liveDay && day !== ALL_DAYS ? day : 'Today'}
-        onHere={() => patch({ day: liveDay || days[0], sel: undefined })}
-        onWhole={() => patch({ day: ALL_DAYS, sel: undefined })} />
-
-      <MapControls following={following} onFollow={toggleFollow} onFit={fitAll}
-        onZoom={by => {
-          setFollowing(false)
-          setMapView(current => ({ center: current.center, zoom: clamp(current.zoom + by, 3, 18), ms: 300 }))
-        }} />
+      </div>
 
       <TripBar items={items} days={days} day={day} liveDay={liveDay} selected={selected}
         behindPanel={panelOpen}
