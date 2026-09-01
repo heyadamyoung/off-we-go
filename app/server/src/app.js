@@ -30,6 +30,45 @@ function bearer(request) {
   return value.startsWith('Bearer ') ? value.slice(7).trim() : null
 }
 
+const isPlainObject = value =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/* A home base is a name and a coordinate, and half a coordinate is not a place:
+   null means the request was malformed, not that the field was left alone. */
+function readHomeBase(body) {
+  const place = body.homePlace === undefined
+    ? undefined : String(body.homePlace).trim().slice(0, 120) || null
+  const lat = body.homeLat === undefined || body.homeLat === null ? null : Number(body.homeLat)
+  const lng = body.homeLng === undefined || body.homeLng === null ? null : Number(body.homeLng)
+  if ((lat === null) !== (lng === null)) return null
+  if (lat !== null && (!Number.isFinite(lat) || Math.abs(lat) > 90)) return null
+  if (lng !== null && (!Number.isFinite(lng) || Math.abs(lng) > 180)) return null
+  return {
+    ...(place === undefined ? {} : { homePlace: place }),
+    ...(body.homeLat === undefined && body.homeLng === undefined
+      ? {} : { homeLat: lat, homeLng: lng }),
+  }
+}
+
+const gpxEscape = value => String(value || '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/* The trail as GPX so it opens in anything that reads a track: the phones'
+   fixes if there are any, otherwise the route somebody drew by hand. */
+function gpxTrail(trip) {
+  const points = trip.trail?.length
+    ? trip.trail.map(fix => ({ lng: fix.lng, lat: fix.lat, at: fix.at }))
+    : (trip.route || []).map(([lng, lat]) => ({ lng, lat, at: null }))
+  if (!points.length) return null
+  const body = points.map(point =>
+    `      <trkpt lat="${point.lat}" lon="${point.lng}">` +
+    (point.at ? `<time>${new Date(point.at).toISOString()}</time>` : '') +
+    '</trkpt>').join('\n')
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<gpx version="1.1" creator="Off We Go" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+    `  <trk><name>${gpxEscape(trip.title)}</name><trkseg>\n${body}\n  </trkseg></trk>\n</gpx>\n`
+}
+
 export async function buildServer({ repository, fileStore = null, mailer, publicUrl, sessionSecret,
   clock = () => new Date(), ingestRateLimit = { max: 180, windowMs: 60_000 },
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
@@ -554,29 +593,77 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
   })
 
+  const ownProfile = profile => ({
+    id: profile.profileId, handle: profile.handle, email: profile.email,
+    name: profile.displayName || profile.email.split('@')[0],
+    avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
+    homePlace: profile.homePlace, homeLat: profile.homeLat, homeLng: profile.homeLng,
+    timeZone: profile.timeZone, preferences: profile.preferences || {},
+    joinedAt: profile.joinedAt, tripCount: profile.tripCount, photoCount: profile.photoCount,
+  })
+
+  app.get('/api/profile', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const profile = await repository.loadProfile(user)
+    if (!profile) return reply.code(404).send({ error: 'Profile not found' })
+    return ownProfile(profile)
+  })
+
   app.patch('/api/profile', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const requestedHandle = request.body?.handle === undefined
-      ? undefined : normalizeProfileHandle(request.body.handle)
-    if (request.body?.handle !== undefined && !requestedHandle) {
+    const body = request.body || {}
+    const requestedHandle = body.handle === undefined
+      ? undefined : normalizeProfileHandle(body.handle)
+    if (body.handle !== undefined && !requestedHandle) {
       return reply.code(400).send({
         code: 'profile.handle_invalid',
         error: 'Use 3–30 letters, numbers, or single hyphens for your handle.',
       })
     }
+    let home
+    if (body.homePlace !== undefined || body.homeLat !== undefined || body.homeLng !== undefined) {
+      home = readHomeBase(body)
+      if (home === null) {
+        return reply.code(400).send({ error: 'A home base needs both a latitude and a longitude' })
+      }
+    }
+    if (body.preferences !== undefined && !isPlainObject(body.preferences)) {
+      return reply.code(400).send({ error: 'Preferences must be an object' })
+    }
     const profile = await repository.updateProfile(user, {
-      ...(request.body?.name !== undefined ? { name: String(request.body.name).trim() || user.email.split('@')[0] } : {}),
+      ...(body.name !== undefined ? { name: String(body.name).trim() || user.email.split('@')[0] } : {}),
       ...(requestedHandle !== undefined ? { handle: requestedHandle } : {}),
+      ...(home || {}),
+      ...(body.timeZone !== undefined ? { timeZone: String(body.timeZone).trim().slice(0, 64) || null } : {}),
+      ...(body.preferences !== undefined ? { preferences: body.preferences } : {}),
     })
     if (profile?.conflict === 'handle') {
       return reply.code(409).send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
     }
     if (!profile) return reply.code(404).send({ error: 'Profile not found' })
+    return ownProfile(profile)
+  })
+
+  /* Everything this account holds, as one JSON document. Photo bytes stay put
+     and are linked rather than inlined: an archive that had to buffer a trip's
+     worth of full-size images in memory would fall over on the first real one. */
+  app.get('/api/account/archive', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!repository.exportAccount) return reply.code(503).send({ error: 'Archives are not configured' })
+    const archive = await repository.exportAccount(user)
+    const stamp = clock().toISOString().slice(0, 10)
+    reply.header('content-disposition', `attachment; filename="off-we-go-${stamp}.json"`)
     return {
-      id: profile.profileId, handle: profile.handle,
-      name: profile.displayName || profile.email.split('@')[0],
-      avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
+      exportedAt: clock().toISOString(),
+      profile: archive.profile ? ownProfile(archive.profile) : null,
+      trips: (archive.trips || []).map(trip => ({
+        ...trip,
+        photos: trip.photos.map(({ path, ...photo }) => ({ ...photo, url: path ? mediaUrl(path) : null })),
+        gpx: gpxTrail(trip),
+      })),
     }
   })
 

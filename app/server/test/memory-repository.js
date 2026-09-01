@@ -1,5 +1,14 @@
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
 
+const profileShape = profile => ({
+  profileId: profile.id, email: profile.email, handle: profile.handle,
+  displayName: profile.displayName, avatarUrl: profile.avatarUrl,
+  homePlace: profile.homePlace ?? null, homeLat: profile.homeLat ?? null,
+  homeLng: profile.homeLng ?? null, timeZone: profile.timeZone ?? null,
+  preferences: profile.preferences || {}, joinedAt: profile.joinedAt ?? null,
+  tripCount: 0, photoCount: 0,
+})
+
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const fakeUuid = (namespace, value) => `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
@@ -61,6 +70,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         profiles.set(user.id, {
           id: user.id, handle,
           email, displayName: email.split('@')[0], avatarUrl: null,
+          homePlace: null, homeLat: null, homeLng: null, timeZone: null,
+          preferences: {}, joinedAt: new Date().toISOString(),
         })
       }
       return users.get(email)
@@ -194,6 +205,11 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
           id: trip.id, slug: trip.slug, title: trip.title, crew: trip.crew, dates: trip.dates,
           dayCount: trip.dayCount, startsOn: trip.startsOn, endsOn: trip.endsOn,
           role: trip.members.find(member => member.profileId === user.id).role,
+          places: trip.stops.slice(0, 60).map(stop => ({
+            name: stop.name, lng: stop.lng, lat: stop.lat, status: stop.status,
+          })),
+          stopCount: trip.stops.length, photoCount: trip.photos.length,
+          memberCount: trip.members.length,
         }))
     },
     async loadCurrentTrip(user, slug) {
@@ -228,6 +244,30 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         displayName: profile.displayName, avatarUrl: profile.avatarUrl,
       } : null
     },
+    async loadProfile(user) {
+      const profile = profiles.get(user.id)
+      return profile ? profileShape(profile) : null
+    },
+    async exportAccount(user) {
+      const mine = [...trips.values()]
+        .filter(trip => trip.members.some(member => member.profileId === user.id))
+      return {
+        profile: profiles.get(user.id) ? profileShape(profiles.get(user.id)) : null,
+        trips: mine.map(trip => ({
+          id: trip.id, slug: trip.slug, title: trip.title, crew: trip.crew, dates: trip.dates,
+          role: trip.members.find(member => member.profileId === user.id).role,
+          stops: trip.stops.map(stop => ({ ...stop })),
+          photos: trip.photos.map(photo => ({
+            id: photo.id, stopId: photo.stopId, caption: photo.caption, by: photo.by,
+            takenAt: photo.when, lng: photo.lng, lat: photo.lat, path: photo.storagePath || null,
+          })),
+          route: trip.route.map(point => [...point]),
+          comments: Object.entries(trip.comments || {}).flatMap(([photoId, list]) =>
+            list.map(comment => ({ id: comment.id, photoId, by: comment.by, body: comment.text }))),
+          trail: [],
+        })),
+      }
+    },
     async updateProfile(user, changes) {
       const profile = profiles.get(user.id)
       if (!profile) return null
@@ -242,7 +282,14 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (changes.name !== undefined) profile.displayName = changes.name
       if (changes.handle !== undefined) profile.handle = changes.handle
       if (changes.avatarPath !== undefined) profile.avatarUrl = changes.avatarPath
-      return { ...profile, profileId: profile.id, oldAvatarUrl }
+      if (changes.homePlace !== undefined) profile.homePlace = changes.homePlace
+      if (changes.homeLat !== undefined) profile.homeLat = changes.homeLat
+      if (changes.homeLng !== undefined) profile.homeLng = changes.homeLng
+      if (changes.timeZone !== undefined) profile.timeZone = changes.timeZone
+      if (changes.preferences !== undefined) {
+        profile.preferences = { ...profile.preferences, ...changes.preferences }
+      }
+      return { ...profileShape(profile), oldAvatarUrl }
     },
     async canEditTrip(userId, tripId) {
       const trip = trips.get(tripId)

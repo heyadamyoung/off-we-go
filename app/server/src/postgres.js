@@ -23,6 +23,19 @@ export function migrationChecksumStatus(sql, storedChecksum) {
   }
 }
 
+const profileShape = value => ({
+  profileId: value.id, email: value.email, handle: value.handle,
+  displayName: value.display_name, avatarUrl: value.avatar_path,
+  homePlace: value.home_place || null,
+  homeLat: value.home_lat === null || value.home_lat === undefined ? null : Number(value.home_lat),
+  homeLng: value.home_lng === null || value.home_lng === undefined ? null : Number(value.home_lng),
+  timeZone: value.time_zone || null,
+  preferences: value.preferences || {},
+  joinedAt: value.joined_at ? new Date(value.joined_at).toISOString() : null,
+  tripCount: Number(value.trip_count || 0),
+  photoCount: Number(value.photo_count || 0),
+})
+
 const camelTrip = value => ({
   id: value.id, slug: value.slug, title: value.title, crew: value.crew,
   dates: value.dates, dayCount: value.day_count,
@@ -360,9 +373,35 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
 
     async listTrips(user) {
-      const result = await pool.query(`select t.*,m.role from trips t
-        join trip_members m on m.trip_id=t.id where m.profile_id=$1 order by t.created_at`, [user.id])
-      return result.rows.map(value => ({ ...camelTrip(value), role: value.role }))
+      /* The home globe draws every trip as an arc, and the trip cards carry
+         their own tallies, so the list answers with both rather than making the
+         client open each trip to find out. Places are capped: a long trip has
+         hundreds of stops and the globe cannot show the difference. */
+      const result = await pool.query(`select t.*,m.role,
+        coalesce(s.places,'[]'::json) places,
+        coalesce(sc.stop_count,0) stop_count,
+        coalesce(p.photo_count,0) photo_count,
+        coalesce(mem.member_count,0) member_count
+        from trips t
+        join trip_members m on m.trip_id=t.id
+        left join lateral (
+          select json_agg(json_build_object('name',name,'lng',lng,'lat',lat,'status',status)
+                          order by seq,created_at) places
+          from (select name,lng,lat,status,seq,created_at from stops
+                where trip_id=t.id order by seq,created_at limit 60) capped
+        ) s on true
+        left join lateral (select count(*) stop_count from stops where trip_id=t.id) sc on true
+        left join lateral (select count(*) photo_count from photos where trip_id=t.id) p on true
+        left join lateral (select count(*) member_count from trip_members where trip_id=t.id) mem on true
+        where m.profile_id=$1 order by t.created_at`, [user.id])
+      return result.rows.map(value => ({
+        ...camelTrip(value), role: value.role,
+        places: (value.places || []).map(place => ({
+          name: place.name, lng: Number(place.lng), lat: Number(place.lat), status: place.status,
+        })),
+        stopCount: Number(value.stop_count), photoCount: Number(value.photo_count),
+        memberCount: Number(value.member_count),
+      }))
     },
 
     async loadCurrentTrip(user, slug) {
@@ -446,6 +485,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         displayName: value.display_name, avatarUrl: value.avatar_path,
       } : null
     },
+    async loadProfile(user) {
+      const result = await pool.query(`select p.*,u.email,u.created_at joined_at,
+        (select count(*) from trip_members where profile_id=p.id) trip_count,
+        (select count(*) from photos where user_id=p.id) photo_count
+        from profiles p join users u on u.id=p.id where p.id=$1`, [user.id])
+      return result.rows[0] ? profileShape(result.rows[0]) : null
+    },
     async updateProfile(user, changes) {
       const client = await pool.connect()
       try {
@@ -463,20 +509,31 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         if (changes.name !== undefined) entries.push(['display_name', changes.name])
         if (changes.handle !== undefined) entries.push(['handle', changes.handle])
         if (changes.avatarPath !== undefined) entries.push(['avatar_path', changes.avatarPath])
+        if (changes.homePlace !== undefined) entries.push(['home_place', changes.homePlace])
+        if (changes.homeLat !== undefined) entries.push(['home_lat', changes.homeLat])
+        if (changes.homeLng !== undefined) entries.push(['home_lng', changes.homeLng])
+        if (changes.timeZone !== undefined) entries.push(['time_zone', changes.timeZone])
+        // Merged rather than replaced: the settings page saves one card at a
+        // time and must not blank the choices made on another.
+        if (changes.preferences !== undefined) {
+          entries.push(['preferences', JSON.stringify(changes.preferences)])
+        }
         if (entries.length) {
-          const set = entries.map(([column], index) => `${column}=$${index + 2}`).join(',')
+          const set = entries.map(([column], index) => (column === 'preferences'
+            ? `preferences=preferences||$${index + 2}::jsonb`
+            : `${column}=$${index + 2}`)).join(',')
           await client.query(`update profiles set ${set},updated_at=now() where id=$1`,
             [user.id, ...entries.map(([, value]) => value)])
         }
-        const result = await client.query(`select p.*,u.email from profiles p join users u on u.id=p.id
-          where p.id=$1`, [user.id])
+        const result = await client.query(`select p.*,u.email,u.created_at joined_at,
+          (select count(*) from trip_members where profile_id=p.id) trip_count,
+          (select count(*) from photos where user_id=p.id) photo_count
+          from profiles p join users u on u.id=p.id where p.id=$1`, [user.id])
         await client.query('commit')
         const value = result.rows[0]
-        return value ? {
-          profileId: value.id, email: value.email, handle: value.handle,
-          displayName: value.display_name, avatarUrl: value.avatar_path,
-          oldAvatarUrl: previous?.rows[0]?.avatar_path || null,
-        } : null
+        return value
+          ? { ...profileShape(value), oldAvatarUrl: previous?.rows[0]?.avatar_path || null }
+          : null
       } catch (error) { await client.query('rollback'); throw error }
       finally { client.release() }
     },
@@ -844,6 +901,47 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         category: value.category, imageFile: value.image_file, lng: value.lng,
         lat: value.lat, headline: value.headline,
       }))
+    },
+    /* Everything this person can see, in one pass, for the archive on the
+       settings page. Photo bytes stay where they are and are referenced by
+       path — the caller turns those into URLs. */
+    async exportAccount(user) {
+      const profile = await this.loadProfile(user)
+      const trips = await pool.query(`select t.*,m.role from trips t
+        join trip_members m on m.trip_id=t.id where m.profile_id=$1 order by t.created_at`, [user.id])
+      const exported = []
+      for (const trip of trips.rows) {
+        const [stops, photos, route, comments, fixes] = await Promise.all([
+          pool.query('select * from stops where trip_id=$1 order by seq,created_at', [trip.id]),
+          pool.query('select * from photos where trip_id=$1 order by seq,created_at', [trip.id]),
+          pool.query('select lng,lat from route_points where trip_id=$1 order by seq', [trip.id]),
+          pool.query(`select c.*,p.display_name author from comments c
+            join profiles p on p.id=c.user_id where c.trip_id=$1 order by c.created_at`, [trip.id]),
+          pool.query(`select lng,lat,recorded_at from positions
+            where trip_id=$1 order by recorded_at`, [trip.id]),
+        ])
+        exported.push({
+          ...camelTrip(trip), role: trip.role,
+          stops: stops.rows.map(value => ({
+            id: value.id, name: value.name, kind: value.kind, day: value.day, time: value.time,
+            lng: Number(value.lng), lat: Number(value.lat), status: value.status, note: value.note,
+          })),
+          photos: photos.rows.map(value => ({
+            id: value.id, stopId: value.stop_id, caption: value.caption, by: value.taken_by,
+            takenAt: value.taken_at, lng: value.lng === null ? null : Number(value.lng),
+            lat: value.lat === null ? null : Number(value.lat), path: value.storage_path,
+          })),
+          route: route.rows.map(value => [Number(value.lng), Number(value.lat)]),
+          comments: comments.rows.map(value => ({
+            id: value.id, photoId: value.photo_id, by: value.author, body: value.body,
+            at: value.created_at,
+          })),
+          trail: fixes.rows.map(value => ({
+            lng: Number(value.lng), lat: Number(value.lat), at: value.recorded_at,
+          })),
+        })
+      }
+      return { profile, trips: exported }
     },
     async deleteAccount(user) {
       const client = await pool.connect()

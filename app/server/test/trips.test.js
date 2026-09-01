@@ -94,6 +94,8 @@ test('the trip landing contract lists every accessible trip and pending invitati
       id: owned.json().id, slug: 'scotland-2027', title: 'Scotland 2027',
       crew: 'The family', dates: 'June 1–14', dayCount: 1,
       startsOn: null, endsOn: null, role: 'owner',
+      // The home globe draws each trip from these, and the cards count from them.
+      places: [], stopCount: 0, photoCount: 0, memberCount: 1,
     }],
     invites: [{
       id: '00000000-0000-4000-8000-000000500001',
