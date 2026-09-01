@@ -112,6 +112,7 @@ jobs:
             app/tsconfig.json \
             app/vite.config.ts \
             app/public \
+            app/scripts \
             app/src \
             app/server \
             app/deploy \

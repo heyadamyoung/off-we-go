@@ -1,4 +1,11 @@
-@import "tailwindcss";
+/* Sources are declared rather than detected. Tailwind scans outwards from
+   this file and skips whatever .gitignore ignores — and the deploy image has
+   no .gitignore, so the second build pass was scanning the first pass's own
+   output in dist/ and generating a different stylesheet. The prerendered
+   shell then named a file that was never shipped, and every cold load spent
+   a 404 unstyled until hydration replaced the link. */
+@import "tailwindcss" source(none);
+@source "./";
 /* Imported here rather than from the map component: as a JS import it lands in
    the trip route's own CSS chunk, which loads after this file, and MapLibre's
    `.maplibregl-map { position: relative }` then beats our `.mapcanvas` rule and

@@ -14,6 +14,10 @@ ENV NODE_OPTIONS=--dns-result-order=ipv4first
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
 RUN pnpm build
+# A shell that names a file the build did not emit must fail here, not
+# silently paint unstyled in front of everybody.
+COPY scripts/check-release-assets.mjs ./scripts/
+RUN node scripts/check-release-assets.mjs dist/client
 
 FROM caddy:2.10-alpine
 COPY --from=build /app/dist/client /srv
