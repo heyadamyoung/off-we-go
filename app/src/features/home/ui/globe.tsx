@@ -2,7 +2,8 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Map as MapGL, setWorkerUrl } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { MapMarker } from '../../map'
-import { CLOUD_BOUNDS, CLOUD_REFRESH, cloudFrame } from '../model/clouds'
+import { CLOUD_BOUNDS, CLOUD_DRIFT, CLOUD_REFRESH, loadWeather, type Weather }
+  from '../model/clouds'
 import { facing, globeZoom, legFeatures, type GlobePlace, type LngLat }
   from '../model/globe-core'
 
@@ -53,7 +54,10 @@ const STYLE: any = {
   },
 }
 
-const START: LngLat = [-42, 34]
+const stillness = () => typeof window !== 'undefined'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const START: LngLat = [-42, 26]
 const DRIFT = 0.00025          // degrees per millisecond, about a lap an hour
 const IDLE_BEFORE_DRIFT = 2500
 
@@ -157,36 +161,34 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
   }, [map, legs])
 
   /* ---- today's weather --------------------------------------------------
-     Fetched after the planet is up rather than with it: the frame is half a
-     megabyte and the land underneath is what the page is waiting on. */
+     Fetched after the planet is up rather than with it: the frame is a couple
+     of megabytes and the land underneath is what the page is waiting on. */
+  const weather = useRef<Weather | null>(null)
   useEffect(() => {
     if (!map) return
     let live = true
-    let previous = ''
     const show = async () => {
-      const url = await cloudFrame()
-      if (!live || !url) return
-      if (previous) URL.revokeObjectURL(previous)
-      previous = url
-      const source = map.getSource('clouds')
-      if (source) { source.updateImage({ url, coordinates: CLOUD_BOUNDS }); return }
-      map.addSource('clouds', { type: 'image', url, coordinates: CLOUD_BOUNDS })
+      const sky = await loadWeather()
+      if (!live || !sky || !map.getStyle()) return
+      weather.current = sky
+      map.addSource('clouds', {
+        type: 'canvas', canvas: sky.canvas, coordinates: CLOUD_BOUNDS,
+        // The texture is redrawn as the weather rolls, so it is re-read every
+        // frame; standing still, it is uploaded once and left alone.
+        animate: !stillness(),
+      })
       map.addLayer({
         id: 'cloud-cover', type: 'raster', source: 'clouds',
         // Under the trip, over the planet: the route is the point of the page.
         ...(map.getLayer('planned-line') ? { beforeId: 'planned-line' } : {}),
-        paint: { 'raster-opacity': 0.92, 'raster-fade-duration': 0 },
+        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0 },
       })
     }
     const start = () => { void show() }
     if (map.loaded()) start()
     else map.once('load', start)
-    const again = setInterval(start, CLOUD_REFRESH)
-    return () => {
-      live = false
-      clearInterval(again)
-      if (previous) URL.revokeObjectURL(previous)
-    }
+    const again = setInterval(() => { void weather.current?.refresh() }, CLOUD_REFRESH)
+    return () => { live = false; clearInterval(again); weather.current = null }
   }, [map])
 
   /* ---- spin on release, then the slow drift -----------------------------
@@ -194,13 +196,19 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
      the camera: while MapLibre is still easing a fling, this stands off. */
   useEffect(() => {
     if (!map) return
-    const reduced = typeof window !== 'undefined'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reduced = stillness()
     let frame = 0
     let last = 0
+    let rolled = 0
     const tick = (now: number) => {
       const elapsed = last ? Math.min(now - last, 64) : 0
       last = now
+      if (!reduced) {
+        // The weather keeps moving while the planet is being dragged: it is
+        // the one thing on the page that is not the reader's to hold still.
+        rolled += (elapsed / 1000) * CLOUD_DRIFT
+        weather.current?.roll(rolled)
+      }
       if (!reduced && !handled.current && !map.isMoving()
           && now - idleSince.current > IDLE_BEFORE_DRIFT) {
         const at = map.getCenter()
