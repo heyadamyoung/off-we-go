@@ -62,6 +62,7 @@ test('production restore includes the Logto identity database', () => {
   assert.match(restore, /SOURCE\/logto\.dump/);
   assert.match(restore, /logto-db pg_restore --list/);
   assert.match(restore, /logto_restore/);
+  assert.match(restore, /configure-logto\.sh logto_restore/);
   assert.match(restore, /docker compose stop api logto/);
   assert.match(restore, /alter database logto_restore rename to logto/);
 });

@@ -38,6 +38,7 @@ docker compose exec -T logto-db dropdb -U logto --if-exists logto_restore
 docker compose exec -T logto-db createdb -U logto logto_restore
 docker compose exec -T logto-db pg_restore -U logto -d logto_restore --no-owner --no-privileges < "$SOURCE/logto.dump"
 docker compose exec -T logto-db psql -U logto -d logto_restore -v ON_ERROR_STOP=1 -c 'select count(*) from applications' >/dev/null
+bash ./deploy/configure-logto.sh logto_restore
 
 docker compose stop api logto >/dev/null
 docker compose exec -T db dropdb -U wayfare --if-exists wayfare_before_restore

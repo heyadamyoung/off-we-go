@@ -122,6 +122,7 @@ else
 fi
 
 docker compose up -d --build
+bash ./deploy/configure-logto.sh
 for _ in $(seq 1 60); do
   if curl -fsS "https://${WAYFARE_DOMAIN}/api/health" >/dev/null 2>&1; then break; fi
   sleep 2

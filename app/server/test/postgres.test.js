@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 const moduleUnderTest = await import('../src/postgres.js').catch(() => null)
 const databaseUrl = process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
 const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations')
+const deployDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'deploy')
 
 test('PostgreSQL migrations create a repository that persists auth, trips and GPS', async t => {
   assert.ok(moduleUnderTest?.createPostgresRepository, 'the PostgreSQL repository has not been implemented')
@@ -365,4 +366,59 @@ test('the human-slug migration upgrades existing profiles and preserves old trip
   assert.equal(profile.handle, 'alex-owner')
   assert.equal((await repository.loadCurrentTrip({ id: userId }, 'scotland-2027')).id, tripId)
   assert.equal((await repository.loadCurrentTrip({ id: userId }, 'scotland-2027-a1b2c3')).id, tripId)
+})
+
+test('the VPS configures Logto for the email and password flow exposed by the app', async () => {
+  const sql = await readFile(join(deployDirectory, 'configure-logto.sql'), 'utf8').catch(() => null)
+  assert.ok(sql, 'the deployment must include an idempotent Logto sign-in configuration')
+
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  try {
+    await client.query('begin')
+    await client.query(`create temporary table sign_in_experiences (
+      tenant_id text not null, id text not null, sign_in jsonb not null, sign_up jsonb not null
+    ) on commit drop`)
+    await client.query(`insert into sign_in_experiences(tenant_id,id,sign_in,sign_up) values(
+      'default', 'default',
+      '{"methods":[{"identifier":"username","password":true,"verificationCode":false,"isPasswordPrimary":true}],"legacyOption":"keep"}',
+      '{"identifiers":["username"],"password":true,"verify":false,"secondaryIdentifiers":["phone"],"legacyOption":"keep"}'
+    )`)
+
+    await client.query(sql)
+    const first = await client.query(`select sign_in,sign_up from sign_in_experiences
+      where tenant_id='default' and id='default'`)
+    await client.query(sql)
+    const result = await client.query(`select sign_in,sign_up from sign_in_experiences
+      where tenant_id='default' and id='default'`)
+    assert.deepEqual(result.rows, first.rows, 'reapplying the configuration must be idempotent')
+    assert.deepEqual(result.rows[0].sign_in.methods, [{
+      identifier: 'email', password: true, verificationCode: false, isPasswordPrimary: true,
+    }])
+    assert.equal(result.rows[0].sign_in.legacyOption, 'keep')
+    assert.deepEqual(result.rows[0].sign_up.identifiers, ['email'])
+    assert.equal(result.rows[0].sign_up.password, true)
+    assert.equal(result.rows[0].sign_up.verify, true)
+    assert.deepEqual(result.rows[0].sign_up.secondaryIdentifiers, ['phone'])
+    assert.equal(result.rows[0].sign_up.legacyOption, 'keep')
+  } finally {
+    await client.query('rollback').catch(() => {})
+    await client.end()
+  }
+})
+
+test('the VPS fails closed when Logto has no default sign-in experience to configure', async () => {
+  const sql = await readFile(join(deployDirectory, 'configure-logto.sql'), 'utf8')
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  try {
+    await client.query('begin')
+    await client.query(`create temporary table sign_in_experiences (
+      tenant_id text not null, id text not null, sign_in jsonb not null, sign_up jsonb not null
+    ) on commit drop`)
+    await assert.rejects(client.query(sql), /default Logto sign-in experience was not found/i)
+  } finally {
+    await client.query('rollback').catch(() => {})
+    await client.end()
+  }
 })

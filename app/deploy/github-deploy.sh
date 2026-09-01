@@ -107,6 +107,7 @@ trap rollback ERR
 cd "$APP_ROOT"
 docker compose config --quiet
 docker compose up -d --build --wait --wait-timeout 180
+bash ./deploy/configure-logto.sh
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
 if [[ -z "$deployment_domain" ]]; then
   echo "WAYFARE_DOMAIN is missing from $APP_ROOT/.env." >&2
