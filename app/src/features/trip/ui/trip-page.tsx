@@ -158,9 +158,9 @@ function Trip({ data, busyEditing }:
     setFollowing(false)
     const target = item.stop
     if (item.kind === 'photo' && item.photo?.lng != null && item.photo?.lat != null) {
-      setMapView({ center: [item.photo.lng, item.photo.lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520 })
+      setMapView({ center: [item.photo.lng, item.photo.lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520, focus: true })
     } else if (target) {
-      setMapView({ center: [target.lng, target.lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520 })
+      setMapView({ center: [target.lng, target.lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520, focus: true })
     }
     patch({ sel: item.id, ...(day !== ALL_DAYS && item.day && item.day !== day ? { day: item.day } : {}) })
   }, [patch, day])
@@ -207,7 +207,7 @@ function Trip({ data, busyEditing }:
     const lat = stop?.lat ?? saved.lat
     if (lng != null && lat != null) {
       setFollowing(false)
-      setMapView({ center: [lng, lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520 })
+      setMapView({ center: [lng, lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520, focus: true })
     }
     return saved
   }, [addPhoto, stops])

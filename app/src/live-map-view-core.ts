@@ -12,7 +12,7 @@ export function liveFollowView(
   const valid = points.filter(validPoint)
   if (!valid.length) return null
   if (valid.length === 1) {
-    return { center: valid[0], zoom: Math.max(current.zoom, 15), ms: duration }
+    return { center: valid[0], zoom: Math.max(current.zoom, 15), ms: duration, focus: true }
   }
 
   const lngs = valid.map(point => point[0])

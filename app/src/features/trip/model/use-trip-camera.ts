@@ -42,7 +42,7 @@ export function useTripCamera(
     engaging.current = false
     const duration = engage ? 520 : 900
     setMapView(current => liveFollowView(current, livePoints, { ready: true, duration })
-      || { center: live, zoom: engage ? Math.max(current.zoom, 15) : current.zoom, ms: duration })
+      || { center: live, zoom: engage ? Math.max(current.zoom, 15) : current.zoom, ms: duration, focus: true })
   }, [live, livePoints, liveReady, following, setMapView])
 
   const toggleFollow = useCallback(() => {

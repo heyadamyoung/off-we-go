@@ -254,6 +254,30 @@ test('fit the whole trip reveals every stop on the smallest phone viewport', asy
    flew in to street level, and the effect behind it immediately re-issued the
    move carrying the zoom from before the tap. The second one won, so a phone
    that had been panned away crawled sideways and never zoomed. */
+/* Focusing places its subject in the middle of the map you can see rather than
+   the middle of the container. Applying that shift to a camera that is only
+   changing zoom walks the map a little further away on every press. */
+test('zooming does not walk the map away from where it was', async ({ page }) => {
+  await open(page)
+  const still = () => expect.poll(() => page.evaluate(() => !window.__offwegoMap.isMoving())).toBe(true)
+  const centre = () => page.evaluate(() => {
+    const c = window.__offwegoMap.getCenter()
+    return [c.lng, c.lat]
+  })
+
+  const before = await centre()
+  for (let round = 0; round < 3; round += 1) {
+    await page.locator('.wctl .wc').nth(1).click()   // in
+    await still()
+    await page.locator('.wctl .wc').nth(2).click()   // out
+    await still()
+  }
+  const after = await centre()
+
+  expect(Math.abs(after[0] - before[0]), 'the map drifted east or west').toBeLessThan(1e-4)
+  expect(Math.abs(after[1] - before[1]), 'the map drifted north or south').toBeLessThan(1e-4)
+})
+
 test('following the travellers actually zooms in, and then holds still', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)                                   // open() leaves follow off

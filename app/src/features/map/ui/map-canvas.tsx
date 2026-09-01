@@ -238,9 +238,11 @@ const MapCanvas = memo(function MapCanvas({
         Math.abs(map.getZoom() - view.zoom) < 1e-4) return
     map.easeTo({
       center: view.center, zoom: view.zoom, duration: ms, essential: true,
-      // Put the target in the middle of the map you can see, not the middle of
-      // the container — a third of which is behind the chrome on a phone.
-      offset: padding ? paddingOffset(padding) : [0, 0],
+      // A focus goes to the middle of the map you can see, not the middle of the
+      // container — a third of which is behind the chrome on a phone. Anything
+      // else keeps the centre it was given: offsetting a camera that is only
+      // changing zoom walks the map a little further away on every press.
+      offset: padding && view.focus ? paddingOffset(padding) : [0, 0],
     })
   }, [map, view, padding])
 

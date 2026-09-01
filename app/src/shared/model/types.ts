@@ -8,6 +8,11 @@ export interface MapView {
   zoom: number
   ms?: number
   bounds?: [Coordinates, Coordinates]
+  /* This move is going somewhere to be looked at, so it is placed in the middle
+     of the map that is not behind the chrome. Moves that merely keep the camera
+     where it is — a zoom button, the position reported back after a drag — must
+     leave this off, or every one of them shifts the map by the same offset. */
+  focus?: boolean
 }
 
 export interface Stop {
