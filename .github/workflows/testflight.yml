@@ -1,6 +1,21 @@
 name: iOS TestFlight
 
 on:
+  # Only what ends up inside the binary. The server, the tests, the VPS deploy
+  # and the Android project can all change without a beta being any different,
+  # and a build nobody needs still costs the testers a download.
+  push:
+    branches: [main]
+    paths:
+      - 'app/src/**'
+      - 'app/public/**'
+      - 'app/ios/**'
+      - 'app/capacitor.config.json'
+      - 'app/package.json'
+      - 'app/pnpm-lock.yaml'
+      - 'app/vite.config.ts'
+      - 'app/tsconfig.json'
+      - '.github/workflows/testflight.yml'
   workflow_dispatch:
 
 permissions:
@@ -21,6 +36,7 @@ jobs:
       WAYFARE_DOMAIN: offwego.to
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      TESTFLIGHT_GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
     defaults:
       run:
         working-directory: app
@@ -40,6 +56,9 @@ jobs:
 
       - name: Install and synchronize iOS
         run: pnpm install --frozen-lockfile && VITE_API_URL="https://${WAYFARE_DOMAIN}/api" pnpm ios:sync
+
+      - name: Run unit tests
+        run: pnpm test:unit
 
       - name: Install CocoaPods
         run: cd ios/App && pod install
@@ -101,3 +120,28 @@ jobs:
             -authenticationKeyPath "$APP_STORE_CONNECT_KEY_PATH" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+      # Uploading is not delivering: a build sits in App Store Connect until
+      # something hands it to a tester group. Internal groups need no review, so
+      # this step is the whole distance between "uploaded" and "installable".
+      - name: Send the build to the internal testers
+        if: ${{ vars.TESTFLIGHT_GROUPS != '' }}
+        env:
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          IOS_MARKETING_VERSION="$(node scripts/iosMarketingVersion.mjs)"
+          export IOS_MARKETING_VERSION
+          echo "Distributing $IOS_MARKETING_VERSION ($GITHUB_RUN_NUMBER) to: $TESTFLIGHT_GROUPS"
+          if ! command -v fastlane >/dev/null 2>&1; then
+            gem install fastlane --no-document
+          fi
+          fastlane ios distribute_beta
+
+      - name: Say what to do when no group is configured
+        if: ${{ vars.TESTFLIGHT_GROUPS == '' }}
+        run: |
+          echo "::warning::Build $GITHUB_RUN_NUMBER was uploaded but not distributed."
+          echo "Set the TESTFLIGHT_GROUPS repository variable to the name of an internal"
+          echo "TestFlight group (comma-separated for several) and the next build reaches"
+          echo "those testers without a visit to App Store Connect. External groups still"
+          echo "need Apple's beta review."

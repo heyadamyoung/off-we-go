@@ -162,3 +162,27 @@ test('Ad Hoc device input accepts modern and legacy Apple UDIDs without acceptin
     /valid Apple UDID/i,
   );
 });
+
+test('the marketing version comes from the Xcode project, not a second copy of it', async () => {
+  const { readMarketingVersion } = await import('../scripts/iosMarketingVersion.mjs');
+
+  assert.equal(readMarketingVersion('        MARKETING_VERSION = 1.1;'), '1.1');
+  assert.equal(readMarketingVersion('MARKETING_VERSION = 2.10.3;'), '2.10.3');
+  assert.throws(() => readMarketingVersion('CURRENT_PROJECT_VERSION = 7;'), /MARKETING_VERSION/);
+  assert.throws(() => readMarketingVersion(undefined), /MARKETING_VERSION/);
+});
+
+test('the version the beta is filed under is the one the project ships', async () => {
+  const { readMarketingVersion } = await import('../scripts/iosMarketingVersion.mjs');
+  const { readFile } = await import('node:fs/promises');
+
+  const project = await readFile(
+    path.join(appRoot, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj'), 'utf8',
+  );
+  const printed = spawnSync(process.execPath, [
+    path.join(appRoot, 'scripts', 'iosMarketingVersion.mjs'),
+  ], { encoding: 'utf8' });
+
+  assert.equal(printed.status, 0);
+  assert.equal(printed.stdout, readMarketingVersion(project));
+});
