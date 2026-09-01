@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Brandmark } from '../../../shared/ui/brand'
 import Icon from '../../../shared/ui/icon'
 import type { TripView } from '../../../trip-search-core'
@@ -151,6 +151,19 @@ function MoreThisWay({ side }: { side: 'left' | 'right' }) {
 
 /* The one thing on the screen that is happening right now. Clicking it takes
    the map back to the travellers, wherever the map had wandered to. */
+/* Along the bottom of the map, one line: where the day sits, what is happening
+   now, and the map's own controls. On a phone this is a real flex row, so
+   nothing floats at its own height over the middle of the map; above 640px
+   `contents` dissolves the row and each piece keeps the corner it was placed
+   in. */
+export function MapChrome({ children }: { children: ReactNode }) {
+  return (
+    <div className="absolute inset-x-3 bottom-[var(--trip-1)] z-[4] flex items-center gap-2 sm:contents">
+      {children}
+    </div>
+  )
+}
+
 export const NowCapsule = memo(function NowCapsule(
   { text, meta, tone, onClick }: {
     text: string
