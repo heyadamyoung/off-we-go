@@ -452,11 +452,13 @@ test('the settings sheet opens on a tab, and the tab is in the URL', async ({ pa
   await expect(page).toHaveURL(/sheet=settings/)
   await expect(page.getByRole('dialog')).toBeVisible()
 
-  await page.getByRole('button', { name: 'People', exact: true }).last().click()
+  await page.locator('.dlg').getByRole('button', { name: 'People', exact: true }).click()
   await expect(page).toHaveURL(/tab=people/)
   await expect(page.locator('.dlg').getByPlaceholder('them@example.com')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Location' }).click()
+  // Scoped and exact: role names match by substring, and any copy anywhere on
+  // the screen that mentions a location would otherwise answer to this.
+  await page.locator('.dlg').getByRole('button', { name: 'Location', exact: true }).click()
   await expect(page).toHaveURL(/tab=phones/)
 })
 
