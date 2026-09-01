@@ -26,18 +26,19 @@ function AttractionCard({ poi, canEdit, inTrip, onAdd, onClose }: any) {
   const source = more?.source || `https://en.wikipedia.org/?curid=${poi.id}`
 
   return (
-    <div className="acard sheet rise absolute bottom-[var(--trip-1)] left-1/2 z-[9] w-[320px] -translate-x-1/2
-                    overflow-hidden rounded-2xl">
+    <div className="acard sheet rise absolute bottom-[var(--trip-1)] left-1/2 z-[9] flex w-[320px]
+                    max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-1)_-_12px)] -translate-x-1/2 flex-col
+                    overflow-hidden rounded-2xl max-sm:inset-x-4 max-sm:w-auto max-sm:translate-x-0">
       <button className="ax absolute right-2.5 top-2.5 z-10 grid size-7 place-items-center rounded-lg
                          bg-black/60 text-white" onClick={onClose} title="Close">
         <Icon n="x" s={14} />
       </button>
       {picture && (
-        <div className="apic h-[132px] overflow-hidden bg-raised2">
+        <div className="apic h-[132px] flex-none overflow-hidden bg-raised2">
           <img src={picture} alt="" decoding="async" className="size-full object-cover" />
         </div>
       )}
-      <div className="abody flex flex-col gap-1.5 p-4">
+      <div className="abody flex flex-col gap-1.5 overflow-y-auto p-4">
         <b className="text-[16px] font-extrabold tracking-[-.01em]">{poi.n}</b>
         <span className="kind text-[11.5px] font-semibold text-accent">{poi.d}</span>
         <p className="m-0 line-clamp-4 text-xs leading-relaxed text-muted">{note}</p>

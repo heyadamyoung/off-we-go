@@ -146,6 +146,41 @@ test('a toast stays horizontally centred throughout its entrance animation', asy
    the title from the left, the actions from the right — which on a phone put
    twelve buttons straight through the trip name and pushed the account menu off
    the screen. Nothing up there may overlap or leave the viewport. */
+/* The detail card is anchored to the bottom of a phone screen and grew upwards
+   with its own text, so a stop with a real note — a flight with a terminal
+   change in it, say — pushed its header, and the only button that closes it,
+   up behind the top bar. There was then no way back to the map. */
+test('a long note cannot push the detail card off the top of a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+
+  await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
+  await expect(page.locator('.detailcard')).toBeVisible()
+  await page.locator('.detailcard').getByTitle('Edit this stop').click()
+  await page.locator('.editor textarea').fill(
+    'Air Canada Rouge AC 1924, ref CL7GQW (booked under a different email). Lands Terminal 1: '
+    + 'collect bags, take the Terminal Link train to Terminal 3, re-check with the next airline — '
+    + 'separate tickets, nothing is through-checked. They want check-in three hours before '
+    + 'departure, so there is no time for a sit-down meal between the two.')
+  await page.locator('.editor .btn.pri').click()
+  await expect(page.locator('.editor')).toHaveCount(0)
+
+  await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
+  const card = page.locator('.detailcard')
+  await expect(card).toBeVisible()
+
+  // Below the bar, not merely on the screen: the bar is opaque, so a card that
+  // starts underneath it hides its own header just as completely.
+  const bar = await page.locator('header').first().boundingBox()
+  const box = await card.boundingBox()
+  expect(box.y, 'the card starts behind the top bar').toBeGreaterThanOrEqual(bar.y + bar.height)
+
+  const close = card.getByRole('button', { name: 'Close' })
+  await expect(close, 'the only way back to the map is off the screen').toBeInViewport()
+  await close.click()
+  await expect(card).toHaveCount(0)
+})
+
 test('the trip chrome stays clear of itself on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)

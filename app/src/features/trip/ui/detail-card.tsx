@@ -29,8 +29,13 @@ export default function DetailCard(props: DetailCardProps) {
     <div className={'detailcard sheet rise absolute top-[var(--trip-top)] z-[7] flex w-[360px] flex-col ' +
       'overflow-hidden ' +
       'rounded-[18px] transition-[left] max-lg:inset-x-4 max-lg:bottom-[var(--trip-1)] max-lg:top-auto ' +
+      /* Anchored to the bottom, it grew upwards with its own text: a stop with
+         a long note pushed its header — and the only way to close it — up
+         behind the top bar. It gets the room between the chrome and the day
+         bar, and the body scrolls inside that. */
+      'max-lg:max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-1)_-_12px)] ' +
       'max-lg:w-auto ' + (props.shifted ? 'left-[492px] max-lg:left-4' : 'left-7')}>
-      <div className="relative h-[170px] flex-none overflow-hidden bg-raised2">
+      <div className="relative h-[170px] flex-none overflow-hidden bg-raised2 max-sm:h-[128px]">
         {photo || stop?.src
           ? <Img item={(photo || stop)!} w={720} h={340} eager className="size-full object-cover" />
           : <span className="grid size-full place-items-center text-faint opacity-50">
