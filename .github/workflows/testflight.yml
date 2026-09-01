@@ -122,26 +122,9 @@ jobs:
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
 
       # Uploading is not delivering: a build sits in App Store Connect until
-      # something hands it to a tester group. Internal groups need no review, so
-      # this step is the whole distance between "uploaded" and "installable".
-      - name: Send the build to the internal testers
-        if: ${{ vars.TESTFLIGHT_GROUPS != '' }}
+      # something hands it to a tester group, and nothing here ever did — which
+      # is how every upload succeeded while the testers stayed on an old build.
+      - name: Release the build to the testers
         env:
           APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
-        run: |
-          IOS_MARKETING_VERSION="$(node scripts/iosMarketingVersion.mjs)"
-          export IOS_MARKETING_VERSION
-          echo "Distributing $IOS_MARKETING_VERSION ($GITHUB_RUN_NUMBER) to: $TESTFLIGHT_GROUPS"
-          if ! command -v fastlane >/dev/null 2>&1; then
-            gem install fastlane --no-document
-          fi
-          fastlane ios distribute_beta
-
-      - name: Say what to do when no group is configured
-        if: ${{ vars.TESTFLIGHT_GROUPS == '' }}
-        run: |
-          echo "::warning::Build $GITHUB_RUN_NUMBER was uploaded but not distributed."
-          echo "Set the TESTFLIGHT_GROUPS repository variable to the name of an internal"
-          echo "TestFlight group (comma-separated for several) and the next build reaches"
-          echo "those testers without a visit to App Store Connect. External groups still"
-          echo "need Apple's beta review."
+        run: node scripts/testflightRelease.mjs

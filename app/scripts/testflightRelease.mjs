@@ -1,0 +1,123 @@
+/* Uploading a build is not releasing it. Until something attaches it to a
+   tester group it sits in App Store Connect and every tester keeps whatever
+   they last installed — which is how a beta ends up fifteen commits behind
+   while every upload reports success. This does the attaching, and says what
+   it found, so the run itself answers "why can nobody see the new one?". */
+import { sign as signBytes } from 'node:crypto';
+
+const API = 'https://api.appstoreconnect.apple.com/v1';
+
+const base64url = input => Buffer.from(input)
+  .toString('base64')
+  .replaceAll('+', '-')
+  .replaceAll('/', '_')
+  .replaceAll('=', '');
+
+/** A token App Store Connect will accept, good for twenty minutes. */
+export function buildToken({ keyId, issuerId, privateKey, now = Date.now() }) {
+  if (!keyId || !issuerId || !privateKey) throw new Error('Expected an App Store Connect API key');
+  const issued = Math.floor(now / 1000);
+  const header = base64url(JSON.stringify({ alg: 'ES256', kid: keyId, typ: 'JWT' }));
+  const payload = base64url(JSON.stringify({
+    iss: issuerId, iat: issued, exp: issued + 20 * 60, aud: 'appstoreconnect-v1',
+  }));
+  const signature = signBytes('sha256', Buffer.from(`${header}.${payload}`),
+    { key: privateKey, dsaEncoding: 'ieee-p1363' });
+  return `${header}.${payload}.${base64url(signature)}`;
+}
+
+/** Which groups to hand the build to: the ones named, or every internal one. */
+export function chooseGroups(groups, wanted = []) {
+  const named = wanted.map(name => name.trim().toLowerCase()).filter(Boolean);
+  const all = (groups || []).map(group => ({
+    id: group.id,
+    name: group.attributes?.name || '',
+    internal: !!group.attributes?.isInternalGroup,
+  }));
+  if (!named.length) return all.filter(group => group.internal);
+  return all.filter(group => named.includes(group.name.toLowerCase()));
+}
+
+/** The build this run produced, if App Store Connect has finished with it. */
+export function findBuild(builds, buildNumber) {
+  return (builds || []).find(build => String(build.attributes?.version) === String(buildNumber)) || null;
+}
+
+export const isReady = build => build?.attributes?.processingState === 'VALID';
+
+async function api(path, token, options = {}) {
+  const response = await fetch(path.startsWith('http') ? path : `${API}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  if (response.status === 204) return null;
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = body?.errors?.map(error => error.detail || error.title).join('; ');
+    throw new Error(`${options.method || 'GET'} ${path} → ${response.status}${detail ? `: ${detail}` : ''}`);
+  }
+  return body;
+}
+
+const wait = ms => new Promise(resolve => { setTimeout(resolve, ms); });
+
+async function main() {
+  const token = buildToken({
+    keyId: process.env.APP_STORE_CONNECT_KEY_ID,
+    issuerId: process.env.APP_STORE_CONNECT_ISSUER_ID,
+    privateKey: process.env.APP_STORE_CONNECT_API_KEY_P8,
+  });
+  const bundleId = process.env.IOS_BUNDLE_ID;
+  const buildNumber = process.env.GITHUB_RUN_NUMBER;
+  const wanted = (process.env.TESTFLIGHT_GROUPS || '').split(',').filter(Boolean);
+
+  const apps = await api(`/apps?filter[bundleId]=${encodeURIComponent(bundleId)}`, token);
+  const app = apps?.data?.[0];
+  if (!app) throw new Error(`No app in App Store Connect for ${bundleId}`);
+
+  // Processing takes minutes, and a build cannot join a group until it is done.
+  let build = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const builds = await api(`/builds?filter[app]=${app.id}&limit=200`, token);
+    build = findBuild(builds?.data, buildNumber);
+    if (isReady(build)) break;
+    const state = build?.attributes?.processingState || 'not visible yet';
+    console.log(`build ${buildNumber}: ${state}`);
+    await wait(30_000);
+  }
+  if (!isReady(build)) {
+    throw new Error(`Build ${buildNumber} did not finish processing; it cannot be distributed yet`);
+  }
+
+  const groups = await api(`/apps/${app.id}/betaGroups?limit=200`, token);
+  const chosen = chooseGroups(groups?.data, wanted);
+  const available = (groups?.data || [])
+    .map(group => `${group.attributes?.name}${group.attributes?.isInternalGroup ? ' (internal)' : ' (external)'}`);
+  console.log(`groups on this app: ${available.join(', ') || 'none'}`);
+
+  if (!chosen.length) {
+    console.log('::warning::No group to distribute to, so no tester will see this build.');
+    console.log('Create an internal TestFlight group and add your testers to it, or set the');
+    console.log('TESTFLIGHT_GROUPS repository variable to the group you want.');
+    return;
+  }
+
+  for (const group of chosen) {
+    await api(`/betaGroups/${group.id}/relationships/builds`, token, {
+      method: 'POST',
+      body: JSON.stringify({ data: [{ type: 'builds', id: build.id }] }),
+    });
+    console.log(`build ${buildNumber} → ${group.name}${group.internal ? '' : ' (external: Apple review still applies)'}`);
+  }
+}
+
+if (process.argv[1] && process.argv[1].endsWith('testflightRelease.mjs')) {
+  main().catch(error => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
+}

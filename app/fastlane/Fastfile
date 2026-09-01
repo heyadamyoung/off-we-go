@@ -3,32 +3,6 @@ require 'json'
 default_platform(:ios)
 
 platform :ios do
-  desc 'Hand the build that was just uploaded to the internal TestFlight groups'
-  lane :distribute_beta do
-    api_key = app_store_connect_api_key(
-      key_id: ENV.fetch('APP_STORE_CONNECT_KEY_ID'),
-      issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID'),
-      key_content: ENV.fetch('APP_STORE_CONNECT_API_KEY_P8')
-    )
-    groups = ENV.fetch('TESTFLIGHT_GROUPS').split(',').map(&:strip).reject(&:empty?)
-    raise 'TESTFLIGHT_GROUPS names no group' if groups.empty?
-
-    # The build is already in App Store Connect; this only waits for Apple to
-    # finish processing it and then attaches it to the groups. Internal only:
-    # external testers need Apple's beta review, which no pipeline can grant.
-    upload_to_testflight(
-      api_key: api_key,
-      app_identifier: ENV.fetch('IOS_BUNDLE_ID'),
-      app_version: ENV.fetch('IOS_MARKETING_VERSION'),
-      build_number: ENV.fetch('GITHUB_RUN_NUMBER'),
-      distribute_only: true,
-      groups: groups,
-      distribute_external: false,
-      notify_external_testers: false,
-      wait_processing_timeout_duration: 1800
-    )
-  end
-
   desc 'Register the private test devices and refresh the Ad Hoc profile'
   lane :refresh_adhoc_profile do
     api_key = app_store_connect_api_key(
