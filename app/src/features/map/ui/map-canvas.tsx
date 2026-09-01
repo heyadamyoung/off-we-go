@@ -289,6 +289,7 @@ const MapCanvas = memo(function MapCanvas({
     const out = []
     byStop.forEach((items, stopId) => {
       const s = stops.find(x => x.id === stopId) || items[0]
+      items.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
       out.push({ key: 'g' + stopId, lng: s.lng, lat: s.lat, items })
     })
     loose.forEach(p => out.push({ key: p.id, lng: p.lng, lat: p.lat, items: [p] }))

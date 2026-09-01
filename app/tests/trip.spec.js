@@ -369,6 +369,43 @@ test('photo upload previews multiple Apple Photos selections and lets them be re
   await expect(page.getByRole('button', { name: 'Add 2 to the map' })).toBeEnabled()
 })
 
+test('uploading a geotagged iPhone photo brings its map pin into view', async ({ page }) => {
+  await open(page)
+  await page.locator('button[title="Add a photo"]').click()
+  await page.locator('.modal input[type="file"]').evaluate(input => {
+    const file = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'edinburgh.jpg', {
+      type: 'image/jpeg',
+    })
+    Object.defineProperty(file, 'wayfareMetadata', {
+      value: { lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z' },
+    })
+    const transfer = new DataTransfer()
+    transfer.items.add(file)
+    input.files = transfer.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+
+  await page.getByRole('button', { name: 'Add 1 to the map' }).click()
+  await expect(page.locator('.modal')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => {
+    const center = window.__wayfareMap.getCenter()
+    return [Number(center.lng.toFixed(4)), Number(center.lat.toFixed(4))]
+  })).toEqual([-3.1883, 55.9533])
+})
+
+test('a newly uploaded photo is visible on top of an existing map stack', async ({ page }) => {
+  await open(page)
+  await page.locator('button[title="Add a photo"]').click()
+  await page.locator('.modal input[type="file"]').setInputFiles({
+    name: 'foodhallen-now.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+  })
+  await page.getByRole('button', { name: 'Add 1 to the map' }).click()
+
+  const updatedStack = page.locator('.mstack[title="3 photos"]')
+  await expect(updatedStack).toHaveCount(1)
+  await expect(updatedStack.locator('.sh img').first()).toHaveAttribute('src', /^blob:/)
+})
+
 test('editing a caption shows immediately in the open viewer', async ({ page }) => {
   await open(page)
   await page.locator('.tnav button[title="photos"]').click()

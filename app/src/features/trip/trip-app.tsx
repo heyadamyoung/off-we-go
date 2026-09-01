@@ -94,6 +94,18 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
     changePhoto, removePhoto, removeComment,
   } = useTripPhotos({ data, tripId, me, toast, setSelected })
 
+  const addPhotoToMap = useCallback(async input => {
+    const saved = await addPhoto(input)
+    const stop = stops.find(value => value.id === saved.stopId)
+    const lng = saved.lng ?? stop?.lng
+    const lat = saved.lat ?? stop?.lat
+    if (lng != null && lat != null) {
+      setTab('map'); setFollowing(false)
+      setView({ center: [lng, lat], zoom: Math.max(viewRef.current.zoom, 15), ms: 520 })
+    }
+    return saved
+  }, [addPhoto, stops])
+
   const ordered = useMemo(
     () => [...stops].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)), [stops])
   const days = useMemo(() => [...new Set(ordered.map(s => s.day).filter(Boolean))], [ordered])
@@ -327,7 +339,7 @@ export default function TripApp({ data, onReload, onHome }: TripAppProps) {
                              viewers={viewers}
                              appLink={absoluteTripHref(trip.slug, window.location.origin,
                                String(import.meta.env.VITE_API_URL || ''))} />}
-      {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhoto} live={live} stops={stops} toast={toast} />}
+      {upload && <UploadModal onClose={() => setUpload(false)} onAdd={addPhotoToMap} live={live} stops={stops} toast={toast} />}
       <ToastNoticeView notice={notice} />
     </div>
   )

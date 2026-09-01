@@ -66,6 +66,7 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
       photoUploadMetadata(input, { by: me.name, nextSequence: photos.length }))
     setPhotos(list => [...list, saved])
     if (input.stopId) setSelected(input.stopId)
+    return saved
   }, [tripId, me.name, photos.length])
 
   const changePhoto = useCallback(async (id: Id, fields: Partial<TripPhoto>) => {
