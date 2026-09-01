@@ -54,6 +54,24 @@ const STYLE: any = {
   },
 }
 
+/* MapLibre closes the top and bottom of the globe with a fan of the topmost
+   and bottommost rows of the highest raster layer, and Web Mercator has no
+   tiles past 85° to fill it: over Blue Marble the north pole comes out as a
+   disc of Arctic Ocean, which reads as a hole punched in the planet. This tile
+   is transparent apart from those rows, so it changes nothing anywhere else
+   and caps both poles with ice. Three rows rather than one: at a glancing
+   angle a hairline cap does not quite cover the dark fan behind it. */
+function iceCap(): string {
+  const tile = document.createElement('canvas')
+  tile.width = 256
+  tile.height = 256
+  const paint = tile.getContext('2d')!
+  paint.fillStyle = '#E8EFF5'
+  paint.fillRect(0, 0, 256, 3)
+  paint.fillRect(0, 253, 256, 3)
+  return tile.toDataURL()
+}
+
 const stillness = () => typeof window !== 'undefined'
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -112,7 +130,14 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
   useEffect(() => {
     if (!map) return
     const add = () => {
-      if (map.getSource('planned')) return
+      if (map.getSource('ice')) return
+      map.addSource('ice', {
+        type: 'raster', tiles: [iceCap()], tileSize: 256, minzoom: 0, maxzoom: 0,
+      })
+      map.addLayer({
+        id: 'ice-cap', type: 'raster', source: 'ice',
+        paint: { 'raster-resampling': 'nearest', 'raster-fade-duration': 0 },
+      })
       map.addSource('planned', { type: 'geojson', data: legsRef.current.planned })
       map.addSource('walked', { type: 'geojson', data: legsRef.current.walked })
       map.addLayer({
@@ -142,23 +167,6 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
     map.on('style.load', add)
     return () => { map.off('style.load', add) }
   }, [map])
-
-  /* MapLibre closes the top and bottom of the globe with a fan painted in the
-     background colour, and Web Mercator has no tiles past 85° to cover it. Sea
-     while the planet loads, so it is not briefly a white ball; ice once the
-     imagery is in, which is what is actually up there. */
-  useEffect(() => {
-    if (!map) return
-    const freeze = () => map.setPaintProperty('deep', 'background-color', '#D9E4EC')
-    if (map.loaded()) freeze()
-    else map.once('load', freeze)
-  }, [map])
-
-  useEffect(() => {
-    if (!map) return
-    map.getSource('walked')?.setData(legs.walked)
-    map.getSource('planned')?.setData(legs.planned)
-  }, [map, legs])
 
   /* ---- today's weather --------------------------------------------------
      Fetched after the planet is up rather than with it: the frame is a couple
