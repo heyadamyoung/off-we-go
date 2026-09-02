@@ -42,6 +42,30 @@ async function open(page) {
   await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
 }
 
+/* Somewhere on the map with nothing on it. Clicking a fixed fraction of the
+   canvas was a bet on where the pins happened to be, and the bet came off
+   until the camera started framing into the visible band and moved them: the
+   click landed on a marker, selected it, and no editor opened. */
+async function emptyMapPoint(page) {
+  const box = await page.locator('.mapcanvas').boundingBox()
+  const spot = await page.evaluate(({ x, y, width, height }) => {
+    const taken = [...document.querySelectorAll('.mstop, .mstack, .mme, .mfind, .glass, .sheet')]
+      .map(el => el.getBoundingClientRect())
+    const clear = (px, py) => !taken.some(r =>
+      px > r.x - 24 && px < r.right + 24 && py > r.y - 24 && py < r.bottom + 24)
+    for (let fy = 0.35; fy <= 0.65; fy += 0.05) {
+      for (let fx = 0.25; fx <= 0.75; fx += 0.05) {
+        const px = x + width * fx
+        const py = y + height * fy
+        if (clear(px, py)) return { x: px, y: py }
+      }
+    }
+    return null
+  }, box)
+  if (!spot) throw new Error('no empty patch of map to click')
+  return spot
+}
+
 const allDays = page => page.locator('.fdays button').first().click()
 const cardTitles = page => page.locator('.fcard .t').allTextContents()
 const stopTitles = async page =>
@@ -112,8 +136,8 @@ test('a successful action shows a toast with a check mark', async ({ page }) => 
   await page.locator('.dlg').getByRole('button', { name: 'Close', exact: true }).last().click()
 
   await page.getByRole('button', { name: 'Place a pin' }).click()
-  const box = await page.locator('.mapcanvas').boundingBox()
-  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.4)
+  const spot = await emptyMapPoint(page)
+  await page.mouse.click(spot.x, spot.y)
   await expect(page.locator('.editor')).toBeVisible()
 })
 
@@ -359,8 +383,8 @@ test('adding a stop creates exactly one', async ({ page }) => {
   await page.getByRole('button', { name: 'Edit the itinerary' }).click()
   await expect(page.locator('.edithint')).toBeVisible()
 
-  const box = await page.locator('.mapcanvas').boundingBox()
-  await page.mouse.click(box.x + box.width * 0.62, box.y + box.height * 0.45)
+  const spot = await emptyMapPoint(page)
+  await page.mouse.click(spot.x, spot.y)
   await expect(page.locator('.editor')).toBeVisible()
   await expect(page.locator('.editor .eh b')).toHaveText('New stop')
 
