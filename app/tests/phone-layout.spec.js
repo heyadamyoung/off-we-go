@@ -114,6 +114,36 @@ const STATES = [
   }],
 ]
 
+/* Edit mode unlocks dragging pins, drawing the route and searching for places,
+   and every one of those controls is on a hint bar that hides below 768px. What
+   was left of the pencil on a phone was "tap the map to add a stop" — which is
+   what the pin beside it already says, and says out loud. */
+test('the pencil is not offered where the things it unlocks are hidden', async ({ page }) => {
+  const pencil = () => page.getByRole('button', { name: 'Edit the itinerary' })
+  const pin = () => page.getByRole('button', { name: 'Place a pin' })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
+  await expect(pencil(), 'the pencil is on a phone, where it can do almost none of its job')
+    .toBeHidden()
+  await expect(pin(), 'the one control that does add a stop on a phone has gone too')
+    .toBeVisible()
+
+  await page.setViewportSize({ width: 1024, height: 800 })
+  await page.waitForTimeout(300)
+  await expect(pencil(), 'the pencil is missing where the hint bar it belongs to is shown')
+    .toBeVisible()
+
+  // And it may not vanish while it is on, or there is no way back out.
+  await pencil().click()
+  await expect(page.locator('.edithint')).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(300)
+  await expect(page.getByRole('button', { name: 'Done editing' }),
+    'edit mode is on with no way to turn it off').toBeVisible()
+})
+
 /* A box that scrolls sideways computes its other axis to auto as well, so every
    horizontal strip in the app could also be dragged up and down — and the top
    chrome ended up with its buttons half out of their own bar. */

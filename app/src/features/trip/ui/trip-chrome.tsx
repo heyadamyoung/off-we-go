@@ -53,7 +53,13 @@ interface ClusterProps {
 
 export const TripCluster = memo(function TripCluster(props: ClusterProps) {
   const night = props.theme !== 'light'
-  const actions: Array<[string, string, string, boolean, () => void]> = [
+  /* The last of each row is what it may not appear on: edit mode unlocks
+     dragging pins, drawing the route and searching for places, and every one of
+     those controls lives on a hint bar that hides below 768px — so on a phone
+     the pencil silently became "tap the map to add a stop", which is the pin
+     beside it with a different picture on it. It stays visible while edit mode
+     is on, or there would be no way to leave. */
+  const actions: Array<[string, string, string, boolean, () => void, string?]> = [
     ['settings', 'Trip settings', 'cog', false, props.onSettings],
     ['pin', 'Place a pin', 'pinplus', props.placing, props.onPlace],
     ['attractions', props.attractions ? 'Hide attractions' : 'Show attractions', 'museum',
@@ -64,7 +70,7 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
   ]
   if (props.canEdit) {
     actions.unshift(['edit', props.editing ? 'Done editing' : 'Edit the itinerary', 'pencil',
-      props.editing, props.onEdit])
+      props.editing, props.onEdit, props.editing ? '' : 'max-md:hidden'])
   }
   const { strip, more, measure } = useScrollEdges()
   // The edit button appears and disappears with the trip's permissions, which
@@ -94,9 +100,9 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
           </button>
         ))}
         <span className="mx-1 h-5 w-px flex-none bg-line2" />
-        {actions.map(([key, label, icon, on, run]) => (
+        {actions.map(([key, label, icon, on, run, hide]) => (
           <button key={key} data-tip={label} aria-label={label}
-                  className={'tb' + (on ? ' on' : '')} onClick={run}>
+                  className={'tb' + (on ? ' on' : '') + (hide ? ' ' + hide : '')} onClick={run}>
             <Icon n={icon} s={18} />
           </button>
         ))}
