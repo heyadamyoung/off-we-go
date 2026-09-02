@@ -233,6 +233,25 @@ test('a return trip can revisit co-located first and final stops in sequence', (
   assert.deepEqual(progress.visitedStopIds, ['outbound', 'museum', 'return'])
 })
 
+test('nearby sequential stops advance when GPS is clearly closer to the next stop', () => {
+  const stops = [
+    { id: 'cafe', name: 'Cafe', lng: 0, lat: 0, seq: 0 },
+    { id: 'gallery', name: 'Gallery', lng: 0.0009, lat: 0, seq: 1 },
+  ]
+  const fixes = [
+    { deviceId: 'phone-1', lng: 0, lat: 0, accuracy: 8, speed: 0,
+      at: new Date('2026-09-01T17:58:00.000Z') },
+    { deviceId: 'phone-1', lng: 0.0009, lat: 0, accuracy: 8, speed: 0,
+      at: new Date('2026-09-01T17:59:45.000Z') },
+  ]
+
+  const progress = deriveLiveStopProgress({ stops, fixes, now: NOW })
+
+  assert.equal(progress.state, 'arrived')
+  assert.equal(progress.currentStop?.id, 'gallery')
+  assert.deepEqual(progress.visitedStopIds, ['cafe', 'gallery'])
+})
+
 test('a multi-day trip keeps GPS visit evidence for the server retention window', () => {
   const stops = [
     { id: 'first', name: 'First', lng: 0, lat: 0, seq: 0 },

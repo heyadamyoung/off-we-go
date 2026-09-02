@@ -88,6 +88,13 @@ export function deriveLiveStopProgress(
       const distance = metres([fix.lng, fix.lat], [stop.lng, stop.lat])
       return distance - accuracy > ARRIVAL_RADIUS_METRES
     }
+    const clearlyCloserTo = (fix: LiveFix, target: Stop, previous: Stop) => {
+      const accuracy = accuracyOf(fix)
+      if (accuracy == null) return false
+      const targetDistance = metres([fix.lng, fix.lat], [target.lng, target.lat])
+      const previousDistance = metres([fix.lng, fix.lat], [previous.lng, previous.lat])
+      return targetDistance + accuracy < previousDistance - accuracy
+    }
 
     /* GPS advances the itinerary as a cursor, never by globally picking whichever
        stop happens to be closest. A later stop cannot skip earlier stops, and a
@@ -100,8 +107,10 @@ export function deriveLiveStopProgress(
       const fix = sameDevice[index]
       const target = orderedStops[targetIndex]
       if (!targetArmed) {
-        if (confidentlyOutside(fix, target)) targetArmed = true
-        continue
+        const previous = visitEvents[visitEvents.length - 1]?.stop
+        targetArmed = confidentlyOutside(fix, target)
+          || !!previous && clearlyCloserTo(fix, target, previous)
+        if (!targetArmed) continue
       }
       const distance = metres([fix.lng, fix.lat], [target.lng, target.lat])
       if (!canArrive(fix, distance, index)) continue
