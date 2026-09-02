@@ -114,6 +114,37 @@ const STATES = [
   }],
 ]
 
+/* A box that scrolls sideways computes its other axis to auto as well, so every
+   horizontal strip in the app could also be dragged up and down — and the top
+   chrome ended up with its buttons half out of their own bar. */
+test('the strips that scroll sideways do not also scroll up and down', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
+  await page.waitForTimeout(1500)
+
+  const strips = await page.evaluate(() => {
+    const found = [
+      ['the action strip', document.querySelector('.tb')?.parentElement],
+      ['the day chips', document.querySelector('.fdays')],
+      ['the card row', document.querySelector('.fcard')?.parentElement],
+    ]
+    return found.map(([what, el]) => {
+      if (!el) return { what, missing: true }
+      el.scrollTop = 60
+      const moved = el.scrollTop
+      el.scrollTop = 0
+      return { what, moved, spare: el.scrollHeight - el.clientHeight }
+    })
+  })
+
+  for (const strip of strips) {
+    expect(strip.missing, `${strip.what} is not there to check`).toBeUndefined()
+    expect(strip.moved, `${strip.what} scrolled vertically`).toBe(0)
+    expect(strip.spare, `${strip.what} has content hanging below it`).toBeLessThanOrEqual(0)
+  }
+})
+
 for (const [phone, width, height] of PHONES) {
   test(`nothing sticks out or hides from a tap on ${phone}`, async ({ page }) => {
     await page.setViewportSize({ width, height })

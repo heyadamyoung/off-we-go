@@ -49,6 +49,10 @@ export function findBuild(builds, buildNumber) {
 
 export const isReady = build => build?.attributes?.processingState === 'VALID';
 
+/* Interrupting someone is opt-in. Anything but a plain "true" means the build
+   goes out quietly and waits to be noticed. */
+export const shouldNotify = value => String(value ?? '').trim().toLowerCase() === 'true';
+
 async function api(path, token, options = {}) {
   const response = await fetch(path.startsWith('http') ? path : `${API}${path}`, {
     ...options,
@@ -96,6 +100,27 @@ async function main() {
   if (!isReady(build)) {
     throw new Error(`Build ${buildNumber} did not finish processing; it cannot be distributed yet`);
   }
+
+  /* Every push that changes the app ships a build, and Apple tells the testers
+     about each one. Ten fixes in an evening is ten notifications on the phones
+     of people who did not ask to be paged — so the build goes out quietly and
+     TestFlight shows it as an update when they next open it. Set
+     TESTFLIGHT_NOTIFY=true when a build is worth interrupting someone for. */
+  const detail = await api(`/builds/${build.id}/buildBetaDetail`, token).catch(() => null);
+  const notify = shouldNotify(process.env.TESTFLIGHT_NOTIFY);
+  if (detail?.data?.id && detail.data.attributes?.autoNotifyEnabled !== notify) {
+    await api(`/buildBetaDetails/${detail.data.id}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        data: {
+          type: 'buildBetaDetails',
+          id: detail.data.id,
+          attributes: { autoNotifyEnabled: notify },
+        },
+      }),
+    }).catch(error => console.log(`could not set notifications: ${error.message}`));
+  }
+  console.log(`testers ${notify ? 'will be notified' : 'will not be notified — it appears as an update'}`);
 
   const groups = await api(`/apps/${app.id}/betaGroups?limit=200`, token);
   const all = groups?.data || [];

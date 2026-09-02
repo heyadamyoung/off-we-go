@@ -22,7 +22,9 @@ permissions:
 
 concurrency:
   group: off-we-go-testflight
-  cancel-in-progress: false
+  # A flurry of pushes should leave one build, not five. The last one wins;
+  # the ones it overtakes were never going to be installed by anybody.
+  cancel-in-progress: true
 
 jobs:
   archive-and-upload:
@@ -36,6 +38,8 @@ jobs:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       TESTFLIGHT_GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
+      # Off by default: a build an evening is fine, ten notifications is not.
+      TESTFLIGHT_NOTIFY: ${{ vars.TESTFLIGHT_NOTIFY }}
     defaults:
       run:
         working-directory: app

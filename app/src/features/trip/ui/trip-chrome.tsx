@@ -80,8 +80,12 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
     <div className="glass relative flex min-w-0 items-center rounded-xl p-1
                     max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none
                     max-sm:backdrop-blur-none">
+      {/* overflow-y-hidden with it: a box that scrolls on one axis computes the
+          other to auto, so the strip could be dragged up and down as well as
+          across — and a row of buttons scrolled half out of its own bar. */}
       <div ref={strip} className="flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto
-                      max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
+                      max-sm:[overflow-y:clip] max-sm:[scrollbar-width:none]
+                      max-sm:[&::-webkit-scrollbar]:hidden">
         {VIEWS.map(([key, label, icon]) => (
           <button key={key} data-tip={label} aria-label={label} title={key}
                   className={'tb' + (props.view === key ? ' active' : '')}

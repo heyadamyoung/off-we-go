@@ -225,6 +225,11 @@
     color: var(--c-ink); opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 30;
   }
   .tb:hover::after { opacity: 1 }
+  /* No hover on a phone, so the tooltip never shows — but it still hangs below
+     its button, and a scrolling strip counts that as content to scroll to. */
+  @media (max-width: 639px) {
+    .tb[data-tip]::after { content: none }
+  }
 
   .avatar {
     width: 28px; height: 28px; border-radius: 50%; flex: none;

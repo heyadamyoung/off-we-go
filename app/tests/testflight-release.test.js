@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
 import test from 'node:test'
-import { buildToken, chooseGroups, findBuild, isReady } from '../scripts/testflightRelease.mjs'
+import { buildToken, chooseGroups, findBuild, isReady, shouldNotify } from '../scripts/testflightRelease.mjs'
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
 
@@ -62,4 +62,15 @@ test('the build this run made is found by its number, and only when processed', 
   assert.equal(isReady(findBuild(builds, '9')), true)
   assert.equal(isReady(findBuild(builds, '10')), false, 'a processing build cannot join a group')
   assert.equal(findBuild(builds, '11'), null)
+})
+
+/* Ten fixes in an evening is ten builds, and Apple pages every tester for each
+   one. Quiet is the default; interrupting people is the thing you ask for. */
+test('a build only interrupts the testers when something asks it to', () => {
+  assert.equal(shouldNotify('true'), true)
+  assert.equal(shouldNotify(' TRUE '), true)
+  assert.equal(shouldNotify(''), false)
+  assert.equal(shouldNotify(undefined), false)
+  assert.equal(shouldNotify('false'), false)
+  assert.equal(shouldNotify('yes'), false, 'only a plain true, so a stray value is not a page')
 })

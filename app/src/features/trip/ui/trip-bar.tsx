@@ -38,7 +38,8 @@ const TripBar = memo(function TripBar({
           so below 640px they take a line each instead of splitting one. */}
       <div className="flex items-center justify-between gap-4 px-4 pb-1.5 pt-2.5
                       max-sm:flex-col max-sm:items-stretch max-sm:gap-1.5 max-sm:px-3 max-sm:pt-2">
-        <div ref={chips} className="fdays flex items-center gap-1.5 overflow-x-auto pr-10 max-sm:pr-6
+        <div ref={chips} className="fdays flex items-center gap-1.5 overflow-x-auto overflow-y-hidden
+                        pr-10 max-sm:pr-6
                         [mask-image:linear-gradient(to_right,#000_calc(100%-40px),transparent)]
                         [scrollbar-width:none]">
           <button className={'chip' + (day === ALL_DAYS ? ' sel' : '')}
@@ -63,8 +64,8 @@ const TripBar = memo(function TripBar({
                  value={query} onChange={event => onQuery(event.target.value)} />
         </label>
       </div>
-      <div className="flex flex-1 items-stretch gap-2.5 overflow-x-auto px-4 pb-3.5 pt-1.5
-                      max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5">
+      <div className="flex flex-1 items-stretch gap-2.5 overflow-x-auto overflow-y-hidden px-4
+                      pb-3.5 pt-1.5 max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5">
         {items.length ? items.map((item, index) => (
           <Card key={item.id} item={item} eager={index < 5}
                 selected={selected === item.id} onSelect={() => onSelect(item)} />
