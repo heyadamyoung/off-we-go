@@ -1,19 +1,18 @@
 import { useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { deleteAccount, hasBackend, loadAccountArchive, signOut } from '../../../backend'
-import { formatRange } from '../../../shared/lib/trip-dates'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { deleteAccount, loadAccountArchive } from '../../../backend'
 import { appErrorMessage } from '../../../user-messages-core'
 import Boot from '../../../shared/ui/boot'
 import AccountMenu from '../../../shared/ui/account-menu'
 import { Wordmark } from '../../../shared/ui/brand'
-import Icon from '../../../shared/ui/icon'
 import { useToast } from '../../../shared/ui/toast'
 import useProfile from '../model/use-profile'
-import { Card, NotificationsCard, PrivacyCard, Row } from './profile-cards'
+import { SheetTab } from '../../../shared/ui/sheet'
+import {
+  AccountSection, AlertsSection, DataSection, ProfileSection, TripsSection,
+} from './profile-sections'
+import { DEFAULT_PROFILE_TAB, PROFILE_TAB_LABELS } from '../../../profile-tabs-core'
 import { useTripList } from '../model/use-trip-list'
-
-const TIME_ZONES = ['America/Regina', 'America/Toronto', 'America/Vancouver', 'Europe/London',
-  'Europe/Amsterdam', 'Europe/Paris', 'Australia/Sydney', 'UTC']
 
 export default function ProfilePage() {
   const notify = useToast()
@@ -21,6 +20,8 @@ export default function ProfilePage() {
   const { trips } = useTripList()
   const picker = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<Record<string, string> | null>(null)
+  const navigate = useNavigate({ from: '/profile' })
+  const tab = useSearch({ from: '/profile' }).tab || DEFAULT_PROFILE_TAB
 
   if (error) return <Boot what="Your profile" error={error} action="load-profile" onRetry={reload} />
   if (loading || !profile) return <Boot what="your profile" />
@@ -59,6 +60,11 @@ export default function ProfilePage() {
 
   const name = profile.name || 'You'
   const joined = profile.joinedAt ? new Date(profile.joinedAt).getFullYear() : null
+
+  const sections = {
+    profile, trips, preferences, savePreferences, field, set, saveDetails, saving, draft,
+    download, removeAccount,
+  }
 
   return (
     <main className="min-h-full overflow-y-auto bg-canvas text-ink
@@ -104,103 +110,24 @@ export default function ProfilePage() {
           </div>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card title="Profile" aside="Shown to people on your trips">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="field">Display name
-                <input value={field('name')} onChange={event => set('name', event.target.value)} />
-              </label>
-              <label className="field">Handle
-                <input value={field('handle')} autoCapitalize="none" spellCheck={false}
-                       onChange={event => set('handle', event.target.value.toLowerCase())} />
-              </label>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="field">Home base
-                <input placeholder="Regina, Saskatchewan" value={field('homePlace')}
-                       onChange={event => set('homePlace', event.target.value)} />
-              </label>
-              <label className="field">Time zone
-                <select value={field('timeZone', TIME_ZONES[0])}
-                        onChange={event => set('timeZone', event.target.value)}>
-                  {TIME_ZONES.map(zone => <option key={zone} value={zone}>{zone}</option>)}
-                </select>
-              </label>
-            </div>
-            <p className="hint">
-              Home base marks where each trip leaves from and comes back to on your globe, and the
-              time zone is the one followers see beside local times.
-            </p>
-            <div>
-              <button className="btn btn-solid" disabled={!draft || saving} onClick={saveDetails}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </Card>
+        {/* The same row of tabs as the trip's settings, because it is the same
+            idea: one thing at a time rather than a wall of everything. */}
+        <div className="flex gap-0.5 overflow-x-auto overflow-y-hidden border-b border-line
+                        [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {PROFILE_TAB_LABELS.map(([key, label]) => (
+            <SheetTab key={key} on={tab === key}
+                      onClick={() => navigate({ search: key === DEFAULT_PROFILE_TAB ? {} : { tab: key } })}>
+              {label}
+            </SheetTab>
+          ))}
+        </div>
 
-          <Card title="Sign-in &amp; email">
-            <Row title={profile.email || 'No email on file'}
-                 detail="You sign in with this address. Changing it means signing in again." />
-            <Row title="This browser" detail="Signed in now"
-                 action={hasBackend
-                   ? <button className="mini" onClick={() => signOut().then(() => window.location.assign('/'))}>
-                       Sign out
-                     </button>
-                   : null} />
-            <h3 className="mt-1.5 flex items-center justify-between text-[15px] font-extrabold">
-              Your phones
-              <span className="text-xs font-semibold text-faint">Report your position to a trip</span>
-            </h3>
-            {trips.length ? trips.map(trip => (
-              <Row key={trip.id} title={trip.title}
-                   detail="Pair a phone to this trip, or remove one"
-                   action={<Link className="mini" to="/trips/$slug" params={{ slug: trip.slug }}
-                                 search={{ sheet: 'settings' as const, tab: 'phones' as const }}>
-                     Phones
-                   </Link>} />
-            )) : <p className="hint">No trips yet, so there is nothing for a phone to report to.</p>}
-            <p className="hint">
-              A phone only shares its position while a trip is running, and only with the people on
-              that trip.
-            </p>
-          </Card>
-
-          <NotificationsCard preferences={preferences} onChange={savePreferences} />
-          <PrivacyCard preferences={preferences} onChange={savePreferences} />
-
-          <Card title="Your trips" aside={<Link to="/">All trips</Link>}>
-            {trips.length ? trips.map(trip => (
-              <Row key={trip.id}
-                   title={<Link to="/trips/$slug" params={{ slug: trip.slug }}
-                                search={{}}>{trip.title}</Link>}
-                   detail={[trip.dates || formatRange(trip.startsOn, trip.endsOn), trip.crew]
-                     .filter(Boolean).join(' · ')}
-                   action={<span className={'rounded-md border px-2 py-1 text-[11px] font-bold ' +
-                     (trip.role === 'owner'
-                       ? 'border-accent-soft bg-accent-soft text-accent' : 'border-line text-faint')}>
-                     {trip.role === 'owner' ? 'Owner' : trip.role === 'editor' ? 'Traveller' : 'Following'}
-                   </span>} />
-            )) : <p className="hint">When someone invites you along, their trip shows up here.</p>}
-          </Card>
-
-          <Card title="Your data">
-            <Row title="Download an archive"
-                 detail="Every caption, comment and stop, a GPX trail per trip, and a link to each photo at full size."
-                 action={<button className="mini" onClick={download}>
-                   <Icon n="download" s={13} className="inline -mt-0.5 mr-1" />Download
-                 </button>} />
-            <div className="flex flex-col gap-2 rounded-xl border border-danger p-3.5">
-              <h4 className="m-0 text-[13px] text-danger">Delete my account</h4>
-              <p className="hint">
-                Removes your profile, comments, likes, phones, GPS history and uploaded photos. A trip
-                disappears too if you are its only owner — hand it to someone else first if they
-                should keep it.
-              </p>
-              <div>
-                <button className="btn btn-danger" onClick={removeAccount}>Delete my account…</button>
-              </div>
-            </div>
-          </Card>
+        <div className="flex flex-col gap-4">
+          {tab === 'profile' && <ProfileSection {...sections} />}
+          {tab === 'signin' && <AccountSection {...sections} />}
+          {tab === 'alerts' && <AlertsSection {...sections} />}
+          {tab === 'trips' && <TripsSection {...sections} />}
+          {tab === 'data' && <DataSection {...sections} />}
         </div>
       </div>
     </main>

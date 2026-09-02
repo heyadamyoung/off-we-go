@@ -61,7 +61,8 @@ export function SheetTab({ on, children, onClick }:
   { on: boolean; children: ReactNode; onClick: () => void }) {
   return (
     <button onClick={onClick}
-            className={'-mb-px border-b-2 px-3 pb-2.5 pt-3 text-[13px] font-bold ' +
+            className={'-mb-px flex-none whitespace-nowrap border-b-2 px-3 pb-2.5 pt-3 ' +
+              'text-[13px] font-bold ' +
               (on ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink')}>
       {children}
     </button>

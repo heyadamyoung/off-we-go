@@ -70,7 +70,9 @@ test('the account menu reaches every screen that is not a trip', async ({ page }
 })
 
 test('the settings page keeps its notification and privacy choices in the URL-free store', async ({ page }) => {
-  await page.goto('/profile')
+  // These live under Alerts since the profile was broken into tabs; the choices
+  // themselves are still nowhere near the address bar.
+  await page.goto('/profile?tab=alerts')
   const digest = page.getByText('Daily digest while a trip is live')
   await expect(digest).toBeVisible()
 
@@ -175,6 +177,30 @@ test('a failed sign-in return explains itself rather than looping', async ({ pag
 /* A flex child does not shrink below its content unless it is told it may, so
    a long display name pushed itself out through the side of its card and off
    the screen instead of ending in an ellipsis. */
+/* The profile was six cards deep in two columns, which is a lot to read past to
+   change a handle. It is tabbed now, like the trip's settings, and the tab is
+   in the address so a section can be linked to and Back works. */
+test('the profile is broken into tabs, and a tab can be linked to', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/profile?tab=data')
+
+  await expect(page.getByRole('button', { name: 'Delete my account…' }),
+    'a linked tab should open on that section').toBeVisible()
+  await expect(page.getByText('Home base marks where each trip leaves'),
+    'the other sections should not also be on the page').toHaveCount(0)
+
+  const tabs = page.locator('main').getByRole('button', { name: 'Profile', exact: true })
+  await tabs.click()
+  await expect(page).toHaveURL(/\/profile$/, { timeout: 5000 })
+  await expect(page.getByText('Home base marks where each trip leaves')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Delete my account…' })).toHaveCount(0)
+
+  await page.locator('main').getByRole('button', { name: 'Alerts', exact: true }).click()
+  await expect(page).toHaveURL(/tab=alerts/)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/profile$/, { timeout: 5000 })
+})
+
 test('a long name stays inside its card on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/profile')
