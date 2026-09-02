@@ -145,6 +145,33 @@ test('the strips that scroll sideways do not also scroll up and down', async ({ 
   }
 })
 
+/* The bar is a fixed height and the cards fill it, so trimming the bar to suit
+   one thing clipped another: first the times were cut mid-line, then the names
+   were. A name half visible is worse than no name. */
+test('a card on the day bar shows its whole name', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
+  await page.waitForTimeout(1500)
+
+  const cards = await page.evaluate(() => {
+    const row = document.querySelector('.fcard').parentElement.getBoundingClientRect()
+    return [...document.querySelectorAll('.fcard')].slice(0, 4).map(card => {
+      const name = card.querySelector('.t').getBoundingClientRect()
+      return {
+        text: card.querySelector('.t').textContent.slice(0, 20),
+        cut: Math.round(name.bottom - row.bottom),
+        lines: Math.round(name.height),
+      }
+    })
+  })
+
+  for (const card of cards) {
+    expect(card.cut, `"${card.text}" is cut off by the bottom of the bar`).toBeLessThanOrEqual(0)
+    expect(card.lines, `"${card.text}" has no room to be read at all`).toBeGreaterThan(10)
+  }
+})
+
 for (const [phone, width, height] of PHONES) {
   test(`nothing sticks out or hides from a tap on ${phone}`, async ({ page }) => {
     await page.setViewportSize({ width, height })

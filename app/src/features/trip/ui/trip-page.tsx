@@ -222,7 +222,7 @@ function Trip({ data, busyEditing }:
   ].filter(Boolean).join(' · ')
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-canvas text-ink"
+    <div className="fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink"
          onScroll={event => {
            const screen = event.currentTarget
            if (screen.scrollTop || screen.scrollLeft) { screen.scrollTop = 0; screen.scrollLeft = 0 }

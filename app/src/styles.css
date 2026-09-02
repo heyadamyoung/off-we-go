@@ -146,7 +146,7 @@
   --trip-3: calc(var(--trip-2) + 42px);
 }
 @media (max-width: 639px) {
-  :root { --trip-bar: calc(172px + env(safe-area-inset-bottom, 0px)) }
+  :root { --trip-bar: calc(180px + env(safe-area-inset-bottom, 0px)) }
 }
 
 /* --------------------------------------------------------------- components

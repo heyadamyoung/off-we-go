@@ -19,8 +19,11 @@ interface HomeShellProps {
 }
 
 export default function HomeShell({ me, places, home, live, waiting, wide, children }: HomeShellProps) {
+  /* h-[100dvh], not inset-0: the layout viewport runs on behind the phone
+     browser's toolbar, so anything anchored to its bottom sits behind that
+     toolbar rather than above it. */
   return (
-    <main className="fixed inset-0 overflow-hidden bg-canvas text-ink">
+    <main className="fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink">
       <Globe places={places} home={home} live={live} waiting={waiting} />
       {/* Reading over a spinning planet needs the planet to give way on the
           left, not the text to grow a box. */}
