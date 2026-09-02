@@ -119,6 +119,20 @@
   }
 }
 
+/* The planet is the page and the words sit on top of it. Anything that is not
+   itself a control lets the pointer through, so a drag that starts on a
+   paragraph — or a thumb that lands on one — still spins the globe. */
+.passthrough { pointer-events: none }
+.passthrough a,
+.passthrough button,
+.passthrough input,
+.passthrough select,
+.passthrough textarea,
+.passthrough label,
+.passthrough [role='button'],
+.passthrough [role='menu'],
+.passthrough [role='menuitem'] { pointer-events: auto }
+
 /* ------------------------------------------------------- the trip screen
    The bottom bar is the datum for everything that floats above the map, so its
    height lives here rather than as a number repeated in five components. A

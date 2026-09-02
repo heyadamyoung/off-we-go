@@ -163,6 +163,55 @@ test('a failed sign-in return explains itself rather than looping', async ({ pag
 /* The shell is prerendered into index.html and hydrated on arrival. When the
    two disagree React throws the prerendered markup away and rebuilds the page
    from scratch — which still looks right, so nothing catches it but this. */
+/* The menu opens out of the top bar. When that bar shared a z-index with the
+   column of trip text below it, the text — later in the document — painted
+   over the open menu, and no amount of opacity on the menu could fix it. */
+test('the account menu opens over the page, not under it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Account' }).click()
+
+  const reachable = await page.evaluate(() => {
+    const menu = document.querySelector('[role="menu"]')
+    const box = menu.getBoundingClientRect()
+    return [box.y + 12, box.y + box.height / 2, box.bottom - 12].map(y => {
+      const hit = document.elementFromPoint(box.x + box.width / 2, y)
+      return !!hit && menu.contains(hit)
+    })
+  })
+
+  expect(reachable, 'something is painted over the open account menu').toEqual([true, true, true])
+})
+
+/* The planet is the page, and the words sit on it. A thumb landing on a
+   paragraph should still spin the globe; a thumb landing on a button should
+   not. */
+test('the planet takes a drag that starts on the words, but not on a control', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await expect(page.locator('.globe')).toBeVisible()
+
+  const what = await page.evaluate(() => {
+    const at = (x, y) => {
+      const hit = document.elementFromPoint(x, y)
+      if (!hit) return 'nothing'
+      if (hit.closest('.globe')) return 'globe'
+      return hit.closest('a, button') ? 'control' : 'in the way'
+    }
+    const heading = document.querySelector('main h1').getBoundingClientRect()
+    const button = [...document.querySelectorAll('a, button')]
+      .find(el => /Open the trip/i.test(el.textContent || ''))
+      .getBoundingClientRect()
+    return {
+      words: at(heading.x + heading.width / 2, heading.y + heading.height / 2),
+      control: at(button.x + button.width / 2, button.y + button.height / 2),
+    }
+  })
+
+  expect(what.words, 'the words swallow the gesture instead of the planet taking it').toBe('globe')
+  expect(what.control, 'a control has to stay clickable').toBe('control')
+})
+
 test('the prerendered shell hydrates instead of being thrown away', async ({ page }) => {
   const errors = []
   page.on('pageerror', error => errors.push(String(error)))

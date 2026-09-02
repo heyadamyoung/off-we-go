@@ -40,7 +40,9 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
               className={'transition-transform ' + (open ? 'rotate-90' : '')} />
       </button>
       {open && (
-        <div className="glass absolute right-0 top-[calc(100%+8px)] z-40 flex w-56 flex-col rounded-xl p-1.5"
+        /* A surface, not a tint: this opens over a spinning planet and a trip
+           title in 40px type, and glass left both of them legible through it. */
+        <div className="sheet absolute right-0 top-[calc(100%+8px)] z-40 flex w-56 flex-col rounded-xl p-1.5"
              role="menu" aria-label="Account">
           <div className="mb-1 border-b border-line px-2.5 pb-2.5 pt-2 text-xs text-muted">
             <b className="block text-[13px] text-ink">{name}</b>

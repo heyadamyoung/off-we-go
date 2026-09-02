@@ -26,11 +26,15 @@ export default function HomeShell({ me, places, home, live, waiting, wide, child
           left, not the text to grow a box. */}
       <div className="pointer-events-none absolute inset-0
                       [background:linear-gradient(90deg,var(--c-bg)_0%,var(--c-bg)_34%,transparent_64%),linear-gradient(0deg,var(--c-bg)_0%,transparent_22%)]" />
-      <div className="absolute left-8 right-7 top-6 z-10 flex items-center justify-between md:left-16">
+      {/* Above the column below it, not level with it: the account menu opens
+          out of this bar, and a menu that shares a z-index with the page it
+          covers is painted over by whatever comes later in the document. */}
+      <div className="passthrough absolute left-8 right-7 top-6 z-30 flex items-center
+                      justify-between md:left-16">
         <Link to="/"><Wordmark markSize={44} /></Link>
         <AccountMenu me={me} />
       </div>
-      <div className={'absolute left-8 z-10 flex flex-col gap-5 pr-4 md:left-16 ' + (wide
+      <div className={'passthrough absolute left-8 z-10 flex flex-col gap-5 pr-4 md:left-16 ' + (wide
         ? 'bottom-6 top-24 w-[min(660px,calc(100%-4rem))] overflow-y-auto'
         : 'top-32 w-[min(560px,calc(100%-4rem))] md:top-[150px]')}>
         {children}

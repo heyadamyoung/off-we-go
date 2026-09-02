@@ -245,7 +245,7 @@ function Trip({ data, busyEditing }:
           the top edge on its own surface, with the actions on a second line and
           the panels opening directly beneath it; above 640px it goes back to
           floating over the map, which is where there is room for it. */}
-      <div className="absolute inset-x-0 top-0 z-10 flex h-[var(--trip-top)] flex-wrap
+      <div className="absolute inset-x-0 top-0 z-20 flex h-[var(--trip-top)] flex-wrap
                       items-center gap-2 border-b border-line bg-strong px-4 pb-2
                       pt-[calc(0.75rem+env(safe-area-inset-top,0px))] backdrop-blur-[22px]
                       sm:inset-x-7 sm:top-6 sm:h-auto sm:flex-nowrap sm:items-start sm:gap-3

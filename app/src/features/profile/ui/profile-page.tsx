@@ -64,7 +64,7 @@ export default function ProfilePage() {
     <main className="min-h-full overflow-y-auto bg-canvas text-ink
                      [background:radial-gradient(900px_500px_at_85%_0%,var(--c-accent-soft),transparent_60%),var(--c-bg)]">
       <div className="mx-auto flex max-w-[1040px] flex-col gap-5 px-7 pb-20 pt-10">
-        <div className="flex items-center justify-between">
+        <div className="relative z-30 flex items-center justify-between">
           <Link to="/"><Wordmark /></Link>
           <AccountMenu me={profile} />
         </div>

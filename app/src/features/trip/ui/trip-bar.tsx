@@ -88,7 +88,10 @@ function Card({ item, selected, eager, onSelect }:
       'bg-raised text-left transition-[transform,border-color] hover:-translate-y-0.5 ' +
       (selected ? 'border-accent shadow-[0_0_0_1px_var(--c-accent)]' : 'border-line hover:border-line2')}
             onClick={onSelect}>
-      <div className="relative h-[78px] overflow-hidden bg-raised2 max-sm:h-[52px]">
+      {/* flex-none: the bar is a fixed height, so without it a two-line title
+          takes its extra line out of the photograph and cards in the same row
+          end up with different sized pictures. */}
+      <div className="relative h-[78px] flex-none overflow-hidden bg-raised2 max-sm:h-[52px]">
         {item.kind === 'photo' || item.stop?.src
           ? <Img item={(item.photo || item.stop)!} w={420} h={220} eager={eager}
                  className="size-full object-cover" />
@@ -103,7 +106,11 @@ function Card({ item, selected, eager, onSelect }:
         </span>
       </div>
       <div className="flex flex-col gap-0.5 px-2.5 pb-2 pt-1.5 max-sm:px-2 max-sm:pb-1.5">
-        <div className="t line-clamp-2 text-[12.5px] font-bold leading-tight max-sm:text-[11px]">
+        {/* One line on a phone: a stop called "Schiphol — arrive from Toronto"
+            would otherwise spend two of them, and the row is easier to read
+            across when every card is the same shape. */}
+        <div className="t line-clamp-2 text-[12.5px] font-bold leading-tight
+                        max-sm:line-clamp-1 max-sm:text-[11px]">
           {item.title}
         </div>
         <div className="truncate text-[11px] text-faint max-sm:text-[9.5px]">{item.meta}</div>
