@@ -57,3 +57,16 @@ test('a group says who is in it, so an invitation can be checked rather than ass
   )
   assert.match(describeGroup(group, []), /nobody yet$/)
 })
+
+/* A build that never had a submission of its own was approved with its train:
+   the first build of a version pays for the review, the rest ride on it. */
+test('a build with no submission of its own says so, rather than looking unreviewed', () => {
+  const ridden = describeBuild({ version: '3', release: '1.0', processingState: 'VALID', groups: [] })
+  assert.match(ridden, /review: never submitted — approved with its train/)
+
+  const paid = describeBuild({
+    version: '14', release: '1.1', processingState: 'VALID', groups: [],
+    submitted: 'WAITING_FOR_REVIEW since 2026-09-01 23:45',
+  })
+  assert.match(paid, /review: WAITING_FOR_REVIEW since 2026-09-01 23:45/)
+})

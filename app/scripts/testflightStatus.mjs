@@ -43,12 +43,15 @@ export function describeGroup(group, testers) {
 }
 
 /** One line per build: what it is, and who can install it. */
-export function describeBuild({ version, release, uploaded, processingState, internalState, externalState, groups }) {
+export function describeBuild({
+  version, release, uploaded, processingState, internalState, externalState, groups, submitted,
+}) {
   const when = uploaded ? new Date(uploaded).toISOString().replace('T', ' ').slice(0, 16) : 'unknown time';
   const where = groups?.length ? groups.join(', ') : 'no external group';
   return `${release || '?'} build ${version} (${when})  processing: ${readable(processingState, 'internal')}`
     + `  internal: ${readable(internalState, 'internal')}`
-    + `  external: ${readable(externalState, 'external')}  groups: ${where}`;
+    + `  external: ${readable(externalState, 'external')}  groups: ${where}`
+    + `  review: ${submitted || 'never submitted — approved with its train'}`;
 }
 
 async function api(path, token) {
@@ -84,10 +87,11 @@ async function main() {
 
   const builds = await api(`/builds?filter[app]=${app.id}&limit=14&sort=-uploadedDate`, token);
   for (const build of builds?.data || []) {
-    const [detail, groups, release] = await Promise.all([
+    const [detail, groups, release, review] = await Promise.all([
       api(`/builds/${build.id}/buildBetaDetail`, token).catch(() => null),
       api(`/builds/${build.id}/betaGroups`, token).catch(() => null),
       api(`/builds/${build.id}/preReleaseVersion`, token).catch(() => null),
+      api(`/builds/${build.id}/betaAppReviewSubmission`, token).catch(() => null),
     ]);
     console.log(describeBuild({
       version: build.attributes?.version,
@@ -97,6 +101,10 @@ async function main() {
       internalState: detail?.data?.attributes?.internalBuildState,
       externalState: detail?.data?.attributes?.externalBuildState,
       groups: (groups?.data || []).map(group => group.attributes?.name),
+      submitted: review?.data?.attributes?.betaReviewState
+        ? `${review.data.attributes.betaReviewState}${review.data.attributes.submittedDate
+          ? ` since ${review.data.attributes.submittedDate.slice(0, 16).replace('T', ' ')}` : ''}`
+        : null,
     }));
   }
 }
