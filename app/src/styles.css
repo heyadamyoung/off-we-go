@@ -542,3 +542,20 @@
                      - var(--trip-top) - 12px);
   }
 }
+
+/* On a phone the editor takes the screen. Floating above the day bar, it was
+   competing for height with the chrome and the bar and the keyboard all at
+   once — with a keyboard open there were about a hundred pixels left for it,
+   which is a field and half a button. Writing a stop is the whole job while
+   you are doing it, so it gets the whole screen: header, a body that scrolls,
+   and the buttons on the bottom edge where a thumb is. */
+@media (max-width: 639px) {
+  .editor {
+    position: fixed; inset: 0; left: 0; right: 0; top: 0; width: auto; z-index: 40;
+    height: calc(100dvh - var(--keyboard, 0px));
+    max-height: none; border: 0; border-radius: 0;
+  }
+  .editor .eh { padding-top: calc(14px + env(safe-area-inset-top, 0px)) }
+  .editor .eb { flex: 1 }
+  .editor .ef { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) }
+}

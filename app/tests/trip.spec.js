@@ -604,12 +604,13 @@ test('the settings sheet opens on a tab, and the tab is in the URL', async ({ pa
    keyboard opens, iOS keeps the page at its full height and only shrinks the
    visual viewport — so the panel being typed into sat behind the keyboard, and
    the fields and the save button with it. */
-test('the stop editor stays above the keyboard and below the top bar', async ({ page }) => {
+test('the stop editor takes the phone screen and stays above the keyboard', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)
   await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
   await page.locator('.detailcard').getByTitle('Edit this stop').click()
   await expect(page.locator('.editor')).toBeVisible()
+  await page.waitForTimeout(350)   // it rises into place over 220ms
 
   const geometry = async () => page.evaluate(() => {
     const editor = document.querySelector('.editor').getBoundingClientRect()
@@ -618,18 +619,27 @@ test('the stop editor stays above the keyboard and below the top bar', async ({ 
     return { top: editor.y, bottom: editor.bottom, save: save.bottom, chrome: bar.bottom }
   })
 
+  // On a phone it is the screen, not a card floating over it: with the chrome
+  // and the day bar and a keyboard all taking their share there was about a
+  // hundred pixels left for the thing being typed into.
   const resting = await geometry()
-  expect(resting.top, 'the editor grows up behind the top bar')
-    .toBeGreaterThanOrEqual(resting.chrome)
+  expect(resting.top, 'the editor does not start at the top of the screen').toBeLessThanOrEqual(1)
+  expect(resting.bottom, 'the editor does not reach the bottom').toBeGreaterThanOrEqual(843)
 
   // What iOS does when the keyboard opens: the page keeps its height, and this
   // is the part of it that is no longer visible.
   await page.evaluate(() => document.documentElement.style.setProperty('--keyboard', '364px'))
   const lifted = await geometry()
 
-  expect(lifted.bottom, 'the editor sits behind the keyboard').toBeLessThanOrEqual(844 - 364)
+  expect(lifted.bottom, 'the editor runs on behind the keyboard').toBeLessThanOrEqual(844 - 364)
   expect(lifted.save, 'the save button is behind the keyboard').toBeLessThanOrEqual(844 - 364)
-  expect(lifted.top, 'the editor grows up behind the top bar').toBeGreaterThanOrEqual(lifted.chrome)
+  expect(lifted.top, 'the editor lost its header off the top').toBeGreaterThanOrEqual(0)
+
+  const scrolls = await page.evaluate(() => {
+    const body = document.querySelector('.editor .eb')
+    return body.scrollHeight > body.clientHeight
+  })
+  expect(scrolls, 'the fields cannot be reached once the keyboard is up').toBe(true)
 })
 
 /* The sheet is centred, so when it was sized to whatever tab was showing, its
