@@ -1,7 +1,8 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ToastHost } from '../shared/ui/toast'
 import { SessionProvider } from '../features/auth'
+import { trackKeyboardInset } from '../shared/lib/keyboard-inset'
 import styles from '../styles.css?url'
 
 /* Painted before React arrives, so a returning visitor's chosen theme is on the
@@ -13,7 +14,15 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+      /* interactive-widget: when the on-screen keyboard opens, the layout
+         viewport shrinks with it. Without this the page keeps its full height
+         behind the keyboard, and anything anchored to the bottom — the stop
+         editor, most of all — is typed into from underneath it. */
+      {
+        name: 'viewport',
+        content: 'width=device-width, initial-scale=1, viewport-fit=cover, '
+          + 'interactive-widget=resizes-content',
+      },
       { name: 'theme-color', content: '#10141C' },
       { title: 'Off We Go — Go Places Together' },
     ],
@@ -57,6 +66,8 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootLayout() {
+  useEffect(() => trackKeyboardInset(), [])
+
   return (
     <SessionProvider>
       <ToastHost>

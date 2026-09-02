@@ -576,6 +576,38 @@ test('the settings sheet opens on a tab, and the tab is in the URL', async ({ pa
    or a tracker URL turned the settings sheet into a sideways scroller — and the
    two ways of finishing with the sheet, saving and closing, sat on different
    rows with the scrolling content between them. */
+/* The stop editor is anchored to the bottom of a phone screen. When the
+   keyboard opens, iOS keeps the page at its full height and only shrinks the
+   visual viewport — so the panel being typed into sat behind the keyboard, and
+   the fields and the save button with it. */
+test('the stop editor stays above the keyboard and below the top bar', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
+  await page.locator('.detailcard').getByTitle('Edit this stop').click()
+  await expect(page.locator('.editor')).toBeVisible()
+
+  const geometry = async () => page.evaluate(() => {
+    const editor = document.querySelector('.editor').getBoundingClientRect()
+    const save = document.querySelector('.editor .btn.pri').getBoundingClientRect()
+    const bar = document.querySelector('header').closest('div').getBoundingClientRect()
+    return { top: editor.y, bottom: editor.bottom, save: save.bottom, chrome: bar.bottom }
+  })
+
+  const resting = await geometry()
+  expect(resting.top, 'the editor grows up behind the top bar')
+    .toBeGreaterThanOrEqual(resting.chrome)
+
+  // What iOS does when the keyboard opens: the page keeps its height, and this
+  // is the part of it that is no longer visible.
+  await page.evaluate(() => document.documentElement.style.setProperty('--keyboard', '364px'))
+  const lifted = await geometry()
+
+  expect(lifted.bottom, 'the editor sits behind the keyboard').toBeLessThanOrEqual(844 - 364)
+  expect(lifted.save, 'the save button is behind the keyboard').toBeLessThanOrEqual(844 - 364)
+  expect(lifted.top, 'the editor grows up behind the top bar').toBeGreaterThanOrEqual(lifted.chrome)
+})
+
 test('the settings sheet finishes on one row and never scrolls sideways', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)

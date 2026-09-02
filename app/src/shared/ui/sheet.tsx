@@ -19,8 +19,11 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
     return () => window.removeEventListener('keydown', key)
   }, [onClose])
 
+  /* The bottom padding follows the keyboard: on iOS the page keeps its full
+     height behind it, so a centred dialog centres behind it too. */
   return (
-    <div className="scrim fixed inset-0 z-[200] grid place-items-center bg-black/60 p-5 backdrop-blur-[6px]"
+    <div className="scrim fixed inset-0 z-[200] grid place-items-center bg-black/60 p-5
+                    pb-[calc(1.25rem+var(--keyboard,0px))] backdrop-blur-[6px]"
          onClick={onClose}>
       <div className={'modal dlg rise flex max-h-full w-full flex-col overflow-hidden rounded-[18px] ' +
         'border border-line bg-solid shadow-panel ' + (wide ? 'max-w-[640px]' : 'max-w-[520px]')}

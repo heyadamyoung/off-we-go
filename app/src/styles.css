@@ -526,5 +526,14 @@
 .editor .lookup:disabled { opacity: .5; cursor: default }
 
 @media (max-width: 900px) {
-  .editor { left: 16px; right: 16px; width: auto; top: auto; bottom: var(--trip-1); max-height: 52% }
+  /* Above the keyboard, not behind it, and never taller than what is left of
+     the screen once the keyboard has taken its half. */
+  .editor {
+    left: 16px; right: 16px; width: auto; top: auto;
+    bottom: max(var(--trip-1), calc(var(--keyboard, 0px) + 12px));
+    /* Bounded at both ends: it may not grow up behind the top bar any more than
+       it may sit down behind the keyboard. */
+    max-height: calc(100% - max(var(--trip-1), calc(var(--keyboard, 0px) + 12px))
+                     - var(--trip-top) - 12px);
+  }
 }

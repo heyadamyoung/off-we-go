@@ -138,10 +138,11 @@ test('the dashboard keeps its brandmark compact beside the wordmark', async ({ p
   expect(bounds?.height).toBeLessThanOrEqual(48)
 })
 
-test('the viewport allows pinch zoom and covers the notch', async ({ page }) => {
+test('the viewport allows pinch zoom, covers the notch, and yields to the keyboard', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
-    'content', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    'content',
+    'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content')
 })
 
 test('an OIDC browser return can hand sign-in back to the installed app', async ({ page }) => {
