@@ -632,6 +632,35 @@ test('the stop editor stays above the keyboard and below the top bar', async ({ 
   expect(lifted.top, 'the editor grows up behind the top bar').toBeGreaterThanOrEqual(lifted.chrome)
 })
 
+/* The sheet is centred, so when it was sized to whatever tab was showing, its
+   title, its tabs and its buttons all moved as you went between them — every
+   tab arrived with its controls somewhere new. */
+test('the settings chrome does not move when you change tab', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+
+  const chrome = () => page.evaluate(() => {
+    const round = box => [Math.round(box.y), Math.round(box.height)]
+    return {
+      sheet: round(document.querySelector('.dlg').getBoundingClientRect()),
+      footer: round(document.querySelector('.dlgfoot').getBoundingClientRect()),
+    }
+  })
+
+  const seen = []
+  for (const tab of ['Trip', 'People', 'Location', 'Trip']) {
+    await page.locator('.dlg').getByRole('button', { name: tab, exact: true }).click()
+    await page.waitForTimeout(250)
+    seen.push(await chrome())
+  }
+
+  for (const state of seen.slice(1)) {
+    expect(state, 'the sheet changes shape with the tab').toEqual(seen[0])
+  }
+})
+
 test('the settings sheet finishes on one row and never scrolls sideways', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)

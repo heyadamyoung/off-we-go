@@ -25,8 +25,13 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
     <div className="scrim fixed inset-0 z-[200] grid place-items-center bg-black/60 p-5
                     pb-[calc(1.25rem+var(--keyboard,0px))] backdrop-blur-[6px]"
          onClick={onClose}>
+      {/* A tabbed sheet keeps one height whichever tab is showing. Sized to its
+          content it grew and shrank as you moved between them, and since it is
+          centred, the title, the tabs and the buttons all jumped with it —
+          every tab arrived with its controls somewhere new. */}
       <div className={'modal dlg rise flex max-h-full w-full flex-col overflow-hidden rounded-[18px] ' +
-        'border border-line bg-solid shadow-panel ' + (wide ? 'max-w-[640px]' : 'max-w-[520px]')}
+        'border border-line bg-solid shadow-panel ' + (wide ? 'max-w-[640px] ' : 'max-w-[520px] ') +
+        (tabs ? 'h-[min(100%,560px)]' : '')}
            role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
         <div className="flex flex-none items-center justify-between border-b border-line px-[18px] pb-3 pt-4">
           <b className="text-[18px] font-extrabold tracking-[-.01em]">{title}</b>
@@ -37,8 +42,10 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
         {/* overflow-x-hidden explicitly: a box that scrolls on one axis computes
             the other to auto, so anything a little too wide — a device name, a
             long address — turned the whole panel into a sideways scroller. */}
-        <div className="mb flex flex-col gap-3.5 overflow-y-auto overflow-x-hidden overscroll-contain
-                        break-words p-[18px]">{children}</div>
+        {/* flex-1: the body takes what is left of the sheet, so the buttons stay
+            on the bottom edge instead of floating up to meet short content. */}
+        <div className="mb flex flex-1 flex-col gap-3.5 overflow-y-auto overflow-x-hidden
+                        overscroll-contain break-words p-[18px]">{children}</div>
         {footer && (
           <div className="dlgfoot flex flex-none items-center justify-end gap-2 border-t border-line
                           px-[18px] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3">

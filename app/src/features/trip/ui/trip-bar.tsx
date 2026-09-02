@@ -113,7 +113,11 @@ function Card({ item, selected, eager, onSelect }:
                         max-sm:line-clamp-1 max-sm:text-[11px]">
           {item.title}
         </div>
-        <div className="truncate text-[11px] text-faint max-sm:text-[9.5px]">{item.meta}</div>
+        {/* On a phone the card is barely wider than the name, and the times
+            underneath were clipped mid-line by the bottom of the bar — a sliver
+            of text that reads as a mistake. The name is the useful half; the
+            times are on the stop itself. */}
+        <div className="truncate text-[11px] text-faint max-sm:hidden">{item.meta}</div>
       </div>
     </button>
   )
