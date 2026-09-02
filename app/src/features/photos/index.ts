@@ -1,3 +1,5 @@
 export { default as useTripPhotos } from './model/use-trip-photos'
 export { default as PhotoViewer } from './ui/photo-viewer'
 export { default as UploadModal } from './ui/upload-modal'
+export { default as UploadTray } from './ui/upload-tray'
+export { default as useUploadQueue } from './model/use-upload-queue'

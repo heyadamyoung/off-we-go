@@ -10,7 +10,7 @@ import AccountMenu from '../../../shared/ui/account-menu'
 import { useToast } from '../../../shared/ui/toast'
 import { MapCanvas } from '../../map'
 import { StopEditor, useItineraryEditor } from '../../itinerary'
-import { PhotoViewer, UploadModal, useTripPhotos } from '../../photos'
+import { PhotoViewer, UploadModal, UploadTray, useTripPhotos, useUploadQueue } from '../../photos'
 import { AttractionCard } from '../../sights'
 import { TripSettingsSheet } from '../../people'
 import { appErrorMessage } from '../../../user-messages-core'
@@ -212,6 +212,10 @@ function Trip({ data, busyEditing }:
     return saved
   }, [addPhoto, stops])
 
+  /* Photographs go up in the background: the sheet hands them over and closes,
+     and the tray in the corner says what is still going. */
+  const uploads = useUploadQueue({ send: addPhotoToMap, toast })
+
   const here = photos.filter(photo => photo.stopId === selectedItem?.stop?.id)
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   const panelOpen = view !== 'map'
@@ -337,6 +341,8 @@ function Trip({ data, busyEditing }:
           }} />
       </MapChrome>
 
+      <UploadTray uploads={uploads.uploads} onRetry={uploads.tryAgain} onDismiss={uploads.forget} />
+
       <TripBar items={items} days={days} day={day} liveDay={liveDay} selected={selected}
         behindPanel={panelOpen}
         query={query} onDay={value => patch({ day: value, sel: undefined })}
@@ -361,7 +367,7 @@ function Trip({ data, busyEditing }:
       )}
 
       {search.sheet === 'add' && (
-        <UploadModal onClose={() => patch({ sheet: undefined })} onAdd={addPhotoToMap}
+        <UploadModal onClose={() => patch({ sheet: undefined })} onAdd={uploads.add}
           live={latestGpsPosition} stops={stops} toast={toast} theme={mapTheme} tint={sun} />
       )}
 

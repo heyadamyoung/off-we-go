@@ -67,32 +67,33 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
       if (!/cancel/i.test(e?.message || '')) toast(appErrorMessage(e, 'open-photos'), 'error')
     }
   }
-  const [busy, setBusy] = useState(false)
-  const submit = async () => {
+  // Nothing here is busy any more; sending happens after this closes.
+  const busy = false
+  /* Hand the files over and get out of the way. Sending them took as long as it
+     took while this sheet sat on top of the trip; the tray in the corner says
+     what is going up, and the map is usable while it does. */
+  const submit = () => {
     if (!files.length || busy || preparing) return
-    setBusy(true)
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const meta = files[i].file.offwegoMetadata
-        const resolved = placements[i]
-        await onAdd({
-          file: files[i].file, caption: caption.trim() || 'Untitled',
-          uploadKey: files[i].uploadKey,
+    onAdd(files.map((chosen, i) => {
+      const meta = chosen.file.offwegoMetadata
+      const resolved = placements[i]
+      return {
+        key: chosen.uploadKey,
+        name: chosen.file.name || `Photo ${i + 1}`,
+        preview: chosen.url,
+        input: {
+          file: chosen.file, caption: caption.trim() || 'Untitled',
+          uploadKey: chosen.uploadKey,
           stopId: resolved.stopId, lng: resolved.point?.[0], lat: resolved.point?.[1],
           fallbackLng: resolved.fallbackPoint?.[0], fallbackLat: resolved.fallbackPoint?.[1],
           fallbackLocationSource: resolved.fallbackSource,
-          locationSource: ['exif', 'live', 'approximate'].includes(resolved.source) ? resolved.source : undefined,
+          locationSource: ['exif', 'live', 'approximate'].includes(resolved.source)
+            ? resolved.source : undefined,
           when: meta?.takenAt || new Date().toISOString(), order: i,
-        })
+        },
       }
-      const what = `${files.length} photo${files.length === 1 ? '' : 's'} added`
-      toast(`${what} to the map`)
-      onClose()
-    } catch (e) {
-      toast(appErrorMessage(e, 'upload-photo'), 'error')
-    } finally {
-      setBusy(false)
-    }
+    }))
+    onClose()
   }
   useEffect(() => {
     mountedRef.current = true
@@ -115,7 +116,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: any) {
              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
              <button className="btn btn-accent" disabled={!files.length || busy || preparing}
                      onClick={submit}>
-               {busy ? `Uploading ${files.length}…` : `Add ${files.length || ''} to the map`}
+               {`Add ${files.length || ''} to the map`}
              </button>
            </>}>
       {!files.length ? (
