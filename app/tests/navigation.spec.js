@@ -166,6 +166,25 @@ test('a failed sign-in return explains itself rather than looping', async ({ pag
 /* The menu opens out of the top bar. When that bar shared a z-index with the
    column of trip text below it, the text — later in the document — painted
    over the open menu, and no amount of opacity on the menu could fix it. */
+/* The page is drawn under the status bar — the viewport is fit=cover — so on a
+   phone with an island the mark and the account button sat beneath it: visible,
+   and impossible to touch. A desktop browser reports no inset, so a measured
+   position proves nothing here; what has to hold is that the rule accounts for
+   one at all. */
+test('the dashboard chrome is positioned below the notch, not under it', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Account' })).toBeVisible()
+  const positioned = await page.evaluate(() => {
+    const bar = document.querySelector('[aria-label="Account"]').closest('div.passthrough')
+    const column = [...document.querySelectorAll('main > div.passthrough')].pop()
+    return [bar.className, column.className]
+  })
+
+  for (const [what, className] of [['top bar', positioned[0]], ['content', positioned[1]]]) {
+    expect(className, `the dashboard ${what} ignores the safe area`).toMatch(/safe-area-inset-top/)
+  }
+})
+
 test('the account menu opens over the page, not under it', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')

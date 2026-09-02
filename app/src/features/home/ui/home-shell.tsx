@@ -29,14 +29,20 @@ export default function HomeShell({ me, places, home, live, waiting, wide, child
       {/* Above the column below it, not level with it: the account menu opens
           out of this bar, and a menu that shares a z-index with the page it
           covers is painted over by whatever comes later in the document. */}
-      <div className="passthrough absolute left-8 right-7 top-6 z-30 flex items-center
-                      justify-between md:left-16">
+      {/* The page is drawn under the status bar — viewport-fit=cover — so on a
+          phone with an island the mark and the account button sat beneath it,
+          visible and untappable. Everything here starts below the safe area. */}
+      <div className="passthrough absolute left-8 right-7 z-30 flex items-center justify-between
+                      top-[calc(1.5rem+env(safe-area-inset-top,0px))] md:left-16">
         <Link to="/"><Wordmark markSize={44} /></Link>
         <AccountMenu me={me} />
       </div>
       <div className={'passthrough absolute left-8 z-10 flex flex-col gap-5 pr-4 md:left-16 ' + (wide
-        ? 'bottom-6 top-24 w-[min(660px,calc(100%-4rem))] overflow-y-auto'
-        : 'top-32 w-[min(560px,calc(100%-4rem))] md:top-[150px]')}>
+        ? 'bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] '
+          + 'top-[calc(6rem+env(safe-area-inset-top,0px))] '
+          + 'w-[min(660px,calc(100%-4rem))] overflow-y-auto'
+        : 'top-[calc(8rem+env(safe-area-inset-top,0px))] w-[min(560px,calc(100%-4rem))] '
+          + 'md:top-[calc(150px+env(safe-area-inset-top,0px))]')}>
         {children}
       </div>
     </main>

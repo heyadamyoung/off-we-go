@@ -32,7 +32,9 @@ export function Wordmark({ className = '', markSize = 62 }:
    its full height. */
 export function Screen({ children }: { children: ReactNode }) {
   return (
-    <main className="grid min-h-full place-items-center bg-canvas px-5 py-10
+    <main className="grid min-h-full place-items-center bg-canvas px-5
+                     pb-[calc(2.5rem+env(safe-area-inset-bottom,0px))]
+                     pt-[calc(2.5rem+env(safe-area-inset-top,0px))]
                      [background:radial-gradient(900px_500px_at_50%_0%,var(--c-accent-soft),transparent_60%),var(--c-bg)]">
       <div className="flex w-full max-w-[420px] flex-col items-center gap-3 text-center">
         <img src="/offwego-icon.svg" alt="" aria-hidden="true"

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadLive, subscribeToPositions } from '../../../backend'
 import { liveRetryDelay, mergeLiveFixes } from '../../../live-positions-core'
-import { livePhoneMarkers } from '../../../live-markers-core'
+import { followPoints, livePhoneMarkers } from '../../../live-markers-core'
 import {
   deriveLiveStopProgress, describeLiveStopProgress, liveHistoryHours,
 } from '../../../live-stop-progress-core'
@@ -104,9 +104,7 @@ export default function useLiveTrip({ tripId, trip, route, stops, family, mapOve
      last place anyone was, which is the only answer there is. */
   const markers = useMemo(
     () => livePhoneMarkers({ fixes, fresh, phones, family }), [fixes, fresh, phones, family])
-  const livePoints: Coordinates[] = useMemo(
-    () => (fresh.length ? fresh.map(f => [f.lng, f.lat] as Coordinates)
-      : markers.map(m => [m.lng, m.lat] as Coordinates)), [fresh, markers])
+  const livePoints: Coordinates[] = useMemo(() => followPoints(fresh, fixes), [fresh, fixes])
 
   // Each phone's path over the last day, poor fixes left out so the line does not spike.
   const trail = useMemo(() => {

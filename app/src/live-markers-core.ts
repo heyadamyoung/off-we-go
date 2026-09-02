@@ -1,5 +1,5 @@
 import { agoLabel } from './shared/lib/geo'
-import type { Device, LiveFix, Person } from './shared/model/types'
+import type { Coordinates, Device, LiveFix, Person } from './shared/model/types'
 
 export interface PhoneMarker {
   key: string
@@ -50,4 +50,16 @@ export function livePhoneMarkers(
       title: `${name} · ${stale ? `last seen ${agoLabel(fix.at)}` : agoLabel(fix.at)}`,
     }
   })
+}
+
+/* Where to point the camera when someone asks to follow. Everyone reporting
+   gets framed together; with nobody reporting it is the single most recent
+   position, not the box around every phone's last known one — those can be
+   continents apart, and the middle of Regina and Amsterdam is the Atlantic. */
+export function followPoints(fresh: LiveFix[], fixes: LiveFix[]): Coordinates[] {
+  if (fresh?.length) return fresh.map(fix => [fix.lng, fix.lat] as Coordinates);
+
+  const [newest] = lastKnownFixes(fixes)
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+  return newest ? [[newest.lng, newest.lat]] : [];
 }
