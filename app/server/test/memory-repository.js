@@ -35,6 +35,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   let nextStop = 1
   let nextComment = 1
 
+  const mailboxes = new Map()
+  const mailboxRequests = new Map()
+
   return {
     seedPhoto(tripId) {
       const trip = trips.get(tripId)
@@ -498,6 +501,58 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async findDeviceByTokenHash(hash) {
       return [...devices.values()].find(device => device.tokenHash === hash) || null
     },
+    /* ---- connected mailboxes ---- */
+    async startMailboxConnection({ userId, provider, stateHash, verifier, redirectTo, expiresAt }) {
+      mailboxRequests.set(stateHash, { userId, provider, verifier, redirectTo, expiresAt })
+    },
+    async takeMailboxConnectionRequest(stateHash) {
+      const pending = mailboxRequests.get(stateHash)
+      if (!pending) return null
+      mailboxRequests.delete(stateHash)
+      return pending.expiresAt > new Date() ? pending : null
+    },
+    async saveMailboxConnection(connection) {
+      const key = `${connection.userId}:${connection.provider}:${connection.accountId}`
+      const existing = mailboxes.get(key)
+      const saved = {
+        id: existing?.id || `mailbox-${mailboxes.size + 1}`,
+        connectedAt: new Date(),
+        lastUsedAt: existing?.lastUsedAt || null,
+        needsReconnect: false,
+        ...connection,
+        refreshToken: connection.refreshToken || existing?.refreshToken || null,
+      }
+      mailboxes.set(key, saved)
+      return saved
+    },
+    async listMailboxConnections(userId) {
+      return [...mailboxes.values()].filter(row => row.userId === userId)
+    },
+    async findMailboxConnection(userId, id) {
+      return [...mailboxes.values()].find(row => row.userId === userId && row.id === id) || null
+    },
+    async updateMailboxTokens(id, fields) {
+      for (const [key, row] of mailboxes) {
+        if (row.id !== id) continue
+        const saved = { ...row, ...fields, refreshToken: fields.refreshToken || row.refreshToken,
+                        lastUsedAt: new Date(), needsReconnect: false }
+        mailboxes.set(key, saved)
+        return saved
+      }
+      return null
+    },
+    async markMailboxNeedsReconnect(id) {
+      for (const [key, row] of mailboxes) {
+        if (row.id === id) mailboxes.set(key, { ...row, needsReconnect: true })
+      }
+    },
+    async deleteMailboxConnection(userId, id) {
+      for (const [key, row] of mailboxes) {
+        if (row.userId === userId && row.id === id) { mailboxes.delete(key); return true }
+      }
+      return false
+    },
+
     async insertPosition(device, fix) {
       const key = `${device.id}:${fix.at.toISOString()}`
       if (positions.has(key)) return false
@@ -514,11 +569,22 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         .sort((a, b) => a.distance - b.distance)[0]
       return nearest ? { lng: nearest.lng, lat: nearest.lat, at: nearest.at } : null
     },
-    async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 6000 } = {}) {
+    async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 100000 } = {}) {
       if (!await this.canReadTrip(user.id, tripId)) return null
       const tripPositions = [...positions.values()].filter(fix => fix.tripId === tripId)
-      const byDevice = new Map()
+      const sampled = new Map()
       for (const fix of tripPositions.filter(fix => fix.at >= since && fix.id > afterId)) {
+        const key = `${fix.deviceId}:${Math.floor(fix.at.getTime() / 30_000)}`
+        const current = sampled.get(key)
+        const accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : Number.POSITIVE_INFINITY
+        const currentAccuracy = Number.isFinite(current?.accuracy)
+          ? current.accuracy : Number.POSITIVE_INFINITY
+        if (!current || accuracy < currentAccuracy || accuracy === currentAccuracy && fix.id > current.id) {
+          sampled.set(key, fix)
+        }
+      }
+      const byDevice = new Map()
+      for (const fix of sampled.values()) {
         if (!byDevice.has(fix.deviceId)) byDevice.set(fix.deviceId, [])
         byDevice.get(fix.deviceId).push(fix)
       }

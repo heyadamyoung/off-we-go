@@ -7,3 +7,4 @@ demo-*.png
 newtrip.png
 signed-in.png
 .tmp/
+deploy/release.env

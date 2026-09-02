@@ -33,6 +33,15 @@ const app = await buildServer({
   oauthSecret: required('WAYFARE_OAUTH_SECRET'),
   identityProvider: createOidcIdentityProvider(oidcConfig),
   appleTeamId: required('APPLE_TEAM_ID'),
+  /* Optional: with no Azure application configured the connector routes say so
+     and the screen offers nothing, rather than sending somebody to a sign-in
+     that cannot work. */
+  microsoft: process.env.MS_CLIENT_ID ? {
+    clientId: process.env.MS_CLIENT_ID,
+    clientSecret: process.env.MS_CLIENT_SECRET || null,
+    tenant: process.env.MS_TENANT || 'common',
+  } : null,
+  mailboxTokenKey: process.env.MAILBOX_TOKEN_KEY || null,
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
   androidPackageName: process.env.ANDROID_PACKAGE_NAME || 'ai.threadway.wayfare',
   androidCertFingerprints: (process.env.ANDROID_SHA256_CERT_FINGERPRINTS || '')

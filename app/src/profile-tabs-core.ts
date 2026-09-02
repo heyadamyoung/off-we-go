@@ -2,7 +2,7 @@
    be linked to and come back on a Back. The same shape as the trip's settings
    tabs, because they are the same idea and should not need learning twice. */
 
-export const PROFILE_TABS = ['profile', 'signin', 'alerts', 'trips', 'data'] as const
+export const PROFILE_TABS = ['profile', 'signin', 'alerts', 'connections', 'trips', 'data'] as const
 
 export type ProfileTab = (typeof PROFILE_TABS)[number]
 
@@ -13,6 +13,7 @@ export const PROFILE_TAB_LABELS: Array<[ProfileTab, string]> = [
   // reading it aloud.
   ['signin', 'Sign-in'],
   ['alerts', 'Alerts'],
+  ['connections', 'Connections'],
   ['trips', 'Trips'],
   ['data', 'Your data'],
 ]

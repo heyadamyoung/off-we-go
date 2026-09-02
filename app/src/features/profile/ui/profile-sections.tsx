@@ -1,10 +1,14 @@
+import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { hasBackend, signOut } from '../../../backend'
+import {
+  disconnectMailbox, loadConnectors, startOutlookConnection, type ConnectorState,
+} from '../../../connectors-client'
 import { formatRange } from '../../../shared/lib/trip-dates'
 import Icon from '../../../shared/ui/icon'
 import { Card, NotificationsCard, PrivacyCard, Row } from './profile-cards'
 import type { Preferences } from '../../../preferences-core'
-import type { MyProfile, TripSummary } from '../../../shared/model/types'
+import type { MyProfile, Toast, TripSummary } from '../../../shared/model/types'
 
 const TIME_ZONES = ['America/Regina', 'America/Toronto', 'America/Vancouver', 'Europe/London',
   'Europe/Amsterdam', 'Europe/Paris', 'Australia/Sydney', 'UTC']
@@ -26,6 +30,7 @@ interface SectionProps {
   draft: Record<string, string> | null
   download: () => void
   removeAccount: () => void
+  toast: Toast
 }
 
 export function ProfileSection({ field, set, saveDetails, saving, draft }: SectionProps) {
@@ -144,5 +149,77 @@ export function DataSection({ download, removeAccount }: SectionProps) {
           </div>
         </div>
       </Card>
+  )
+}
+
+/* Connecting a mailbox. The sign-in and the consent are Microsoft's screens,
+   because that is the point of OAuth — the password is typed somewhere we
+   cannot see it, and the permissions are granted somewhere we cannot fake.
+   Everything either side of it is here: what is connected, adding another,
+   taking one away. */
+export function ConnectionsSection({ toast }: SectionProps) {
+  const [state, setState] = useState<ConnectorState | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = () => loadConnectors().then(setState).catch(() => setState(null))
+  useEffect(() => { refresh() }, [])
+
+  const connect = async () => {
+    setBusy(true)
+    try {
+      window.location.assign(await startOutlookConnection(window.location.href))
+    } catch {
+      setBusy(false)
+      toast('That connection could not be started', 'error')
+    }
+  }
+
+  const disconnect = async (id: string, email?: string) => {
+    if (!window.confirm(`Disconnect ${email || 'this mailbox'}?`)) return
+    try {
+      await disconnectMailbox(id)
+      toast('Mailbox disconnected')
+      refresh()
+    } catch {
+      toast('That mailbox could not be disconnected', 'error')
+    }
+  }
+
+  return (
+    <Card title="Connected mailboxes" aside="Outlook">
+      {!state ? <p className="hint">Loading…</p> : !state.configured ? (
+        <p className="hint">
+          No mailbox connector is set up on this server yet. Once one is, connecting a mailbox will
+          appear here.
+        </p>
+      ) : (
+        <>
+          {state.connections.length ? state.connections.map(connection => (
+            <Row key={connection.id}
+                 title={connection.email || connection.name || 'Outlook mailbox'}
+                 detail={connection.needsReconnect
+                   ? 'Microsoft stopped accepting this connection — connect it again'
+                   : `${connection.name ? `${connection.name} · ` : ''}Outlook`}
+                 action={<button className="mini" onClick={() => disconnect(connection.id, connection.email)}>
+                   Disconnect
+                 </button>} />
+          )) : (
+            <p className="hint">
+              No mailbox is connected. Connecting one lets Off We Go read the mail you point it at —
+              nothing is sent, and it can be disconnected here at any time.
+            </p>
+          )}
+          <div>
+            <button className="btn btn-solid" disabled={busy} onClick={connect}>
+              {state.connections.length ? 'Connect another mailbox' : 'Connect Outlook'}
+            </button>
+          </div>
+          <p className="hint">
+            You sign in on Microsoft's own page; we never see the password. The permissions asked
+            for are read-only.
+          </p>
+        </>
+      )}
+    </Card>
   )
 }

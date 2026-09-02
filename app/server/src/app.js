@@ -7,6 +7,11 @@ import { registerMcpRoutes } from './mcp.js'
 import { createWindowRateLimiter } from './rateLimit.js'
 import { createLiveStream } from './live-stream.js'
 import { changeKind } from './change-kind.js'
+import { createSecretBox } from './secret-box.js'
+import {
+  DEFAULT_SCOPES, authorizeUrl, challengeFor, createState, createVerifier, expiresAt,
+  isExpired, stateHash, tokenRequestBody, tokenUrl,
+} from './mailbox-oauth.js'
 import { createLogtoExperienceService } from './logto-experience.js'
 import { normalizeProfileHandle } from './slugs.js'
 
@@ -78,6 +83,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
   androidPackageName = 'ai.threadway.wayfare', androidCertFingerprints = [], identityProvider = null,
   experienceFetch = fetch,
+  /* The mailbox connector is optional: with nothing configured the routes say
+     so and the screen offers nothing, rather than sending someone to a
+     half-built sign-in. */
+  microsoft = null, mailboxTokenKey = null, connectorFetch = fetch,
   trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
   if (!repository) throw new Error('A repository is required')
   if (!mailer) throw new Error('A mailer is required')
@@ -128,6 +137,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   const deviceRegistrationLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authEmailLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authIpLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const mailboxBox = mailboxTokenKey ? createSecretBox(mailboxTokenKey) : null
+  const connectorReady = !!(microsoft?.clientId && mailboxBox)
   const presenceByTrip = new Map()
   const presenceTtlMs = 45_000
   const allowedOrigins = new Set([
@@ -147,7 +158,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.get('/api/health', async (_request, reply) => {
     try {
       await Promise.all([repository.ready?.(), fileStore?.ready?.()])
-      return { ok: true }
+      /* Which optional pieces this deployment actually came up with. It says
+         whether the box has the configuration, never what the configuration
+         is, and it is how a release is checked from outside. */
+      return { ok: true, connectors: { outlook: connectorReady } }
     } catch (error) {
       app.log.warn({ err: error }, 'readiness check failed')
       return reply.code(503).send({ ok: false })
@@ -1043,6 +1057,113 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     request.raw.on('error', close)
 
     return reply
+  })
+
+  /* ---- connected mailboxes --------------------------------------------
+
+     The sign-in and the consent are Microsoft's screens, because that is the
+     point of OAuth: the password is typed somewhere we cannot see it and the
+     scopes are granted somewhere we cannot fake. Everything either side of that
+     is ours — which mailboxes are connected, adding another, removing one. */
+  const connectorRedirect = `${publicUrl.replace(/\/$/, '')}/api/connectors/outlook/callback`
+
+  const publicConnection = connection => ({
+    id: connection.id,
+    provider: connection.provider,
+    email: connection.accountEmail,
+    name: connection.accountName,
+    scopes: connection.scopes,
+    connectedAt: connection.connectedAt,
+    lastUsedAt: connection.lastUsedAt,
+    needsReconnect: connection.needsReconnect,
+  })
+
+  app.get('/api/connectors', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const connections = await repository.listMailboxConnections(user.id)
+    return {
+      configured: connectorReady,
+      // Named so the screen can say what it is offering without knowing how it
+      // is wired underneath.
+      providers: connectorReady ? [{ id: 'outlook', name: 'Outlook', scopes: DEFAULT_SCOPES }] : [],
+      connections: connections.map(publicConnection),
+    }
+  })
+
+  app.post('/api/connectors/outlook/start', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!connectorReady) {
+      return reply.code(503).send({ error: 'No mailbox connector is configured on this server' })
+    }
+    const verifier = createVerifier()
+    const state = createState()
+    await repository.startMailboxConnection({
+      userId: user.id, provider: 'outlook', stateHash: stateHash(state), verifier,
+      redirectTo: typeof request.body?.redirectTo === 'string' ? request.body.redirectTo : null,
+      expiresAt: new Date(clock().getTime() + 10 * 60_000),
+    })
+    return {
+      authorizeUrl: authorizeUrl({
+        clientId: microsoft.clientId, tenant: microsoft.tenant, redirectUri: connectorRedirect,
+        state, challenge: challengeFor(verifier),
+        // Always offer the account picker: connecting a second mailbox is the
+        // normal case, and without this Microsoft signs you into the first one
+        // again without asking.
+        prompt: 'select_account',
+      }),
+    }
+  })
+
+  app.get('/api/connectors/outlook/callback', async (request, reply) => {
+    const back = where => reply.redirect(`${publicUrl.replace(/\/$/, '')}/profile?tab=connections${where}`)
+    if (request.query?.error) return back(`&connected=denied`)
+    const pending = request.query?.state
+      ? await repository.takeMailboxConnectionRequest(stateHash(request.query.state))
+      : null
+    if (!pending || !request.query?.code) return back('&connected=expired')
+
+    try {
+      const response = await connectorFetch(tokenUrl(microsoft.tenant), {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: tokenRequestBody({
+          clientId: microsoft.clientId, clientSecret: microsoft.clientSecret,
+          code: request.query.code, redirectUri: connectorRedirect, verifier: pending.verifier,
+        }).toString(),
+      })
+      const tokens = await response.json()
+      if (!response.ok || !tokens.access_token) throw new Error(tokens.error_description || 'No token')
+
+      const who = await connectorFetch('https://graph.microsoft.com/v1.0/me', {
+        headers: { authorization: `Bearer ${tokens.access_token}` },
+      }).then(result => result.json()).catch(() => ({}))
+
+      await repository.saveMailboxConnection({
+        userId: pending.userId,
+        provider: 'outlook',
+        accountId: who.id || who.userPrincipalName || who.mail || 'unknown',
+        accountEmail: who.mail || who.userPrincipalName || null,
+        accountName: who.displayName || null,
+        tenant: microsoft.tenant || 'common',
+        scopes: String(tokens.scope || '').split(' ').filter(Boolean),
+        accessToken: mailboxBox.seal(tokens.access_token),
+        refreshToken: mailboxBox.seal(tokens.refresh_token),
+        expiresAt: expiresAt(tokens, clock()),
+      })
+      return back('&connected=yes')
+    } catch {
+      return back('&connected=failed')
+    }
+  })
+
+  app.delete('/api/connectors/:id', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const removed = await repository.deleteMailboxConnection(user.id, request.params.id)
+    if (!removed) return reply.code(404).send({ error: 'That mailbox is not connected' })
+    return reply.code(204).send()
   })
 
   app.post('/api/trips/:tripId/stops', async (request, reply) => {

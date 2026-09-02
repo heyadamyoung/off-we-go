@@ -62,6 +62,17 @@ for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Docke
   fi
 done
 
+# The pipeline carries the values nobody wants to edit on the box by hand.
+# They are merged into the live .env before anything is built with it, and the
+# copy that arrived is destroyed here so it never reaches /opt/wayfare.
+readonly release_env="$staged_app/deploy/release.env"
+if [[ -f "$release_env" ]]; then
+  install -d -m 700 "$ROLLBACK_ROOT"
+  install -m 600 "$APP_ROOT/.env" "$ROLLBACK_ROOT/env-previous"
+  bash "$staged_app/deploy/merge-env.sh" "$release_env" "$APP_ROOT/.env"
+fi
+shred -u -- "$release_env" 2>/dev/null || rm -f -- "$release_env"
+
 install -d -m 700 "$ROLLBACK_ROOT/source-current"
 rsync -a --delete \
   --exclude='/.env' \
@@ -81,6 +92,7 @@ if docker image inspect wayfare-web:latest >/dev/null 2>&1; then
 fi
 
 rsync -a --delete \
+  --exclude='/deploy/release.env' \
   --exclude='/.env' \
   --exclude='/data/' \
   --exclude='/backups/' \

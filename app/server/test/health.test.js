@@ -20,3 +20,30 @@ test('health reports unavailable when PostgreSQL or upload storage is not writab
   assert.deepEqual(response.json(), { ok: false })
   await app.close()
 })
+
+/* The connector's secrets reach the box through the deployment, so the only
+   way to see whether they arrived is from outside. */
+test('health says whether the mailbox connector came up configured', async () => {
+  const base = {
+    repository: createMemoryRepository(),
+    fileStore: { async ready() {}, async remove() {} },
+    mailer: { async send() {} },
+    publicUrl: 'https://offwego.example.com',
+    sessionSecret: 'test-secret-that-is-long-enough',
+  }
+
+  const bare = await buildServer(base)
+  const connected = await buildServer({
+    ...base,
+    repository: createMemoryRepository(),
+    microsoft: { clientId: 'client-abc', clientSecret: 'shhh', tenant: 'common' },
+    mailboxTokenKey: Buffer.alloc(32, 7).toString('base64'),
+  })
+
+  assert.deepEqual((await bare.inject({ method: 'GET', url: '/api/health' })).json(),
+    { ok: true, connectors: { outlook: false } })
+  assert.deepEqual((await connected.inject({ method: 'GET', url: '/api/health' })).json(),
+    { ok: true, connectors: { outlook: true } })
+  await bare.close()
+  await connected.close()
+})

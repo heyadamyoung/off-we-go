@@ -43,6 +43,23 @@ const camelTrip = value => ({
   endsOn: value.ends_on ? String(value.ends_on).slice(0, 10) : null,
 })
 
+/* One shape for a connected mailbox, whatever the column names underneath. */
+const mailboxRow = row => (row ? {
+  id: row.id,
+  provider: row.provider,
+  accountId: row.account_id,
+  accountEmail: row.account_email,
+  accountName: row.account_name,
+  tenant: row.tenant,
+  scopes: row.scopes || [],
+  accessToken: row.access_token,
+  refreshToken: row.refresh_token,
+  expiresAt: row.expires_at,
+  connectedAt: row.connected_at,
+  lastUsedAt: row.last_used_at,
+  needsReconnect: row.needs_reconnect,
+} : null)
+
 export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
   const admin = String(adminEmail || '').trim().toLowerCase()
@@ -844,6 +861,71 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const value = result.rows[0]
       return value ? { ...value, tripId: value.trip_id, userId: value.user_id, lastSeen: value.last_seen } : null
     },
+    /* ---- connected mailboxes ------------------------------------------
+       A row per mailbox, so a second one is a second row. Tokens arrive
+       already sealed; this never sees them in the clear. */
+    async startMailboxConnection({ userId, provider, stateHash, verifier, redirectTo, expiresAt }) {
+      await pool.query(`insert into mailbox_connection_requests
+        (state_hash,user_id,provider,verifier,redirect_to,expires_at) values($1,$2,$3,$4,$5,$6)`,
+      [stateHash, userId, provider, verifier, redirectTo || null, expiresAt])
+      await pool.query('delete from mailbox_connection_requests where expires_at < now()')
+    },
+
+    async takeMailboxConnectionRequest(stateHash) {
+      const result = await pool.query(`delete from mailbox_connection_requests
+        where state_hash=$1 and expires_at > now() returning *`, [stateHash])
+      const row = result.rows[0]
+      return row ? { userId: row.user_id, provider: row.provider, verifier: row.verifier,
+                     redirectTo: row.redirect_to } : null
+    },
+
+    async saveMailboxConnection(connection) {
+      const result = await pool.query(`insert into mailbox_connections
+        (user_id,provider,account_id,account_email,account_name,tenant,scopes,
+         access_token,refresh_token,expires_at,needs_reconnect)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false)
+        on conflict (user_id,provider,account_id) do update set
+          account_email=excluded.account_email, account_name=excluded.account_name,
+          tenant=excluded.tenant, scopes=excluded.scopes, access_token=excluded.access_token,
+          refresh_token=coalesce(excluded.refresh_token, mailbox_connections.refresh_token),
+          expires_at=excluded.expires_at, needs_reconnect=false, connected_at=now()
+        returning *`, [
+        connection.userId, connection.provider, connection.accountId, connection.accountEmail,
+        connection.accountName, connection.tenant, connection.scopes || [],
+        connection.accessToken, connection.refreshToken, connection.expiresAt,
+      ])
+      return mailboxRow(result.rows[0])
+    },
+
+    async listMailboxConnections(userId) {
+      const result = await pool.query(`select * from mailbox_connections
+        where user_id=$1 order by connected_at`, [userId])
+      return result.rows.map(mailboxRow)
+    },
+
+    async findMailboxConnection(userId, id) {
+      const result = await pool.query('select * from mailbox_connections where user_id=$1 and id=$2',
+        [userId, id])
+      return result.rows[0] ? mailboxRow(result.rows[0]) : null
+    },
+
+    async updateMailboxTokens(id, { accessToken, refreshToken, expiresAt }) {
+      const result = await pool.query(`update mailbox_connections set access_token=$2,
+        refresh_token=coalesce($3, refresh_token), expires_at=$4, last_used_at=now(),
+        needs_reconnect=false where id=$1 returning *`, [id, accessToken, refreshToken, expiresAt])
+      return result.rows[0] ? mailboxRow(result.rows[0]) : null
+    },
+
+    async markMailboxNeedsReconnect(id) {
+      await pool.query('update mailbox_connections set needs_reconnect=true where id=$1', [id])
+    },
+
+    async deleteMailboxConnection(userId, id) {
+      const result = await pool.query('delete from mailbox_connections where user_id=$1 and id=$2',
+        [userId, id])
+      return result.rowCount > 0
+    },
+
     async insertPosition(device, fix) {
       const result = await pool.query(`insert into positions
         (trip_id,device_id,lng,lat,accuracy,altitude,speed,heading,battery,recorded_at)
@@ -867,14 +949,20 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const value = result.rows[0]
       return value ? { lng: value.lng, lat: value.lat, at: value.recorded_at } : null
     },
-    async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 6000 } = {}) {
+    async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 100000 } = {}) {
       if (!await this.canReadTrip(user.id, tripId)) return null
       const [devices, fixes, cursor] = await Promise.all([
         pool.query('select * from devices where trip_id=$1 order by created_at', [tripId]),
-        pool.query(`with ranked as (
+        pool.query(`with sampled as (
+          select distinct on (device_id, floor(extract(epoch from recorded_at) / 30))
+            id,device_id,lng,lat,accuracy,speed,recorded_at
+          from positions where trip_id=$1 and recorded_at >= $2 and id>$3
+          order by device_id, floor(extract(epoch from recorded_at) / 30),
+            accuracy nulls last, recorded_at desc, id desc
+        ), ranked as (
           select id,device_id,lng,lat,accuracy,speed,recorded_at,
             row_number() over(partition by device_id order by id desc) as device_rank
-          from positions where trip_id=$1 and recorded_at >= $2 and id>$3
+          from sampled
         ) select id,device_id,lng,lat,accuracy,speed,recorded_at from ranked
           where device_rank <= $4 order by id`, [tripId, since, afterId, maxPerDevice]),
         pool.query('select coalesce(max(id),$2::bigint) cursor from positions where trip_id=$1', [tripId, afterId]),

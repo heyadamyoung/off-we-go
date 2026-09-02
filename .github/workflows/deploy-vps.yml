@@ -95,6 +95,24 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Stage the release environment
+        # /opt/wayfare/.env is not edited by hand. The values the running
+        # server needs but the repository must never hold travel with the
+        # release, and the deploy script folds them in and destroys the copy.
+        env:
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+          MS_TENANT: ${{ secrets.MS_TENANT }}
+          MAILBOX_TOKEN_KEY: ${{ secrets.MAILBOX_TOKEN_KEY }}
+        run: |
+          umask 077
+          {
+            echo "MS_CLIENT_ID=$MS_CLIENT_ID"
+            echo "MS_CLIENT_SECRET=$MS_CLIENT_SECRET"
+            echo "MS_TENANT=$MS_TENANT"
+            echo "MAILBOX_TOKEN_KEY=$MAILBOX_TOKEN_KEY"
+          } > app/deploy/release.env
+
       - name: Stream release to the VPS
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}

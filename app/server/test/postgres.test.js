@@ -254,10 +254,11 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   await bulk.end()
   const large = await repository.loadLive(user, trip.id, new Date('2027-01-01T00:00:00.000Z'))
   const perDevice = Object.groupBy(large.fixes, value => value.deviceId)
-  assert.equal(perDevice[device.id].length, 6000, 'one noisy phone is bounded independently')
-  assert.equal(perDevice[secondDevice.id].length, 2500)
-  assert.equal(perDevice[thirdDevice.id].length, 2500)
-  assert.equal(large.fixes.length, 11000, 'three phones are not truncated by one aggregate limit')
+  assert.equal(perDevice[device.id].length, 669,
+    'a noisy phone keeps one accurate sample per 30-second progress interval across the full range')
+  assert.equal(perDevice[secondDevice.id].length, 84)
+  assert.equal(perDevice[thirdDevice.id].length, 84)
+  assert.equal(large.fixes.length, 837, 'downsampling remains independent for every phone')
 
   await repository.insertPosition(secondDevice, {
     lng: -104.5, lat: 50.5, at: new Date('2027-01-03T00:00:00.000Z'),

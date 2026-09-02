@@ -9,7 +9,7 @@ import { useToast } from '../../../shared/ui/toast'
 import useProfile from '../model/use-profile'
 import { SheetTab } from '../../../shared/ui/sheet'
 import {
-  AccountSection, AlertsSection, DataSection, ProfileSection, TripsSection,
+  AccountSection, AlertsSection, ConnectionsSection, DataSection, ProfileSection, TripsSection,
 } from './profile-sections'
 import { DEFAULT_PROFILE_TAB, PROFILE_TAB_LABELS } from '../../../profile-tabs-core'
 import { useTripList } from '../model/use-trip-list'
@@ -63,7 +63,7 @@ export default function ProfilePage() {
 
   const sections = {
     profile, trips, preferences, savePreferences, field, set, saveDetails, saving, draft,
-    download, removeAccount,
+    download, removeAccount, toast: notify,
   }
 
   return (
@@ -126,6 +126,7 @@ export default function ProfilePage() {
           {tab === 'profile' && <ProfileSection {...sections} />}
           {tab === 'signin' && <AccountSection {...sections} />}
           {tab === 'alerts' && <AlertsSection {...sections} />}
+          {tab === 'connections' && <ConnectionsSection {...sections} />}
           {tab === 'trips' && <TripsSection {...sections} />}
           {tab === 'data' && <DataSection {...sections} />}
         </div>
