@@ -134,9 +134,10 @@ export default function PhonesTab({ tripId, family, canEdit, me, toast, phones, 
 
       {canEdit && (
         <form onSubmit={add} className="flex gap-2">
-          <input className="flex-1 rounded-lg border border-line bg-raised px-3 py-2.5 text-[12.5px] outline-none"
+          <input className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
+                            text-[12.5px] outline-none"
                  placeholder={suggested} value={name} onChange={event => setName(event.target.value)} />
-          <button className="btn btn-accent" type="submit" disabled={busy}>
+          <button className="btn btn-accent flex-none" type="submit" disabled={busy}>
             {busy ? 'Adding…' : 'Add a phone'}
           </button>
         </form>

@@ -228,19 +228,21 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
               </label>
             </div>
             <div className="flex gap-2">
-              <input className="flex-1 rounded-lg border border-line bg-raised px-3 py-2.5 text-[12.5px] outline-none"
+              <input className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
+                                text-[12.5px] outline-none"
                      type="email" required placeholder="them@example.com" value={email}
                      onChange={event => setEmail(event.target.value)} />
-              <button className="btn btn-accent" type="submit" disabled={busy || !email.trim()}>
+              <button className="btn btn-accent flex-none" type="submit" disabled={busy || !email.trim()}>
                 {busy ? 'Inviting…' : 'Invite'}
               </button>
             </div>
           </form>
           <div className="flex gap-2">
             <input readOnly value={appLink} onFocus={event => event.target.select()}
-                   className="flex-1 rounded-lg border border-line bg-raised px-3 py-2.5 text-[12.5px]
-                              text-muted outline-none" />
-            <button className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(appLink)
+                   className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
+                              text-[12.5px] text-muted outline-none" />
+            <button className="btn btn-ghost flex-none"
+                    onClick={() => navigator.clipboard?.writeText(appLink)
               .then(() => toast('Link copied'))
               .catch(error => toast(appErrorMessage(error, 'copy'), 'error'))}>
               <Icon n="copy" s={14} />Copy
