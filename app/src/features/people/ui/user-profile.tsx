@@ -50,7 +50,7 @@ export default function UserProfilePage({ handle }: { handle: string }) {
       <span className="avatar size-20 border-0 bg-[#5B8DEF] text-3xl">
         {profile.avatar ? <img src={profile.avatar} alt="" /> : (profile.name || '?')[0].toUpperCase()}
       </span>
-      <h1 className="text-2xl font-extrabold tracking-tight">{profile.name}</h1>
+      <h1 className="break-words text-2xl font-extrabold tracking-tight">{profile.name}</h1>
       <p className="hint">@{profile.handle}</p>
       <p className="hint max-w-[380px]">You can see this profile because you share a trip.</p>
       <Link className="btn btn-ghost mt-1" to="/">Back to your trips</Link>

@@ -71,9 +71,10 @@ export default function ProfilePage() {
           <AccountMenu me={profile} />
         </div>
 
-        <header className="surface flex items-center gap-5 p-[22px]">
+        <header className="surface flex items-center gap-5 p-[22px] max-sm:gap-4 max-sm:p-4">
           <button className="relative size-[76px] flex-none overflow-hidden rounded-full bg-[#5B8DEF]
-                             text-[30px] font-extrabold text-[#10141C]"
+                             text-[30px] font-extrabold text-[#10141C] max-sm:size-[60px]
+                             max-sm:text-[24px]"
                   onClick={() => picker.current?.click()} title="Change your picture">
             {profile.avatar
               ? <img src={profile.avatar} alt="" className="size-full object-cover" />
@@ -85,9 +86,13 @@ export default function ProfilePage() {
                    if (file) saveAvatar(file)
                    event.target.value = ''
                  }} />
-          <div className="flex flex-1 flex-col gap-1">
-            <h1 className="m-0 text-[28px] font-extrabold tracking-[-.02em]">{name}</h1>
-            <div className="text-[13px] text-muted">
+          {/* min-w-0: a flex child will not shrink below its content by default,
+              so a long name pushed itself out through the side of the card
+              rather than ending in an ellipsis. */}
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h1 className="m-0 truncate text-[28px] font-extrabold tracking-[-.02em]
+                           max-sm:text-[21px]">{name}</h1>
+            <div className="truncate text-[13px] text-muted">
               {[profile.handle ? `@${profile.handle}` : null, profile.homePlace,
                 joined ? `joined ${joined}` : null].filter(Boolean).join(' · ')}
             </div>

@@ -172,6 +172,25 @@ test('a failed sign-in return explains itself rather than looping', async ({ pag
    and impossible to touch. A desktop browser reports no inset, so a measured
    position proves nothing here; what has to hold is that the rule accounts for
    one at all. */
+/* A flex child does not shrink below its content unless it is told it may, so
+   a long display name pushed itself out through the side of its card and off
+   the screen instead of ending in an ellipsis. */
+test('a long name stays inside its card on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/profile')
+  const name = page.locator('header h1').first()
+  await expect(name).toBeVisible()
+
+  const fits = await name.evaluate(el => {
+    const card = el.closest('header').getBoundingClientRect()
+    const text = el.getBoundingClientRect()
+    return { overflow: Math.round(text.right - card.right), width: Math.round(text.width) }
+  })
+
+  expect(fits.overflow, 'the name runs out through the side of the card').toBeLessThanOrEqual(0)
+  expect(fits.width, 'the name has no width at all').toBeGreaterThan(0)
+})
+
 test('the dashboard chrome is positioned below the notch, not under it', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'Account' })).toBeVisible()
