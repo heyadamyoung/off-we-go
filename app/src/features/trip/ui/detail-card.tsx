@@ -35,9 +35,15 @@ export default function DetailCard(props: DetailCardProps) {
          bar, and the body scrolls inside that. */
       'max-lg:max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-1)_-_12px)] ' +
       'max-lg:w-auto ' + (props.shifted ? 'left-[492px] max-lg:left-4' : 'left-7')}>
-      <div className="relative h-[170px] flex-none overflow-hidden bg-raised2 max-sm:h-[128px]">
+      {/* A photograph is the point of the card it is on, so it is shown whole
+          against the card rather than cropped to a letterbox strip — a portrait
+          one lost everything but a band across its middle. A stop's picture is
+          decoration behind a title and still fills its space. */}
+      <div className={'relative flex-none overflow-hidden bg-canvas ' +
+        (photo ? 'h-[240px] max-sm:h-[210px]' : 'h-[170px] max-sm:h-[128px]')}>
         {photo || stop?.src
-          ? <Img item={(photo || stop)!} w={720} h={340} eager className="size-full object-cover" />
+          ? <Img item={(photo || stop)!} w={720} h={720} eager
+                 className={'size-full ' + (photo ? 'object-contain' : 'object-cover')} />
           : <span className="grid size-full place-items-center text-faint opacity-50">
               <Icon n={stop?.icon || 'pin'} s={56} />
             </span>}
