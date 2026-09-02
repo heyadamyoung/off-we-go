@@ -572,6 +572,33 @@ test('the settings sheet opens on a tab, and the tab is in the URL', async ({ pa
   await expect(page).toHaveURL(/tab=phones/)
 })
 
+/* A box that scrolls on one axis computes the other to auto, so a device token
+   or a tracker URL turned the settings sheet into a sideways scroller — and the
+   two ways of finishing with the sheet, saving and closing, sat on different
+   rows with the scrolling content between them. */
+test('the settings sheet finishes on one row and never scrolls sideways', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+
+  // The header carries a Close too, so both of these come from the footer.
+  const save = page.locator('.dlgfoot').getByRole('button', { name: 'Save' })
+  const close = page.locator('.dlgfoot').getByRole('button', { name: 'Close', exact: true })
+  const [saveBox, closeBox] = await Promise.all([save.boundingBox(), close.boundingBox()])
+
+  expect(Math.abs(saveBox.y - closeBox.y), 'saving and closing are on different rows')
+    .toBeLessThanOrEqual(1)
+  expect(saveBox.height, 'the two buttons are different heights').toBe(closeBox.height)
+
+  const sideways = await page.evaluate(() => {
+    const body = document.querySelector('.dlg .mb')
+    return { style: getComputedStyle(body).overflowX, over: body.scrollWidth - body.clientWidth }
+  })
+  expect(sideways.style, 'the sheet body can scroll sideways').toBe('hidden')
+  expect(sideways.over, 'something inside the sheet is wider than it').toBeLessThanOrEqual(1)
+})
+
 test('the roster lists people and takes an invite', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Trip settings' }).click()

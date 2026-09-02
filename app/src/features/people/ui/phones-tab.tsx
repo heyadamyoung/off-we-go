@@ -162,7 +162,7 @@ function SetupCard({ card, toast, tracking, onEnable, onClose }) {
   const Row = ({ k, v }: { k: string; v: string }) => (
     <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2">
       <span className="text-[11.5px] text-faint">{k}</span>
-      <code className="cursor-copy break-all rounded-lg border border-line bg-raised px-2 py-1.5
+      <code className="min-w-0 cursor-copy break-all rounded-lg border border-line bg-raised px-2 py-1.5
                        font-mono text-[11.5px] leading-snug text-ink"
             onClick={() => copy(k, v)} title="Click to copy">{v}</code>
       <button className="grid size-9 place-items-center rounded-lg border border-line bg-raised"
@@ -202,7 +202,8 @@ function SetupCard({ card, toast, tracking, onEnable, onClose }) {
           <Row k="Device identifier" v={card.token} />
           <Row k="Server URL" v={trackUrl} />
           <p className="hint">
-            Traccar Client, OwnTracks and GPSLogger all work: post to <code>{trackUrl}?id=</code>token,
+            Traccar Client, OwnTracks and GPSLogger all work: post to{' '}
+            <code className="break-all">{trackUrl}?id=</code>token,
             every 30 seconds, high accuracy.
           </p>
         </>

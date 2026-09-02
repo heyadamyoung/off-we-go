@@ -31,9 +31,14 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
                   onClick={onClose} aria-label="Close"><Icon n="x" s={16} /></button>
         </div>
         {tabs && <div className="flex flex-none gap-0.5 border-b border-line px-[18px]">{tabs}</div>}
-        <div className="mb flex flex-col gap-3.5 overflow-y-auto overscroll-contain p-[18px]">{children}</div>
+        {/* overflow-x-hidden explicitly: a box that scrolls on one axis computes
+            the other to auto, so anything a little too wide — a device name, a
+            long address — turned the whole panel into a sideways scroller. */}
+        <div className="mb flex flex-col gap-3.5 overflow-y-auto overflow-x-hidden overscroll-contain
+                        break-words p-[18px]">{children}</div>
         {footer && (
-          <div className="flex flex-none justify-end gap-2 border-t border-line px-[18px] pb-4 pt-3">
+          <div className="dlgfoot flex flex-none items-center justify-end gap-2 border-t border-line
+                          px-[18px] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3">
             {footer}
           </div>
         )}

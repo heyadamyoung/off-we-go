@@ -28,13 +28,22 @@ interface SettingsProps {
 const TABS: Array<[SettingsTab, string]> = [['trip', 'Trip'], ['people', 'People'], ['phones', 'Location']]
 
 export default function TripSettingsSheet(props: SettingsProps) {
+  const form = useTripFields(props)
   return (
     <Sheet wide title="Trip settings" onClose={props.onClose}
            tabs={TABS.map(([key, label]) => (
              <SheetTab key={key} on={props.tab === key} onClick={() => props.onTab(key)}>{label}</SheetTab>
            ))}
-           footer={<button className="btn btn-ghost" onClick={props.onClose}>Close</button>}>
-      {props.tab === 'trip' && <TripTab {...props} />}
+           /* Saving and closing are both ways of finishing with this sheet, so
+              they finish it from the same row rather than one being stranded
+              at the end of the scrolling content above the other. */
+           footer={<>
+             <button className="btn btn-ghost" onClick={props.onClose}>Close</button>
+             {props.tab === 'trip' && props.canEdit && (
+               <button className="btn btn-accent" disabled={!form.dirty} onClick={form.save}>Save</button>
+             )}
+           </>}>
+      {props.tab === 'trip' && <TripTab {...props} form={form} />}
       {props.tab === 'people' && <PeopleTab {...props} />}
       {props.tab === 'phones' && (
         <PhonesTab tripId={props.tripId} family={props.family} canEdit={props.canEdit}
@@ -44,7 +53,9 @@ export default function TripSettingsSheet(props: SettingsProps) {
   )
 }
 
-function TripTab({ trip, canEdit, onSaveTrip }: SettingsProps) {
+/* The form's state lives out here because the button that commits it lives in
+   the sheet's footer, beside the one that closes the sheet. */
+function useTripFields({ trip, onSaveTrip }: SettingsProps) {
   const [fields, setFields] = useState({
     title: trip.title || '', crew: trip.crew || '',
     startsOn: trip.startsOn || '', endsOn: trip.endsOn || '',
@@ -62,6 +73,13 @@ function TripTab({ trip, canEdit, onSaveTrip }: SettingsProps) {
     })
     setDirty(false)
   }
+  return { fields, set, dirty, save }
+}
+
+type TripFields = ReturnType<typeof useTripFields>
+
+function TripTab({ canEdit, form }: SettingsProps & { form: TripFields }) {
+  const { fields, set } = form
 
   if (!canEdit) {
     return <p className="hint">Only the people running this trip can change its details.</p>
@@ -91,7 +109,6 @@ function TripTab({ trip, canEdit, onSaveTrip }: SettingsProps) {
       <p className="hint">
         Stops and photos are shown in local time where they happened; followers at home see both.
       </p>
-      <div><button className="btn btn-accent" disabled={!dirty} onClick={save}>Save</button></div>
     </>
   )
 }
