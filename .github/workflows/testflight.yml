@@ -40,6 +40,11 @@ jobs:
       TESTFLIGHT_GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
       # Off by default: a build an evening is fine, ten notifications is not.
       TESTFLIGHT_NOTIFY: ${{ vars.TESTFLIGHT_NOTIFY }}
+      # The build prerenders the shell by booting a server on "localhost" and
+      # fetching it back. Where that resolves to ::1 first the fetch times out
+      # and the build dies — the same fault the deploy image had. Both ends on
+      # IPv4 and they find each other.
+      NODE_OPTIONS: --dns-result-order=ipv4first
     defaults:
       run:
         working-directory: app
