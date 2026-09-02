@@ -29,6 +29,10 @@ const BY_AUDIENCE = {
   },
 };
 
+/* Apple returns these with their own offsets; two timestamps side by side in
+   different zones read as a seven-hour gap that is not there. */
+export const utc = value => `${new Date(value).toISOString().replace('T', ' ').slice(0, 16)}Z`;
+
 export const readable = (state, audience = 'external') =>
   BY_AUDIENCE[audience]?.[state] || READABLE[state] || state || 'unknown';
 
@@ -46,7 +50,7 @@ export function describeGroup(group, testers) {
 export function describeBuild({
   version, release, uploaded, processingState, internalState, externalState, groups, submitted,
 }) {
-  const when = uploaded ? new Date(uploaded).toISOString().replace('T', ' ').slice(0, 16) : 'unknown time';
+  const when = uploaded ? utc(uploaded) : 'unknown time';
   const where = groups?.length ? groups.join(', ') : 'no external group';
   return `${release || '?'} build ${version} (${when})  processing: ${readable(processingState, 'internal')}`
     + `  internal: ${readable(internalState, 'internal')}`
@@ -103,7 +107,7 @@ async function main() {
       groups: (groups?.data || []).map(group => group.attributes?.name),
       submitted: review?.data?.attributes?.betaReviewState
         ? `${review.data.attributes.betaReviewState}${review.data.attributes.submittedDate
-          ? ` since ${review.data.attributes.submittedDate.slice(0, 16).replace('T', ' ')}` : ''}`
+          ? ` since ${utc(review.data.attributes.submittedDate)}` : ''}`
         : null,
     }));
   }

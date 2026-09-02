@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { describeBuild, describeGroup, readable } from '../scripts/testflightStatus.mjs'
+import { describeBuild, describeGroup, readable, utc } from '../scripts/testflightStatus.mjs'
 
 test('Apple’s states are said in words a person can act on', () => {
   assert.equal(readable('READY_FOR_BETA_TESTING'), 'approved — they can install it')
@@ -29,7 +29,7 @@ test('a build line says who can install it and where it went', () => {
     groups: ['Wayfare Friends & Family'],
   })
 
-  assert.match(line, /^1\.1 build 14 \(2026-09-01 23:45\)/,
+  assert.match(line, /^1\.1 build 14 \(2026-09-01 23:45Z\)/,
     'which version a build belongs to decides whether Apple reviews it afresh')
   assert.match(line, /internal: installable/)
   assert.match(line, /external: in beta review at Apple/)
@@ -69,4 +69,11 @@ test('a build with no submission of its own says so, rather than looking unrevie
     submitted: 'WAITING_FOR_REVIEW since 2026-09-01 23:45',
   })
   assert.match(paid, /review: WAITING_FOR_REVIEW since 2026-09-01 23:45/)
+})
+
+/* Apple answers with its own offsets, and two stamps in different zones sitting
+   next to each other read as a seven-hour gap that never happened. */
+test('times are all said in the same zone', () => {
+  assert.equal(utc('2026-09-01T23:45:00Z'), '2026-09-01 23:45Z')
+  assert.equal(utc('2026-09-01T16:45:00-07:00'), '2026-09-01 23:45Z')
 })
