@@ -79,3 +79,24 @@ test('production restore includes the Logto identity database', () => {
   assert.match(restore, /docker compose stop api logto/);
   assert.match(restore, /alter database logto_restore rename to logto/);
 });
+
+/* A Caddyfile that does not parse is a site that does not start. This one has
+   already cost a deploy: an "encode" response matcher does not accept "not",
+   the container refused to come up, and the pipeline rolled the release back.
+   Caddy will say so in a second, given the chance. */
+test('the production Caddyfile is one Caddy will accept', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const result = spawnSync('docker', [
+    'run', '--rm', '-v', `${appRoot.split(String.fromCharCode(92)).join('/')}/deploy:/cfg:ro`,
+    '-e', 'WAYFARE_DOMAIN=example.com',
+    '-e', 'LOGTO_DOMAIN=auth.example.com',
+    '-e', 'LOGTO_ADMIN_DOMAIN=admin.example.com',
+    'caddy:2.10-alpine',
+    'caddy', 'validate', '--config', '/cfg/Caddyfile', '--adapter', 'caddyfile',
+  ], { encoding: 'utf8', env: { ...process.env, MSYS_NO_PATHCONV: '1' } })
+
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  // Caddy says where it says it; take either stream.
+  assert.match(`${result.stdout || ''}${result.stderr || ''}`, /Valid configuration/)
+})

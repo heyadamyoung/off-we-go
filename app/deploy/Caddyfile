@@ -1,11 +1,8 @@
 {$WAYFARE_DOMAIN} {
-  # Not the live stream: compression holds bytes back waiting for more of them,
-  # which turns a pushed position into a slow one.
-  encode zstd gzip {
-    match {
-      not header Content-Type text/event-stream*
-    }
-  }
+  # Everything but the live stream: compression holds bytes back waiting for
+  # more of them, which turns a pushed position into a slow one.
+  @compressible not path /api/trips/*/live/stream
+  encode @compressible zstd gzip
 
   handle /.well-known/apple-app-site-association {
     reverse_proxy api:3000
