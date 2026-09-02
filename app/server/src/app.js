@@ -5,6 +5,8 @@ import formbody from '@fastify/formbody'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { registerMcpRoutes } from './mcp.js'
 import { createWindowRateLimiter } from './rateLimit.js'
+import { createLiveStream } from './live-stream.js'
+import { changeKind } from './change-kind.js'
 import { createLogtoExperienceService } from './logto-experience.js'
 import { normalizeProfileHandle } from './slugs.js'
 
@@ -88,6 +90,41 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   // two authenticated multipart image routes below.
   const app = Fastify({ logger, bodyLimit: 64 * 1024, trustProxy })
   const ingestLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const liveStream = createLiveStream()
+
+  /* Everything a browser watching this trip would want to know about. The
+     positions carry their payload because they are incremental and cheap; the
+     rest say only what changed, and the browser asks for that slice — one
+     serializer, not two, and no chance of the pushed copy drifting from the
+     fetched one. */
+  const touched = (tripId, kind) => {
+    if (tripId) liveStream.announce(tripId, kind)
+  }
+
+  /* One hook rather than an announce buried in every route: a request that
+     changed something, and was allowed to, tells whoever is watching that trip.
+     After the response, so nothing is announced that did not happen. */
+  app.addHook('onResponse', async (request, reply) => {
+    if (reply.statusCode >= 400) return
+    const tripId = request.params?.tripId
+    const kind = tripId && changeKind(request.method, request.raw?.url)
+    if (kind) touched(tripId, kind)
+  })
+
+  /* One shape for the positions whether they are asked for or pushed, so a
+     browser cannot tell the two apart beyond how quickly they arrived. */
+  const livePayload = result => ({
+    devices: result.devices.map(device => ({
+      id: device.id, name: device.name, slug: device.slug, userId: device.userId,
+      lastSeen: device.lastSeen?.toISOString?.() || device.lastSeen || null,
+    })),
+    fixes: result.fixes.map(fix => ({
+      deviceId: fix.deviceId, lng: fix.lng, lat: fix.lat,
+      accuracy: fix.accuracy, speed: fix.speed,
+      at: fix.at.toISOString(),
+    })),
+    cursor: result.cursor,
+  })
   const deviceRegistrationLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authEmailLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authIpLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
@@ -903,7 +940,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       heading: finite(body.cog ?? body.bearing ?? request.query?.bearing),
       battery: finite(body.batt ?? body.battery ?? request.query?.batt),
     }
-    await repository.insertPosition(device, fix)
+    const stored = await repository.insertPosition(device, fix)
+    // Everyone looking at this trip hears about it now, rather than within ten
+    // seconds of now.
+    if (stored !== false) liveStream.announce(device.tripId)
     return ownTracks ? [] : reply.type('text/plain').send('OK')
   })
 
@@ -917,18 +957,92 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       user, request.params.tripId, new Date(clock().getTime() - hours * 3600_000), { afterId: cursor },
     )
     if (!result) return reply.code(403).send({ error: 'You cannot view this trip' })
-    return {
-      devices: result.devices.map(device => ({
-        id: device.id, name: device.name, slug: device.slug, userId: device.userId,
-        lastSeen: device.lastSeen?.toISOString?.() || device.lastSeen || null,
-      })),
-      fixes: result.fixes.map(fix => ({
-        deviceId: fix.deviceId, lng: fix.lng, lat: fix.lat,
-        accuracy: fix.accuracy, speed: fix.speed,
-        at: fix.at.toISOString(),
-      })),
-      cursor: result.cursor,
+    return livePayload(result)
+  })
+
+  /* The same positions as /live, pushed. The browser holds this open and the
+     server writes a frame when a phone reports; there is no interval anywhere.
+
+     It is Server-Sent Events rather than a socket because everything here goes
+     one way: phones post over plain HTTP and browsers only listen. That also
+     means no protocol upgrade to arrange through Caddy, and a reconnect that
+     resumes from the cursor it already had. */
+  app.get('/api/trips/:tripId/live/stream', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const tripId = request.params.tripId
+    const hours = Math.min(Math.max(finite(request.query?.hours) || 24, 1), 720)
+    const since = () => new Date(clock().getTime() - hours * 3600_000)
+    const rawCursor = finite(request.query?.cursor)
+    let cursor = rawCursor == null ? 0 : Math.max(0, Math.floor(rawCursor))
+
+    const opening = await repository.loadLive(user, tripId, since(), { afterId: cursor })
+    if (!opening) return reply.code(403).send({ error: 'You cannot view this trip' })
+
+    reply.raw.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      // Nothing between here and the browser may hold a frame back waiting for
+      // more of it; that is what turns a push into a slower poll.
+      'x-accel-buffering': 'no',
+    })
+
+    let open = true
+    const write = text => {
+      if (!open) return
+      try { reply.raw.write(text) } catch { open = false }
     }
+    const send = payload => {
+      cursor = payload.cursor
+      write(`id: ${payload.cursor}\ndata: ${JSON.stringify(payload)}\n\n`)
+    }
+
+    // Tell the browser how long to wait before reconnecting, then hand it
+    // whatever it missed while it was away.
+    write('retry: 3000\n\n')
+    send(livePayload(opening))
+
+    let reading = false
+    let again = false
+    const deliver = async () => {
+      if (reading) { again = true; return }
+      reading = true
+      try {
+        do {
+          again = false
+          const next = await repository.loadLive(user, tripId, since(), { afterId: cursor })
+          if (!next || !open) break
+          if (next.fixes.length || next.devices.length) send(livePayload(next))
+        } while (again && open)
+      } catch {
+        // A read that fails is not a reason to drop the connection; the next
+        // position will try again, and the browser can always reconnect.
+      } finally {
+        reading = false
+      }
+    }
+
+    const unwatch = liveStream.watch(tripId, kind => {
+      if (kind === 'positions') { deliver(); return }
+      // Everything else says only what changed; the browser asks for that slice
+      // rather than the server keeping a second copy of every serializer.
+      write(`event: changed\ndata: ${JSON.stringify({ kind })}\n\n`)
+    })
+    // Proxies close a connection that says nothing. A comment is not an event.
+    const heartbeat = setInterval(() => write(':\n\n'), 25_000)
+
+    const close = () => {
+      if (!open) return
+      open = false
+      clearInterval(heartbeat)
+      unwatch()
+      try { reply.raw.end() } catch { /* already gone */ }
+    }
+    request.raw.on('close', close)
+    request.raw.on('error', close)
+
+    return reply
   })
 
   app.post('/api/trips/:tripId/stops', async (request, reply) => {

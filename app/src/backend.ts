@@ -1,4 +1,6 @@
 import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
+import { liveRetryDelay } from './live-positions-core'
+import { createTripStreams } from './trip-stream-core'
 import { createApiClient, safeOAuthContinuation } from './api-client-core'
 import { mobileTracker, sessionStorage } from './mobile'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
@@ -270,10 +272,18 @@ export async function uploadAvatar(file: File): Promise<string> {
   return result.avatar
 }
 
+/* One connection per trip on screen, shared by everything watching it. */
+const tripStreams = createTripStreams({
+  open: (path, signal) => authClient.stream(path, signal),
+  poll: (tripId, options) => loadLive(tripId, options),
+  path: tripPath,
+  asFix: value => asFix(value as never),
+  retryDelay: liveRetryDelay,
+})
+
 export function subscribeToTrip(tripId: Id, onChange: () => void) {
   if (isSample(tripId)) return () => {}
-  const timer = setInterval(onChange, 15_000)
-  return () => clearInterval(timer)
+  return tripStreams.watch(String(tripId), { onChange })
 }
 
 export async function updateTripPresence(tripId: Id, clientId: string): Promise<Id[]> {
@@ -328,24 +338,11 @@ export function subscribeToPositions(
   } = {},
 ) {
   if (isSample(tripId)) return () => {}
-  let stopped = false, polling = false, cursor = initialCursor
-  const poll = async () => {
-    if (polling || stopped) return
-    polling = true
-    try {
-      const result = await loadLive(tripId, { hours, cursor })
-      for (const fix of result.fixes) onFix(fix)
-      cursor = result.cursor
-      onState?.('ready')
-    } catch (error) {
-      onState?.('error', error)
-    } finally {
-      polling = false
-    }
-  }
-  const timer = setInterval(() => { if (!stopped) poll() }, 10_000)
-  return () => { stopped = true; clearInterval(timer) }
+  return tripStreams.watch(String(tripId), {
+    onFix, onState, cursor: initialCursor, hours,
+  })
 }
+
 export async function sweepPhotos() { return { objects: 0, inserted: 0, skipped: [] } }
 
 export async function signInWithPassword(email: string, password: string) {

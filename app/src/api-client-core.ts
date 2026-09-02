@@ -53,6 +53,20 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     return session
   }
 
+  /* A response to read rather than parse: Server-Sent Events, held open. Not
+     EventSource, which cannot carry the bearer token everything here needs. */
+  const stream = async (path: string, signal?: AbortSignal): Promise<Response> => {
+    await hydrate()
+    const headers: Record<string, string> = { accept: 'text/event-stream' }
+    if (session?.accessToken) headers.authorization = `Bearer ${session.accessToken}`
+    const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, {
+      credentials: 'include', headers, signal, cache: 'no-store',
+    })
+    if (response.status === 401) await save(null)
+    if (!response.ok) throw new Error(`Stream failed (${response.status})`)
+    return response
+  }
+
   const request = async <T = any>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
     await hydrate()
     const headers: Record<string, string> = { ...Object.fromEntries(new Headers(options.headers).entries()) }
@@ -86,6 +100,7 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
 
   return {
     request,
+    stream,
     getSession() { return session },
     subscribe(listener: (session: AuthSession | null) => void) { listeners.add(listener); return () => listeners.delete(listener) },
     async acceptSession(value: AuthSession) {

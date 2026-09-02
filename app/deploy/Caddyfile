@@ -1,5 +1,11 @@
 {$WAYFARE_DOMAIN} {
-  encode zstd gzip
+  # Not the live stream: compression holds bytes back waiting for more of them,
+  # which turns a pushed position into a slow one.
+  encode zstd gzip {
+    match {
+      not header Content-Type text/event-stream*
+    }
+  }
 
   handle /.well-known/apple-app-site-association {
     reverse_proxy api:3000
