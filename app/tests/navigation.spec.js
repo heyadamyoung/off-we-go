@@ -142,13 +142,13 @@ test('publishes the Off We Go mark for browser and installed web app icons', asy
   }
 })
 
-test('the dashboard keeps its brandmark compact beside the wordmark', async ({ page }) => {
+test('the dashboard chrome carries the wordmark alone, no badge', async ({ page }) => {
+  // Both drawn marks are under review; the words and the amber full stop hold
+  // the identity. The home link must show the wordmark and no image sneaks back.
   await page.goto('/')
-  const brandmark = page.getByRole('link', { name: 'Off We Go' }).locator('img')
-  await expect(brandmark).toBeVisible()
-
-  const bounds = await brandmark.boundingBox()
-  expect(bounds?.height).toBeLessThanOrEqual(48)
+  const home = page.getByRole('link', { name: /off we go/i })
+  await expect(home).toBeVisible()
+  await expect(home.locator('img')).toHaveCount(0)
 })
 
 test('the viewport allows pinch zoom, covers the notch, and yields to the keyboard', async ({
@@ -245,7 +245,9 @@ test('the dashboard chrome is positioned below the notch, not under it', async (
   await expect(page.getByRole('button', { name: 'Account' })).toBeVisible()
   const positioned = await page.evaluate(() => {
     const bar = document.querySelector('[aria-label="Account"]').closest('div.passthrough')
-    const column = [...document.querySelectorAll('main > div.passthrough')].pop()
+    // The chrome now sits inside the ultrawide positioning band, so the
+    // passthrough pieces are descendants of main, not direct children.
+    const column = [...document.querySelectorAll('main div.passthrough')].pop()
     return [bar.className, column.className]
   })
 
