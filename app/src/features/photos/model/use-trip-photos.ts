@@ -1,13 +1,24 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  addComment as saveComment, deleteComment, deletePhoto, setLike,
-  updatePhoto, uploadPhoto,
+  addComment as saveComment,
+  deleteComment,
+  deletePhoto,
+  setLike,
+  updatePhoto,
+  uploadPhoto,
 } from '../../../backend'
 import { photoUploadMetadata } from '../../../mobile-photos-core'
 import { clamp } from '../../../shared/lib/numbers'
 import { appErrorMessage } from '../../../user-messages-core'
 import type {
-  Id, Person, Toast, TripComment, TripData, TripPhoto, UploadInput, ViewerState,
+  Id,
+  Person,
+  Toast,
+  TripComment,
+  TripData,
+  TripPhoto,
+  UploadInput,
+  ViewerState,
 } from '../../../shared/model/types'
 
 interface UseTripPhotosOptions {
@@ -18,7 +29,13 @@ interface UseTripPhotosOptions {
   setSelected: (id: Id | null) => void
 }
 
-export default function useTripPhotos({ data, tripId, me, toast, setSelected }: UseTripPhotosOptions) {
+export default function useTripPhotos({
+  data,
+  tripId,
+  me,
+  toast,
+  setSelected,
+}: UseTripPhotosOptions) {
   const [photos, setPhotos] = useState<TripPhoto[]>(data.photos)
   const [comments, setComments] = useState<Record<Id, TripComment[]>>(data.comments || {})
   const [likes, setLikes] = useState<Set<Id>>(() => new Set(data.likes || []))
@@ -26,91 +43,183 @@ export default function useTripPhotos({ data, tripId, me, toast, setSelected }: 
 
   // Ids, not a snapshot: the viewer must reflect edits and deletions made while
   // it is open, which a captured array cannot.
-  const openViewer = useCallback((list: TripPhoto[], index: number) => setViewer({
-    ids: list.map(p => p.id), index: clamp(index, 0, list.length - 1),
-  }), [])
+  const openViewer = useCallback(
+    (list: TripPhoto[], index: number) =>
+      setViewer({
+        ids: list.map(p => p.id),
+        index: clamp(index, 0, list.length - 1),
+      }),
+    [],
+  )
   const closeViewer = useCallback(() => setViewer(null), [])
-  const setIndex = useCallback((index: number) => setViewer(value => value && ({ ...value, index })), [])
+  const setIndex = useCallback(
+    (index: number) => setViewer(value => value && { ...value, index }),
+    [],
+  )
 
   // Optimistic, then reconciled with what the database actually stored — and
   // rolled back if it refused, so the UI never claims a comment that is not there.
-  const addComment = useCallback(async (photoId: Id, text: string) => {
-    const temp = { id: 'tmp' + Date.now(), by: me.name, text, when: 'just now', pending: true }
-    setComments(c => ({ ...c, [photoId]: [...(c[photoId] || []), temp] }))
-    try {
-      const saved = await saveComment(tripId, photoId, text)
-      setComments(c => ({
-        ...c,
-        [photoId]: (c[photoId] || []).map(x => (x.id === temp.id ? { ...temp, ...saved, pending: false } : x)),
-      }))
-      toast('Comment posted')
-    } catch (e) {
-      setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== temp.id) }))
-      toast(appErrorMessage(e, 'post-comment'), 'error')
-    }
-  }, [tripId, me.name, toast])
+  const addComment = useCallback(
+    async (photoId: Id, text: string) => {
+      const temp = { id: 'tmp' + Date.now(), by: me.name, text, when: 'just now', pending: true }
+      setComments(c => ({ ...c, [photoId]: [...(c[photoId] || []), temp] }))
+      try {
+        const saved = await saveComment(tripId, photoId, text)
+        setComments(c => ({
+          ...c,
+          [photoId]: (c[photoId] || []).map(x =>
+            x.id === temp.id ? { ...temp, ...saved, pending: false } : x,
+          ),
+        }))
+        toast('Comment posted')
+      } catch (e) {
+        setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== temp.id) }))
+        toast(appErrorMessage(e, 'post-comment'), 'error')
+      }
+    },
+    [tripId, me.name, toast],
+  )
 
-  const toggleLike = useCallback(async (id: Id) => {
-    const on = !likes.has(id)
-    setLikes(s => { const n = new Set(s); on ? n.add(id) : n.delete(id); return n })
-    try {
-      await setLike(tripId, id, on)
-    } catch (e) {
-      setLikes(s => { const n = new Set(s); on ? n.delete(id) : n.add(id); return n })
-      toast(appErrorMessage(e, 'save-reaction'), 'error')
-    }
-  }, [likes, tripId, toast])
+  const toggleLike = useCallback(
+    async (id: Id) => {
+      const on = !likes.has(id)
+      setLikes(s => {
+        const n = new Set(s)
+        on ? n.add(id) : n.delete(id)
+        return n
+      })
+      try {
+        await setLike(tripId, id, on)
+      } catch (e) {
+        setLikes(s => {
+          const n = new Set(s)
+          on ? n.delete(id) : n.add(id)
+          return n
+        })
+        toast(appErrorMessage(e, 'save-reaction'), 'error')
+      }
+    },
+    [likes, tripId, toast],
+  )
 
-  const addPhoto = useCallback(async (input: UploadInput) => {
-    const saved = await uploadPhoto(tripId, input.file,
-      photoUploadMetadata(input, {
-        by: me.name,
-        nextSequence: Math.max(photos.length, ...photos.map(photo => (photo.seq ?? -1) + 1)),
-      }))
-    setPhotos(list => [...list, saved])
-    if (input.stopId) setSelected(input.stopId)
-    return saved
-  }, [tripId, me.name, photos.length])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the queue keeps one sender; length covers the next sequence, and clashes reconcile by seq on the server
+  const addPhoto = useCallback(
+    async (input: UploadInput) => {
+      const saved = await uploadPhoto(
+        tripId,
+        input.file,
+        photoUploadMetadata(input, {
+          by: me.name,
+          nextSequence: Math.max(photos.length, ...photos.map(photo => (photo.seq ?? -1) + 1)),
+        }),
+      )
+      setPhotos(list => [...list, saved])
+      if (input.stopId) setSelected(input.stopId)
+      return saved
+    },
+    [tripId, me.name, photos.length],
+  )
 
-  const changePhoto = useCallback(async (id: Id, fields: Partial<TripPhoto>) => {
-    const before = photos.find(p => p.id === id)
-    setPhotos(list => list.map(p => (p.id === id ? { ...p, ...fields } : p)))
-    try { await updatePhoto(tripId, id, fields); toast('Photo changes saved') }
-    catch (e) {
-      if (before) setPhotos(list => list.map(p => (p.id === id ? before : p)))
-      toast(appErrorMessage(e, 'save-photo'), 'error')
-    }
-  }, [tripId, photos, toast])
+  const changePhoto = useCallback(
+    async (id: Id, fields: Partial<TripPhoto>) => {
+      const before = photos.find(p => p.id === id)
+      setPhotos(list => list.map(p => (p.id === id ? { ...p, ...fields } : p)))
+      try {
+        await updatePhoto(tripId, id, fields)
+        toast('Photo changes saved')
+      } catch (e) {
+        if (before) setPhotos(list => list.map(p => (p.id === id ? before : p)))
+        toast(appErrorMessage(e, 'save-photo'), 'error')
+      }
+    },
+    [tripId, photos, toast],
+  )
 
-  const removePhoto = useCallback(async (id: Id) => {
-    const before = photos
-    setPhotos(list => list.filter(p => p.id !== id))
-    setViewer(v => {
-      if (!v) return v
-      const ids = v.ids.filter(x => x !== id)
-      return ids.length ? { ids, index: clamp(v.index, 0, ids.length - 1) } : null
-    })
-    try { await deletePhoto(tripId, id); toast('Photo deleted') }
-    catch (e) { setPhotos(before); toast(appErrorMessage(e, 'delete-photo'), 'error') }
-  }, [tripId, photos, toast])
+  const removePhoto = useCallback(
+    async (id: Id) => {
+      const before = photos.find(p => p.id === id)
+      const at = photos.findIndex(p => p.id === id)
+      setPhotos(list => list.filter(p => p.id !== id))
+      setViewer(v => {
+        if (!v) return v
+        const ids = v.ids.filter(x => x !== id)
+        return ids.length ? { ids, index: clamp(v.index, 0, ids.length - 1) } : null
+      })
+      try {
+        await deletePhoto(tripId, id)
+        toast('Photo deleted')
+      } catch (e) {
+        /* Put back the one row, where it was. Restoring the whole array would
+           also undo an upload that landed while this delete was in flight. */
+        if (before) {
+          setPhotos(list =>
+            list.some(p => p.id === id) ? list : [...list.slice(0, at), before, ...list.slice(at)],
+          )
+        }
+        toast(appErrorMessage(e, 'delete-photo'), 'error')
+      }
+    },
+    [tripId, photos, toast],
+  )
 
-  const removeComment = useCallback(async (photoId: Id, id: Id) => {
-    const before = comments
-    setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== id) }))
-    try { await deleteComment(tripId, id); toast('Comment deleted') }
-    catch (e) { setComments(before); toast(appErrorMessage(e, 'delete-comment'), 'error') }
-  }, [tripId, comments, toast])
+  const removeComment = useCallback(
+    async (photoId: Id, id: Id) => {
+      const before = (comments[photoId] || []).find(x => x.id === id)
+      setComments(c => ({ ...c, [photoId]: (c[photoId] || []).filter(x => x.id !== id) }))
+      try {
+        await deleteComment(tripId, id)
+        toast('Comment deleted')
+      } catch (e) {
+        // Only this comment comes back, not every comment on the trip.
+        if (before) {
+          setComments(c => ({
+            ...c,
+            [photoId]: (c[photoId] || []).some(x => x.id === id)
+              ? c[photoId] || []
+              : [...(c[photoId] || []), before],
+          }))
+        }
+        toast(appErrorMessage(e, 'delete-comment'), 'error')
+      }
+    },
+    [tripId, comments, toast],
+  )
 
+  /* The index counts positions in the list actually rendered, and that list
+     drops ids no longer in `photos`. A photograph removed by somebody else
+     shifts everything after it, so the index has to be found again against the
+     list it indexes rather than carried across the gap. */
   const viewerList = useMemo(() => {
     if (!viewer) return null
     const by = new Map(photos.map(p => [p.id, p]))
-    return viewer.ids.map(id => by.get(id)).filter(Boolean)
+    return viewer.ids.map(id => by.get(id)).filter((p): p is TripPhoto => !!p)
   }, [viewer, photos])
 
+  const viewerIndex = useMemo(() => {
+    if (!viewer || !viewerList?.length) return 0
+    const showing = viewer.ids[viewer.index]
+    const found = viewerList.findIndex(photo => photo.id === showing)
+    return found >= 0 ? found : clamp(viewer.index, 0, viewerList.length - 1)
+  }, [viewer, viewerList])
+
   return {
-    photos, setPhotos, comments, setComments, likes, setLikes, viewer, viewerList,
-    openViewer, closeViewer, setIndex, addComment, toggleLike, addPhoto,
-    changePhoto, removePhoto, removeComment,
+    photos,
+    setPhotos,
+    comments,
+    setComments,
+    likes,
+    setLikes,
+    viewer,
+    viewerList,
+    viewerIndex,
+    openViewer,
+    closeViewer,
+    setIndex,
+    addComment,
+    toggleLike,
+    addPhoto,
+    changePhoto,
+    removePhoto,
+    removeComment,
   }
 }
-
