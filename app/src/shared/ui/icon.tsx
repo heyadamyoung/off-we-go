@@ -7,11 +7,14 @@ const PATHS: Record<string, string> = {
   list: 'M5.5 4h8M5.5 8h8M5.5 12h8|c2.5 4 .9|c2.5 8 .9|c2.5 12 .9',
   grid: 'M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z',
   star: 'm8 2 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.8l-3.8 2 .7-4.3-3.1-3 4.3-.6L8 2Z',
-  people: 'M1.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4M11 3.5a2.2 2.2 0 0 1 0 4.4M12.5 9.7c1.5.5 2.5 1.8 2.5 3.8|o6 5.5 2.5',
-  pencil: 'M3 13l.6-3L10.8 2.8a1.4 1.4 0 0 1 2 0l.4.4a1.4 1.4 0 0 1 0 2L6 12.4 3 13Z|M9.5 4.2l2.3 2.3',
+  people:
+    'M1.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4M11 3.5a2.2 2.2 0 0 1 0 4.4M12.5 9.7c1.5.5 2.5 1.8 2.5 3.8|o6 5.5 2.5',
+  pencil:
+    'M3 13l.6-3L10.8 2.8a1.4 1.4 0 0 1 2 0l.4.4a1.4 1.4 0 0 1 0 2L6 12.4 3 13Z|M9.5 4.2l2.3 2.3',
   pin: 'M8 14.5S3 9.6 3 6.2a5 5 0 0 1 10 0c0 3.4-5 8.3-5 8.3Z|o8 6.2 1.6',
   pinplus: 'M8 14.5S3 9.6 3 6.2a5 5 0 0 1 10 0c0 3.4-5 8.3-5 8.3Z|M8 4.3v3.8M6.1 6.2h3.8',
-  camera: 'M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-6Z|o8 8.5 2.4',
+  camera:
+    'M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-6Z|o8 8.5 2.4',
   sun: 'M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3|o8 8 3',
   moon: 'M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z',
   plane: 'M2 9.5 14 5l-1 3.5L9 10l-1.5 3.5-1.3-2.6L3.5 10 2 9.5Z',
@@ -36,7 +39,8 @@ const PATHS: Record<string, string> = {
   upload: 'M8 11V3m0 0L5 6m3-3 3 3M3 13h10',
   download: 'M8 3v8m0 0 3-3m-3 3-3-3M3 13h10',
   heart: 'M8 13.5S2 9.8 2 5.9A3 3 0 0 1 8 4.6a3 3 0 0 1 6 1.3c0 3.9-6 7.6-6 7.6Z',
-  comment: 'M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H7l-3.5 3v-3H4a1.5 1.5 0 0 1-1.5-1.5v-6Z',
+  comment:
+    'M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H7l-3.5 3v-3H4a1.5 1.5 0 0 1-1.5-1.5v-6Z',
   send: 'M14 2 7 9M14 2l-4.5 12L7 9 2 6.5 14 2Z',
   locate: 'M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15|o8 8 4.5|c8 8 1.2',
   chevron: 'm6 3 5 5-5 5',
@@ -49,13 +53,24 @@ const PATHS: Record<string, string> = {
   trash: 'M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5',
   clock: 'M8 4.5V8l2.5 1.5|o8 8 6',
   copy: 'M6 6h7v7H6zM3 10V3h7',
+  more: 'c3.2 8 1.2|c8 8 1.2|c12.8 8 1.2',
+  spark: 'M8 1.5 9.7 6.3 14.5 8 9.7 9.7 8 14.5 6.3 9.7 1.5 8 6.3 6.3 8 1.5Z|c13 3 .9',
 }
 
 /* Aliases keep older call sites reading naturally without a second drawing. */
 const ALIAS: Record<string, string> = {
-  users: 'people', edit: 'pencil', loc: 'locate', chev: 'chevron',
-  chevl: 'chevronLeft', chevd: 'chevronDown', hotel: 'bed', flight: 'plane',
-  drive: 'car', event: 'music', photo: 'camera', checkout: 'bed',
+  users: 'people',
+  edit: 'pencil',
+  loc: 'locate',
+  chev: 'chevron',
+  chevl: 'chevronLeft',
+  chevd: 'chevronDown',
+  hotel: 'bed',
+  flight: 'plane',
+  drive: 'car',
+  event: 'music',
+  photo: 'camera',
+  checkout: 'bed',
 }
 
 /* Icons re-render on every map frame; split the path data once, not 50x per
@@ -83,13 +98,34 @@ export interface IconProps {
 const Icon = memo(function Icon({ n, s = 16, c = 'currentColor', w = 1.5, className }: IconProps) {
   const shapes = SHAPES[ALIAS[n] || n] || SHAPES.pin
   return (
-    <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth={w}
-         strokeLinecap="round" strokeLinejoin="round" className={className}
-         style={{ flex: 'none' }} aria-hidden="true">
-      {shapes.map((shape, index) => ('d' in shape
-        ? <path key={index} d={shape.d} />
-        : <circle key={index} cx={shape.cx} cy={shape.cy} r={shape.r}
-                  fill={shape.fill ? c : 'none'} stroke={shape.fill ? 'none' : undefined} />))}
+    <svg
+      width={s}
+      height={s}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke={c}
+      strokeWidth={w}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      style={{ flex: 'none' }}
+      aria-hidden="true">
+      {shapes.map((shape, index) =>
+        'd' in shape ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the shape lists are frozen module constants; index is their identity
+          <path key={index} d={shape.d} />
+        ) : (
+          <circle
+            // biome-ignore lint/suspicious/noArrayIndexKey: the shape lists are frozen module constants; index is their identity
+            key={index}
+            cx={shape.cx}
+            cy={shape.cy}
+            r={shape.r}
+            fill={shape.fill ? c : 'none'}
+            stroke={shape.fill ? 'none' : undefined}
+          />
+        ),
+      )}
     </svg>
   )
 })

@@ -5,7 +5,6 @@
 !app/public/icon-512.png
 !app/public/brand/
 !app/public/brand/*.png
-!app/public/offwego-logo-transparent-teal-road.png
 .env*
 !.env.example
 !.env.*.example

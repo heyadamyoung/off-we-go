@@ -12,6 +12,46 @@
    collapses the map to twenty pixels. Same stylesheet, our rules last. */
 @import "maplibre-gl/dist/maplibre-gl.css";
 
+/* Served from here rather than fetched from Google. The stylesheet that used
+   to declare these was cross-origin and render-blocking, and a synchronous
+   script waits for every stylesheet before it — so the app's own JavaScript,
+   fully downloaded by 16ms, could not start until that request came back at
+   154ms. Everything after it inherited the delay: first paint, the map style,
+   the tiles. Two variable faces, latin and latin-ext only.
+   Refresh with scripts/fetch-fonts.mjs. */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: swap;
+  src: url('/fonts/bricolage-grotesque-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: swap;
+  src: url('/fonts/bricolage-grotesque-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/schibsted-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/schibsted-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ------------------------------------------------------------------ palette
    One set of custom properties, swapped wholesale by [data-theme] on <html>.
    Every Tailwind colour below is `inline`, so utilities resolve to these
@@ -19,27 +59,27 @@
    duplicate `dark:` class on every element. */
 :root {
   color-scheme: dark;
-  --c-bg: #10141C;
-  --c-panel: rgb(16 20 28 / 0.8);
-  --c-panel-strong: rgb(19 24 33 / 0.96);
-  --c-panel-solid: #151A24;
-  --c-raised: #1B2130;
-  --c-raised-2: #242B3B;
+  --c-bg: #0B0D11;
+  --c-panel: rgb(22 27 35 / 0.78);
+  --c-panel-strong: rgb(17 21 28 / 0.96);
+  --c-panel-solid: #12161D;
+  --c-raised: #1A202B;
+  --c-raised-2: #232A38;
   --c-line: rgb(255 255 255 / 0.08);
-  --c-line-2: rgb(255 255 255 / 0.16);
-  --c-ink: #EEF1F6;
-  --c-muted: #A6AEBD;
-  --c-faint: #7C8699;
-  --c-accent: #F5B84A;
-  --c-accent-soft: rgb(245 184 74 / 0.16);
-  --c-accent-ink: #10141C;
+  --c-line-2: rgb(255 255 255 / 0.15);
+  --c-ink: #F2F4F7;
+  --c-muted: #99A3B2;
+  --c-faint: #78828F;
+  /* One accent. Amber is the journey — the travelled trail, the live pulse,
+     the active state. Everything else stays greyscale, and amber is never a
+     paragraph colour: it marks, it never narrates. */
+  --c-accent: #F0A63C;
+  --c-accent-bright: #FFB454;
+  --c-accent-soft: rgb(240 166 60 / 0.16);
+  --c-accent-ink: #2A1A05;
   --c-danger: #F06A6A;
-  --c-shadow: 0 8px 30px rgb(0 0 0 / 0.38);
-  --c-glow: rgb(245 184 74 / 0.55);
-
-  /* trail colour for where the phones actually went, as distinct from the
-     route somebody drew by hand */
-  --c-trail: #6FD3A8;
+  --c-shadow: 0 8px 30px rgb(0 0 0 / 0.45);
+  --c-glow: rgb(255 180 84 / 0.5);
 }
 
 [data-theme="light"] {
@@ -56,18 +96,19 @@
   --c-muted: #5B6473;
   --c-faint: #8A93A3;
   --c-accent: #B9741A;
+  --c-accent-bright: #D18A26;
   --c-accent-soft: rgb(185 116 26 / 0.14);
   --c-accent-ink: #FFFFFF;
   --c-danger: #C73F3F;
   --c-shadow: 0 8px 30px rgb(16 20 28 / 0.16);
   --c-glow: rgb(185 116 26 / 0.35);
-
-  --c-trail: #0E9F6E;
 }
 
 @theme inline {
   --font-sans: 'Schibsted Grotesk', 'Helvetica Neue', Arial, sans-serif;
-  --font-display: 'Schibsted Grotesk', 'Helvetica Neue', Arial, sans-serif;
+  /* The one face with a voice, reserved for the wordmark and the big titles.
+     Everything that merely works for a living stays in the quiet grotesk. */
+  --font-display: 'Bricolage Grotesque', 'Schibsted Grotesk', 'Helvetica Neue', Arial, sans-serif;
 
   --color-canvas: var(--c-bg);
   --color-panel: var(--c-panel);
@@ -81,10 +122,10 @@
   --color-muted: var(--c-muted);
   --color-faint: var(--c-faint);
   --color-accent: var(--c-accent);
+  --color-accent-bright: var(--c-accent-bright);
   --color-accent-soft: var(--c-accent-soft);
   --color-accent-ink: var(--c-accent-ink);
   --color-danger: var(--c-danger);
-  --color-trail: var(--c-trail);
 
   --shadow-panel: var(--c-shadow);
   --shadow-glow: 0 0 18px var(--c-glow);
@@ -144,6 +185,7 @@
   --trip-1: calc(var(--trip-bar) + 16px);
   --trip-2: calc(var(--trip-1) + 46px);
   --trip-3: calc(var(--trip-2) + 42px);
+  --trip-4: calc(var(--trip-3) + 42px);
 }
 @media (max-width: 639px) {
   :root { --trip-bar: calc(180px + env(safe-area-inset-bottom, 0px)) }
@@ -231,6 +273,22 @@
     .tb[data-tip]::after { content: none }
   }
 
+  /* A named view tab: the icon keeps its word, so nothing has to be guessed.
+     The active one is amber with a small underline — state, not decoration. */
+  .tbv {
+    position: relative; flex: none; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    min-width: 52px; height: 46px; padding: 0 9px; border-radius: 9px;
+    font-size: 10px; font-weight: 700; letter-spacing: .02em;
+    color: var(--c-muted); transition: background .15s, color .15s;
+  }
+  .tbv:hover { background: var(--c-raised-2); color: var(--c-ink) }
+  .tbv.active { color: var(--c-accent) }
+  .tbv.active::after {
+    content: ""; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+    width: 16px; height: 2px; border-radius: 2px; background: var(--c-accent);
+  }
+
   .avatar {
     width: 28px; height: 28px; border-radius: 50%; flex: none;
     display: flex; align-items: center; justify-content: center;
@@ -272,6 +330,26 @@
    MapLibre paints the basemap; markers are DOM on top of it. */
 .mapcanvas { position: absolute; inset: 0 }
 .mapcanvas canvas { outline: none }
+/* The tiles are OpenStreetMap's data on CARTO's servers, and both ask to be
+   named. Same treatment as the globe's credit line. */
+/* The basemap credit CARTO and OpenStreetMap both require. MapLibre renders
+   whatever the tile source declares, so it stays correct in the provider's own
+   words if the basemap ever changes hands. Themed to the app's greys, because
+   the stock control is a white pill on a near-black map. */
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib.maplibregl-compact {
+  background: var(--c-panel-strong); border-radius: 999px;
+  font-size: 10.5px; padding: 2px 8px; backdrop-filter: blur(10px);
+}
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib-inner { color: var(--c-muted) }
+.maplibregl-ctrl-attrib a, .maplibregl-ctrl-attrib-inner a { color: var(--c-ink); text-decoration: none }
+.maplibregl-ctrl-attrib a:hover { text-decoration: underline }
+/* The stock disclosure icon is drawn dark, which only reads on a pale map. */
+:root:not([data-theme="light"]) .maplibregl-ctrl-attrib-button { filter: invert(1) opacity(.7) }
+
+/* On the trip screen the bottom of the map is the itinerary bar, so the credit
+   is lifted clear of it and of the map controls. An attribution nobody can see
+   is not an attribution. */
+.tripscreen .maplibregl-ctrl-bottom-left { bottom: var(--trip-2); left: 4px; z-index: 4 }
 .maplibregl-marker { will-change: transform }
 
 /* Markers are placed with translate rather than left/top: position changes stay
@@ -308,24 +386,33 @@
   border-radius: 999px; background: var(--c-accent); color: var(--c-accent-ink);
   font-size: 11px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--c-bg);
 }
-.mme { position: absolute; left: 0; top: 0; width: 58px; height: 58px; transform: translate(-50%, -50%); z-index: 8; cursor: pointer }
+/* The strongest object on the map. A person, not a pin: stroked amber ring
+   sweeping out, the face inside it, and a LIVE tag underneath so a parent
+   reading over morning coffee never has to guess what the glow means. */
+.mme { position: absolute; left: 0; top: 0; width: 60px; height: 60px; transform: translate(-50%, -50%); z-index: 8; cursor: pointer }
 .mme .halo {
-  position: absolute; inset: 0; border-radius: 50%; background: var(--c-accent); opacity: .3;
+  position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--c-accent); opacity: .9;
   animation: mpulse 2.6s ease-out infinite; will-change: transform, opacity;
 }
-@keyframes mpulse { 0% { transform: scale(.5); opacity: .5 } 100% { transform: scale(2); opacity: 0 } }
+@keyframes mpulse { 0% { transform: scale(.55); opacity: .9 } 100% { transform: scale(1.75); opacity: 0 } }
 .mme img, .mme .ini {
-  position: absolute; inset: 8px; width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
-  border: 3px solid var(--c-bg); box-shadow: 0 6px 18px rgb(0 0 0 / .55);
+  position: absolute; inset: 7px; width: 46px; height: 46px; border-radius: 50%; object-fit: cover;
+  border: 2.5px solid var(--c-ink); box-shadow: 0 6px 18px rgb(0 0 0 / .55);
   display: grid; place-items: center; background: var(--c-raised-2); color: var(--c-ink);
   font-weight: 800; font-size: 17px;
 }
+.mme .tag {
+  position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%);
+  background: var(--c-accent); color: var(--c-accent-ink);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .05em; padding: 2px 7px;
+  border-radius: 999px; box-shadow: 0 2px 8px rgb(0 0 0 / .4);
+}
 .mme .dot {
-  position: absolute; right: 4px; bottom: 4px; width: 14px; height: 14px; border-radius: 50%;
-  background: var(--c-trail); border: 2.5px solid var(--c-bg);
+  position: absolute; right: 3px; bottom: 3px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--c-accent); border: 2.5px solid var(--c-bg);
 }
 /* Heard from a while ago: still on the map, still where they were, but plainly
-   not live — no halo, a muted badge, and the face at half strength. */
+   not live — no ring, no tag, a muted badge, and the face at half strength. */
 .mme.quiet img, .mme.quiet .ini { opacity: .55; filter: saturate(.55) }
 .mme.quiet .dot { background: var(--c-faint) }
 /* Hover work is pure noise mid-gesture, and effects recomputed from the pixels
@@ -377,7 +464,7 @@
   background: rgb(10 15 24 / .62); backdrop-filter: blur(4px);
   font-size: 12px; font-weight: 600; color: #EEF1F6;
 }
-.wdot.home i { background: #10141C; box-shadow: 0 0 0 2px rgb(255 255 255 / .9) }
+.wdot.home i { background: #0B0D11; box-shadow: 0 0 0 2px rgb(255 255 255 / .9) }
 .wdot .pulse {
   position: absolute; width: 40px; height: 40px; border-radius: 50%;
   background: var(--c-accent); animation: gpulse 2.4s ease-out infinite;
@@ -414,7 +501,10 @@
   position: fixed; inset: 0; z-index: 100; background: var(--c-bg);
   display: grid; grid-template-columns: 1fr 372px;
 }
-.vstage { position: relative; display: flex; flex-direction: column; min-height: 0; background: #06070a }
+/* min-width:0 is load-bearing: as a grid item the stage will not shrink below
+   the filmstrip's full row of thumbnails, and a viewer holding a dozen photos
+   pushed the side column off the screen. */
+.vstage { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: #06070a }
 .vtop { height: 60px; flex: none; display: flex; align-items: center; gap: 11px; padding: 0 18px; color: #f2f4f8 }
 .vtop .who { display: flex; align-items: center; gap: 10px; min-width: 0 }
 .vtop .who img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover }
