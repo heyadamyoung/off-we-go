@@ -1,16 +1,25 @@
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
+import { maskHomeZones } from '../src/home-zone.js'
 
 const profileShape = profile => ({
-  profileId: profile.id, email: profile.email, handle: profile.handle,
-  displayName: profile.displayName, avatarUrl: profile.avatarUrl,
-  homePlace: profile.homePlace ?? null, homeLat: profile.homeLat ?? null,
-  homeLng: profile.homeLng ?? null, timeZone: profile.timeZone ?? null,
-  preferences: profile.preferences || {}, joinedAt: profile.joinedAt ?? null,
-  tripCount: 0, photoCount: 0,
+  profileId: profile.id,
+  email: profile.email,
+  handle: profile.handle,
+  displayName: profile.displayName,
+  avatarUrl: profile.avatarUrl,
+  homePlace: profile.homePlace ?? null,
+  homeLat: profile.homeLat ?? null,
+  homeLng: profile.homeLng ?? null,
+  timeZone: profile.timeZone ?? null,
+  preferences: profile.preferences || {},
+  joinedAt: profile.joinedAt ?? null,
+  tripCount: 0,
+  photoCount: 0,
 })
 
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
-  const fakeUuid = (namespace, value) => `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
+  const fakeUuid = (namespace, value) =>
+    `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
   const oidcLogins = new Map()
   const oidcIdentities = new Map()
@@ -42,18 +51,31 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     seedPhoto(tripId) {
       const trip = trips.get(tripId)
       const photo = {
-        id: fakeUuid(3, nextPhoto++), stopId: null, lng: 0, lat: 0,
-        caption: 'Seed photo', by: 'owner', when: null, locationSource: 'manual',
-        storagePath: `${tripId}/seed.jpg`, thumbPath: null, seq: trip.photos.length,
+        id: fakeUuid(3, nextPhoto++),
+        stopId: null,
+        lng: 0,
+        lat: 0,
+        caption: 'Seed photo',
+        by: 'owner',
+        when: null,
+        locationSource: 'manual',
+        storagePath: `${tripId}/seed.jpg`,
+        thumbPath: null,
+        seq: trip.photos.length,
         userId: trip.ownerId,
       }
       trip.photos.push(photo)
       return photo
     },
     async emailAllowed(email) {
-      return allowed.has(email) || [...trips.values()].some(trip => trip.invites.some(invite => invite.email === email))
+      return (
+        allowed.has(email) ||
+        [...trips.values()].some(trip => trip.invites.some(invite => invite.email === email))
+      )
     },
-    async findUserByEmail(email) { return users.get(email) || null },
+    async findUserByEmail(email) {
+      return users.get(email) || null
+    },
     async createOidcLogin({ stateHash, ...login }) {
       oidcLogins.set(stateHash, login)
     },
@@ -66,15 +88,28 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!users.has(email)) {
         const user = { id: fakeUuid(1, nextUser++), email }
         const rawBase = slugBase(email.split('@')[0], 'traveller', 30)
-        const base = normalizeProfileHandle(rawBase) || `${rawBase.slice(0, 25) || 'traveller'}-user`
+        const base =
+          normalizeProfileHandle(rawBase) || `${rawBase.slice(0, 25) || 'traveller'}-user`
         let handle = chosenHandle || base
-        for (let suffix = 2; [...profiles.values()].some(profile => profile.handle === handle); suffix++) handle = `${base}-${suffix}`
+        for (
+          let suffix = 2;
+          [...profiles.values()].some(profile => profile.handle === handle);
+          suffix++
+        )
+          handle = `${base}-${suffix}`
         users.set(email, user)
         profiles.set(user.id, {
-          id: user.id, handle,
-          email, displayName: email.split('@')[0], avatarUrl: null,
-          homePlace: null, homeLat: null, homeLng: null, timeZone: null,
-          preferences: {}, joinedAt: new Date().toISOString(),
+          id: user.id,
+          handle,
+          email,
+          displayName: email.split('@')[0],
+          avatarUrl: null,
+          homePlace: null,
+          homeLat: null,
+          homeLng: null,
+          timeZone: null,
+          preferences: {},
+          joinedAt: new Date().toISOString(),
         })
       }
       return users.get(email)
@@ -85,7 +120,12 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (value.expiresAt <= now) profileHandleReservations.delete(key)
       }
       if ([...profiles.values()].some(profile => profile.handle === handle)) return false
-      if ([...profileHandleReservations].some(([key, value]) => key !== reservationHash && value.handle === handle)) return false
+      if (
+        [...profileHandleReservations].some(
+          ([key, value]) => key !== reservationHash && value.handle === handle,
+        )
+      )
+        return false
       profileHandleReservations.set(reservationHash, { handle, expiresAt })
       return true
     },
@@ -95,8 +135,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (existingId) return [...users.values()].find(user => user.id === existingId) || null
       let user = users.get(email)
       if (!user) {
-        const reservation = handleReservationHash && profileHandleReservations.get(handleReservationHash)
-        if (reservation?.expiresAt > new Date()) user = await this.ensureUser(email, reservation.handle)
+        const reservation =
+          handleReservationHash && profileHandleReservations.get(handleReservationHash)
+        if (reservation?.expiresAt > new Date())
+          user = await this.ensureUser(email, reservation.handle)
         else if (allowed.has(email)) user = await this.ensureUser(email)
         else return null
       }
@@ -109,7 +151,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async consumeLoginHandoff({ hash, now, client, bindingHash }) {
       const row = loginHandoffs.get(hash)
-      if (!row || row.expiresAt <= now || row.client !== client || row.bindingHash !== bindingHash) return null
+      if (!row || row.expiresAt <= now || row.client !== client || row.bindingHash !== bindingHash)
+        return null
       loginHandoffs.delete(hash)
       return [...users.values()].find(user => user.id === row.userId) || null
     },
@@ -121,7 +164,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!row || row.expiresAt <= now) return null
       return [...users.values()].find(user => user.id === row.userId) || null
     },
-    async deleteSession(hash) { sessions.delete(hash) },
+    async deleteSession(hash) {
+      sessions.delete(hash)
+    },
     async registerMcpClient(client) {
       mcpClients.set(client.id, { ...client })
       return { ...client }
@@ -135,18 +180,34 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async redeemMcpAuthorizationCode(grant) {
       const code = mcpCodes.get(grant.codeHash)
-      if (!code || code.expiresAt <= grant.now || code.clientId !== grant.clientId ||
-        code.redirectUri !== grant.redirectUri || code.resource !== grant.resource ||
-        code.codeChallenge !== grant.codeChallenge) return null
+      if (
+        !code ||
+        code.expiresAt <= grant.now ||
+        code.clientId !== grant.clientId ||
+        code.redirectUri !== grant.redirectUri ||
+        code.resource !== grant.resource ||
+        code.codeChallenge !== grant.codeChallenge
+      )
+        return null
       mcpCodes.delete(grant.codeHash)
       const token = {
-        accessHash: grant.accessHash, refreshHash: grant.refreshHash,
-        userId: code.userId, clientId: code.clientId, scopes: code.scopes, resource: code.resource,
-        accessExpiresAt: grant.accessExpiresAt, refreshExpiresAt: grant.refreshExpiresAt,
+        accessHash: grant.accessHash,
+        refreshHash: grant.refreshHash,
+        userId: code.userId,
+        clientId: code.clientId,
+        scopes: code.scopes,
+        resource: code.resource,
+        accessExpiresAt: grant.accessExpiresAt,
+        refreshExpiresAt: grant.refreshExpiresAt,
         grantId: grant.codeHash,
       }
       mcpTokens.set(token.accessHash, token)
-      return { userId: code.userId, clientId: code.clientId, scopes: code.scopes, resource: code.resource }
+      return {
+        userId: code.userId,
+        clientId: code.clientId,
+        scopes: code.scopes,
+        resource: code.resource,
+      }
     },
     async findMcpAccessToken(hash, now) {
       const token = mcpTokens.get(hash)
@@ -156,34 +217,61 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async rotateMcpRefreshToken(grant) {
       const used = mcpUsedRefreshTokens.get(grant.refreshHash)
-      if (used && used.expiresAt > grant.now && used.clientId === grant.clientId && used.resource === grant.resource) {
+      if (
+        used &&
+        used.expiresAt > grant.now &&
+        used.clientId === grant.clientId &&
+        used.resource === grant.resource
+      ) {
         for (const [accessHash, token] of mcpTokens) {
           if (token.grantId === used.grantId) mcpTokens.delete(accessHash)
         }
         return null
       }
-      const entry = [...mcpTokens.entries()].find(([, value]) => value.refreshHash === grant.refreshHash)
+      const entry = [...mcpTokens.entries()].find(
+        ([, value]) => value.refreshHash === grant.refreshHash,
+      )
       if (!entry) return null
       const [accessHash, token] = entry
-      if (token.refreshExpiresAt <= grant.now || token.clientId !== grant.clientId ||
-        token.resource !== grant.resource) return null
+      if (
+        token.refreshExpiresAt <= grant.now ||
+        token.clientId !== grant.clientId ||
+        token.resource !== grant.resource
+      )
+        return null
       mcpTokens.delete(accessHash)
       mcpUsedRefreshTokens.set(token.refreshHash, {
-        grantId: token.grantId, clientId: token.clientId,
-        resource: token.resource, expiresAt: token.refreshExpiresAt,
+        grantId: token.grantId,
+        clientId: token.clientId,
+        resource: token.resource,
+        expiresAt: token.refreshExpiresAt,
       })
       const replacement = {
-        ...token, accessHash: grant.accessHash, refreshHash: grant.replacementRefreshHash,
-        accessExpiresAt: grant.accessExpiresAt, refreshExpiresAt: grant.refreshExpiresAt,
+        ...token,
+        accessHash: grant.accessHash,
+        refreshHash: grant.replacementRefreshHash,
+        accessExpiresAt: grant.accessExpiresAt,
+        refreshExpiresAt: grant.refreshExpiresAt,
       }
       mcpTokens.set(replacement.accessHash, replacement)
-      return { userId: token.userId, clientId: token.clientId, scopes: token.scopes, resource: token.resource }
+      return {
+        userId: token.userId,
+        clientId: token.clientId,
+        scopes: token.scopes,
+        resource: token.resource,
+      }
     },
     async revokeMcpToken(hash) {
-      const matched = [...mcpTokens.values()].find(token => token.accessHash === hash || token.refreshHash === hash)
-        || mcpUsedRefreshTokens.get(hash)
+      const matched =
+        [...mcpTokens.values()].find(
+          token => token.accessHash === hash || token.refreshHash === hash,
+        ) || mcpUsedRefreshTokens.get(hash)
       for (const [accessHash, token] of mcpTokens) {
-        if ((matched && token.grantId === matched.grantId) || accessHash === hash || token.refreshHash === hash) {
+        if (
+          (matched && token.grantId === matched.grantId) ||
+          accessHash === hash ||
+          token.refreshHash === hash
+        ) {
           mcpTokens.delete(accessHash)
         }
       }
@@ -191,47 +279,76 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async createTrip(user, input) {
       const id = fakeUuid(2, nextTrip++)
       const slug = await availableSlug(input.title, candidate =>
-        [...trips.values()].some(trip => trip.slug === candidate))
+        [...trips.values()].some(trip => trip.slug === candidate),
+      )
       const trip = {
-        id, slug, ownerId: user.id,
-        title: input.title, crew: input.crew || null, dates: input.dates || null,
-        dayCount: input.dayCount || 1, startsOn: input.startsOn || null, endsOn: input.endsOn || null,
+        id,
+        slug,
+        ownerId: user.id,
+        title: input.title,
+        crew: input.crew || null,
+        dates: input.dates || null,
+        dayCount: input.dayCount || 1,
+        startsOn: input.startsOn || null,
+        endsOn: input.endsOn || null,
         members: [{ profileId: user.id, role: 'owner' }],
-        stops: [], photos: [], route: [], comments: {}, likes: [], invites: [],
+        stops: [],
+        photos: [],
+        route: [],
+        comments: {},
+        likes: [],
+        invites: [],
       }
       trips.set(id, trip)
       return { id, slug: trip.slug, ownerId: user.id, title: trip.title }
     },
     async listTrips(user) {
-      return [...trips.values()].filter(trip => trip.members.some(member => member.profileId === user.id))
+      return [...trips.values()]
+        .filter(trip => trip.members.some(member => member.profileId === user.id))
         .map(trip => ({
-          id: trip.id, slug: trip.slug, title: trip.title, crew: trip.crew, dates: trip.dates,
-          dayCount: trip.dayCount, startsOn: trip.startsOn, endsOn: trip.endsOn,
+          id: trip.id,
+          slug: trip.slug,
+          title: trip.title,
+          crew: trip.crew,
+          dates: trip.dates,
+          dayCount: trip.dayCount,
+          startsOn: trip.startsOn,
+          endsOn: trip.endsOn,
           role: trip.members.find(member => member.profileId === user.id).role,
           places: trip.stops.slice(0, 60).map(stop => ({
-            name: stop.name, lng: stop.lng, lat: stop.lat, status: stop.status,
+            name: stop.name,
+            lng: stop.lng,
+            lat: stop.lat,
+            status: stop.status,
           })),
-          stopCount: trip.stops.length, photoCount: trip.photos.length,
+          stopCount: trip.stops.length,
+          photoCount: trip.photos.length,
           memberCount: trip.members.length,
         }))
     },
     async loadCurrentTrip(user, slug) {
-      const trip = [...trips.values()].find(value =>
-        (!slug || value.slug === slug) && value.members.some(member => member.profileId === user.id))
+      const trip = [...trips.values()].find(
+        value =>
+          (!slug || value.slug === slug) &&
+          value.members.some(member => member.profileId === user.id),
+      )
       if (!trip) return null
       return {
         ...trip,
         members: trip.members.map(member => {
           const profile = profiles.get(member.profileId)
           return {
-            ...member, email: profile.email, handle: profile.handle,
-            displayName: profile.displayName, avatarUrl: profile.avatarUrl,
+            ...member,
+            email: profile.email,
+            handle: profile.handle,
+            displayName: profile.displayName,
+            avatarUrl: profile.avatarUrl,
           }
         }),
       }
     },
     async updateTrip(user, tripId, changes) {
-      if (!await this.canEditTrip(user.id, tripId)) return null
+      if (!(await this.canEditTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       Object.assign(trip, changes)
       return trip
@@ -239,34 +356,54 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async loadProfileByHandle(user, handle) {
       const profile = [...profiles.values()].find(value => value.handle === handle)
       if (!profile) return null
-      const sharesTrip = profile.id === user.id || [...trips.values()].some(trip =>
-        trip.members.some(member => member.profileId === user.id) &&
-        trip.members.some(member => member.profileId === profile.id))
-      return sharesTrip ? {
-        profileId: profile.id, handle: profile.handle,
-        displayName: profile.displayName, avatarUrl: profile.avatarUrl,
-      } : null
+      const sharesTrip =
+        profile.id === user.id ||
+        [...trips.values()].some(
+          trip =>
+            trip.members.some(member => member.profileId === user.id) &&
+            trip.members.some(member => member.profileId === profile.id),
+        )
+      return sharesTrip
+        ? {
+            profileId: profile.id,
+            handle: profile.handle,
+            displayName: profile.displayName,
+            avatarUrl: profile.avatarUrl,
+          }
+        : null
     },
     async loadProfile(user) {
       const profile = profiles.get(user.id)
       return profile ? profileShape(profile) : null
     },
     async exportAccount(user) {
-      const mine = [...trips.values()]
-        .filter(trip => trip.members.some(member => member.profileId === user.id))
+      const mine = [...trips.values()].filter(trip =>
+        trip.members.some(member => member.profileId === user.id),
+      )
       return {
         profile: profiles.get(user.id) ? profileShape(profiles.get(user.id)) : null,
         trips: mine.map(trip => ({
-          id: trip.id, slug: trip.slug, title: trip.title, crew: trip.crew, dates: trip.dates,
+          id: trip.id,
+          slug: trip.slug,
+          title: trip.title,
+          crew: trip.crew,
+          dates: trip.dates,
           role: trip.members.find(member => member.profileId === user.id).role,
           stops: trip.stops.map(stop => ({ ...stop })),
           photos: trip.photos.map(photo => ({
-            id: photo.id, stopId: photo.stopId, caption: photo.caption, by: photo.by,
-            takenAt: photo.when, lng: photo.lng, lat: photo.lat, path: photo.storagePath || null,
+            id: photo.id,
+            stopId: photo.stopId,
+            caption: photo.caption,
+            by: photo.by,
+            takenAt: photo.when,
+            lng: photo.lng,
+            lat: photo.lat,
+            path: photo.storagePath || null,
           })),
           route: trip.route.map(point => [...point]),
           comments: Object.entries(trip.comments || {}).flatMap(([photoId, list]) =>
-            list.map(comment => ({ id: comment.id, photoId, by: comment.by, body: comment.text }))),
+            list.map(comment => ({ id: comment.id, photoId, by: comment.by, body: comment.text })),
+          ),
           trail: [],
         })),
       }
@@ -275,9 +412,15 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const profile = profiles.get(user.id)
       if (!profile) return null
       if (changes.handle !== undefined) {
-        const reserved = [...profileHandleReservations.values()].some(value =>
-          value.expiresAt > new Date() && value.handle === changes.handle)
-        if (reserved || [...profiles.values()].some(value => value.id !== user.id && value.handle === changes.handle)) {
+        const reserved = [...profileHandleReservations.values()].some(
+          value => value.expiresAt > new Date() && value.handle === changes.handle,
+        )
+        if (
+          reserved ||
+          [...profiles.values()].some(
+            value => value.id !== user.id && value.handle === changes.handle,
+          )
+        ) {
           return { conflict: 'handle' }
         }
       }
@@ -296,10 +439,14 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async canEditTrip(userId, tripId) {
       const trip = trips.get(tripId)
-      return !!trip?.members.some(member => member.profileId === userId && ['owner', 'editor'].includes(member.role))
+      return !!trip?.members.some(
+        member => member.profileId === userId && ['owner', 'editor'].includes(member.role),
+      )
     },
     async canManageTrip(userId, tripId) {
-      return !!trips.get(tripId)?.members.some(member => member.profileId === userId && member.role === 'owner')
+      return !!trips
+        .get(tripId)
+        ?.members.some(member => member.profileId === userId && member.role === 'owner')
     },
     async canReadTrip(userId, tripId) {
       return !!trips.get(tripId)?.members.some(member => member.profileId === userId)
@@ -309,73 +456,95 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const member = trip?.members.find(value => value.profileId === user.id)
       if (!trip || !member || !['owner', 'editor'].includes(member.role)) return null
       const photo = {
-        id: fakeUuid(3, nextPhoto++), stopId: input.stopId || null,
-        lng: input.lng, lat: input.lat, caption: input.caption || null,
-        by: profiles.get(member.profileId).displayName, when: input.takenAt || null,
+        id: fakeUuid(3, nextPhoto++),
+        stopId: input.stopId || null,
+        lng: input.lng,
+        lat: input.lat,
+        caption: input.caption || null,
+        by: profiles.get(member.profileId).displayName,
+        when: input.takenAt || null,
         locationSource: input.locationSource || null,
-        storagePath: input.storagePath, thumbPath: input.thumbPath, userId: user.id, clientKey: input.clientKey || null,
+        storagePath: input.storagePath,
+        thumbPath: input.thumbPath,
+        userId: user.id,
+        clientKey: input.clientKey || null,
         seq: Math.max(trip.photos.length, ...trip.photos.map(value => (value.seq ?? -1) + 1)),
       }
       trip.photos.push(photo)
       return photo
     },
     async findPhotoByClientKey(user, tripId, clientKey) {
-      if (!clientKey || !await this.canEditTrip(user.id, tripId)) return null
-      return trips.get(tripId)?.photos.find(value => value.userId === user.id && value.clientKey === clientKey) || null
+      if (!clientKey || !(await this.canEditTrip(user.id, tripId))) return null
+      return (
+        trips
+          .get(tripId)
+          ?.photos.find(value => value.userId === user.id && value.clientKey === clientKey) || null
+      )
     },
     async updatePhoto(user, tripId, photoId, changes) {
-      if (!await this.canEditTrip(user.id, tripId)) return null
+      if (!(await this.canEditTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
-      if (changes.stopId != null && !trip?.stops.some(value => value.id === changes.stopId)) return null
+      if (changes.stopId != null && !trip?.stops.some(value => value.id === changes.stopId))
+        return null
       const photo = trip?.photos.find(value => value.id === photoId)
       if (!photo) return null
       Object.assign(photo, changes)
       return photo
     },
     async deletePhoto(user, tripId, photoId) {
-      if (!await this.canEditTrip(user.id, tripId)) return null
+      if (!(await this.canEditTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       const photo = trip?.photos.find(value => value.id === photoId)
       if (!photo) return null
       trip.photos = trip.photos.filter(value => value.id !== photoId)
       delete trip.comments[photoId]
       trip.likes = trip.likes.filter(value => value !== photoId)
-      for (const path of [photo.storagePath, photo.thumbPath].filter(Boolean)) fileDeletionQueue.set(path, new Date(0))
+      for (const path of [photo.storagePath, photo.thumbPath].filter(Boolean))
+        fileDeletionQueue.set(path, new Date(0))
       return { storagePath: photo.storagePath, thumbPath: photo.thumbPath }
     },
     async listPendingFileDeletions(now, limit = 50) {
-      return [...fileDeletionQueue].filter(([, next]) => next <= now).slice(0, limit).map(([path]) => path)
+      return [...fileDeletionQueue]
+        .filter(([, next]) => next <= now)
+        .slice(0, limit)
+        .map(([path]) => path)
     },
-    async completeFileDeletion(path) { fileDeletionQueue.delete(path) },
-    async failFileDeletion(path, _error, now) { fileDeletionQueue.set(path, new Date(now.getTime() + 60_000)) },
+    async completeFileDeletion(path) {
+      fileDeletionQueue.delete(path)
+    },
+    async failFileDeletion(path, _error, now) {
+      fileDeletionQueue.set(path, new Date(now.getTime() + 60_000))
+    },
     async createStop(user, tripId, input) {
-      if (!await this.canEditTrip(user.id, tripId)) return null
+      if (!(await this.canEditTrip(user.id, tripId))) return null
       const stop = { id: fakeUuid(4, nextStop++), ...input }
       trips.get(tripId).stops.push(stop)
       return stop
     },
     async updateStop(user, tripId, stopId, changes) {
-      if (!await this.canEditTrip(user.id, tripId)) return null
+      if (!(await this.canEditTrip(user.id, tripId))) return null
       const stop = trips.get(tripId)?.stops.find(value => value.id === stopId)
       if (!stop) return null
       Object.assign(stop, changes)
       return stop
     },
     async deleteStop(user, tripId, stopId) {
-      if (!await this.canEditTrip(user.id, tripId)) return false
+      if (!(await this.canEditTrip(user.id, tripId))) return false
       const trip = trips.get(tripId)
       const before = trip.stops.length
-      trip.photos.forEach(photo => { if (photo.stopId === stopId) photo.stopId = null })
+      trip.photos.forEach(photo => {
+        if (photo.stopId === stopId) photo.stopId = null
+      })
       trip.stops = trip.stops.filter(value => value.id !== stopId)
       return trip.stops.length < before
     },
     async replaceRoute(user, tripId, points) {
-      if (!await this.canEditTrip(user.id, tripId)) return false
+      if (!(await this.canEditTrip(user.id, tripId))) return false
       trips.get(tripId).route = points.map(point => [...point])
       return true
     },
     async upsertInvite(user, tripId, input) {
-      if (!await this.canManageTrip(user.id, tripId)) return null
+      if (!(await this.canManageTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       let invite = trip.invites.find(value => value.email === input.email)
       if (invite) {
@@ -383,24 +552,32 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         const invitedUser = users.get(input.email)
         const member = invitedUser && trip.members.find(value => value.profileId === invitedUser.id)
         if (member && member.role !== 'owner') member.role = input.role
-      }
-      else {
+      } else {
         invite = { id: fakeUuid(5, trip.invites.length + 1), ...input, claimedAt: null }
         trip.invites.push(invite)
       }
       return { ...invite, tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title }
     },
     async listPendingInvites(user) {
-      return [...trips.values()].flatMap(trip => trip.invites
-        .filter(invite => invite.email === user.email && !invite.claimedAt)
-        .map(invite => ({
-          id: invite.id, email: invite.email, name: invite.name, role: invite.role,
-          tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title,
-        })))
+      return [...trips.values()].flatMap(trip =>
+        trip.invites
+          .filter(invite => invite.email === user.email && !invite.claimedAt)
+          .map(invite => ({
+            id: invite.id,
+            email: invite.email,
+            name: invite.name,
+            role: invite.role,
+            tripId: trip.id,
+            tripSlug: trip.slug,
+            tripTitle: trip.title,
+          })),
+      )
     },
     async acceptInvite(user, inviteId) {
       for (const trip of trips.values()) {
-        const invite = trip.invites.find(value => value.id === inviteId && value.email === user.email && !value.claimedAt)
+        const invite = trip.invites.find(
+          value => value.id === inviteId && value.email === user.email && !value.claimedAt,
+        )
         if (!invite) continue
         if (!trip.members.some(member => member.profileId === user.id)) {
           trip.members.push({ profileId: user.id, role: invite.role })
@@ -411,24 +588,26 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return null
     },
     async listInvites(user, tripId) {
-      if (!await this.canManageTrip(user.id, tripId)) return null
+      if (!(await this.canManageTrip(user.id, tripId))) return null
       return trips.get(tripId).invites
     },
     async revokeInvite(user, tripId, inviteId) {
-      if (!await this.canManageTrip(user.id, tripId)) return false
+      if (!(await this.canManageTrip(user.id, tripId))) return false
       const trip = trips.get(tripId)
       const invite = trip.invites.find(value => value.id === inviteId)
       if (!invite) return false
       const invitedUser = users.get(invite.email)
       if (invitedUser) {
-        trip.members = trip.members.filter(value => value.profileId !== invitedUser.id || value.role === 'owner')
+        trip.members = trip.members.filter(
+          value => value.profileId !== invitedUser.id || value.role === 'owner',
+        )
       }
       const before = trip.invites.length
       trip.invites = trip.invites.filter(value => value.id !== inviteId)
       return before !== trip.invites.length
     },
     async removeMember(user, tripId, profileId) {
-      if (!await this.canManageTrip(user.id, tripId)) return null
+      if (!(await this.canManageTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       const member = trip.members.find(value => value.profileId === profileId)
       if (!member) return null
@@ -436,21 +615,29 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       trip.members = trip.members.filter(value => value.profileId !== profileId)
       trip.invites = trip.invites.filter(value => value.email !== profiles.get(profileId)?.email)
       const removedDevices = [...devices.values()]
-        .filter(value => value.tripId === tripId && value.userId === profileId).map(value => value.id)
-      removedDevices.forEach(id => devices.delete(id))
-      for (const [key, fix] of positions) if (removedDevices.includes(fix.deviceId)) positions.delete(key)
+        .filter(value => value.tripId === tripId && value.userId === profileId)
+        .map(value => value.id)
+      removedDevices.forEach(id => {
+        devices.delete(id)
+      })
+      for (const [key, fix] of positions)
+        if (removedDevices.includes(fix.deviceId)) positions.delete(key)
       return 'removed'
     },
     async addComment(user, tripId, photoId, body) {
-      if (!await this.canReadTrip(user.id, tripId)) return null
+      if (!(await this.canReadTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       if (!trip.photos.some(photo => photo.id === photoId)) return null
       const member = trip.members.find(value => value.profileId === user.id)
       const comment = {
-        id: fakeUuid(6, nextComment++), by: profiles.get(member.profileId).displayName, text: body,
-        userId: user.id, when: 'just now',
+        id: fakeUuid(6, nextComment++),
+        by: profiles.get(member.profileId).displayName,
+        text: body,
+        userId: user.id,
+        when: 'just now',
       }
-      ;(trip.comments[photoId] ||= []).push(comment)
+      trip.comments[photoId] ||= []
+      trip.comments[photoId].push(comment)
       return comment
     },
     async deleteComment(user, tripId, commentId) {
@@ -459,15 +646,16 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const canEdit = await this.canEditTrip(user.id, tripId)
       for (const photoId of Object.keys(trip.comments)) {
         const before = trip.comments[photoId].length
-        trip.comments[photoId] = trip.comments[photoId].filter(value =>
-          value.id !== commentId || (!canEdit && value.userId !== user.id))
+        trip.comments[photoId] = trip.comments[photoId].filter(
+          value => value.id !== commentId || (!canEdit && value.userId !== user.id),
+        )
         if (!trip.comments[photoId].length) delete trip.comments[photoId]
         if ((trip.comments[photoId]?.length || 0) !== before) return true
       }
       return false
     },
     async setLike(user, tripId, photoId, on) {
-      if (!await this.canReadTrip(user.id, tripId)) return false
+      if (!(await this.canReadTrip(user.id, tripId))) return false
       const trip = trips.get(tripId)
       if (!trip.photos.some(photo => photo.id === photoId)) return false
       const index = trip.likes.indexOf(photoId)
@@ -476,22 +664,52 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return true
     },
     async registerDevice(user, tripId, input) {
-      if (!await this.canEditTrip(user.id, tripId)) return null
+      if (!(await this.canEditTrip(user.id, tripId))) return null
       const id = `device-${nextDevice++}`
       const device = {
-        id, tripId, userId: user.id, name: input.name, slug: input.slug,
-        timezone: input.timezone || null, tokenHash: input.tokenHash,
-        lastSeen: null, createdAt: new Date(),
+        id,
+        tripId,
+        userId: user.id,
+        name: input.name,
+        slug: input.slug,
+        timezone: input.timezone || null,
+        tokenHash: input.tokenHash,
+        lastSeen: null,
+        pausedAt: null,
+        createdAt: new Date(),
       }
       devices.set(id, device)
       return device
     },
+    async markDevicePaused(device, at) {
+      const found = devices.get(device.id)
+      if (found) found.pausedAt = at
+      return true
+    },
+    async resetDeviceToken(user, tripId, deviceId, tokenHash) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const device = devices.get(deviceId)
+      if (!device || device.tripId !== tripId) return null
+      device.tokenHash = tokenHash
+      return device
+    },
+    async prunePositions(now = new Date()) {
+      const cutoff = now.getTime() - 30 * 24 * 60 * 60 * 1000
+      let removed = 0
+      for (const [key, fix] of positions) {
+        if (fix.at.getTime() < cutoff) {
+          positions.delete(key)
+          removed++
+        }
+      }
+      return removed
+    },
     async listDevices(user, tripId) {
-      if (!await this.canReadTrip(user.id, tripId)) return null
+      if (!(await this.canReadTrip(user.id, tripId))) return null
       return [...devices.values()].filter(device => device.tripId === tripId)
     },
     async removeDevice(user, tripId, deviceId) {
-      if (!await this.canEditTrip(user.id, tripId)) return false
+      if (!(await this.canEditTrip(user.id, tripId))) return false
       const device = devices.get(deviceId)
       if (!device || device.tripId !== tripId) return false
       devices.delete(deviceId)
@@ -534,8 +752,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async updateMailboxTokens(id, fields) {
       for (const [key, row] of mailboxes) {
         if (row.id !== id) continue
-        const saved = { ...row, ...fields, refreshToken: fields.refreshToken || row.refreshToken,
-                        lastUsedAt: new Date(), needsReconnect: false }
+        const saved = {
+          ...row,
+          ...fields,
+          refreshToken: fields.refreshToken || row.refreshToken,
+          lastUsedAt: new Date(),
+          needsReconnect: false,
+        }
         mailboxes.set(key, saved)
         return saved
       }
@@ -548,7 +771,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async deleteMailboxConnection(userId, id) {
       for (const [key, row] of mailboxes) {
-        if (row.userId === userId && row.id === id) { mailboxes.delete(key); return true }
+        if (row.userId === userId && row.id === id) {
+          mailboxes.delete(key)
+          return true
+        }
       }
       return false
     },
@@ -557,20 +783,26 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const key = `${device.id}:${fix.at.toISOString()}`
       if (positions.has(key)) return false
       positions.set(key, { ...fix, id: nextPosition++, deviceId: device.id, tripId: device.tripId })
-      device.lastSeen = fix.at
+      const registered = devices.get(device.id) || device
+      if (!registered.lastSeen || registered.lastSeen < fix.at) registered.lastSeen = fix.at
+      if (registered.pausedAt && registered.pausedAt <= fix.at) registered.pausedAt = null
       return true
     },
     async findPositionNearCapture(user, tripId, capturedAt, toleranceMs) {
       const nearest = [...positions.values()]
-        .filter(fix => fix.tripId === tripId && devices.get(fix.deviceId)?.userId === user.id
-          && (fix.accuracy == null || fix.accuracy <= 80))
+        .filter(
+          fix =>
+            fix.tripId === tripId &&
+            devices.get(fix.deviceId)?.userId === user.id &&
+            (fix.accuracy == null || fix.accuracy <= 80),
+        )
         .map(fix => ({ ...fix, distance: Math.abs(fix.at.getTime() - capturedAt.getTime()) }))
         .filter(fix => fix.distance <= toleranceMs)
         .sort((a, b) => a.distance - b.distance)[0]
       return nearest ? { lng: nearest.lng, lat: nearest.lat, at: nearest.at } : null
     },
     async loadLive(user, tripId, since, { afterId = 0, maxPerDevice = 100000 } = {}) {
-      if (!await this.canReadTrip(user.id, tripId)) return null
+      if (!(await this.canReadTrip(user.id, tripId))) return null
       const tripPositions = [...positions.values()].filter(fix => fix.tripId === tripId)
       const sampled = new Map()
       for (const fix of tripPositions.filter(fix => fix.at >= since && fix.id > afterId)) {
@@ -578,8 +810,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         const current = sampled.get(key)
         const accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : Number.POSITIVE_INFINITY
         const currentAccuracy = Number.isFinite(current?.accuracy)
-          ? current.accuracy : Number.POSITIVE_INFINITY
-        if (!current || accuracy < currentAccuracy || accuracy === currentAccuracy && fix.id > current.id) {
+          ? current.accuracy
+          : Number.POSITIVE_INFINITY
+        if (
+          !current ||
+          accuracy < currentAccuracy ||
+          (accuracy === currentAccuracy && fix.id > current.id)
+        ) {
           sampled.set(key, fix)
         }
       }
@@ -588,10 +825,25 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (!byDevice.has(fix.deviceId)) byDevice.set(fix.deviceId, [])
         byDevice.get(fix.deviceId).push(fix)
       }
+      const homes = new Map()
+      for (const device of devices.values()) {
+        if (device.tripId !== tripId) continue
+        const profile = profiles.get(device.userId)
+        homes.set(
+          device.id,
+          profile && profile.homeLat != null && profile.homeLng != null
+            ? { lat: profile.homeLat, lng: profile.homeLng }
+            : null,
+        )
+      }
       return {
         devices: [...devices.values()].filter(device => device.tripId === tripId),
-        fixes: [...byDevice.values()].flatMap(values => values.sort((a, b) => a.id - b.id).slice(-maxPerDevice))
-          .sort((a, b) => a.id - b.id),
+        fixes: maskHomeZones(
+          [...byDevice.values()]
+            .flatMap(values => values.sort((a, b) => a.id - b.id).slice(-maxPerDevice))
+            .sort((a, b) => a.id - b.id),
+          homes,
+        ),
         cursor: Math.max(afterId, ...tripPositions.map(fix => fix.id), 0),
       }
     },
@@ -605,7 +857,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
           trips.delete(tripId)
           continue
         }
-        for (const photo of trip.photos.filter(value => value.userId === user.id)) paths.push(photo.storagePath, photo.thumbPath)
+        for (const photo of trip.photos.filter(value => value.userId === user.id))
+          paths.push(photo.storagePath, photo.thumbPath)
         trip.photos = trip.photos.filter(value => value.userId !== user.id)
         trip.members = trip.members.filter(value => value.profileId !== user.id)
         trip.invites = trip.invites.filter(value => value.email !== user.email)

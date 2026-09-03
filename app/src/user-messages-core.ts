@@ -1,10 +1,34 @@
 export type AppAction =
-  | 'load-trip' | 'load-profile' | 'create-trip' | 'accept-invite' | 'delete-account'
-  | 'save-trip' | 'save-profile' | 'send-invite' | 'remove-invite' | 'remove-member'
-  | 'add-phone' | 'remove-phone' | 'share-location' | 'open-photos' | 'upload-photo'
-  | 'post-comment' | 'save-reaction' | 'save-photo' | 'delete-photo' | 'delete-comment'
-  | 'search-places' | 'lookup-place' | 'save-route' | 'move-stop' | 'reorder-stops'
-  | 'save-stop' | 'delete-stop' | 'add-place' | 'copy'
+  | 'load-trip'
+  | 'load-profile'
+  | 'create-trip'
+  | 'accept-invite'
+  | 'delete-account'
+  | 'save-trip'
+  | 'save-profile'
+  | 'send-invite'
+  | 'remove-invite'
+  | 'remove-member'
+  | 'add-phone'
+  | 'remove-phone'
+  | 'share-location'
+  | 'open-photos'
+  | 'upload-photo'
+  | 'post-comment'
+  | 'save-reaction'
+  | 'save-photo'
+  | 'delete-photo'
+  | 'delete-comment'
+  | 'search-places'
+  | 'lookup-place'
+  | 'save-route'
+  | 'move-stop'
+  | 'reorder-stops'
+  | 'save-stop'
+  | 'delete-stop'
+  | 'add-place'
+  | 'copy'
+  | 'ask-assistant'
 
 type ApiError = Error & { status?: number; code?: string }
 
@@ -38,6 +62,7 @@ const failures: Record<AppAction, string> = {
   'delete-stop': 'We could not delete that stop. Please try again.',
   'add-place': 'We could not add that place to the trip. Please try again.',
   copy: 'We could not copy that. Select it and copy it manually.',
+  'ask-assistant': 'The assistant could not answer that. Please try again.',
 }
 
 const unavailable: Partial<Record<AppAction, string>> = {
@@ -47,6 +72,7 @@ const unavailable: Partial<Record<AppAction, string>> = {
   'open-photos': 'Your photo library is temporarily unavailable. Please try again later.',
   'share-location': 'Location sharing is temporarily unavailable. Please try again later.',
   'send-invite': 'Invitations are temporarily unavailable. Please try again later.',
+  'ask-assistant': 'The AI assistant is not available on this server right now.',
 }
 
 const forbidden: Partial<Record<AppAction, string>> = {
@@ -66,19 +92,27 @@ const forbidden: Partial<Record<AppAction, string>> = {
 export function appErrorMessage(caught: unknown, action: AppAction): string {
   const error = caught as Partial<ApiError> | null
   const status = Number(error?.status || 0)
-  if (error?.code === 'profile.handle_taken') return 'That handle is already taken. Try another one.'
-  if (error?.code === 'profile.handle_invalid') return 'Use 3–30 letters, numbers, or single hyphens for your handle.'
-  if (caught instanceof TypeError || status === 0 && /fetch|network|offline/i.test(String(error?.message || ''))) {
+  if (error?.code === 'profile.handle_taken')
+    return 'That handle is already taken. Try another one.'
+  if (error?.code === 'profile.handle_invalid')
+    return 'Use 3–30 letters, numbers, or single hyphens for your handle.'
+  if (
+    caught instanceof TypeError ||
+    (status === 0 && /fetch|network|offline/i.test(String(error?.message || '')))
+  ) {
     return 'Check your internet connection and try again.'
   }
   if (status === 401) return 'Your session has expired. Sign in again, then retry.'
   if (status === 403) return forbidden[action] || 'You do not have permission to do that.'
-  if (status === 404) return action === 'accept-invite'
-    ? 'That invitation is no longer available.' : 'That item could not be found. It may have been removed.'
+  if (status === 404)
+    return action === 'accept-invite'
+      ? 'That invitation is no longer available.'
+      : 'That item could not be found. It may have been removed.'
   if (status === 409) return 'That change conflicts with a newer update. Reload and try again.'
   if (status === 413) return 'That file is too large. Choose a smaller image and try again.'
   if (status === 415) return 'Choose a JPEG, PNG, WebP, or HEIC image.'
   if (status === 429) return 'Too many attempts. Wait a moment, then try again.'
-  if (status >= 500) return unavailable[action] || 'Off We Go is temporarily unavailable. Please try again later.'
+  if (status >= 500)
+    return unavailable[action] || 'Off We Go is temporarily unavailable. Please try again later.'
   return failures[action]
 }

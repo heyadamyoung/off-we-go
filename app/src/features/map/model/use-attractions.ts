@@ -1,30 +1,38 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Feature, FeatureCollection, Point } from 'geojson'
 import { hasBackend, loadAttractions } from '../../../backend'
 import { attractionsInCell, cellsCovering, isHeadline } from '../api/attractions'
+import type { AttractionPoi, MapView } from '../../../shared/model/types'
 
-const EMPTY_FC = { type: 'FeatureCollection', features: [] as any[] }
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 /* Which attraction cells the screen is touching, and everything ever fetched.
 
    Cells are asked for one at a time and abandoned the moment the view moves
    again, so a long pan does not queue up a hundred requests for country you
    have already left. Anything fetched stays: the layer only ever grows. */
-const boxFor = view => {
-  const scale = 360 / (256 * Math.pow(2, view.zoom))
+const boxFor = (view: MapView) => {
+  const scale = 360 / (256 * 2 ** view.zoom)
   const lngSpan = window.innerWidth * scale
   const latSpan = window.innerHeight * scale * Math.cos((view.center[1] * Math.PI) / 180)
   return {
-    west: view.center[0] - lngSpan / 2, east: view.center[0] + lngSpan / 2,
-    south: view.center[1] - latSpan / 2, north: view.center[1] + latSpan / 2,
+    west: view.center[0] - lngSpan / 2,
+    east: view.center[0] + lngSpan / 2,
+    south: view.center[1] - latSpan / 2,
+    north: view.center[1] + latSpan / 2,
   }
 }
 
-const featureFor = poi => ({
+const featureFor = (poi: AttractionPoi): Feature<Point> => ({
   type: 'Feature',
   geometry: { type: 'Point', coordinates: [poi.x, poi.y] },
   properties: {
-    id: poi.id, n: poi.n, d: poi.d, k: poi.k,
-    f: poi.f || '', big: isHeadline(poi.k),
+    id: poi.id,
+    n: poi.n,
+    d: poi.d,
+    k: poi.k,
+    f: poi.f || '',
+    big: isHeadline(poi.k),
   },
 })
 
@@ -39,9 +47,9 @@ const featureFor = poi => ({
    it finds in that browser. It works, but every visitor pays for it again, and
    only for the ground they personally wandered over. That fallback is what
    this was before there was anywhere to put the answers. */
-function useAttractions(view, enabled) {
-  const seen = useRef(new Map())
-  const [data, setData] = useState(EMPTY_FC)
+function useAttractions(view: MapView, enabled: boolean) {
+  const seen = useRef(new Map<number, AttractionPoi>())
+  const [data, setData] = useState<FeatureCollection>(EMPTY_FC)
   const [filling, setFilling] = useState(0)
   /* Two ways this can go wrong, and they want different answers. A database
      that errors is out for the session. A database that simply holds nothing
@@ -54,8 +62,12 @@ function useAttractions(view, enabled) {
 
   const handOn = useRef(false)
   useEffect(() => {
-    const down = () => { handOn.current = true }
-    const up = () => { handOn.current = false }
+    const down = () => {
+      handOn.current = true
+    }
+    const up = () => {
+      handOn.current = false
+    }
     window.addEventListener('pointerdown', down, { passive: true })
     window.addEventListener('pointerup', up, { passive: true })
     window.addEventListener('pointercancel', up, { passive: true })
@@ -77,10 +89,13 @@ function useAttractions(view, enabled) {
         setDbBlankHere(rows.length === 0)
         if (rows.length) setData({ type: 'FeatureCollection', features: rows.map(featureFor) })
       } catch {
-        if (alive) setDbUp(false)            // fall back rather than show nothing
+        if (alive) setDbUp(false) // fall back rather than show nothing
       }
     }, 260)
-    return () => { alive = false; clearTimeout(timer) }
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
   }, [view, enabled, dbUp])
 
   /* ---- unseeded: walk Wikipedia in ten-kilometre cells ----------------- */
@@ -98,7 +113,10 @@ function useAttractions(view, enabled) {
   }, [enabled, dbUp, dbBlankHere])
 
   useEffect(() => {
-    if (!enabled || (dbUp && !dbBlankHere) || view.zoom < 7.4) { setFilling(0); return }
+    if (!enabled || (dbUp && !dbBlankHere) || view.zoom < 7.4) {
+      setFilling(0)
+      return
+    }
     let alive = true
 
     const timer = setTimeout(async () => {
@@ -117,14 +135,20 @@ function useAttractions(view, enabled) {
         if (!alive) return
         left -= batch.length
         setFilling(left)
-        for (const poi of got.filter(Boolean).flat()) {
-          if (!seen.current.has(poi.id)) { seen.current.set(poi.id, poi); dirty.current = true }
+        for (const poi of got.flatMap(list => list ?? [])) {
+          if (!seen.current.has(poi.id)) {
+            seen.current.set(poi.id, poi)
+            dirty.current = true
+          }
         }
       }
       setFilling(0)
     }, 320)
 
-    return () => { alive = false; clearTimeout(timer) }
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
   }, [view, enabled, dbUp, dbBlankHere])
 
   const shown = enabled ? data : EMPTY_FC
@@ -133,5 +157,3 @@ function useAttractions(view, enabled) {
 
 export { EMPTY_FC }
 export default useAttractions
-
-

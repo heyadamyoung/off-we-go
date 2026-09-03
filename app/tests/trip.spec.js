@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test'
    going blank mid-gesture. Each one is a regression guard, not a smoke test. */
 
 const MAP_READY = 9000
-const PHOTOLESS = 'Bikes in Vondelpark'      // a stop with no photographs of its own
+const PHOTOLESS = 'Bikes in Vondelpark' // a stop with no photographs of its own
 
 const WIKIPEDIA_TESTS = new Set([
   'finding a place fills in its name, description and picture',
@@ -21,17 +21,19 @@ const WIKIPEDIA_TESTS = new Set([
 test.describe.configure({ mode: 'parallel' })
 test.beforeEach(async ({ page }, testInfo) => {
   if (WIKIPEDIA_TESTS.has(testInfo.title)) return
-  await page.route('https://en.wikipedia.org/**', route => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
-  }))
+  await page.route('https://en.wikipedia.org/**', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
+    }),
+  )
 })
 
 async function open(page) {
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await expect(page.locator('.mstop')).toHaveCount(8)
-  const follow = page.locator('.wc.on')           // stop the camera drifting under us
+  const follow = page.locator('.wc.on') // stop the camera drifting under us
   if (await follow.count()) {
     await follow.click()
     await expect(follow).toHaveCount(0)
@@ -49,10 +51,11 @@ async function open(page) {
 async function emptyMapPoint(page) {
   const box = await page.locator('.mapcanvas').boundingBox()
   const spot = await page.evaluate(({ x, y, width, height }) => {
-    const taken = [...document.querySelectorAll('.mstop, .mstack, .mme, .mfind, .glass, .sheet')]
-      .map(el => el.getBoundingClientRect())
-    const clear = (px, py) => !taken.some(r =>
-      px > r.x - 24 && px < r.right + 24 && py > r.y - 24 && py < r.bottom + 24)
+    const taken = [
+      ...document.querySelectorAll('.mstop, .mstack, .mme, .mfind, .glass, .sheet'),
+    ].map(el => el.getBoundingClientRect())
+    const clear = (px, py) =>
+      !taken.some(r => px > r.x - 24 && px < r.right + 24 && py > r.y - 24 && py < r.bottom + 24)
     for (let fy = 0.35; fy <= 0.65; fy += 0.05) {
       for (let fx = 0.25; fx <= 0.75; fx += 0.05) {
         const px = x + width * fx
@@ -69,39 +72,108 @@ async function emptyMapPoint(page) {
 const allDays = page => page.locator('.fdays button').first().click()
 const cardTitles = page => page.locator('.fcard .t').allTextContents()
 const stopTitles = async page =>
-  (await page.locator('.fcard', { has: page.locator('.t') }).all().then(cards =>
-    Promise.all(cards.map(async card => ({
-      title: (await card.locator('.t').textContent())?.trim(),
-      photo: (await card.locator('span', { hasText: 'PHOTO' }).count()) > 0,
-    }))))).filter(item => !item.photo).map(item => item.title)
+  (
+    await page
+      .locator('.fcard', { has: page.locator('.t') })
+      .all()
+      .then(cards =>
+        Promise.all(
+          cards.map(async card => ({
+            title: (await card.locator('.t').textContent())?.trim(),
+            // Photographs are told apart by form, not by a chip.
+            photo: /\bfcard-photo\b/.test((await card.getAttribute('class')) || ''),
+          })),
+        ),
+      )
+  )
+    .filter(item => !item.photo)
+    .map(item => item.title)
 
 async function centreOnStop(page, name) {
   await allDays(page)
   await page.locator('.fcard', { hasText: name }).first().click()
-  const pinCentre = () => page.evaluate(n => {
-    const p = [...document.querySelectorAll('.mstop')].find(x => (x.textContent || '').includes(n))
-    if (!p) return null
-    const q = p.querySelector('.pin').getBoundingClientRect()
-    const c = { x: q.x + q.width / 2, y: q.y + q.height / 2 }
-    return {
-      point: p.contains(document.elementFromPoint(c.x, c.y)) ? c : null,
-      moving: window.__offwegoMap?.isMoving() ?? true,
-    }
-  }, name)
+  const pinCentre = () =>
+    page.evaluate(n => {
+      const p = [...document.querySelectorAll('.mstop')].find(x =>
+        (x.textContent || '').includes(n),
+      )
+      if (!p) return null
+      const q = p.querySelector('.pin').getBoundingClientRect()
+      const c = { x: q.x + q.width / 2, y: q.y + q.height / 2 }
+      return {
+        point: p.contains(document.elementFromPoint(c.x, c.y)) ? c : null,
+        moving: window.__offwegoMap?.isMoving() ?? true,
+      }
+    }, name)
   let previous = null
-  await expect.poll(async () => {
-    const current = await pinCentre()
-    const stable = current?.point && previous
-      && Math.abs(current.point.x - previous.x) < 1
-      && Math.abs(current.point.y - previous.y) < 1
-      && !current.moving
-    previous = current?.point
-    return !!stable
-  }, { intervals: [50, 100, 200] }).toBe(true)
+  await expect
+    .poll(
+      async () => {
+        const current = await pinCentre()
+        const stable =
+          current?.point &&
+          previous &&
+          Math.abs(current.point.x - previous.x) < 1 &&
+          Math.abs(current.point.y - previous.y) < 1 &&
+          !current.moving
+        previous = current?.point
+        return !!stable
+      },
+      { intervals: [50, 100, 200] },
+    )
+    .toBe(true)
   return (await pinCentre()).point
 }
 
 /* ------------------------------------------------------------- the screen */
+
+/* The basemap licence is not satisfied by an attribution that exists in the
+   markup: CARTO and OpenStreetMap both require it to be visible. It was once
+   rendered underneath the itinerary bar, where nobody could read it. */
+/* The card's trash button read the draft, which is null whenever the card is
+   showing — so it opened the editor and deleted nothing, silently, every time. */
+test('removing a stop from its card actually removes it', async ({ page }) => {
+  await open(page)
+  await allDays(page)
+  const before = await page.locator('.mstop').count()
+  await page.locator('.fcard', { hasText: PHOTOLESS }).first().click()
+  await expect(page.getByTitle('Remove this stop')).toBeVisible({ timeout: 8000 })
+
+  await page.getByTitle('Remove this stop').click()
+
+  await expect(page.locator('.mstop')).toHaveCount(before - 1)
+  await expect(page.locator('.fcard', { hasText: PHOTOLESS })).toHaveCount(0)
+})
+
+/* Two independent Escape listeners closed the viewer and the sheet behind it
+   in one press. Escape unwinds one layer at a time. */
+test('escape closes the photo viewer without closing what is behind it', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await expect(page).toHaveURL(/view=photos/)
+  await page.locator('.fcard-photo').first().click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+
+  await page.keyboard.press('Escape')
+
+  await expect(page.locator('.viewer')).toHaveCount(0)
+  /* One layer, not two: the trip's own Escape chain used to fire as well and
+     clear the selection out from under the panel behind the viewer. */
+  await expect(page).toHaveURL(/view=photos/)
+  await expect(page).toHaveURL(/sel=/)
+})
+
+test('the basemap credit is visible, clear of the bottom bar', async ({ page }) => {
+  await open(page)
+
+  const credit = page.locator('.maplibregl-ctrl-attrib')
+  await expect(credit).toBeVisible()
+
+  const box = await credit.boundingBox()
+  const bar = await page.locator('.tripscreen > .glass.absolute.inset-x-0.bottom-0').boundingBox()
+  expect(box, 'the credit has a place on the screen').not.toBeNull()
+  if (bar) expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1)
+})
 
 test('loads the trip with map, markers and the day strip', async ({ page }) => {
   await open(page)
@@ -116,7 +188,7 @@ test('the strip interleaves a day’s stops with the photographs taken at them',
   await open(page)
   const titles = await cardTitles(page)
   expect(titles.length).toBeGreaterThan(3)
-  await expect(page.locator('.fcard span', { hasText: 'PHOTO' }).first()).toBeVisible()
+  await expect(page.locator('.fcard-photo').first()).toBeVisible()
 })
 
 test('a day chip filters the strip, and all days brings everything back', async ({ page }) => {
@@ -132,7 +204,9 @@ test('a day chip filters the strip, and all days brings everything back', async 
 
 test('a successful action shows a toast with a check mark', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  // Occasional tools live behind the More menu now.
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Trip settings' }).click()
   await page.locator('.dlg').getByRole('button', { name: 'Close', exact: true }).last().click()
 
   await page.getByRole('button', { name: 'Place a pin' }).click()
@@ -144,12 +218,13 @@ test('a successful action shows a toast with a check mark', async ({ page }) => 
 test('a toast stays horizontally centred throughout its entrance animation', async ({ page }) => {
   await open(page)
   const positions = await page.evaluate(async () => {
-    const button = [...document.querySelectorAll('button')]
-      .find(b => b.getAttribute('aria-label') === 'Follow live position')
+    const button = [...document.querySelectorAll('button')].find(
+      b => b.getAttribute('aria-label') === 'Follow live position',
+    )
     button.click()
-    const toast = await new Promise(resolve => requestAnimationFrame(
-      () => resolve(document.querySelector('.toast')),
-    ))
+    const toast = await new Promise(resolve =>
+      requestAnimationFrame(() => resolve(document.querySelector('.toast'))),
+    )
     if (!toast) return []
     const animation = toast.getAnimations()[0]
     animation.pause()
@@ -181,11 +256,14 @@ test('a long note cannot push the detail card off the top of a phone', async ({ 
   await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
   await expect(page.locator('.detailcard')).toBeVisible()
   await page.locator('.detailcard').getByTitle('Edit this stop').click()
-  await page.locator('.editor textarea').fill(
-    'Air Canada Rouge AC 1924, ref CL7GQW (booked under a different email). Lands Terminal 1: '
-    + 'collect bags, take the Terminal Link train to Terminal 3, re-check with the next airline — '
-    + 'separate tickets, nothing is through-checked. They want check-in three hours before '
-    + 'departure, so there is no time for a sit-down meal between the two.')
+  await page
+    .locator('.editor textarea')
+    .fill(
+      'Air Canada Rouge AC 1924, ref CL7GQW (booked under a different email). Lands Terminal 1: ' +
+        'collect bags, take the Terminal Link train to Terminal 3, re-check with the next airline — ' +
+        'separate tickets, nothing is through-checked. They want check-in three hours before ' +
+        'departure, so there is no time for a sit-down meal between the two.',
+    )
   await page.locator('.editor .btn.pri').click()
   await expect(page.locator('.editor')).toHaveCount(0)
 
@@ -200,16 +278,21 @@ test('a long note cannot push the detail card off the top of a phone', async ({ 
   const close = card.getByRole('button', { name: 'Close' })
   await expect(close).toBeVisible()
   const [bar, box, x] = await Promise.all([
-    page.locator('header').first().boundingBox(), card.boundingBox(), close.boundingBox(),
+    page.locator('header').first().boundingBox(),
+    card.boundingBox(),
+    close.boundingBox(),
   ])
   const where = `card ${JSON.stringify(box)} close ${JSON.stringify(x)} bar ${JSON.stringify(bar)}`
 
-  expect(box.y, `the card starts behind the top bar — ${where}`)
-    .toBeGreaterThanOrEqual(bar.y + bar.height)
+  expect(box.y, `the card starts behind the top bar — ${where}`).toBeGreaterThanOrEqual(
+    bar.y + bar.height,
+  )
   expect(box.y + box.height, `the card runs off the bottom — ${where}`).toBeLessThanOrEqual(845)
   expect(x.y, `the way back to the map is above the screen — ${where}`).toBeGreaterThanOrEqual(0)
-  expect(x.y + x.height, `the way back to the map is below the screen — ${where}`)
-    .toBeLessThanOrEqual(844)
+  expect(
+    x.y + x.height,
+    `the way back to the map is below the screen — ${where}`,
+  ).toBeLessThanOrEqual(844)
 
   // Rects alone would not catch the button being clipped by the card's own
   // overflow or covered by the bar above it. Ask the page what is actually
@@ -238,14 +321,21 @@ test('the trip chrome stays clear of itself on a phone', async ({ page }) => {
   const account = await box(page.locator('.avatar').last().locator('xpath=..'))
   const bar = await box(page.locator('.fdays').locator('xpath=../..'))
 
-  expect(title.y + title.height, 'the actions overlap the trip name')
-    .toBeLessThanOrEqual(cluster.y + 1)
-  expect(title.x + title.width, 'the trip name runs under the account menu')
-    .toBeLessThanOrEqual(account.x + 1)
-  for (const [what, rect] of [['title', title], ['actions', cluster], ['account', account]]) {
+  expect(title.y + title.height, 'the actions overlap the trip name').toBeLessThanOrEqual(
+    cluster.y + 1,
+  )
+  expect(title.x + title.width, 'the trip name runs under the account menu').toBeLessThanOrEqual(
+    account.x + 1,
+  )
+  for (const [what, rect] of [
+    ['title', title],
+    ['actions', cluster],
+    ['account', account],
+  ]) {
     expect(rect.x, `the ${what} starts off the left of the screen`).toBeGreaterThanOrEqual(-1)
-    expect(rect.x + rect.width, `the ${what} runs off the right of the screen`)
-      .toBeLessThanOrEqual(391)
+    expect(rect.x + rect.width, `the ${what} runs off the right of the screen`).toBeLessThanOrEqual(
+      391,
+    )
   }
 
   // Everything that floats above the bottom bar has to clear it, at whatever
@@ -255,8 +345,10 @@ test('the trip chrome stays clear of itself on a phone', async ({ page }) => {
     expect(rect.y + rect.height, `${selector} sits below the fold`).toBeLessThanOrEqual(845)
   }
   const controls = await box(page.locator('.wctl'))
-  expect(controls.y + controls.height, 'the map controls overlap the bottom bar')
-    .toBeLessThanOrEqual(bar.y + 1)
+  expect(
+    controls.y + controls.height,
+    'the map controls overlap the bottom bar',
+  ).toBeLessThanOrEqual(bar.y + 1)
 })
 
 test('fit the whole trip reveals every stop on the smallest phone viewport', async ({ page }) => {
@@ -283,17 +375,20 @@ test('fit the whole trip reveals every stop on the smallest phone viewport', asy
    changing zoom walks the map a little further away on every press. */
 test('zooming does not walk the map away from where it was', async ({ page }) => {
   await open(page)
-  const still = () => expect.poll(() => page.evaluate(() => !window.__offwegoMap.isMoving())).toBe(true)
-  const centre = () => page.evaluate(() => {
-    const c = window.__offwegoMap.getCenter()
-    return [c.lng, c.lat]
-  })
+  const still = () =>
+    expect.poll(() => page.evaluate(() => !window.__offwegoMap.isMoving())).toBe(true)
+  const centre = () =>
+    page.evaluate(() => {
+      const c = window.__offwegoMap.getCenter()
+      return [c.lng, c.lat]
+    })
 
   const before = await centre()
   for (let round = 0; round < 3; round += 1) {
-    await page.locator('.wctl .wc').nth(1).click()   // in
+    // By name, not position: buttons come and go from this cluster.
+    await page.getByTitle('Zoom in').click()
     await still()
-    await page.locator('.wctl .wc').nth(2).click()   // out
+    await page.getByTitle('Zoom out').click()
     await still()
   }
   const after = await centre()
@@ -304,20 +399,23 @@ test('zooming does not walk the map away from where it was', async ({ page }) =>
 
 test('following the travellers actually zooms in, and then holds still', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await open(page)                                   // open() leaves follow off
+  await open(page) // open() leaves follow off
 
-  const camera = () => page.evaluate(() => ({
-    zoom: window.__offwegoMap.getZoom(),
-    moving: window.__offwegoMap.isMoving(),
-  }))
+  const camera = () =>
+    page.evaluate(() => ({
+      zoom: window.__offwegoMap.getZoom(),
+      moving: window.__offwegoMap.isMoving(),
+    }))
   await page.evaluate(() => window.__offwegoMap.jumpTo({ center: [4.75, 52.32], zoom: 9 }))
   await expect.poll(async () => (await camera()).zoom).toBeLessThan(9.5)
 
   await page.getByRole('button', { name: 'Follow live position' }).click()
-  await expect.poll(async () => (await camera()).zoom, {
-    message: 'following should bring the travellers to street level',
-    timeout: 5000,
-  }).toBeGreaterThan(14)
+  await expect
+    .poll(async () => (await camera()).zoom, {
+      message: 'following should bring the travellers to street level',
+      timeout: 5000,
+    })
+    .toBeGreaterThan(14)
 
   // And having arrived it stays: live positions arrive on a timer, and a map
   // that re-frames itself every time one does cannot be read.
@@ -344,7 +442,8 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
 
   // dragging must pan without selecting whatever was underneath
   const box = await page.locator('.mapcanvas').boundingBox()
-  const cx = box.x + box.width * 0.6, cy = box.y + box.height * 0.55
+  const cx = box.x + box.width * 0.6,
+    cy = box.y + box.height * 0.55
   await page.mouse.move(cx, cy)
   await page.mouse.down()
   for (let i = 1; i <= 25; i++) await page.mouse.move(cx - i * 8, cy - i * 3)
@@ -353,7 +452,9 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
   expect(await page.locator('.detailcard h3').textContent()).toBe(after)
 })
 
-test('what is selected is in the URL, so the view can be linked and gone back from', async ({ page }) => {
+test('what is selected is in the URL, so the view can be linked and gone back from', async ({
+  page,
+}) => {
   await open(page)
   await allDays(page)
   await page.locator('.fcard', { hasText: PHOTOLESS }).first().click()
@@ -410,7 +511,7 @@ test('reordering moves a stop one place and back', async ({ page }) => {
   await page.locator('.editor .ef .ord').first().click()
   await expect.poll(() => stopTitles(page)).not.toEqual(before)
   const moved = await stopTitles(page)
-  expect(moved.slice().sort()).toEqual(before.slice().sort())   // same set, new order
+  expect(moved.slice().sort()).toEqual(before.slice().sort()) // same set, new order
 
   await page.locator('.editor .ef .ord').nth(1).click()
   await expect.poll(() => stopTitles(page)).toEqual(before)
@@ -420,8 +521,9 @@ test('placing a pin is its own mode, and escape leaves it', async ({ page }) => 
   await open(page)
   const place = page.getByRole('button', { name: 'Place a pin' })
   await place.click()
-  await expect(page.locator('.edithint, .glass', { hasText: 'Click the map where the stop is' }).first())
-    .toBeVisible()
+  await expect(
+    page.locator('.edithint, .glass', { hasText: 'Click the map where the stop is' }).first(),
+  ).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByText('Click the map where the stop is')).toHaveCount(0)
 })
@@ -443,7 +545,9 @@ test('search matches a stop by its photo caption, across the whole trip', async 
 test('each side panel is its own URL and closes back to the map', async ({ page }) => {
   await open(page)
   for (const [label, heading] of [
-    ['Timeline', 'Timeline'], ['Photos', 'Photos'], ['People', 'People'],
+    ['Timeline', 'Timeline'],
+    ['Photos', 'Photos'],
+    ['People', 'People'],
   ]) {
     await page.getByRole('button', { name: label, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`view=${heading.toLowerCase()}`))
@@ -479,8 +583,16 @@ test('photo upload previews multiple selections and lets them be replaced', asyn
   await open(page)
   await page.getByRole('button', { name: 'Add photos' }).click()
   await page.locator('.dlg input[type="file"]').setInputFiles([
-    { name: 'camera-one.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) },
-    { name: 'camera-two.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) },
+    {
+      name: 'camera-one.jpg',
+      mimeType: 'image/jpeg',
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+    },
+    {
+      name: 'camera-two.jpg',
+      mimeType: 'image/jpeg',
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+    },
   ])
 
   await expect(page.locator('.previews .preview')).toHaveCount(2)
@@ -515,10 +627,9 @@ test('uploading a geotagged photo brings its map pin into view', async ({ page }
 
 test('editing a caption shows immediately in the open viewer', async ({ page }) => {
   await open(page)
-  // A tile selects the photograph; its card is what opens the viewer.
+  // Clicking a photograph opens the viewer directly.
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
   await page.locator('.grid button').first().click()
-  await page.locator('.detailcard').getByRole('button', { name: 'Open' }).click()
   await expect(page.locator('.viewer')).toBeVisible()
 
   await page.locator('.vcap .vedit, .vcap h2').first().click()
@@ -532,10 +643,9 @@ test('editing a caption shows immediately in the open viewer', async ({ page }) 
 
 test('a comment posts and can be deleted again', async ({ page }) => {
   await open(page)
-  // A tile selects the photograph; its card is what opens the viewer.
+  // Clicking a photograph opens the viewer directly.
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
   await page.locator('.grid button').first().click()
-  await page.locator('.detailcard').getByRole('button', { name: 'Open' }).click()
   await expect(page.locator('.viewer')).toBeVisible()
 
   const before = await page.locator('.cmt').count()
@@ -558,7 +668,8 @@ test('theme choice survives a reload and takes the map with it', async ({ page }
   const root = page.locator('html')
   await expect(root).toHaveAttribute('data-theme', 'dark')
 
-  await page.getByRole('button', { name: 'Day map' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Day map' }).click()
   await expect(root).toHaveAttribute('data-theme', 'light')
 
   await page.reload()
@@ -568,10 +679,11 @@ test('theme choice survives a reload and takes the map with it', async ({ page }
 
 test('the map keeps something painted through zoom and pan', async ({ page }) => {
   await open(page)
-  const painted = async () => page.evaluate(() => {
-    const canvas = document.querySelector('.mapcanvas canvas')
-    return canvas.width > 0 && canvas.height > 0
-  })
+  const painted = async () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector('.mapcanvas canvas')
+      return canvas.width > 0 && canvas.height > 0
+    })
   await page.locator('.wctl .wc').nth(1).click()
   expect(await painted()).toBe(true)
   await page.locator('.wctl .wc').nth(2).click()
@@ -582,7 +694,8 @@ test('the map keeps something painted through zoom and pan', async ({ page }) =>
 
 test('the settings sheet opens on a tab, and the tab is in the URL', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Trip settings' }).click()
   await expect(page).toHaveURL(/sheet=settings/)
   await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -610,14 +723,15 @@ test('the stop editor takes the phone screen and stays above the keyboard', asyn
   await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
   await page.locator('.detailcard').getByTitle('Edit this stop').click()
   await expect(page.locator('.editor')).toBeVisible()
-  await page.waitForTimeout(350)   // it rises into place over 220ms
+  await page.waitForTimeout(350) // it rises into place over 220ms
 
-  const geometry = async () => page.evaluate(() => {
-    const editor = document.querySelector('.editor').getBoundingClientRect()
-    const save = document.querySelector('.editor .btn.pri').getBoundingClientRect()
-    const bar = document.querySelector('header').closest('div').getBoundingClientRect()
-    return { top: editor.y, bottom: editor.bottom, save: save.bottom, chrome: bar.bottom }
-  })
+  const geometry = async () =>
+    page.evaluate(() => {
+      const editor = document.querySelector('.editor').getBoundingClientRect()
+      const save = document.querySelector('.editor .btn.pri').getBoundingClientRect()
+      const bar = document.querySelector('header').closest('div').getBoundingClientRect()
+      return { top: editor.y, bottom: editor.bottom, save: save.bottom, chrome: bar.bottom }
+    })
 
   // On a phone it is the screen, not a card floating over it: with the chrome
   // and the day bar and a keyboard all taking their share there was about a
@@ -648,16 +762,18 @@ test('the stop editor takes the phone screen and stays above the keyboard', asyn
 test('the settings chrome does not move when you change tab', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Trip settings' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
 
-  const chrome = () => page.evaluate(() => {
-    const round = box => [Math.round(box.y), Math.round(box.height)]
-    return {
-      sheet: round(document.querySelector('.dlg').getBoundingClientRect()),
-      footer: round(document.querySelector('.dlgfoot').getBoundingClientRect()),
-    }
-  })
+  const chrome = () =>
+    page.evaluate(() => {
+      const round = box => [Math.round(box.y), Math.round(box.height)]
+      return {
+        sheet: round(document.querySelector('.dlg').getBoundingClientRect()),
+        footer: round(document.querySelector('.dlgfoot').getBoundingClientRect()),
+      }
+    })
 
   const seen = []
   for (const tab of ['Trip', 'People', 'Location', 'Trip']) {
@@ -674,7 +790,8 @@ test('the settings chrome does not move when you change tab', async ({ page }) =
 test('the settings sheet finishes on one row and never scrolls sideways', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Trip settings' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
 
   // The header carries a Close too, so both of these come from the footer.
@@ -682,8 +799,10 @@ test('the settings sheet finishes on one row and never scrolls sideways', async 
   const close = page.locator('.dlgfoot').getByRole('button', { name: 'Close', exact: true })
   const [saveBox, closeBox] = await Promise.all([save.boundingBox(), close.boundingBox()])
 
-  expect(Math.abs(saveBox.y - closeBox.y), 'saving and closing are on different rows')
-    .toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(saveBox.y - closeBox.y),
+    'saving and closing are on different rows',
+  ).toBeLessThanOrEqual(1)
   expect(saveBox.height, 'the two buttons are different heights').toBe(closeBox.height)
 
   const sideways = await page.evaluate(() => {
@@ -696,7 +815,8 @@ test('the settings sheet finishes on one row and never scrolls sideways', async 
 
 test('the roster lists people and takes an invite', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Trip settings' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Trip settings' }).click()
   await page.getByRole('button', { name: 'People', exact: true }).last().click()
 
   await expect(page.locator('.dlg').getByText('Maya').first()).toBeVisible()
@@ -719,13 +839,14 @@ test('finding a place fills in its name, description and picture', async ({ page
   await expect(page.locator('.editor .eh b')).toHaveText('New stop')
 
   await page.locator('.editor .lookup').click()
-  await expect.poll(() => page.locator('.editor .f input').first().inputValue(),
-    { timeout: 25000 }).not.toBe('')
+  await expect
+    .poll(() => page.locator('.editor .f input').first().inputValue(), { timeout: 25000 })
+    .not.toBe('')
 })
 
 test('the sights panel shows real landmarks with a picture and a description', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Sights nearby' }).click()
+  await page.getByRole('button', { name: 'Sights', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Sights nearby' })).toBeVisible()
   await expect(page.locator('.sight').first()).toBeVisible({ timeout: 25000 })
   await expect(page.locator('.sight .sname').first()).not.toHaveText('')
@@ -735,14 +856,18 @@ test('attractions are drawn across the map and open into a card', async ({ page 
   await open(page)
   // The layer is drawn by the GPU, so there is nothing in the DOM to count;
   // ask the source what it is holding.
-  const drawn = () => page.evaluate(() =>
-    window.__offwegoMap?.getSource('attr')?.serialize?.().data?.features?.length ?? 0)
+  const drawn = () =>
+    page.evaluate(
+      () => window.__offwegoMap?.getSource('attr')?.serialize?.().data?.features?.length ?? 0,
+    )
 
   await expect.poll(drawn, { timeout: 30000 }).toBeGreaterThan(0)
 
-  await page.getByRole('button', { name: 'Hide attractions' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Hide attractions' }).click()
   await expect.poll(drawn).toBe(0)
 
-  await page.getByRole('button', { name: 'Show attractions' }).click()
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name: 'Show attractions' }).click()
   await expect.poll(drawn, { timeout: 30000 }).toBeGreaterThan(0)
 })

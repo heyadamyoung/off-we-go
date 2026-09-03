@@ -8,6 +8,8 @@ interface Landing {
   invites: PendingInvite[]
   profile: MyProfile | null
   email?: string
+  /** When the list came from the offline cache, when it was last synced. */
+  offlineAt: number | null
   loading: boolean
   error: Error | null
   reload: () => void
@@ -21,6 +23,7 @@ export default function useLanding(): Landing {
   const [invites, setInvites] = useState<PendingInvite[]>([])
   const [profile, setProfile] = useState<MyProfile | null>(null)
   const [email, setEmail] = useState<string | undefined>()
+  const [offlineAt, setOfflineAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -37,6 +40,7 @@ export default function useLanding(): Landing {
         setTrips(landing.trips || [])
         setInvites(landing.invites || [])
         setEmail(landing.email)
+        setOfflineAt(landing.offlineAt ?? null)
         setProfile(me)
         setLoading(false)
       })
@@ -45,8 +49,10 @@ export default function useLanding(): Landing {
         setError(caught instanceof Error ? caught : new Error(String(caught)))
         setLoading(false)
       })
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [ready, session, attempt])
 
-  return { trips, invites, profile, email, loading, error, reload }
+  return { trips, invites, profile, email, offlineAt, loading, error, reload }
 }

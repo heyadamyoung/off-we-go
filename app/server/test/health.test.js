@@ -5,7 +5,9 @@ import { createMemoryRepository } from './memory-repository.js'
 
 test('health reports unavailable when PostgreSQL or upload storage is not writable', async () => {
   const repository = createMemoryRepository()
-  repository.ready = async () => { throw new Error('database unavailable') }
+  repository.ready = async () => {
+    throw new Error('database unavailable')
+  }
   const app = await buildServer({
     repository,
     fileStore: { async ready() {}, async remove() {} },
@@ -40,10 +42,14 @@ test('health says whether the mailbox connector came up configured', async () =>
     mailboxTokenKey: Buffer.alloc(32, 7).toString('base64'),
   })
 
-  assert.deepEqual((await bare.inject({ method: 'GET', url: '/api/health' })).json(),
-    { ok: true, connectors: { outlook: false } })
-  assert.deepEqual((await connected.inject({ method: 'GET', url: '/api/health' })).json(),
-    { ok: true, connectors: { outlook: true } })
+  assert.deepEqual((await bare.inject({ method: 'GET', url: '/api/health' })).json(), {
+    ok: true,
+    connectors: { outlook: false, assistant: false },
+  })
+  assert.deepEqual((await connected.inject({ method: 'GET', url: '/api/health' })).json(), {
+    ok: true,
+    connectors: { outlook: true, assistant: false },
+  })
   await bare.close()
   await connected.close()
 })

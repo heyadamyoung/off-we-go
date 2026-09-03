@@ -7,8 +7,11 @@ export function safeOAuthContinuation(value: unknown, origin: string) {
   try {
     const destination = new URL(value, origin)
     return destination.origin === origin && destination.pathname === '/oauth/authorize'
-      ? destination.pathname + destination.search : null
-  } catch { return null }
+      ? destination.pathname + destination.search
+      : null
+  } catch {
+    return null
+  }
 }
 
 interface ApiClientOptions {
@@ -25,18 +28,35 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
   try {
     const initial = storage.getItem(SESSION_KEY)
     if (initial && typeof initial !== 'string') {
-      hydration = Promise.resolve(initial).then(value => {
-        try { session = JSON.parse(value || 'null') as AuthSession | null } catch { session = null }
-        hydrated = true
-        return session
-      })
+      hydration = Promise.resolve(initial)
+        .then(value => {
+          try {
+            session = JSON.parse(value || 'null') as AuthSession | null
+          } catch {
+            session = null
+          }
+          return session
+        })
+        /* A keychain that will not open yet means no session, not a client
+           that rejects every request it is ever asked to make. */
+        .catch(() => null)
+        .then(value => {
+          hydrated = true
+          return value
+        })
     } else {
       session = JSON.parse((initial as string | null) || 'null') as AuthSession | null
       hydrated = true
     }
-  } catch { session = null; hydrated = true }
+  } catch {
+    session = null
+    hydrated = true
+  }
 
-  const emit = () => listeners.forEach(listener => listener(session))
+  const emit = () =>
+    listeners.forEach(listener => {
+      listener(session)
+    })
   const hydrate = async () => {
     if (hydrated) return session
     if (hydration) await hydration
@@ -60,34 +80,57 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     const headers: Record<string, string> = { accept: 'text/event-stream' }
     if (session?.accessToken) headers.authorization = `Bearer ${session.accessToken}`
     const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, {
-      credentials: 'include', headers, signal, cache: 'no-store',
+      credentials: 'include',
+      headers,
+      signal,
+      cache: 'no-store',
     })
     if (response.status === 401) await save(null)
     if (!response.ok) throw new Error(`Stream failed (${response.status})`)
     return response
   }
 
-  const request = async <T = any>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
+  const request = async <T = unknown>(
+    path: string,
+    options: ApiRequestOptions = {},
+  ): Promise<T> => {
     await hydrate()
-    const headers: Record<string, string> = { ...Object.fromEntries(new Headers(options.headers).entries()) }
+    const headers: Record<string, string> = {
+      ...Object.fromEntries(new Headers(options.headers).entries()),
+    }
     if (session?.accessToken) headers.authorization = `Bearer ${session.accessToken}`
     let body = options.body
-    if (body != null && !(body instanceof FormData) && typeof body !== 'string' && !(body instanceof Blob)) {
+    if (
+      body != null &&
+      !(body instanceof FormData) &&
+      typeof body !== 'string' &&
+      !(body instanceof Blob)
+    ) {
       headers['content-type'] ||= 'application/json'
       body = JSON.stringify(body)
     }
     const response = await fetchFn(baseUrl.replace(/\/$/, '') + path, {
-      credentials: 'include', ...options, headers, body: body as BodyInit | null | undefined,
+      credentials: 'include',
+      ...options,
+      headers,
+      body: body as BodyInit | null | undefined,
     })
     if (response.status === 401 && !path.startsWith('/auth/')) await save(null)
     if (!response.ok) {
       let message = `Request failed (${response.status})`
       let code = ''
+      /* Read the body once. Asking for JSON and then falling back to text on
+         the same response throws "body stream already read" — a TypeError with
+         no status, which every caller downstream reads as a lost connection
+         rather than as the refusal it actually was. */
+      const raw = await response.text().catch(() => '')
       try {
-        const payload = await response.json()
+        const payload = JSON.parse(raw) as { error?: string; code?: unknown }
         message = payload.error || message
         code = typeof payload.code === 'string' ? payload.code : ''
-      } catch { const text = await response.text(); if (text) message = text }
+      } catch {
+        if (raw) message = raw.slice(0, 300)
+      }
       const error: Error & { status?: number; code?: string } = new Error(message)
       error.status = response.status
       if (code) error.code = code
@@ -101,13 +144,24 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
   return {
     request,
     stream,
-    getSession() { return session },
-    subscribe(listener: (session: AuthSession | null) => void) { listeners.add(listener); return () => listeners.delete(listener) },
+    getSession() {
+      return session
+    },
+    subscribe(listener: (session: AuthSession | null) => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     async acceptSession(value: AuthSession) {
       return save({ accessToken: value.accessToken, user: value.user })
     },
-    async exchangeLoginHandoff(token: string, binding: { client?: 'native'; verifier?: string } = {}) {
-      const result = await request<AuthSession>('/auth/exchange', { method: 'POST', body: { token, ...binding } })
+    async exchangeLoginHandoff(
+      token: string,
+      binding: { client?: 'native'; verifier?: string } = {},
+    ) {
+      const result = await request<AuthSession>('/auth/exchange', {
+        method: 'POST',
+        body: { token, ...binding },
+      })
       return await save({ accessToken: result.accessToken, user: result.user })
     },
     async restore() {
@@ -116,10 +170,22 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
       try {
         const result = await request<{ user: AuthSession['user'] }>('/auth/session')
         return await save({ ...session, user: result.user })
-      } catch { return await save(null) }
+      } catch (caught) {
+        /* Only the server saying who you are not is a reason to forget the
+           session. A trip abroad with the data off would otherwise sign the
+           traveller out of an app they cannot sign back into, and take the
+           whole offline copy with it. */
+        const status = Number((caught as { status?: number } | null)?.status || 0)
+        if (status === 401 || status === 403) return await save(null)
+        return session
+      }
     },
     async signOut() {
-      try { if (session) await request('/auth/logout', { method: 'POST' }) } finally { await save(null) }
+      try {
+        if (session) await request('/auth/logout', { method: 'POST' })
+      } finally {
+        await save(null)
+      }
     },
   }
 }

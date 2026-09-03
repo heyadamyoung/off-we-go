@@ -1,7 +1,18 @@
-import { ask, pause } from '../../../shared/api/wikipedia-client'
 import {
-  MAX_RADIUS, NOT_A_PHOTO, NOT_A_PLACE, NOT_SOMEWHERE_YOU_GO,
-  fileNameOf, iconFor, tidy,
+  ask,
+  pause,
+  type WikiGeosearchHit,
+  type WikiPage,
+  type WikiQueryResponse,
+} from '../../../shared/api/wikipedia-client'
+import {
+  MAX_RADIUS,
+  NOT_A_PHOTO,
+  NOT_A_PLACE,
+  NOT_SOMEWHERE_YOU_GO,
+  fileNameOf,
+  iconFor,
+  tidy,
 } from '../../../shared/lib/place-format'
 
 /* =========================================================================
@@ -35,50 +46,96 @@ import {
 const LOOKS_LIKE_A_DESTINATION =
   /(museum|gallery|park|garden|church|kerk|cathedral|basilica|synagogue|mosque|temple|castle|palace|paleis|monument|memorial|tower|toren|bridge|brug|market|markt|square|plein|gracht|theatre|theater|zoo|aquarium|stadium|library|windmill|molen|statue|hall|huis|house|hof|gebouw|poort|station|harbou?r)/i
 
-const BATCH = 20                 // extracts and pageviews both stop above this
+const BATCH = 20 // extracts and pageviews both stop above this
 const MAX_CANDIDATES = 120
 
-
-const dailyReaders = page => {
-  const counts = Object.values(page.pageviews || {}).filter(n => typeof n === 'number')
+const dailyReaders = (page: WikiPage) => {
+  const counts = Object.values(page.pageviews || {}).filter(
+    (n): n is number => typeof n === 'number',
+  )
   return counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : 0
 }
 
-const sightsCache = new Map()
+/** one ranked sight, the shape the panel renders and the editor adds from */
+export interface SightPlace {
+  id: string
+  pageTitle: string
+  name: string
+  kind: string
+  note: string
+  image: string | null
+  source: string | null
+  lng: number | null
+  lat: number | null
+  icon: string
+  metres: number | null
+  readers: number
+  skip: boolean
+}
 
-export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }: any) {
+const sightsCache = new Map<string, SightPlace[]>()
+
+export async function findSights({
+  lng,
+  lat,
+  radius = 3000,
+  limit = 40,
+  signal,
+}: {
+  lng: number
+  lat: number
+  radius?: number
+  limit?: number
+  signal?: AbortSignal
+}): Promise<SightPlace[]> {
   const key = [lng.toFixed(3), lat.toFixed(3), Math.round(radius / 250)].join(':')
-  if (sightsCache.has(key)) return sightsCache.get(key).slice(0, limit)
+  if (sightsCache.has(key)) return sightsCache.get(key)!.slice(0, limit)
 
-  const wide = await ask({
-    list: 'geosearch',
-    gscoord: lat + '|' + lng,
-    gsradius: String(Math.min(MAX_RADIUS, Math.max(500, Math.round(radius)))),
-    gslimit: '500',
-  }, signal)
+  const wide = await ask<WikiQueryResponse>(
+    {
+      list: 'geosearch',
+      gscoord: lat + '|' + lng,
+      gsradius: String(Math.min(MAX_RADIUS, Math.max(500, Math.round(radius)))),
+      gslimit: '500',
+    },
+    signal,
+  )
 
   const found = (wide.query?.geosearch || []).filter(p => !NOT_A_PLACE.test(p.title))
-  const candidates = [...new Map([
-    ...found.filter(p => LOOKS_LIKE_A_DESTINATION.test(p.title)),
-    ...found.slice(0, 30),                    // somewhere unremarkable but close still counts
-  ].map(p => [p.pageid, p])).values()].slice(0, MAX_CANDIDATES)
+  const candidates = [
+    ...new Map<number, WikiGeosearchHit>(
+      [
+        ...found.filter(p => LOOKS_LIKE_A_DESTINATION.test(p.title)),
+        ...found.slice(0, 30), // somewhere unremarkable but close still counts
+      ].map(p => [p.pageid, p]),
+    ).values(),
+  ].slice(0, MAX_CANDIDATES)
 
-  const away = new Map(candidates.map(p => [p.pageid, Math.round(p.dist)]))
-  const detail: any[] = []
+  const away = new Map(candidates.map(p => [p.pageid, Math.round(p.dist ?? 0)]))
+  const detail: WikiPage[] = []
   for (let i = 0; i < candidates.length; i += BATCH) {
     const batch = candidates.slice(i, i + BATCH)
-    const json = await ask({
-      pageids: batch.map(p => p.pageid).join('|'),
-      prop: 'extracts|pageimages|description|info|pageviews|coordinates', inprop: 'url',
-      exintro: '1', explaintext: '1', exsentences: '2', exlimit: 'max',
-      piprop: 'thumbnail', pithumbsize: '800', pvipdays: '14',
-    }, signal)
-    detail.push(...Object.values<any>(json.query?.pages || {}))
-    if (i + BATCH < candidates.length) await pause(80)   // be a good citizen
+    const json = await ask<WikiQueryResponse>(
+      {
+        pageids: batch.map(p => p.pageid).join('|'),
+        prop: 'extracts|pageimages|description|info|pageviews|coordinates',
+        inprop: 'url',
+        exintro: '1',
+        explaintext: '1',
+        exsentences: '2',
+        exlimit: 'max',
+        piprop: 'thumbnail',
+        pithumbsize: '800',
+        pvipdays: '14',
+      },
+      signal,
+    )
+    detail.push(...Object.values(json.query?.pages || {}))
+    if (i + BATCH < candidates.length) await pause(80) // be a good citizen
   }
 
   const places = detail
-    .map(p => {
+    .map((p): SightPlace => {
       const about = (p.description || '') + ' ' + (p.extract || '')
       const image = p.thumbnail?.source || null
       return {
@@ -98,18 +155,21 @@ export async function findSights({ lng, lat, radius = 3000, limit = 40, signal }
            Run over the extract it threw away the Rijksmuseum, whose opening
            paragraph mentions the borough it stands in — the filter is meant to
            catch things that *are* a district, not things that name one. */
-        skip: NOT_A_PLACE.test(p.description || '') ||
-              NOT_SOMEWHERE_YOU_GO.test(p.description || ''),
+        skip:
+          NOT_A_PLACE.test(p.description || '') || NOT_SOMEWHERE_YOU_GO.test(p.description || ''),
       }
     })
     .filter(p => !p.skip)
-    .sort((a, b) => (b.readers - a.readers) || ((a.metres ?? 0) - (b.metres ?? 0)))
+    .sort((a, b) => b.readers - a.readers || (a.metres ?? 0) - (b.metres ?? 0))
 
   // Coordinates come from pass one; pass two is not asked for them again.
   for (const p of places) {
     if (p.lng == null) {
       const src = candidates.find(c => 'wk' + c.pageid === p.id)
-      if (src) { p.lng = src.lon; p.lat = src.lat }
+      if (src) {
+        p.lng = src.lon
+        p.lat = src.lat
+      }
     }
   }
 

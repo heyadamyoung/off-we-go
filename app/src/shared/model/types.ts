@@ -27,7 +27,7 @@ export interface Stop {
   status?: string
   note?: string
   src?: string | null
-  sourceUrl?: string
+  sourceUrl?: string | null
   seq?: number
   kw?: string
   lock?: number
@@ -82,6 +82,8 @@ export interface Device {
   name: string
   token?: string
   lastSeen?: Date | null
+  /** set when the phone reported a deliberate pause after its last fix */
+  pausedAt?: Date | null
   [key: string]: unknown
 }
 
@@ -163,6 +165,7 @@ export interface MyProfile extends Person {
 
 export interface TripLandingData {
   landing: true
+  offlineAt?: number
   email?: string
   trips: TripSummary[]
   invites: PendingInvite[]
@@ -175,6 +178,8 @@ export interface AccountArchive {
 }
 
 export interface TripData {
+  /** Set when this came from the offline cache: when it was last synced. */
+  offlineAt?: number
   tripId: Id
   trip: Trip
   stops: Stop[]
@@ -186,6 +191,12 @@ export interface TripData {
   me: Person
   canEdit: boolean
   source?: string
+}
+
+/** One turn of the AI chat; the transcript lives in the browser. */
+export interface AssistantMessage {
+  role: 'user' | 'assistant'
+  text: string
 }
 
 export interface AuthSession {
@@ -202,29 +213,28 @@ export interface AsyncStorage {
 
 export type ApiRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown }
 
-export type TripLoadResult =
-  | TripData
-  | { needsAuth: true }
-  | TripLandingData
+export type TripLoadResult = TripData | { needsAuth: true } | TripLandingData
 
 export interface Attraction {
   id: Id | number
   name: string
   lng: number
   lat: number
+  kind?: string
   icon?: string
   image?: string | null
   pageTitle?: string
   sourceUrl?: string
   note?: string
-  metres?: number
+  metres?: number | null
   n?: string
   d?: string
   k?: string
   f?: string
   t?: string
   u?: string
-  source?: string
+  big?: boolean
+  source?: string | null
 }
 
 export interface ViewerState {
@@ -232,9 +242,21 @@ export interface ViewerState {
   index: number
 }
 
+/** The compact attraction row the map layer draws — seeded by the server or
+    fetched live from Wikipedia, one shape either way. */
+export interface AttractionPoi {
+  id: number
+  n: string
+  d: string
+  k: string
+  f: string | null
+  x: number
+  y: number
+}
+
 export interface UploadInput {
   file: File
-  stopId?: Id
+  stopId?: Id | null
   caption?: string
   lng?: number
   lat?: number

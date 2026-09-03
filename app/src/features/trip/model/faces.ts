@@ -9,7 +9,10 @@ import type { Person } from '../../../shared/model/types'
 function initialAvatar(name?: string) {
   const label = (name || '?').trim() || '?'
   const initial = label.charAt(0).toUpperCase()
-  const hue = [...label].reduce((value, character) => (value * 31 + character.charCodeAt(0)) % 360, 11)
+  const hue = [...label].reduce(
+    (value, character) => (value * 31 + character.charCodeAt(0)) % 360,
+    11,
+  )
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
     `<rect width="64" height="64" fill="hsl(${hue} 38% 34%)"/>` +
@@ -19,4 +22,4 @@ function initialAvatar(name?: string) {
 }
 
 export const withFace = (person: Person): Person =>
-  (person && person.avatar ? person : { ...person, avatar: initialAvatar(person && person.name) })
+  person?.avatar ? person : { ...person, avatar: initialAvatar(person?.name) }

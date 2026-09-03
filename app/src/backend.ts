@@ -1,25 +1,40 @@
-import { STOPS, PHOTOS, ROUTE, FAMILY, TRIP, SEED_COMMENTS } from './data'
-import { liveRetryDelay } from './live-positions-core'
-import { createTripStreams } from './trip-stream-core'
-import { createApiClient, safeOAuthContinuation } from './api-client-core'
-import { mobileTracker, sessionStorage } from './mobile'
+import { sampleProfile, sampleResult, sampleTrip, uid } from './sample-trip-core'
+import { safeOAuthContinuation } from './api-client-core'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
+import { authClient, hasBackend, isSample, tripPath } from './backend-base'
+import { deviceStorage, mobileTracker } from './mobile'
+import { localId } from './offline-edits-core'
+import { withOfflineEdit } from './offline-edits'
+import {
+  isTripData,
+  isTripLandingData,
+  LANDING_SLUG,
+  offlineAccountId,
+  withOfflineFallback,
+} from './offline-trip-core'
+
+export { authClient, functionsUrl, hasBackend } from './backend-base'
+export * from './backend-social'
+export * from './backend-live'
 import type {
-  AcceptedInvite, AccountArchive, AuthSession, Coordinates, Device, Id, Invite, LiveFix, MyProfile,
-  PendingInvite, Person, Stop, Trip, TripComment, TripData, TripLandingData, TripLoadResult,
-  TripPhoto, TripSummary, UploadInput,
+  AccountArchive,
+  ApiError,
+  AssistantMessage,
+  AttractionPoi,
+  AuthSession,
+  Coordinates,
+  Id,
+  MyProfile,
+  PendingInvite,
+  Person,
+  Stop,
+  Trip,
+  TripLandingData,
+  TripLoadResult,
+  TripSummary,
 } from './shared/model/types'
 
-const API_URL = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-export const hasBackend = Boolean(API_URL)
-export const functionsUrl = hasBackend ? `${API_URL}/ingest` : null
-
-export const authClient = createApiClient({
-  baseUrl: API_URL || '/api',
-  storage: sessionStorage,
-  fetch: globalThis.fetch.bind(globalThis),
-})
 const logtoExperience = createLogtoExperienceClient(authClient)
 
 let browserLogin: Promise<AuthSession | null> | null = null
@@ -30,73 +45,36 @@ export function completeBrowserLogin() {
   const token = browserLoginHandoffFromUrl(url.href)
   if (!token) return Promise.resolve(authClient.getSession())
   const continuation = safeOAuthContinuation(url.searchParams.get('continue'), url.origin)
-  browserLogin = authClient.exchangeLoginHandoff(token).then(session => {
-    if (continuation) window.location.replace(continuation)
-    return session
-  }).finally(() => {
-    url.searchParams.delete('token')
-    url.searchParams.delete('continue')
-    if (continuation) return
-    window.history.replaceState({}, '', url.pathname + url.search + url.hash)
-  })
+  browserLogin = authClient
+    .exchangeLoginHandoff(token)
+    .then(session => {
+      if (continuation) window.location.replace(continuation)
+      return session
+    })
+    .finally(() => {
+      url.searchParams.delete('token')
+      url.searchParams.delete('continue')
+      if (continuation) return
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash)
+    })
   return browserLogin
 }
 
-interface SampleState {
-  trip: Trip
-  stops: Stop[]
-  photos: TripPhoto[]
-  route: Coordinates[]
-  family: Person[]
-  comments: Record<Id, TripComment[]>
-  likes: Id[]
-  invites: Invite[]
-}
-
-let sample: SampleState | null = null
-const sampleTrip = () => {
-  if (!sample) sample = {
-    trip: { ...TRIP, id: 'sample', slug: 'sample' }, stops: STOPS.map(value => ({ ...value })),
-    photos: PHOTOS.map(value => ({ ...value })), route: ROUTE.map(value => [...value] as Coordinates),
-    family: FAMILY.map((value, index) => ({
-      ...value, memberRole: index === 1 ? 'owner' : value.role === 'Travelling' ? 'editor' : 'viewer',
-    })),
-    comments: JSON.parse(JSON.stringify(SEED_COMMENTS)), likes: ['p8'], invites: [],
-  }
-  return sample
-}
-const uid = () => 's' + Math.random().toString(36).slice(2, 10)
-
-/* Sample mode has no server to remember anything, so the profile lives here and
-   survives for as long as the tab does. */
-const sampleProfile: MyProfile = {
-  id: 'sample-me', name: 'You', handle: 'you', email: 'you@example.com',
-  homePlace: 'Regina, Saskatchewan', homeLat: 50.45, homeLng: -104.6,
-  timeZone: 'America/Regina', preferences: {}, joinedAt: new Date().toISOString(),
-  tripCount: 1, photoCount: 0,
-}
-const isSample = (tripId: Id) => tripId === 'sample' || !hasBackend
-const sampleResult = (): TripData => {
-  const value = sampleTrip()
-  return {
-    trip: { ...value.trip }, stops: value.stops.map((item, seq) => ({ ...item, seq })),
-    photos: value.photos.map(item => ({ ...item })), route: value.route.map(item => [...item]),
-    family: value.family.map(item => ({ ...item })),
-    comments: Object.fromEntries(Object.entries(value.comments).map(([key, items]) => [key, items.map(item => ({ ...item }))])),
-    likes: [...value.likes], source: 'sample', tripId: 'sample', canEdit: true,
-    me: value.family[1] || value.family[0],
-  }
-}
-
-const tripPath = (tripId: Id) => `/trips/${encodeURIComponent(tripId)}`
-
-export async function loadTripBySlug(slug: string, session: AuthSession | null): Promise<TripLoadResult> {
+export async function loadTripBySlug(
+  slug: string,
+  session: AuthSession | null,
+): Promise<TripLoadResult> {
   if (!hasBackend) {
     if (slug === 'sample') return sampleResult()
     throw Object.assign(new Error('Trip not found'), { status: 404 })
   }
   if (!session) return { needsAuth: true }
-  return authClient.request(`/trips/current?t=${encodeURIComponent(slug)}`)
+  return withOfflineFallback(deviceStorage, {
+    account: offlineAccountId(session),
+    slug,
+    valid: isTripData,
+    load: () => authClient.request<TripLoadResult>(`/trips/current?t=${encodeURIComponent(slug)}`),
+  })
 }
 
 export async function loadLanding(session: AuthSession | null): Promise<TripLandingData> {
@@ -104,14 +82,23 @@ export async function loadLanding(session: AuthSession | null): Promise<TripLand
     const value = sampleTrip()
     return {
       landing: true,
-      trips: [{
-        ...value.trip, id: 'sample', slug: 'sample', role: 'owner',
-        places: value.stops.map(stop => ({
-          name: stop.name, lng: stop.lng, lat: stop.lat, status: stop.status,
-        })),
-        stopCount: value.stops.length, photoCount: value.photos.length,
-        memberCount: value.family.length,
-      }],
+      trips: [
+        {
+          ...value.trip,
+          id: 'sample',
+          slug: 'sample',
+          role: 'owner',
+          places: value.stops.map(stop => ({
+            name: stop.name,
+            lng: stop.lng,
+            lat: stop.lat,
+            status: stop.status,
+          })),
+          stopCount: value.stops.length,
+          photoCount: value.photos.length,
+          memberCount: value.family.length,
+        },
+      ],
       invites: [],
     }
   }
@@ -127,100 +114,96 @@ export async function loadUserProfile(handle: string): Promise<Person> {
   return authClient.request(`/users/${encodeURIComponent(handle)}`)
 }
 
+/* The trips list gets the same treatment as a trip, and for the same reason:
+   without it, an aeroplane-mode traveller cannot reach the trip we cached for
+   them — the way in is a list they cannot load. */
 export async function loadTripLanding(session: AuthSession): Promise<TripLandingData> {
-  const result = await authClient.request<{ trips: TripSummary[]; invites: PendingInvite[] }>('/trips')
-  return {
-    landing: true, email: session.user.email,
-    trips: result.trips || [], invites: result.invites || [],
-  }
+  return withOfflineFallback(deviceStorage, {
+    account: offlineAccountId(session),
+    slug: LANDING_SLUG,
+    valid: isTripLandingData,
+    load: async (): Promise<TripLandingData> => {
+      const result = await authClient.request<{ trips: TripSummary[]; invites: PendingInvite[] }>(
+        '/trips',
+      )
+      return {
+        landing: true,
+        email: session.user.email,
+        trips: result.trips || [],
+        invites: result.invites || [],
+      }
+    },
+  })
 }
 
 export async function createStop(tripId: Id, fields: Partial<Stop>): Promise<Stop> {
   if (isSample(tripId)) {
-    const stop = { id: uid(), name: '', lng: 0, lat: 0, icon: 'pin', status: 'planned', seq: sampleTrip().stops.length, ...fields } as Stop
-    sampleTrip().stops.push(stop); return { ...stop }
+    const stop = {
+      id: uid(),
+      name: '',
+      lng: 0,
+      lat: 0,
+      icon: 'pin',
+      status: 'planned',
+      seq: sampleTrip().stops.length,
+      ...fields,
+    } as Stop
+    sampleTrip().stops.push(stop)
+    return { ...stop }
   }
-  return authClient.request(`${tripPath(tripId)}/stops`, { method: 'POST', body: fields })
+  const target = localId()
+  return withOfflineEdit(
+    { kind: 'stop.create', tripId, target, fields },
+    () => authClient.request<Stop>(`${tripPath(tripId)}/stops`, { method: 'POST', body: fields }),
+    // The stop exists on the screen straight away under a name only this
+    // device knows; the server's name replaces it when the queue drains.
+    () => ({ id: target, name: '', lng: 0, lat: 0, ...fields }) as Stop,
+  )
 }
-export async function updateStop(tripId: Id, id: Id, fields: Partial<Stop>): Promise<Stop | undefined> {
-  if (isSample(tripId)) { const stop = sampleTrip().stops.find(item => item.id === id); if (stop) Object.assign(stop, fields); return stop }
-  return authClient.request(`${tripPath(tripId)}/stops/${encodeURIComponent(id)}`, { method: 'PATCH', body: fields })
+export async function updateStop(
+  tripId: Id,
+  id: Id,
+  fields: Partial<Stop>,
+): Promise<Stop | undefined> {
+  if (isSample(tripId)) {
+    const stop = sampleTrip().stops.find(item => item.id === id)
+    if (stop) Object.assign(stop, fields)
+    return stop
+  }
+  return withOfflineEdit(
+    { kind: 'stop.update', tripId, target: id, fields },
+    () =>
+      authClient.request<Stop | undefined>(`${tripPath(tripId)}/stops/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: fields,
+      }),
+    () => ({ id, ...fields }) as Stop,
+  )
 }
 export async function deleteStop(tripId: Id, id: Id): Promise<unknown> {
-  if (isSample(tripId)) { sampleTrip().stops = sampleTrip().stops.filter(item => item.id !== id); return }
-  return authClient.request(`${tripPath(tripId)}/stops/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (isSample(tripId)) {
+    sampleTrip().stops = sampleTrip().stops.filter(item => item.id !== id)
+    return
+  }
+  return withOfflineEdit(
+    { kind: 'stop.delete', tripId, target: id },
+    () =>
+      authClient.request(`${tripPath(tripId)}/stops/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+    () => undefined,
+  )
 }
 export async function replaceRoute(tripId: Id, points: Coordinates[]): Promise<unknown> {
-  if (isSample(tripId)) { sampleTrip().route = points.map(point => [...point]); return }
-  return authClient.request(`${tripPath(tripId)}/route`, { method: 'PUT', body: { points } })
-}
-
-export async function addComment(tripId: Id, photoId: Id, body: string): Promise<TripComment> {
   if (isSample(tripId)) {
-    const comment = { id: uid(), by: sampleResult().me.name, text: body, when: 'just now' }
-    ;(sampleTrip().comments[photoId] ||= []).push(comment); return comment
+    sampleTrip().route = points.map(point => [...point])
+    return
   }
-  return authClient.request(`${tripPath(tripId)}/photos/${encodeURIComponent(photoId)}/comments`, { method: 'POST', body: { body } })
-}
-export async function deleteComment(tripId: Id, id: Id): Promise<unknown> {
-  if (isSample(tripId)) { for (const key of Object.keys(sampleTrip().comments)) sampleTrip().comments[key] = sampleTrip().comments[key].filter(item => item.id !== id); return }
-  return authClient.request(`${tripPath(tripId)}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-export async function setLike(tripId: Id, photoId: Id, on: boolean): Promise<unknown> {
-  if (isSample(tripId)) {
-    const likes = sampleTrip().likes, index = likes.indexOf(photoId)
-    if (on && index < 0) likes.push(photoId); if (!on && index >= 0) likes.splice(index, 1); return
-  }
-  return authClient.request(`${tripPath(tripId)}/photos/${encodeURIComponent(photoId)}/like`, { method: on ? 'PUT' : 'DELETE' })
-}
-
-export async function listInvites(tripId: Id): Promise<Invite[]> {
-  if (isSample(tripId)) return sampleTrip().invites.map(item => ({ ...item }))
-  return authClient.request(`${tripPath(tripId)}/invites`)
-}
-export async function listPendingInvites(): Promise<PendingInvite[]> {
-  if (!hasBackend) return []
-  return authClient.request('/invites/pending')
-}
-export async function acceptInvite(id: Id): Promise<AcceptedInvite> {
-  if (!hasBackend) throw new Error('No backend configured')
-  return authClient.request(`/invites/${encodeURIComponent(id)}/accept`, { method: 'POST' })
-}
-export async function invitePerson(tripId: Id, input: Omit<Invite, 'id' | 'claimedAt'>): Promise<Invite> {
-  if (isSample(tripId)) { const row = { id: uid(), ...input, claimedAt: null }; sampleTrip().invites.push(row); return row }
-  return authClient.request(`${tripPath(tripId)}/invites`, { method: 'POST', body: input })
-}
-export async function revokeInvite(tripId: Id, id: Id): Promise<unknown> {
-  if (isSample(tripId)) { sampleTrip().invites = sampleTrip().invites.filter(item => item.id !== id); return }
-  return authClient.request(`${tripPath(tripId)}/invites/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-export async function removeMember(tripId: Id, profileId: Id): Promise<unknown> {
-  if (isSample(tripId)) return
-  return authClient.request(`${tripPath(tripId)}/members/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
-}
-
-export async function uploadPhoto(tripId: Id, file: File, meta: Partial<TripPhoto & UploadInput> = {}): Promise<TripPhoto> {
-  if (isSample(tripId)) {
-    const nextSequence = Math.max(sampleTrip().photos.length,
-      ...sampleTrip().photos.map(photo => (photo.seq ?? -1) + 1))
-    const photo = { id: uid(), by: '', src: URL.createObjectURL(file), seq: nextSequence, ...meta } as TripPhoto
-    sampleTrip().photos.push(photo); return { ...photo }
-  }
-  const form = new FormData(); form.append('photo', file, file.name)
-  const values = { stopId: meta.stopId, lng: meta.lng, lat: meta.lat, caption: meta.caption,
-    fallbackLng: meta.fallbackLng, fallbackLat: meta.fallbackLat,
-    fallbackLocationSource: meta.fallbackLocationSource,
-    takenAt: meta.when || meta.takenAt, locationSource: meta.locationSource, uploadKey: meta.uploadKey }
-  for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
-  return authClient.request(`${tripPath(tripId)}/photos`, { method: 'POST', body: form })
-}
-export async function updatePhoto(tripId: Id, id: Id, fields: Partial<TripPhoto>): Promise<TripPhoto | undefined> {
-  if (isSample(tripId)) { const photo = sampleTrip().photos.find(item => item.id === id); if (photo) Object.assign(photo, fields); return photo }
-  return authClient.request(`${tripPath(tripId)}/photos/${encodeURIComponent(id)}`, { method: 'PATCH', body: fields })
-}
-export async function deletePhoto(tripId: Id, id: Id): Promise<unknown> {
-  if (isSample(tripId)) { sampleTrip().photos = sampleTrip().photos.filter(item => item.id !== id); return }
-  return authClient.request(`${tripPath(tripId)}/photos/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  return withOfflineEdit(
+    { kind: 'route.replace', tripId, points },
+    () => authClient.request(`${tripPath(tripId)}/route`, { method: 'PUT', body: { points } }),
+    () => undefined,
+  )
 }
 
 export async function createTrip(input: Partial<Trip>): Promise<Trip> {
@@ -228,8 +211,15 @@ export async function createTrip(input: Partial<Trip>): Promise<Trip> {
   return authClient.request('/trips', { method: 'POST', body: input })
 }
 export async function updateTrip(tripId: Id, fields: Partial<Trip>): Promise<Trip> {
-  if (isSample(tripId)) { Object.assign(sampleTrip().trip, fields); return { ...sampleTrip().trip } }
-  return authClient.request(tripPath(tripId), { method: 'PATCH', body: fields })
+  if (isSample(tripId)) {
+    Object.assign(sampleTrip().trip, fields)
+    return { ...sampleTrip().trip }
+  }
+  return withOfflineEdit(
+    { kind: 'trip.update', tripId, fields },
+    () => authClient.request<Trip>(tripPath(tripId), { method: 'PATCH', body: fields }),
+    () => fields as Trip,
+  )
 }
 export async function loadMyProfile(): Promise<MyProfile> {
   if (!hasBackend) return { ...sampleProfile }
@@ -254,7 +244,8 @@ export async function loadAccountArchive(): Promise<AccountArchive> {
   if (!hasBackend) {
     const value = sampleTrip()
     return {
-      exportedAt: new Date().toISOString(), profile: { ...sampleProfile },
+      exportedAt: new Date().toISOString(),
+      profile: { ...sampleProfile },
       trips: [{ ...value.trip, stops: value.stops, photos: value.photos, route: value.route }],
     }
   }
@@ -267,112 +258,102 @@ export async function uploadAvatar(file: File): Promise<string> {
     me.avatar = avatar
     return avatar
   }
-  const form = new FormData(); form.append('avatar', file, file.name)
-  const result = await authClient.request('/profile/avatar', { method: 'POST', body: form })
+  const form = new FormData()
+  form.append('avatar', file, file.name)
+  const result = await authClient.request<{ avatar: string }>('/profile/avatar', {
+    method: 'POST',
+    body: form,
+  })
   return result.avatar
 }
 
 /* One connection per trip on screen, shared by everything watching it. */
-const tripStreams = createTripStreams({
-  open: (path, signal) => authClient.stream(path, signal),
-  poll: (tripId, options) => loadLive(tripId, options),
-  path: tripPath,
-  asFix: value => asFix(value as never),
-  retryDelay: liveRetryDelay,
-})
 
-export function subscribeToTrip(tripId: Id, onChange: () => void) {
-  if (isSample(tripId)) return () => {}
-  return tripStreams.watch(String(tripId), { onChange })
+export async function sweepPhotos() {
+  return { objects: 0, inserted: 0, skipped: [] }
 }
 
-export async function updateTripPresence(tripId: Id, clientId: string): Promise<Id[]> {
-  if (isSample(tripId)) return [sampleResult().me.id].filter(Boolean) as Id[]
-  const result = await authClient.request(`${tripPath(tripId)}/presence`, {
-    method: 'PUT', body: { clientId },
-  })
-  return Array.isArray(result.userIds) ? result.userIds : []
-}
-
-export async function leaveTripPresence(tripId: Id, clientId: string): Promise<void> {
-  if (isSample(tripId)) return
-  await authClient.request(`${tripPath(tripId)}/presence`, {
-    method: 'DELETE', body: { clientId }, keepalive: true,
-  })
-}
-
-export async function listDevices(tripId: Id): Promise<Device[]> {
-  if (isSample(tripId)) return []
-  const values = await authClient.request(`${tripPath(tripId)}/devices`)
-  return values.map(value => ({ ...value, lastSeen: value.lastSeen ? new Date(value.lastSeen) : null }))
-}
-export async function registerDevice(tripId: Id, name: string): Promise<Device> {
-  if (isSample(tripId)) throw new Error('Phones require the VPS backend')
-  let timezone: string | null = null; try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null } catch {}
-  return authClient.request(`${tripPath(tripId)}/devices`, { method: 'POST', body: { name, timezone } })
-}
-export async function removeDevice(tripId: Id, id: Id): Promise<unknown> {
-  if (isSample(tripId)) return
-  return authClient.request(`${tripPath(tripId)}/devices/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-const asFix = (value: { lng: number; lat: number; at: string | Date; [key: string]: unknown }): LiveFix => ({
-  ...value, at: new Date(value.at),
-})
-export async function loadLive(tripId: Id, { hours = 24, cursor = null }: { hours?: number; cursor?: number | null } = {}) {
-  if (isSample(tripId)) return { devices: [], fixes: [], cursor: 0 }
-  const query = new URLSearchParams({ hours: String(hours) })
-  if (cursor !== null && Number.isInteger(cursor) && cursor >= 0) query.set('cursor', String(cursor))
-  const result = await authClient.request(`${tripPath(tripId)}/live?${query}`)
-  return {
-    devices: result.devices.map(value => ({ ...value, lastSeen: value.lastSeen ? new Date(value.lastSeen) : null })),
-    fixes: result.fixes.map(asFix), cursor: result.cursor,
+/* The sign-in flows, guarded once: every one of them is meaningless without a
+   backend, and the guard preserves each method's own signature. */
+const requireBackend =
+  <A extends unknown[], R>(fn: (...args: A) => R) =>
+  (...args: A): R => {
+    if (!hasBackend) throw new Error('No backend configured')
+    return fn(...args)
   }
-}
-export function subscribeToPositions(
-  tripId: Id,
-  onFix: (fix: LiveFix) => void,
-  initialCursor = 0,
-  { hours = 24, onState }: {
-    hours?: number
-    onState?: (state: 'ready' | 'error', error?: unknown) => void
-  } = {},
-) {
-  if (isSample(tripId)) return () => {}
-  return tripStreams.watch(String(tripId), {
-    onFix, onState, cursor: initialCursor, hours,
-  })
-}
-
-export async function sweepPhotos() { return { objects: 0, inserted: 0, skipped: [] } }
-
-export async function signInWithPassword(email: string, password: string) {
-  if (!hasBackend) throw new Error('No backend configured')
-  return logtoExperience.signIn(email, password)
-}
-export async function sendRegistrationCode(email: string, handle: string) {
-  if (!hasBackend) throw new Error('No backend configured')
-  return logtoExperience.sendRegistrationCode(email, handle)
-}
-export async function completeRegistration(input: { verificationId: string; code: string; password: string }) {
-  if (!hasBackend) throw new Error('No backend configured')
-  return logtoExperience.completeRegistration(input)
-}
+export const signInWithPassword = requireBackend(logtoExperience.signIn)
+export const sendRegistrationCode = requireBackend(logtoExperience.sendRegistrationCode)
+export const completeRegistration = requireBackend(logtoExperience.completeRegistration)
+export const sendSignInCode = requireBackend(logtoExperience.sendSignInCode)
+export const signInWithCode = requireBackend(logtoExperience.signInWithCode)
 export async function signOut() {
-  try { if (hasBackend) await authClient.signOut() }
-  finally { await mobileTracker.forget() }
+  try {
+    if (hasBackend) await authClient.signOut()
+  } finally {
+    await mobileTracker.forget()
+  }
 }
 export async function deleteAccount() {
   if (!hasBackend) throw new Error('No backend configured')
   await authClient.request('/account', { method: 'DELETE', body: { confirm: 'DELETE' } })
-  try { await authClient.signOut() }
-  finally { await mobileTracker.forget() }
+  try {
+    await authClient.signOut()
+  } finally {
+    await mobileTracker.forget()
+  }
 }
 
-export async function loadAttractions(box: Record<string, string | number>, { headlineOnly = false, limit = 1000 } = {}) {
+/* The AI chat on the map. Addressed by slug like /trips/current, and the
+   whole transcript travels with the ask — the server keeps no chat state. */
+export async function askAssistant(
+  tripId: Id,
+  slug: string,
+  messages: AssistantMessage[],
+): Promise<string> {
+  if (isSample(tripId)) {
+    return (
+      'The AI assistant lives on the family server, so the sample trip cannot reach it. ' +
+      'On a real trip, ask me anything about the plan, the places, or where everyone is.'
+    )
+  }
+  const result = await authClient.request<{ reply?: string }>('/assistant', {
+    method: 'POST',
+    body: { trip: slug, messages },
+  })
+  return String(result.reply || '')
+}
+
+export async function loadAttractions(
+  box: Record<string, string | number>,
+  { headlineOnly = false, limit = 1000 } = {},
+): Promise<AttractionPoi[] | null> {
   if (!hasBackend) return null
-  const query = new URLSearchParams(Object.fromEntries(Object.entries({
-    ...box, headlineOnly, limit: Math.min(limit, 1000),
-  }).map(([key, value]) => [key, String(value)])))
-  try { return await authClient.request(`/attractions?${query}`) }
-  catch (error) { if (error.status === 404) return null; throw error }
+  const query = new URLSearchParams(
+    Object.fromEntries(
+      Object.entries({
+        ...box,
+        headlineOnly,
+        limit: Math.min(limit, 1000),
+      }).map(([key, value]) => [key, String(value)]),
+    ),
+  )
+  try {
+    return await authClient.request<AttractionPoi[]>(`/attractions?${query}`)
+  } catch (error) {
+    if ((error as ApiError).status === 404) return null
+    throw error
+  }
+}
+
+/* The inside of an airport, from the server's shared Overpass cache. Null when
+   there is no backend, or one deployed from before this route existed — the
+   caller then asks OpenStreetMap directly. */
+export async function loadAirportIndoor(lng: number, lat: number): Promise<unknown | null> {
+  if (!hasBackend) return null
+  try {
+    return await authClient.request(`/airports/indoor?lng=${lng}&lat=${lat}`)
+  } catch (error) {
+    if ((error as ApiError).status === 404) return null
+    throw error
+  }
 }

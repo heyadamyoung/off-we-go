@@ -13,8 +13,16 @@ const FRAME = 'https://clouds.matteason.co.uk/images/2048x1024/clouds-alpha.png'
 /** The latitude Web Mercator stops at, and so the edge of what this can cover. */
 export const MERCATOR_EDGE = 85.051129
 
-export const CLOUD_BOUNDS: [number, number][] = [
-  [-180, MERCATOR_EDGE], [180, MERCATOR_EDGE], [180, -MERCATOR_EDGE], [-180, -MERCATOR_EDGE],
+export const CLOUD_BOUNDS: [
+  [number, number],
+  [number, number],
+  [number, number],
+  [number, number],
+] = [
+  [-180, MERCATOR_EDGE],
+  [180, MERCATOR_EDGE],
+  [180, -MERCATOR_EDGE],
+  [-180, -MERCATOR_EDGE],
 ]
 
 /* Half an hour. The frame itself moves every three, and the CDN holds it for
@@ -63,20 +71,20 @@ function reproject(frame: HTMLImageElement): HTMLCanvasElement {
   for (let row = 0; row < SIZE; row++) {
     const top = equirectangularRow(mercatorLatitude(row / SIZE)) * frame.height
     const bottom = equirectangularRow(mercatorLatitude((row + 1) / SIZE)) * frame.height
-    paint.drawImage(frame, 0, top, frame.width, Math.max(bottom - top, 0.01),
-                    0, row, SIZE, 1)
+    paint.drawImage(frame, 0, top, frame.width, Math.max(bottom - top, 0.01), 0, row, SIZE, 1)
   }
   return canvas
 }
 
-const fetchFrame = () => new Promise<HTMLImageElement>((resolve, reject) => {
-  const image = new Image()
-  // Without this the canvas is tainted and WebGL refuses to upload it.
-  image.crossOrigin = 'anonymous'
-  image.onload = () => resolve(image)
-  image.onerror = () => reject(new Error('no cloud frame'))
-  image.src = FRAME
-})
+const fetchFrame = () =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    // Without this the canvas is tainted and WebGL refuses to upload it.
+    image.crossOrigin = 'anonymous'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('no cloud frame'))
+    image.src = FRAME
+  })
 
 /** The weather, ready to roll — or null when it cannot be had, which is not an
     error worth showing: the planet is the page, the clouds are the day. */
@@ -96,7 +104,7 @@ export async function loadWeather(): Promise<Weather | null> {
   /* Twice, a world apart: as the weather rolls off the right-hand edge the
      second copy is already coming in on the left, so the seam never arrives. */
   const roll = (degrees: number) => {
-    const shift = (((degrees % 360) + 360) % 360) / 360 * SIZE
+    const shift = ((((degrees % 360) + 360) % 360) / 360) * SIZE
     paint.clearRect(0, 0, SIZE, SIZE)
     paint.drawImage(master, shift, 0)
     paint.drawImage(master, shift - SIZE, 0)

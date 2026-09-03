@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InvitationsRouteImport } from './routes/invitations'
 import { Route as NewRouteImport } from './routes/new'
+import { Route as PairRouteImport } from './routes/pair'
 import { Route as PastRouteImport } from './routes/past'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as AuthNativeRouteImport } from './routes/auth.native'
@@ -31,6 +32,11 @@ const InvitationsRoute = InvitationsRouteImport.update({
 const NewRoute = NewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PairRoute = PairRouteImport.update({
+  id: '/pair',
+  path: '/pair',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PastRoute = PastRouteImport.update({
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/invitations': typeof InvitationsRoute
   '/new': typeof NewRoute
+  '/pair': typeof PairRoute
   '/past': typeof PastRoute
   '/profile': typeof ProfileRoute
   '/auth/native': typeof AuthNativeRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/invitations': typeof InvitationsRoute
   '/new': typeof NewRoute
+  '/pair': typeof PairRoute
   '/past': typeof PastRoute
   '/profile': typeof ProfileRoute
   '/auth/native': typeof AuthNativeRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/invitations': typeof InvitationsRoute
   '/new': typeof NewRoute
+  '/pair': typeof PairRoute
   '/past': typeof PastRoute
   '/profile': typeof ProfileRoute
   '/auth/native': typeof AuthNativeRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invitations'
     | '/new'
+    | '/pair'
     | '/past'
     | '/profile'
     | '/auth/native'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invitations'
     | '/new'
+    | '/pair'
     | '/past'
     | '/profile'
     | '/auth/native'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invitations'
     | '/new'
+    | '/pair'
     | '/past'
     | '/profile'
     | '/auth/native'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InvitationsRoute: typeof InvitationsRoute
   NewRoute: typeof NewRoute
+  PairRoute: typeof PairRoute
   PastRoute: typeof PastRoute
   ProfileRoute: typeof ProfileRoute
   AuthNativeRoute: typeof AuthNativeRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/new'
       preLoaderRoute: typeof NewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pair': {
+      id: '/pair'
+      path: '/pair'
+      fullPath: '/pair'
+      preLoaderRoute: typeof PairRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/past': {
@@ -199,6 +219,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InvitationsRoute: InvitationsRoute,
   NewRoute: NewRoute,
+  PairRoute: PairRoute,
   PastRoute: PastRoute,
   ProfileRoute: ProfileRoute,
   AuthNativeRoute: AuthNativeRoute,

@@ -1,8 +1,8 @@
-const MAX_RADIUS = 10000        // the API refuses more
+const MAX_RADIUS = 10000 // the API refuses more
 
 // Roughly how far across the viewport is, so a search covers what you can see.
-export function radiusForView(zoom, lat, widthPx = 1200) {
-  const metresPerPx = 40075016.686 * Math.cos((lat * Math.PI) / 180) / (256 * Math.pow(2, zoom))
+export function radiusForView(zoom: number, lat: number, widthPx = 1200) {
+  const metresPerPx = (40075016.686 * Math.cos((lat * Math.PI) / 180)) / (256 * 2 ** zoom)
   return Math.round(Math.min(MAX_RADIUS, Math.max(250, (metresPerPx * widthPx) / 2)))
 }
 
@@ -15,7 +15,8 @@ const ICON_HINTS: Array<[RegExp, string]> = [
   [/airport|station|terminal|railway/i, 'plane'],
   [/canal|harbour|harbor|port|river|bridge|boat|ship/i, 'boat'],
 ]
-const iconFor = (text: string) => (ICON_HINTS.find(([re]) => re.test(text || '')) || [null, 'pin'])[1]
+const iconFor = (text: string) =>
+  (ICON_HINTS.find(([re]) => re.test(text || '')) || [null, 'pin'])[1]
 
 /* Geosearch returns every geotagged article, which near a city centre means
    mostly streets, neighbourhoods and administrative areas — accurate, useless.
@@ -32,8 +33,11 @@ const NOT_A_PLACE =
 const NOT_A_PHOTO =
   /(?:^|[_\-\s])(map|maps|kaart|flag|vlag|locator|wapen|coa|coat|arms|seal|logo|blank|icon)(?:[_\-\s.]|$)/i
 const fileNameOf = (url: string) => {
-  try { return decodeURIComponent((url.split('/').pop() || '').split('?')[0]) }
-  catch { return url }
+  try {
+    return decodeURIComponent((url.split('/').pop() || '').split('?')[0])
+  } catch {
+    return url
+  }
 }
 
 /* Not somewhere you go, however precisely it is geotagged: the works *inside*
@@ -50,10 +54,11 @@ const IS_A_DESTINATION =
 /* Wikipedia's opening sentence carries asides no traveller wants: the Dutch
    spelling, the English gloss, and a full IPA pronunciation. On a card that is
    three lines tall they crowd out what the place actually is. */
-const ASIDE = /\s*\((?:Dutch|English|French|German|Latin|Italian|Spanish|abbreviated|lit\.|pronounced|IPA)[^()]*\)/gi
+const ASIDE =
+  /\s*\((?:Dutch|English|French|German|Latin|Italian|Spanish|abbreviated|lit\.|pronounced|IPA)[^()]*\)/gi
 const NESTED_ASIDE = /\s*\([^()]*(?:pronunciation|pronounced|\[[^\]]*\])[^()]*\)/gi
 
-function tidy(text: string) {
+function tidy(text: string | null | undefined) {
   return (text || '')
     .replace(NESTED_ASIDE, '')
     .replace(ASIDE, '')
@@ -64,6 +69,12 @@ function tidy(text: string) {
 }
 
 export {
-  IS_A_DESTINATION, MAX_RADIUS, NOT_A_PHOTO, NOT_A_PLACE,
-  NOT_SOMEWHERE_YOU_GO, fileNameOf, iconFor, tidy,
+  IS_A_DESTINATION,
+  MAX_RADIUS,
+  NOT_A_PHOTO,
+  NOT_A_PLACE,
+  NOT_SOMEWHERE_YOU_GO,
+  fileNameOf,
+  iconFor,
+  tidy,
 }

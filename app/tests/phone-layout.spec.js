@@ -63,55 +63,141 @@ const SWEEP = scope => `(() => {
 })()`
 
 const STATES = [
-  ['the dashboard', 'main', async page => { await page.goto('/'); await page.waitForTimeout(2500) }],
-  ['your profile', 'main', async page => { await page.goto('/profile'); await page.waitForTimeout(1200) }],
-  ['a new trip', 'main', async page => { await page.goto('/new'); await page.waitForTimeout(1000) }],
-  ['past trips', 'main', async page => { await page.goto('/past'); await page.waitForTimeout(1000) }],
-  ['invitations', 'main', async page => { await page.goto('/invitations'); await page.waitForTimeout(1000) }],
-  ['the trip chrome', 'header', async page => {
-    await page.goto('/trips/sample')
-    await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
-    await page.waitForTimeout(1500)
-  }],
-  ['the day bar', '.fdays', async page => { await page.waitForTimeout(200) }],
-  ['the timeline', 'aside', async page => {
-    await page.locator('button[title="timeline"]').click()
-    await expect(page.locator('aside')).toBeVisible()
-  }],
-  ['the photos panel', 'aside', async page => {
-    await page.locator('button[title="photos"]').click(); await page.waitForTimeout(600)
-  }],
-  ['the people panel', 'aside', async page => {
-    await page.locator('button[title="people"]').click(); await page.waitForTimeout(600)
-  }],
-  ['a stop', '.detailcard', async page => {
-    await page.locator('button[title="map"]').click(); await page.waitForTimeout(400)
-    await page.locator('.fcard').first().click()
-    await expect(page.locator('.detailcard')).toBeVisible()
-  }],
-  ['the stop editor', '.editor', async page => {
-    await page.locator('.detailcard').getByTitle('Edit this stop').click()
-    await expect(page.locator('.editor')).toBeVisible()
-  }],
-  ['trip settings', '.dlg', async page => {
-    await page.keyboard.press('Escape'); await page.waitForTimeout(300)
-    await page.getByRole('button', { name: 'Trip settings' }).click()
-    await expect(page.getByRole('dialog')).toBeVisible()
-  }],
-  ['the people tab', '.dlg', async page => {
-    await page.locator('.dlg').getByRole('button', { name: 'People', exact: true }).click()
-    await page.waitForTimeout(500)
-  }],
-  ['the location tab', '.dlg', async page => {
-    await page.locator('.dlg').getByRole('button', { name: 'Location', exact: true }).click()
-    await page.waitForTimeout(500)
-  }],
-  ['adding photos', '.dlg', async page => {
-    await page.locator('.dlgfoot').getByRole('button', { name: 'Close', exact: true }).click()
-    await page.waitForTimeout(400)
-    await page.getByRole('button', { name: 'Add photos' }).click()
-    await expect(page.getByRole('dialog')).toBeVisible()
-  }],
+  [
+    'the dashboard',
+    'main',
+    async page => {
+      await page.goto('/')
+      await page.waitForTimeout(2500)
+    },
+  ],
+  [
+    'your profile',
+    'main',
+    async page => {
+      await page.goto('/profile')
+      await page.waitForTimeout(1200)
+    },
+  ],
+  [
+    'a new trip',
+    'main',
+    async page => {
+      await page.goto('/new')
+      await page.waitForTimeout(1000)
+    },
+  ],
+  [
+    'past trips',
+    'main',
+    async page => {
+      await page.goto('/past')
+      await page.waitForTimeout(1000)
+    },
+  ],
+  [
+    'invitations',
+    'main',
+    async page => {
+      await page.goto('/invitations')
+      await page.waitForTimeout(1000)
+    },
+  ],
+  [
+    'the trip chrome',
+    'header',
+    async page => {
+      await page.goto('/trips/sample')
+      await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
+      await page.waitForTimeout(1500)
+    },
+  ],
+  [
+    'the day bar',
+    '.fdays',
+    async page => {
+      await page.waitForTimeout(200)
+    },
+  ],
+  [
+    'the timeline',
+    'aside',
+    async page => {
+      await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+      await expect(page.locator('aside')).toBeVisible()
+    },
+  ],
+  [
+    'the photos panel',
+    'aside',
+    async page => {
+      await page.getByRole('button', { name: 'Photos', exact: true }).click()
+      await page.waitForTimeout(600)
+    },
+  ],
+  [
+    'the people panel',
+    'aside',
+    async page => {
+      await page.getByRole('button', { name: 'People', exact: true }).click()
+      await page.waitForTimeout(600)
+    },
+  ],
+  [
+    'a stop',
+    '.detailcard',
+    async page => {
+      await page.getByRole('button', { name: 'Map', exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.locator('.fcard').first().click()
+      await expect(page.locator('.detailcard')).toBeVisible()
+    },
+  ],
+  [
+    'the stop editor',
+    '.editor',
+    async page => {
+      await page.locator('.detailcard').getByTitle('Edit this stop').click()
+      await expect(page.locator('.editor')).toBeVisible()
+    },
+  ],
+  [
+    'trip settings',
+    '.dlg',
+    async page => {
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
+      await page.getByRole('button', { name: 'More tools' }).click()
+      await page.getByRole('menuitem', { name: 'Trip settings' }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
+    },
+  ],
+  [
+    'the people tab',
+    '.dlg',
+    async page => {
+      await page.locator('.dlg').getByRole('button', { name: 'People', exact: true }).click()
+      await page.waitForTimeout(500)
+    },
+  ],
+  [
+    'the location tab',
+    '.dlg',
+    async page => {
+      await page.locator('.dlg').getByRole('button', { name: 'Location', exact: true }).click()
+      await page.waitForTimeout(500)
+    },
+  ],
+  [
+    'adding photos',
+    '.dlg',
+    async page => {
+      await page.locator('.dlgfoot').getByRole('button', { name: 'Close', exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole('button', { name: 'Add photos' }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
+    },
+  ],
 ]
 
 /* Edit mode unlocks dragging pins, drawing the route and searching for places,
@@ -125,23 +211,28 @@ test('the pencil is not offered where the things it unlocks are hidden', async (
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
-  await expect(pencil(), 'the pencil is on a phone, where it can do almost none of its job')
-    .toBeHidden()
-  await expect(pin(), 'the one control that does add a stop on a phone has gone too')
-    .toBeVisible()
+  await expect(
+    pencil(),
+    'the pencil is on a phone, where it can do almost none of its job',
+  ).toBeHidden()
+  await expect(pin(), 'the one control that does add a stop on a phone has gone too').toBeVisible()
 
   await page.setViewportSize({ width: 1024, height: 800 })
   await page.waitForTimeout(300)
-  await expect(pencil(), 'the pencil is missing where the hint bar it belongs to is shown')
-    .toBeVisible()
+  await expect(
+    pencil(),
+    'the pencil is missing where the hint bar it belongs to is shown',
+  ).toBeVisible()
 
   // And it may not vanish while it is on, or there is no way back out.
   await pencil().click()
   await expect(page.locator('.edithint')).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.waitForTimeout(300)
-  await expect(page.getByRole('button', { name: 'Done editing' }),
-    'edit mode is on with no way to turn it off').toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Done editing' }),
+    'edit mode is on with no way to turn it off',
+  ).toBeVisible()
 })
 
 /* A box that scrolls sideways computes its other axis to auto as well, so every
@@ -205,10 +296,12 @@ test('a card on the day bar shows its whole name', async ({ page }) => {
 for (const [phone, width, height] of PHONES) {
   test(`nothing sticks out or hides from a tap on ${phone}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
-    await page.route('https://en.wikipedia.org/**', route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
-    }))
+    await page.route('https://en.wikipedia.org/**', route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
+      }),
+    )
 
     const trouble = []
     for (const [what, scope, reach] of STATES) {

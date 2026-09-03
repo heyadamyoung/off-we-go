@@ -9,13 +9,26 @@ import { createLiveStream } from './live-stream.js'
 import { changeKind } from './change-kind.js'
 import { createSecretBox } from './secret-box.js'
 import {
-  DEFAULT_SCOPES, authorizeUrl, challengeFor, createState, createVerifier, expiresAt,
-  isExpired, stateHash, tokenRequestBody, tokenUrl,
+  DEFAULT_SCOPES,
+  authorizeUrl,
+  challengeFor,
+  createState,
+  createVerifier,
+  expiresAt,
+  stateHash,
+  tokenRequestBody,
+  tokenUrl,
 } from './mailbox-oauth.js'
+import { assistantPrompt, readAssistantMessages } from './assistant.js'
+import { signAgentToken } from './agent-token.js'
 import { createLogtoExperienceService } from './logto-experience.js'
 import { normalizeProfileHandle } from './slugs.js'
+import { createIndoorCache } from './airport-indoor.js'
 
-const normalizeEmail = value => String(value || '').trim().toLowerCase()
+const normalizeEmail = value =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
 const newToken = () => randomBytes(32).toString('base64url')
 const pkceChallenge = verifier => createHash('sha256').update(verifier).digest('base64url')
@@ -37,14 +50,13 @@ function bearer(request) {
   return value.startsWith('Bearer ') ? value.slice(7).trim() : null
 }
 
-const isPlainObject = value =>
-  !!value && typeof value === 'object' && !Array.isArray(value)
+const isPlainObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
 
 /* A home base is a name and a coordinate, and half a coordinate is not a place:
    null means the request was malformed, not that the field was left alone. */
 function readHomeBase(body) {
-  const place = body.homePlace === undefined
-    ? undefined : String(body.homePlace).trim().slice(0, 120) || null
+  const place =
+    body.homePlace === undefined ? undefined : String(body.homePlace).trim().slice(0, 120) || null
   const lat = body.homeLat === undefined || body.homeLat === null ? null : Number(body.homeLat)
   const lng = body.homeLng === undefined || body.homeLng === null ? null : Number(body.homeLng)
   if ((lat === null) !== (lng === null)) return null
@@ -53,12 +65,16 @@ function readHomeBase(body) {
   return {
     ...(place === undefined ? {} : { homePlace: place }),
     ...(body.homeLat === undefined && body.homeLng === undefined
-      ? {} : { homeLat: lat, homeLng: lng }),
+      ? {}
+      : { homeLat: lat, homeLng: lng }),
   }
 }
 
-const gpxEscape = value => String(value || '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const gpxEscape = value =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 
 /* The trail as GPX so it opens in anything that reads a track: the phones'
    fixes if there are any, otherwise the route somebody drew by hand. */
@@ -67,38 +83,89 @@ function gpxTrail(trip) {
     ? trip.trail.map(fix => ({ lng: fix.lng, lat: fix.lat, at: fix.at }))
     : (trip.route || []).map(([lng, lat]) => ({ lng, lat, at: null }))
   if (!points.length) return null
-  const body = points.map(point =>
-    `      <trkpt lat="${point.lat}" lon="${point.lng}">` +
-    (point.at ? `<time>${new Date(point.at).toISOString()}</time>` : '') +
-    '</trkpt>').join('\n')
-  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+  const body = points
+    .map(
+      point =>
+        `      <trkpt lat="${point.lat}" lon="${point.lng}">` +
+        (point.at ? `<time>${new Date(point.at).toISOString()}</time>` : '') +
+        '</trkpt>',
+    )
+    .join('\n')
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<gpx version="1.1" creator="Off We Go" xmlns="http://www.topografix.com/GPX/1/1">\n' +
     `  <trk><name>${gpxEscape(trip.title)}</name><trkseg>\n${body}\n  </trkseg></trk>\n</gpx>\n`
+  )
 }
 
-export async function buildServer({ repository, fileStore = null, mailer, publicUrl, sessionSecret,
-  clock = () => new Date(), ingestRateLimit = { max: 180, windowMs: 60_000 },
+export async function buildServer({
+  repository,
+  fileStore = null,
+  mailer,
+  publicUrl,
+  sessionSecret,
+  clock = () => new Date(),
+  ingestRateLimit = { max: 180, windowMs: 60_000 },
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
-  deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 }, maxDevicesPerTrip = 20,
-  appleTeamId = null, appleBundleId = 'ai.threadway.wayfare', logger = false, oauthSecret = null,
-  androidPackageName = 'ai.threadway.wayfare', androidCertFingerprints = [], identityProvider = null,
+  deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 },
+  maxDevicesPerTrip = 20,
+  appleTeamId = null,
+  appleBundleId = 'ai.threadway.wayfare',
+  logger = false,
+  oauthSecret = null,
+  androidPackageName = 'ai.threadway.wayfare',
+  androidCertFingerprints = [],
+  identityProvider = null,
   experienceFetch = fetch,
   /* The mailbox connector is optional: with nothing configured the routes say
      so and the screen offers nothing, rather than sending someone to a
      half-built sign-in. */
-  microsoft = null, mailboxTokenKey = null, connectorFetch = fetch,
-  trustProxy = ['loopback', 'linklocal', 'uniquelocal'] }) {
+  microsoft = null,
+  mailboxTokenKey = null,
+  connectorFetch = fetch,
+  /* The AI assistant is optional the same way: no configured runner, and the
+     route says so instead of half-working. `assistant.run` takes a prompt and
+     returns the reply — in production that is the Codex CLI on the personal
+     account, in tests a function. */
+  assistant = null,
+  assistantRateLimit = { max: 30, windowMs: 10 * 60_000 },
+  indoorCache = null,
+  trustProxy = ['loopback', 'linklocal', 'uniquelocal'],
+}) {
   if (!repository) throw new Error('A repository is required')
   if (!mailer) throw new Error('A mailer is required')
   if (!publicUrl) throw new Error('WAYFARE_PUBLIC_URL is required')
-  if (!sessionSecret || sessionSecret.length < 16) throw new Error('WAYFARE_SESSION_SECRET must be at least 16 characters')
+  if (!sessionSecret || sessionSecret.length < 16)
+    throw new Error('WAYFARE_SESSION_SECRET must be at least 16 characters')
   oauthSecret ||= sessionSecret
-  if (oauthSecret.length < 16) throw new Error('WAYFARE_OAUTH_SECRET must be at least 16 characters')
+  if (oauthSecret.length < 16)
+    throw new Error('WAYFARE_OAUTH_SECRET must be at least 16 characters')
 
   // Ordinary JSON contracts are tiny. Large payloads are allowed only on the
   // two authenticated multipart image routes below.
   const app = Fastify({ logger, bodyLimit: 64 * 1024, trustProxy })
+
+  /* A path parameter that is not a uuid reaches Postgres and comes back as
+     22P02. Unhandled that is a 500, which tells the app the server is having a
+     moment and to keep retrying a link that will never work. It is a 404: the
+     thing named does not exist, because no such name can. */
+  app.setErrorHandler((error, request, reply) => {
+    if (error.code === '22P02') {
+      return reply.code(404).send({ error: 'Not found' })
+    }
+    request.log?.error?.({ err: error }, 'request failed')
+    const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500
+    return reply
+      .code(status)
+      .send({ error: status === 500 ? 'Something went wrong' : error.message })
+  })
+
   const ingestLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const indoorLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const indoorRateLimit = { max: 30, windowMs: 10 * 60_000 }
+  const inviteLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const inviteRateLimit = { max: 20, windowMs: 60 * 60 * 1000 }
+  const inviteTargetRateLimit = { max: 3, windowMs: 60 * 60 * 1000 }
   const liveStream = createLiveStream()
 
   /* Everything a browser watching this trip would want to know about. The
@@ -124,12 +191,19 @@ export async function buildServer({ repository, fileStore = null, mailer, public
      browser cannot tell the two apart beyond how quickly they arrived. */
   const livePayload = result => ({
     devices: result.devices.map(device => ({
-      id: device.id, name: device.name, slug: device.slug, userId: device.userId,
+      id: device.id,
+      name: device.name,
+      slug: device.slug,
+      userId: device.userId,
       lastSeen: device.lastSeen?.toISOString?.() || device.lastSeen || null,
+      pausedAt: device.pausedAt?.toISOString?.() || device.pausedAt || null,
     })),
     fixes: result.fixes.map(fix => ({
-      deviceId: fix.deviceId, lng: fix.lng, lat: fix.lat,
-      accuracy: fix.accuracy, speed: fix.speed,
+      deviceId: fix.deviceId,
+      lng: fix.lng,
+      lat: fix.lat,
+      accuracy: fix.accuracy,
+      speed: fix.speed,
       at: fix.at.toISOString(),
     })),
     cursor: result.cursor,
@@ -137,18 +211,25 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   const deviceRegistrationLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authEmailLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const authIpLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  const assistantLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const mailboxBox = mailboxTokenKey ? createSecretBox(mailboxTokenKey) : null
   const connectorReady = !!(microsoft?.clientId && mailboxBox)
   const presenceByTrip = new Map()
   const presenceTtlMs = 45_000
   const allowedOrigins = new Set([
-    publicUrl.replace(/\/$/, ''), 'capacitor://localhost', 'ionic://localhost', 'https://localhost',
+    publicUrl.replace(/\/$/, ''),
+    'capacitor://localhost',
+    'ionic://localhost',
+    'https://localhost',
   ])
   await app.register(cors, {
-    origin(origin, callback) { callback(null, !origin || allowedOrigins.has(origin)) },
+    origin(origin, callback) {
+      callback(null, !origin || allowedOrigins.has(origin))
+    },
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['content-type', 'authorization', 'x-wayfare-experience'], maxAge: 86400,
+    allowedHeaders: ['content-type', 'authorization', 'x-wayfare-experience'],
+    maxAge: 86400,
   })
   await app.register(formbody)
   await app.register(multipart, {
@@ -161,21 +242,24 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       /* Which optional pieces this deployment actually came up with. It says
          whether the box has the configuration, never what the configuration
          is, and it is how a release is checked from outside. */
-      return { ok: true, connectors: { outlook: connectorReady } }
+      return { ok: true, connectors: { outlook: connectorReady, assistant: !!assistant } }
     } catch (error) {
       app.log.warn({ err: error }, 'readiness check failed')
       return reply.code(503).send({ ok: false })
     }
   })
   app.get('/.well-known/apple-app-site-association', async (_request, reply) => {
-    if (!appleTeamId) return reply.code(404).send({ error: 'Apple universal links are not configured' })
+    if (!appleTeamId)
+      return reply.code(404).send({ error: 'Apple universal links are not configured' })
     return reply.type('application/json').send({
       applinks: {
         apps: [],
-        details: [{
-          appID: `${appleTeamId}.${appleBundleId}`,
-          paths: ['/auth/callback*', '/auth/native*'],
-        }],
+        details: [
+          {
+            appID: `${appleTeamId}.${appleBundleId}`,
+            paths: ['/auth/callback*', '/auth/native*', '/pair*'],
+          },
+        ],
       },
     })
   })
@@ -183,22 +267,43 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!androidCertFingerprints.length) {
       return reply.code(404).send({ error: 'Android app links are not configured' })
     }
-    return reply.type('application/json').send([{
-      relation: ['delegate_permission/common.handle_all_urls'],
-      target: {
-        namespace: 'android_app',
-        package_name: androidPackageName,
-        sha256_cert_fingerprints: androidCertFingerprints,
+    return reply.type('application/json').send([
+      {
+        relation: ['delegate_permission/common.handle_all_urls'],
+        target: {
+          namespace: 'android_app',
+          package_name: androidPackageName,
+          sha256_cert_fingerprints: androidCertFingerprints,
+        },
       },
-    }])
+    ])
   })
 
-  const mediaSignature = (storagePath, expires) => createHmac('sha256', sessionSecret)
-    .update(`${storagePath}:${expires}`).digest('base64url')
+  const mediaSignature = (storagePath, expires) =>
+    createHmac('sha256', sessionSecret).update(`${storagePath}:${expires}`).digest('base64url')
+  /* timingSafeEqual compares buffers, so the lengths that must match are byte
+     lengths. Comparing character counts let a signature with one multi-byte
+     character through to a throw, and a 403 came back as a 500. */
+  const sameSignature = (supplied, expected) => {
+    const a = Buffer.from(supplied)
+    const b = Buffer.from(expected)
+    return a.length === b.length && timingSafeEqual(a, b)
+  }
+
   const mediaUrl = storagePath => {
     const expires = Math.floor(clock().getTime() / 1000) + 3600
     return `${publicUrl.replace(/\/$/, '')}/api/media/${storagePath}?expires=${expires}&signature=${mediaSignature(storagePath, expires)}`
   }
+  const STOP_STATUSES = new Set(['done', 'now', 'next', 'planned'])
+
+  /* One address, and only one: a comma or a newline here becomes several
+     recipients by the time the mailer parses the header. */
+  const singleAddress = value =>
+    typeof value === 'string' && /^[^\s@,;:<>"]+@[^\s@,;:<>"]+\.[^\s@,;:<>"]+$/.test(value)
+
+  /** Fastify hands back an array when a query key is repeated. */
+  const one = value => (Array.isArray(value) ? value[0] : value)
+
   const finite = value => {
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : null
@@ -207,7 +312,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (value == null || value === '') return null
     const numeric = Number(value)
     const date = Number.isFinite(numeric)
-      ? new Date(numeric > 1e12 ? numeric : numeric * 1000) : new Date(String(value))
+      ? new Date(numeric > 1e12 ? numeric : numeric * 1000)
+      : new Date(String(value))
     return Number.isNaN(date.getTime()) ? null : date
   }
 
@@ -226,7 +332,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   const oidcCallbackUrl = `${publicUrl.replace(/\/$/, '')}/api/auth/oidc/callback`
   const experienceCookieName = '__Host-wayfare-experience'
   const experience = createLogtoExperienceService({
-    identityProvider, publicUrl, fetch: experienceFetch, clock,
+    identityProvider,
+    publicUrl,
+    fetch: experienceFetch,
+    clock,
   })
   const safeAuthContinuation = value => {
     if (typeof value !== 'string') return null
@@ -234,14 +343,19 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       const root = publicUrl.replace(/\/$/, '')
       const destination = new URL(value, root)
       return destination.origin === root && destination.pathname === '/oauth/authorize'
-        ? destination.pathname + destination.search : null
-    } catch { return null }
+        ? destination.pathname + destination.search
+        : null
+    } catch {
+      return null
+    }
   }
-  const privateAuthReply = reply => reply
-    .header('cache-control', 'no-store')
-    .header('referrer-policy', 'no-referrer')
+  const privateAuthReply = reply =>
+    reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer')
   const oidcFailure = (reply, login, message) => {
-    const destination = new URL(login?.client === 'native' ? '/auth/native' : '/auth/callback', publicUrl)
+    const destination = new URL(
+      login?.client === 'native' ? '/auth/native' : '/auth/callback',
+      publicUrl,
+    )
     destination.searchParams.set('error', message)
     return privateAuthReply(reply).redirect(destination.href)
   }
@@ -250,30 +364,47 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     privateAuthReply(reply)
     if (!identityProvider) return reply.code(503).send({ error: 'OIDC sign-in is not configured' })
     const retryAfter = authIpLimiter.hit(request.ip, {
-      max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
+      max: authRateLimit.maxPerIp,
+      windowMs: authRateLimit.windowMs,
     })
     if (retryAfter) {
-      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Try again later' })
     }
     const client = request.query?.client === 'native' ? 'native' : 'web'
     const nativeChallenge = String(request.query?.challenge || '')
     if (client === 'native' && !/^[A-Za-z0-9_-]{43}$/.test(nativeChallenge)) {
-      return reply.code(400).send({ error: 'The native sign-in request is missing its device binding' })
+      return reply
+        .code(400)
+        .send({ error: 'The native sign-in request is missing its device binding' })
     }
     const webBinding = client === 'web' ? newToken() : null
     const bindingHash = client === 'native' ? nativeChallenge : tokenHash(webBinding)
-    const state = newToken(), nonce = newToken(), codeVerifier = newToken()
+    const state = newToken(),
+      nonce = newToken(),
+      codeVerifier = newToken()
     await repository.createOidcLogin({
-      stateHash: tokenHash(state), nonce, codeVerifier, client, bindingHash,
+      stateHash: tokenHash(state),
+      nonce,
+      codeVerifier,
+      client,
+      bindingHash,
       continuation: safeAuthContinuation(request.query?.continue),
       expiresAt: new Date(clock().getTime() + 10 * 60_000),
     })
     const location = await identityProvider.authorizationUrl({
-      redirectUri: oidcCallbackUrl, state, nonce,
+      redirectUri: oidcCallbackUrl,
+      state,
+      nonce,
       codeChallenge: pkceChallenge(codeVerifier),
     })
     if (webBinding) {
-      reply.header('set-cookie', `${loginCookieName}=${webBinding}; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax`)
+      reply.header(
+        'set-cookie',
+        `${loginCookieName}=${webBinding}; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax`,
+      )
     }
     return reply.redirect(location)
   })
@@ -282,9 +413,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     privateAuthReply(reply)
     if (!identityProvider) return reply.code(503).send({ error: 'OIDC sign-in is not configured' })
     const state = String(request.query?.state || '')
-    const login = state.length >= 32
-      ? await repository.consumeOidcLogin(tokenHash(state), clock()) : null
-    if (!login) return reply.code(400).send({ error: 'That sign-in attempt is invalid or has expired' })
+    const login =
+      state.length >= 32 ? await repository.consumeOidcLogin(tokenHash(state), clock()) : null
+    if (!login)
+      return reply.code(400).send({ error: 'That sign-in attempt is invalid or has expired' })
     if (!request.query?.code || request.query?.error) {
       return oidcFailure(reply, login, 'Sign-in was cancelled or could not be completed')
     }
@@ -292,7 +424,9 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     try {
       identity = await identityProvider.exchangeCallback({
         currentUrl: new URL(request.raw.url, publicUrl).href,
-        redirectUri: oidcCallbackUrl, state, nonce: login.nonce,
+        redirectUri: oidcCallbackUrl,
+        state,
+        nonce: login.nonce,
         codeVerifier: login.codeVerifier,
       })
     } catch (error) {
@@ -304,15 +438,28 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       return oidcFailure(reply, login, 'A verified email address is required to sign in')
     }
     const user = await repository.resolveOidcUser({
-      issuer: identity.issuer, subject: identity.subject, email,
+      issuer: identity.issuer,
+      subject: identity.subject,
+      email,
     })
-    if (!user) return oidcFailure(reply, login, 'We could not finish setting up your account. Please try again.')
+    if (!user)
+      return oidcFailure(
+        reply,
+        login,
+        'We could not finish setting up your account. Please try again.',
+      )
     const handoff = newToken()
     await repository.createLoginHandoff({
-      hash: tokenHash(handoff), userId: user.id, client: login.client, bindingHash: login.bindingHash,
+      hash: tokenHash(handoff),
+      userId: user.id,
+      client: login.client,
+      bindingHash: login.bindingHash,
       expiresAt: new Date(clock().getTime() + 2 * 60_000),
     })
-    const destination = new URL(login.client === 'native' ? '/auth/native' : '/auth/callback', publicUrl)
+    const destination = new URL(
+      login.client === 'native' ? '/auth/native' : '/auth/callback',
+      publicUrl,
+    )
     destination.searchParams.set('token', handoff)
     if (login.continuation) destination.searchParams.set('continue', login.continuation)
     return reply.redirect(destination.href)
@@ -324,7 +471,9 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const returnTo = new URL(native ? '/auth/native?logout=1' : '/', publicUrl).href
     if (!identityProvider?.endSessionUrl) return reply.redirect(returnTo)
     try {
-      return reply.redirect(await identityProvider.endSessionUrl({ postLogoutRedirectUri: returnTo }))
+      return reply.redirect(
+        await identityProvider.endSessionUrl({ postLogoutRedirectUri: returnTo }),
+      )
     } catch (error) {
       app.log.warn({ err: error }, 'OIDC provider logout discovery failed')
       return reply.redirect(returnTo)
@@ -335,14 +484,21 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     privateAuthReply(reply)
     if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
     const retryAfter = authIpLimiter.hit(request.ip, {
-      max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
+      max: authRateLimit.maxPerIp,
+      windowMs: authRateLimit.windowMs,
     })
     if (retryAfter) {
-      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Try again later' })
     }
     try {
       const handle = await experience.start()
-      reply.header('set-cookie', `${experienceCookieName}=${handle}; Path=/; Max-Age=900; Secure; HttpOnly; SameSite=Strict`)
+      reply.header(
+        'set-cookie',
+        `${experienceCookieName}=${handle}; Path=/; Max-Age=900; Secure; HttpOnly; SameSite=Strict`,
+      )
       return { started: true, interaction: handle }
     } catch (error) {
       app.log.warn({ err: error }, 'Logto experience start failed')
@@ -353,7 +509,9 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.post('/api/auth/experience/handle', async (request, reply) => {
     privateAuthReply(reply)
     if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
-    const experienceHandle = String(request.headers['x-wayfare-experience'] || '') || cookieValue(request, experienceCookieName)
+    const experienceHandle =
+      String(request.headers['x-wayfare-experience'] || '') ||
+      cookieValue(request, experienceCookieName)
     if (!experienceHandle || experience.event(experienceHandle) !== 'Register') {
       return reply.code(400).send({ error: 'Your registration attempt has expired' })
     }
@@ -365,11 +523,14 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       })
     }
     const reserved = await repository.reserveProfileHandle({
-      reservationHash: tokenHash(experienceHandle), handle,
+      reservationHash: tokenHash(experienceHandle),
+      handle,
       expiresAt: new Date(clock().getTime() + 15 * 60_000),
     })
     if (!reserved) {
-      return reply.code(409).send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
+      return reply
+        .code(409)
+        .send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
     }
     return { handle }
   })
@@ -377,28 +538,43 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   const forwardExperience = async (request, reply) => {
     privateAuthReply(reply)
     if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
-    const handle = String(request.headers['x-wayfare-experience'] || '') || cookieValue(request, experienceCookieName)
+    const handle =
+      String(request.headers['x-wayfare-experience'] || '') ||
+      cookieValue(request, experienceCookieName)
     const path = String(request.params?.['*'] || '')
-    if (['verification/password', 'verification/verification-code',
-      'verification/verification-code/verify'].includes(path)) {
+    if (
+      [
+        'verification/password',
+        'verification/verification-code',
+        'verification/verification-code/verify',
+      ].includes(path)
+    ) {
       let retryAfter = authIpLimiter.hit(request.ip, {
-        max: authRateLimit.maxPerIp, windowMs: authRateLimit.windowMs,
+        max: authRateLimit.maxPerIp,
+        windowMs: authRateLimit.windowMs,
       })
       if (!retryAfter && path !== 'verification/verification-code/verify') {
         const identifier = request.body?.identifier
         const email = identifier?.type === 'email' ? normalizeEmail(identifier.value) : '<empty>'
         retryAfter = authEmailLimiter.hit(email || '<empty>', {
-          max: authRateLimit.maxPerEmail, windowMs: authRateLimit.windowMs,
+          max: authRateLimit.maxPerEmail,
+          windowMs: authRateLimit.windowMs,
         })
       }
       if (retryAfter) {
-        return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Try again later' })
+        return reply
+          .header('retry-after', String(retryAfter))
+          .code(429)
+          .send({ error: 'Try again later' })
       }
     }
     let result
     try {
       result = await experience.forward({
-        handle, method: request.method, path, body: request.body,
+        handle,
+        method: request.method,
+        path,
+        body: request.body,
       })
     } catch (error) {
       app.log.warn({ err: error }, 'Logto experience request failed')
@@ -411,16 +587,22 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         return reply.code(401).send({ error: 'A verified email address is required to sign in' })
       }
       const user = await repository.resolveOidcUser({
-        issuer: identity.issuer, subject: identity.subject, email,
+        issuer: identity.issuer,
+        subject: identity.subject,
+        email,
         handleReservationHash: tokenHash(handle),
       })
       if (!user) return reply.code(500).send({ error: 'Could not create your Off We Go account' })
       const accessToken = newToken()
       await repository.createSession({
-        hash: tokenHash(accessToken), userId: user.id,
+        hash: tokenHash(accessToken),
+        userId: user.id,
         expiresAt: new Date(clock().getTime() + 90 * 24 * 60 * 60_000),
       })
-      reply.header('set-cookie', `${experienceCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`)
+      reply.header(
+        'set-cookie',
+        `${experienceCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`,
+      )
       return { accessToken, user }
     }
     reply.code(result.status)
@@ -435,28 +617,40 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const token = String(request.body?.token || '')
     const now = clock()
     const client = request.body?.client === 'native' ? 'native' : 'web'
-    const binding = client === 'native'
-      ? pkceChallenge(String(request.body?.verifier || ''))
-      : tokenHash(cookieValue(request, loginCookieName) || '')
-    const user = token.length >= 32
-      ? await repository.consumeLoginHandoff({ hash: tokenHash(token), now, client, bindingHash: binding }) : null
-    if (!user) return reply.code(401).send({ error: 'That sign-in handoff is invalid or has expired' })
+    const binding =
+      client === 'native'
+        ? pkceChallenge(String(request.body?.verifier || ''))
+        : tokenHash(cookieValue(request, loginCookieName) || '')
+    const user =
+      token.length >= 32
+        ? await repository.consumeLoginHandoff({
+            hash: tokenHash(token),
+            now,
+            client,
+            bindingHash: binding,
+          })
+        : null
+    if (!user)
+      return reply.code(401).send({ error: 'That sign-in handoff is invalid or has expired' })
 
     const accessToken = newToken()
     await repository.createSession({
-      hash: tokenHash(accessToken), userId: user.id,
+      hash: tokenHash(accessToken),
+      userId: user.id,
       expiresAt: new Date(now.getTime() + 90 * 24 * 60 * 60_000),
     })
     if (client === 'web') {
-      reply.header('set-cookie', `${loginCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`)
+      reply.header(
+        'set-cookie',
+        `${loginCookieName}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`,
+      )
     }
     return { accessToken, user }
   })
 
   app.get('/api/auth/session', async (request, reply) => {
     const accessToken = bearer(request)
-    const user = accessToken
-      ? await repository.findSession(tokenHash(accessToken), clock()) : null
+    const user = accessToken ? await repository.findSession(tokenHash(accessToken), clock()) : null
     if (!user) return reply.code(401).send({ error: 'Sign in required' })
     return { user }
   })
@@ -469,8 +663,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
 
   async function authenticated(request, reply) {
     const accessToken = bearer(request)
-    const user = accessToken
-      ? await repository.findSession(tokenHash(accessToken), clock()) : null
+    const user = accessToken ? await repository.findSession(tokenHash(accessToken), clock()) : null
     if (!user) reply.code(401).send({ error: 'Sign in required' })
     return user
   }
@@ -510,17 +703,28 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   }
   let fileDeletionTimer = null
   if (fileStore && repository.listPendingFileDeletions) {
-    await processFileDeletionQueue().catch(error => app.log.error({ err: error }, 'file deletion queue failed'))
+    await processFileDeletionQueue().catch(error =>
+      app.log.error({ err: error }, 'file deletion queue failed'),
+    )
     fileDeletionTimer = setInterval(() => {
-      processFileDeletionQueue().catch(error => app.log.error({ err: error }, 'file deletion queue failed'))
+      processFileDeletionQueue().catch(error =>
+        app.log.error({ err: error }, 'file deletion queue failed'),
+      )
     }, 60_000)
     fileDeletionTimer.unref?.()
     app.addHook('onClose', async () => clearInterval(fileDeletionTimer))
   }
 
   await registerMcpRoutes(app, {
-    repository, fileStore, publicUrl, oauthSecret, clock,
-    authenticate: authenticated, sendInvite: sendTripInvitation,
+    repository,
+    fileStore,
+    publicUrl,
+    oauthSecret,
+    clock,
+    authenticate: authenticated,
+    sendInvite: sendTripInvitation,
+    /* Tool edits reach watching browsers the same way route edits do. */
+    announce: touched,
   })
 
   app.delete('/api/account', async (request, reply) => {
@@ -540,7 +744,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await authenticated(request, reply)
     if (!user) return
     const [trips, invites] = await Promise.all([
-      repository.listTrips(user), repository.listPendingInvites(user),
+      repository.listTrips(user),
+      repository.listPendingInvites(user),
     ])
     return { trips, invites }
   })
@@ -557,7 +762,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.get('/api/trips/current', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const row = await repository.loadCurrentTrip(user, request.query?.t || null)
+    const row = await repository.loadCurrentTrip(user, one(request.query?.t) || null)
     if (!row) return reply.code(404).send({ error: 'No trip found' })
 
     const member = value => ({
@@ -571,20 +776,74 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const family = row.members.map(member)
     const me = member(row.members.find(value => value.profileId === user.id))
     return {
-      source: 'vps', tripId: row.id,
+      source: 'vps',
+      tripId: row.id,
       trip: {
-        id: row.id, slug: row.slug, title: row.title, crew: row.crew,
-        dates: row.dates, dayCount: row.dayCount, startsOn: row.startsOn, endsOn: row.endsOn,
+        id: row.id,
+        slug: row.slug,
+        title: row.title,
+        crew: row.crew,
+        dates: row.dates,
+        dayCount: row.dayCount,
+        startsOn: row.startsOn,
+        endsOn: row.endsOn,
       },
       stops: row.stops,
       photos: row.photos.map(photo => ({
-        ...photo, src: mediaUrl(photo.storagePath),
+        ...photo,
+        src: mediaUrl(photo.storagePath),
         thumbSrc: photo.thumbPath ? mediaUrl(photo.thumbPath) : null,
       })),
       route: row.route,
-      comments: row.comments, likes: row.likes, family,
-      canEdit: ['owner', 'editor'].includes(row.members.find(value => value.profileId === user.id)?.role),
+      comments: row.comments,
+      likes: row.likes,
+      family,
+      canEdit: ['owner', 'editor'].includes(
+        row.members.find(value => value.profileId === user.id)?.role,
+      ),
       me,
+    }
+  })
+
+  /* The AI chat behind the sparkle on the map. The prompt names the trip and
+     nothing else: the agent queries this server's own MCP endpoint for what a
+     question needs, holding a token minted here that is the asking user, for
+     a few minutes — so what the agent can see and touch is exactly what the
+     person asking could. An editor's agent can edit the trip; a viewer's
+     agent cannot, because its token never carries the write scope and the
+     write tools are never registered for it. A stranger's slug gets the same
+     404 as a trip that does not exist. The model runs on a personal account,
+     so the limiter is per person, not per trip. */
+  app.post('/api/assistant', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!assistant) return reply.code(503).send({ error: 'The AI assistant is not configured' })
+    const retryAfter = assistantLimiter.hit(user.id, assistantRateLimit)
+    if (retryAfter) {
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Too many questions at once' })
+    }
+    const messages = readAssistantMessages(request.body)
+    if (!messages) {
+      return reply.code(400).send({ error: 'A conversation ending with a question is required' })
+    }
+    const slug = typeof request.body?.trip === 'string' ? request.body.trip : null
+    const trips = await repository.listTrips(user)
+    const trip = slug ? trips.find(value => value.slug === slug) : trips[0]
+    if (!trip) return reply.code(404).send({ error: 'No trip found' })
+    const canEdit = ['owner', 'editor'].includes(trip.role)
+    const scopes = canEdit ? ['trips:read', 'trips:write'] : ['trips:read']
+    try {
+      const answer = await assistant.run(
+        assistantPrompt({ user, trip, canEdit, now: clock(), messages }),
+        { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
+      )
+      return { reply: answer }
+    } catch (error) {
+      app.log.error({ err: error }, 'assistant request failed')
+      return reply.code(502).send({ error: 'The assistant could not answer' })
     }
   })
 
@@ -592,16 +851,22 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await authenticated(request, reply)
     if (!user) return
     const tripId = request.params.tripId
-    if (!await repository.canReadTrip(user.id, tripId)) {
+    if (!(await repository.canReadTrip(user.id, tripId))) {
       return reply.code(403).send({ error: 'You cannot view this trip' })
     }
     const clientId = presenceClientId(request)
     if (!clientId) return reply.code(400).send({ error: 'A presence client id is required' })
     activePresence(tripId)
     let byUser = presenceByTrip.get(tripId)
-    if (!byUser) presenceByTrip.set(tripId, byUser = new Map())
+    if (!byUser) {
+      byUser = new Map()
+      presenceByTrip.set(tripId, byUser)
+    }
     let clients = byUser.get(user.id)
-    if (!clients) byUser.set(user.id, clients = new Map())
+    if (!clients) {
+      clients = new Map()
+      byUser.set(user.id, clients)
+    }
     clients.set(clientId, clock().getTime())
     return { userIds: activePresence(tripId) }
   })
@@ -610,7 +875,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await authenticated(request, reply)
     if (!user) return
     const tripId = request.params.tripId
-    if (!await repository.canReadTrip(user.id, tripId)) {
+    if (!(await repository.canReadTrip(user.id, tripId))) {
       return reply.code(403).send({ error: 'You cannot view this trip' })
     }
     const clientId = presenceClientId(request)
@@ -639,18 +904,27 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const profile = await repository.loadProfileByHandle(user, handle)
     if (!profile) return reply.code(404).send({ error: 'Profile not found' })
     return {
-      id: profile.profileId, handle: profile.handle, name: profile.displayName,
+      id: profile.profileId,
+      handle: profile.handle,
+      name: profile.displayName,
       avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
     }
   })
 
   const ownProfile = profile => ({
-    id: profile.profileId, handle: profile.handle, email: profile.email,
+    id: profile.profileId,
+    handle: profile.handle,
+    email: profile.email,
     name: profile.displayName || profile.email.split('@')[0],
     avatar: profile.avatarUrl ? mediaUrl(profile.avatarUrl) : null,
-    homePlace: profile.homePlace, homeLat: profile.homeLat, homeLng: profile.homeLng,
-    timeZone: profile.timeZone, preferences: profile.preferences || {},
-    joinedAt: profile.joinedAt, tripCount: profile.tripCount, photoCount: profile.photoCount,
+    homePlace: profile.homePlace,
+    homeLat: profile.homeLat,
+    homeLng: profile.homeLng,
+    timeZone: profile.timeZone,
+    preferences: profile.preferences || {},
+    joinedAt: profile.joinedAt,
+    tripCount: profile.tripCount,
+    photoCount: profile.photoCount,
   })
 
   app.get('/api/profile', async (request, reply) => {
@@ -665,8 +939,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await authenticated(request, reply)
     if (!user) return
     const body = request.body || {}
-    const requestedHandle = body.handle === undefined
-      ? undefined : normalizeProfileHandle(body.handle)
+    const requestedHandle =
+      body.handle === undefined ? undefined : normalizeProfileHandle(body.handle)
     if (body.handle !== undefined && !requestedHandle) {
       return reply.code(400).send({
         code: 'profile.handle_invalid',
@@ -684,14 +958,20 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       return reply.code(400).send({ error: 'Preferences must be an object' })
     }
     const profile = await repository.updateProfile(user, {
-      ...(body.name !== undefined ? { name: String(body.name).trim() || user.email.split('@')[0] } : {}),
+      ...(body.name !== undefined
+        ? { name: String(body.name).trim() || user.email.split('@')[0] }
+        : {}),
       ...(requestedHandle !== undefined ? { handle: requestedHandle } : {}),
       ...(home || {}),
-      ...(body.timeZone !== undefined ? { timeZone: String(body.timeZone).trim().slice(0, 64) || null } : {}),
+      ...(body.timeZone !== undefined
+        ? { timeZone: String(body.timeZone).trim().slice(0, 64) || null }
+        : {}),
       ...(body.preferences !== undefined ? { preferences: body.preferences } : {}),
     })
     if (profile?.conflict === 'handle') {
-      return reply.code(409).send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
+      return reply
+        .code(409)
+        .send({ code: 'profile.handle_taken', error: 'That handle is already taken.' })
     }
     if (!profile) return reply.code(404).send({ error: 'Profile not found' })
     return ownProfile(profile)
@@ -703,7 +983,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.get('/api/account/archive', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!repository.exportAccount) return reply.code(503).send({ error: 'Archives are not configured' })
+    if (!repository.exportAccount)
+      return reply.code(503).send({ error: 'Archives are not configured' })
     const archive = await repository.exportAccount(user)
     const stamp = clock().toISOString().slice(0, 10)
     reply.header('content-disposition', `attachment; filename="off-we-go-${stamp}.json"`)
@@ -712,7 +993,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       profile: archive.profile ? ownProfile(archive.profile) : null,
       trips: (archive.trips || []).map(trip => ({
         ...trip,
-        photos: trip.photos.map(({ path, ...photo }) => ({ ...photo, url: path ? mediaUrl(path) : null })),
+        photos: trip.photos.map(({ path, ...photo }) => ({
+          ...photo,
+          url: path ? mediaUrl(path) : null,
+        })),
         gpx: gpxTrail(trip),
       })),
     }
@@ -721,17 +1005,22 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.post('/api/profile/avatar', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!fileStore?.storeAvatar) return reply.code(503).send({ error: 'Avatar storage is not configured' })
+    if (!fileStore?.storeAvatar)
+      return reply.code(503).send({ error: 'Avatar storage is not configured' })
     let bytes = null
     for await (const part of request.parts()) {
       if (part.type !== 'file') continue
-      if (!part.mimetype?.startsWith('image/')) return reply.code(415).send({ error: 'Only images can be uploaded' })
+      if (!part.mimetype?.startsWith('image/'))
+        return reply.code(415).send({ error: 'Only images can be uploaded' })
       bytes = await part.toBuffer()
     }
     if (!bytes?.length) return reply.code(400).send({ error: 'Choose an avatar to upload' })
     let stored
-    try { stored = await fileStore.storeAvatar({ profileId: user.id, bytes }) }
-    catch { return reply.code(400).send({ error: 'That file is not a readable image' }) }
+    try {
+      stored = await fileStore.storeAvatar({ profileId: user.id, bytes })
+    } catch {
+      return reply.code(400).send({ error: 'That file is not a readable image' })
+    }
     const profile = await repository.updateProfile(user, stored)
     if (!profile) {
       await fileStore.remove(stored.avatarPath).catch(() => {})
@@ -740,14 +1029,16 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (profile.oldAvatarUrl && profile.oldAvatarUrl !== stored.avatarPath) {
       await fileStore.remove(profile.oldAvatarUrl).catch(() => {})
     }
-    return reply.code(201).send({ avatarPath: stored.avatarPath, avatar: mediaUrl(stored.avatarPath) })
+    return reply
+      .code(201)
+      .send({ avatarPath: stored.avatarPath, avatar: mediaUrl(stored.avatarPath) })
   })
 
   app.post('/api/trips/:tripId/photos', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     if (!fileStore) return reply.code(503).send({ error: 'Photo storage is not configured' })
-    if (!await repository.canEditTrip(user.id, request.params.tripId)) {
+    if (!(await repository.canEditTrip(user.id, request.params.tripId))) {
       return reply.code(403).send({ error: 'You cannot add photos to this trip' })
     }
 
@@ -755,7 +1046,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const fields = {}
     for await (const part of request.parts()) {
       if (part.type === 'file') {
-        if (!part.mimetype?.startsWith('image/')) return reply.code(415).send({ error: 'Only images can be uploaded' })
+        if (!part.mimetype?.startsWith('image/'))
+          return reply.code(415).send({ error: 'Only images can be uploaded' })
         bytes = await part.toBuffer()
       } else fields[part.fieldname] = part.value
     }
@@ -766,18 +1058,22 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
     if (clientKey && repository.findPhotoByClientKey) {
       const existing = await repository.findPhotoByClientKey(user, request.params.tripId, clientKey)
-      if (existing) return {
-        ...existing, src: mediaUrl(existing.storagePath),
-        thumbSrc: existing.thumbPath ? mediaUrl(existing.thumbPath) : null,
-      }
+      if (existing)
+        return {
+          ...existing,
+          src: mediaUrl(existing.storagePath),
+          thumbSrc: existing.thumbPath ? mediaUrl(existing.thumbPath) : null,
+        }
     }
 
     const coordinatePair = (lngField, latField, label) => {
       const lngPresent = fields[lngField] != null && String(fields[lngField]).trim() !== ''
       const latPresent = fields[latField] != null && String(fields[latField]).trim() !== ''
-      if (lngPresent !== latPresent) return { error: `${label} longitude and latitude must be supplied together` }
+      if (lngPresent !== latPresent)
+        return { error: `${label} longitude and latitude must be supplied together` }
       if (!lngPresent) return { lng: null, lat: null }
-      const lng = finite(fields[lngField]), lat = finite(fields[latField])
+      const lng = finite(fields[lngField]),
+        lat = finite(fields[latField])
       if (lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
         return { error: `${label} coordinates are invalid` }
       }
@@ -797,36 +1093,56 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       return reply.code(400).send({ error: 'The photo fallback location source is invalid' })
     }
 
-    let lng = supplied.lng, lat = supplied.lat
+    let lng = supplied.lng,
+      lat = supplied.lat
     const takenAt = dateFrom(fields.takenAt)
     if (fields.takenAt && !takenAt) {
       return reply.code(400).send({ error: 'The photo capture time is invalid' })
     }
     let locationSource = requestedLocationSource
     if ((lng == null || lat == null) && takenAt && repository.findPositionNearCapture) {
-      const matched = await repository.findPositionNearCapture(user, request.params.tripId, takenAt, 30 * 60_000)
-      if (matched) { lng = matched.lng; lat = matched.lat; locationSource = 'trail' }
+      const matched = await repository.findPositionNearCapture(
+        user,
+        request.params.tripId,
+        takenAt,
+        30 * 60_000,
+      )
+      if (matched) {
+        lng = matched.lng
+        lat = matched.lat
+        locationSource = 'trail'
+      }
     }
     if (lng == null || lat == null) {
       if (fallback.lng != null && fallback.lat != null) {
-        lng = fallback.lng; lat = fallback.lat; locationSource = fallbackLocationSource
+        lng = fallback.lng
+        lat = fallback.lat
+        locationSource = fallbackLocationSource
       }
     }
     if (lng == null || lat == null) locationSource = null
 
     let stored
-    try { stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes }) }
-    catch { return reply.code(400).send({ error: 'That file is not a readable image' }) }
+    try {
+      stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes })
+    } catch {
+      return reply.code(400).send({ error: 'That file is not a readable image' })
+    }
     try {
       const photo = await repository.createPhoto(user, request.params.tripId, {
         ...stored,
         stopId: fields.stopId || null,
         caption: String(fields.caption || '').trim() || null,
-        lng, lat, takenAt, locationSource, clientKey,
+        lng,
+        lat,
+        takenAt,
+        locationSource,
+        clientKey,
       })
       if (!photo) throw new Error('Trip not found')
       return reply.code(201).send({
-        ...photo, src: mediaUrl(photo.storagePath),
+        ...photo,
+        src: mediaUrl(photo.storagePath),
         thumbSrc: photo.thumbPath ? mediaUrl(photo.thumbPath) : null,
       })
     } catch (error) {
@@ -839,10 +1155,17 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.patch('/api/trips/:tripId/photos/:photoId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const photo = await repository.updatePhoto(user, request.params.tripId, request.params.photoId, {
-      ...(request.body?.caption !== undefined ? { caption: String(request.body.caption) } : {}),
-      ...(request.body && 'stopId' in request.body ? { stopId: request.body.stopId || null } : {}),
-    })
+    const photo = await repository.updatePhoto(
+      user,
+      request.params.tripId,
+      request.params.photoId,
+      {
+        ...(request.body?.caption !== undefined ? { caption: String(request.body.caption) } : {}),
+        ...(request.body && 'stopId' in request.body
+          ? { stopId: request.body.stopId || null }
+          : {}),
+      },
+    )
     if (!photo) return reply.code(404).send({ error: 'Photo not found' })
     return photo
   })
@@ -850,10 +1173,15 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.delete('/api/trips/:tripId/photos/:photoId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const removed = await repository.deletePhoto(user, request.params.tripId, request.params.photoId)
+    const removed = await repository.deletePhoto(
+      user,
+      request.params.tripId,
+      request.params.photoId,
+    )
     if (!removed) return reply.code(404).send({ error: 'Photo not found' })
     if (fileStore) {
-      for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean)) await removeQueuedFile(path)
+      for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean))
+        await removeQueuedFile(path)
     }
     return reply.code(204).send()
   })
@@ -864,13 +1192,17 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const expires = Number(request.query?.expires)
     const supplied = String(request.query?.signature || '')
     const expected = mediaSignature(storagePath, expires)
-    const valid = Number.isInteger(expires) && expires >= Math.floor(clock().getTime() / 1000) &&
-      supplied.length === expected.length && timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
+    const valid =
+      Number.isInteger(expires) &&
+      expires >= Math.floor(clock().getTime() / 1000) &&
+      sameSignature(supplied, expected)
     if (!valid) return reply.code(403).send({ error: 'That photo link has expired' })
     try {
       const bytes = await fileStore.read(storagePath)
       return reply.type('image/jpeg').header('cache-control', 'private, max-age=3600').send(bytes)
-    } catch { return reply.code(404).send({ error: 'Photo not found' }) }
+    } catch {
+      return reply.code(404).send({ error: 'Photo not found' })
+    }
   })
 
   app.post('/api/trips/:tripId/devices', { bodyLimit: 16 * 1024 }, async (request, reply) => {
@@ -878,27 +1210,42 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!user) return
     const name = String(request.body?.name || '').trim()
     if (!name) return reply.code(400).send({ error: 'A phone needs a name' })
-    if (!await repository.canEditTrip(user.id, request.params.tripId)) {
+    if (!(await repository.canEditTrip(user.id, request.params.tripId))) {
       return reply.code(403).send({ error: 'You cannot add a phone to this trip' })
     }
     const retryAfter = deviceRegistrationLimiter.hit(user.id, deviceRegistrationRateLimit)
     if (retryAfter) {
-      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Too many phone registrations' })
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Too many phone registrations' })
     }
     const currentDevices = await repository.listDevices(user, request.params.tripId)
     if (currentDevices?.length >= maxDevicesPerTrip) {
-      return reply.code(409).send({ error: `A trip can have at most ${maxDevicesPerTrip} registered phones` })
+      return reply
+        .code(409)
+        .send({ error: `A trip can have at most ${maxDevicesPerTrip} registered phones` })
     }
     const token = newToken()
-    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'phone'
+    const base =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'phone'
     const device = await repository.registerDevice(user, request.params.tripId, {
-      name, slug: `${base}-${randomBytes(2).toString('hex')}`,
-      timezone: request.body?.timezone || null, tokenHash: tokenHash(token),
+      name,
+      slug: `${base}-${randomBytes(2).toString('hex')}`,
+      timezone: request.body?.timezone || null,
+      tokenHash: tokenHash(token),
     })
     if (!device) return reply.code(404).send({ error: 'Trip not found' })
     return reply.code(201).send({
-      id: device.id, name: device.name, slug: device.slug,
-      userId: device.userId, lastSeen: device.lastSeen, token,
+      id: device.id,
+      name: device.name,
+      slug: device.slug,
+      userId: device.userId,
+      lastSeen: device.lastSeen,
+      token,
     })
   })
 
@@ -908,32 +1255,75 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const devices = await repository.listDevices(user, request.params.tripId)
     if (!devices) return reply.code(403).send({ error: 'You cannot view this trip' })
     return devices.map(device => ({
-      id: device.id, name: device.name, slug: device.slug, userId: device.userId,
+      id: device.id,
+      name: device.name,
+      slug: device.slug,
+      userId: device.userId,
       lastSeen: device.lastSeen?.toISOString?.() || device.lastSeen || null,
+      pausedAt: device.pausedAt?.toISOString?.() || device.pausedAt || null,
     }))
+  })
+
+  /* The setup card says the token is shown once; this is the honest second
+     chance. A new code is issued and the old one is dead the moment this
+     returns — no lecture about writing it down. */
+  app.post('/api/trips/:tripId/devices/:deviceId/token', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const token = newToken()
+    const device = await repository.resetDeviceToken(
+      user,
+      request.params.tripId,
+      request.params.deviceId,
+      tokenHash(token),
+    )
+    if (!device) return reply.code(404).send({ error: 'Phone not found' })
+    return {
+      id: device.id,
+      name: device.name,
+      slug: device.slug,
+      userId: device.userId,
+      lastSeen: device.lastSeen?.toISOString?.() || device.lastSeen || null,
+      token,
+    }
   })
 
   app.delete('/api/trips/:tripId/devices/:deviceId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!await repository.removeDevice(user, request.params.tripId, request.params.deviceId)) {
+    if (!(await repository.removeDevice(user, request.params.tripId, request.params.deviceId))) {
       return reply.code(404).send({ error: 'Phone not found' })
     }
     return reply.code(204).send()
   })
 
   app.post('/api/ingest/track', async (request, reply) => {
-    const accessToken = bearer(request) || request.query?.id || request.query?.token
-    const device = accessToken ? await repository.findDeviceByTokenHash(tokenHash(accessToken)) : null
+    // Repeated query keys arrive as arrays; hashing one throws, and an
+    // unauthenticated 500 is worse than the 401 this should be.
+    const accessToken = bearer(request) || one(request.query?.id) || one(request.query?.token)
+    const device = accessToken
+      ? await repository.findDeviceByTokenHash(tokenHash(accessToken))
+      : null
     if (!device) return reply.code(401).send({ error: 'Unknown phone' })
 
     const retryAfter = ingestLimiter.hit(device.id, ingestRateLimit)
     if (retryAfter) {
-      return reply.header('retry-after', String(retryAfter)).code(429).send({ error: 'Too many position updates' })
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Too many position updates' })
     }
 
     const body = request.body && typeof request.body === 'object' ? request.body : {}
     if (body._type && body._type !== 'location') return []
+    /* "I stopped on purpose" is as much a fact as a fix — and the only thing
+       that lets the viewers' copy say "paused" instead of guessing from
+       silence. The next real fix clears it. */
+    if (body.paused === true || body.paused === 'true' || request.query?.paused === 'true') {
+      await repository.markDevicePaused(device, clock())
+      liveStream.announce(device.tripId)
+      return reply.type('text/plain').send('OK')
+    }
     const lat = finite(body.lat ?? request.query?.lat)
     const lng = finite(body.lon ?? body.lng ?? request.query?.lon ?? request.query?.lng)
     if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
@@ -941,13 +1331,18 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
     const at = dateFrom(body.tst ?? body.timestamp ?? request.query?.timestamp) || clock()
     const now = clock()
-    if (at > new Date(now.getTime() + 5 * 60_000) || at < new Date(now.getTime() - 30 * 24 * 60 * 60_000)) {
+    if (
+      at > new Date(now.getTime() + 5 * 60_000) ||
+      at < new Date(now.getTime() - 30 * 24 * 60 * 60_000)
+    ) {
       return reply.code(400).send({ error: 'Position timestamp is outside the accepted range' })
     }
     const ownTracks = body._type === 'location'
     const rawSpeed = finite(body.vel ?? body.speed ?? request.query?.speed)
     const fix = {
-      lng, lat, at,
+      lng,
+      lat,
+      at,
       accuracy: finite(body.acc ?? body.accuracy ?? request.query?.accuracy),
       altitude: finite(body.alt ?? body.altitude ?? request.query?.altitude),
       speed: rawSpeed == null ? null : rawSpeed / (ownTracks ? 3.6 : 1.943844),
@@ -968,7 +1363,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const rawCursor = finite(request.query?.cursor)
     const cursor = rawCursor == null ? 0 : Math.max(0, Math.floor(rawCursor))
     const result = await repository.loadLive(
-      user, request.params.tripId, new Date(clock().getTime() - hours * 3600_000), { afterId: cursor },
+      user,
+      request.params.tripId,
+      new Date(clock().getTime() - hours * 3600_000),
+      { afterId: cursor },
     )
     if (!result) return reply.code(403).send({ error: 'You cannot view this trip' })
     return livePayload(result)
@@ -1005,7 +1403,11 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     let open = true
     const write = text => {
       if (!open) return
-      try { reply.raw.write(text) } catch { open = false }
+      try {
+        reply.raw.write(text)
+      } catch {
+        open = false
+      }
     }
     const send = payload => {
       cursor = payload.cursor
@@ -1020,7 +1422,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     let reading = false
     let again = false
     const deliver = async () => {
-      if (reading) { again = true; return }
+      if (reading) {
+        again = true
+        return
+      }
       reading = true
       try {
         do {
@@ -1038,7 +1443,10 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     }
 
     const unwatch = liveStream.watch(tripId, kind => {
-      if (kind === 'positions') { deliver(); return }
+      if (kind === 'positions') {
+        deliver()
+        return
+      }
       // Everything else says only what changed; the browser asks for that slice
       // rather than the server keeping a second copy of every serializer.
       write(`event: changed\ndata: ${JSON.stringify({ kind })}\n\n`)
@@ -1051,7 +1459,11 @@ export async function buildServer({ repository, fileStore = null, mailer, public
       open = false
       clearInterval(heartbeat)
       unwatch()
-      try { reply.raw.end() } catch { /* already gone */ }
+      try {
+        reply.raw.end()
+      } catch {
+        /* already gone */
+      }
     }
     request.raw.on('close', close)
     request.raw.on('error', close)
@@ -1100,14 +1512,20 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const verifier = createVerifier()
     const state = createState()
     await repository.startMailboxConnection({
-      userId: user.id, provider: 'outlook', stateHash: stateHash(state), verifier,
+      userId: user.id,
+      provider: 'outlook',
+      stateHash: stateHash(state),
+      verifier,
       redirectTo: typeof request.body?.redirectTo === 'string' ? request.body.redirectTo : null,
       expiresAt: new Date(clock().getTime() + 10 * 60_000),
     })
     return {
       authorizeUrl: authorizeUrl({
-        clientId: microsoft.clientId, tenant: microsoft.tenant, redirectUri: connectorRedirect,
-        state, challenge: challengeFor(verifier),
+        clientId: microsoft.clientId,
+        tenant: microsoft.tenant,
+        redirectUri: connectorRedirect,
+        state,
+        challenge: challengeFor(verifier),
         // Always offer the account picker: connecting a second mailbox is the
         // normal case, and without this Microsoft signs you into the first one
         // again without asking.
@@ -1117,7 +1535,8 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   })
 
   app.get('/api/connectors/outlook/callback', async (request, reply) => {
-    const back = where => reply.redirect(`${publicUrl.replace(/\/$/, '')}/profile?tab=connections${where}`)
+    const back = where =>
+      reply.redirect(`${publicUrl.replace(/\/$/, '')}/profile?tab=connections${where}`)
     if (request.query?.error) return back(`&connected=denied`)
     const pending = request.query?.state
       ? await repository.takeMailboxConnectionRequest(stateHash(request.query.state))
@@ -1129,16 +1548,22 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: tokenRequestBody({
-          clientId: microsoft.clientId, clientSecret: microsoft.clientSecret,
-          code: request.query.code, redirectUri: connectorRedirect, verifier: pending.verifier,
+          clientId: microsoft.clientId,
+          clientSecret: microsoft.clientSecret,
+          code: request.query.code,
+          redirectUri: connectorRedirect,
+          verifier: pending.verifier,
         }).toString(),
       })
       const tokens = await response.json()
-      if (!response.ok || !tokens.access_token) throw new Error(tokens.error_description || 'No token')
+      if (!response.ok || !tokens.access_token)
+        throw new Error(tokens.error_description || 'No token')
 
       const who = await connectorFetch('https://graph.microsoft.com/v1.0/me', {
         headers: { authorization: `Bearer ${tokens.access_token}` },
-      }).then(result => result.json()).catch(() => ({}))
+      })
+        .then(result => result.json())
+        .catch(() => ({}))
 
       await repository.saveMailboxConnection({
         userId: pending.userId,
@@ -1147,7 +1572,9 @@ export async function buildServer({ repository, fileStore = null, mailer, public
         accountEmail: who.mail || who.userPrincipalName || null,
         accountName: who.displayName || null,
         tenant: microsoft.tenant || 'common',
-        scopes: String(tokens.scope || '').split(' ').filter(Boolean),
+        scopes: String(tokens.scope || '')
+          .split(' ')
+          .filter(Boolean),
         accessToken: mailboxBox.seal(tokens.access_token),
         refreshToken: mailboxBox.seal(tokens.refresh_token),
         expiresAt: expiresAt(tokens, clock()),
@@ -1171,14 +1598,23 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!user) return
     const body = request.body || {}
     const name = String(body.name || '').trim()
-    const lng = finite(body.lng), lat = finite(body.lat)
+    const lng = finite(body.lng),
+      lat = finite(body.lat)
     if (!name || lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
       return reply.code(400).send({ error: 'A stop needs a name and valid coordinates' })
     }
     const stop = await repository.createStop(user, request.params.tripId, {
-      name, kind: body.kind || null, icon: body.icon || 'pin', day: body.day || null,
-      time: body.time || null, lng, lat, status: body.status || 'planned',
-      note: body.note || null, src: body.src || null, sourceUrl: body.sourceUrl || null,
+      name,
+      kind: body.kind || null,
+      icon: body.icon || 'pin',
+      day: body.day || null,
+      time: body.time || null,
+      lng,
+      lat,
+      status: body.status || 'planned',
+      note: body.note || null,
+      src: body.src || null,
+      sourceUrl: body.sourceUrl || null,
       seq: Number.isInteger(body.seq) ? body.seq : 0,
     })
     if (!stop) return reply.code(403).send({ error: 'You cannot edit this trip' })
@@ -1188,7 +1624,30 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.patch('/api/trips/:tripId/stops/:stopId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const stop = await repository.updateStop(user, request.params.tripId, request.params.stopId, request.body || {})
+    const fields = request.body || {}
+    /* The create route checks these; without the same check here the same
+       values get in through the side door and every member's map breaks. */
+    for (const key of ['lng', 'lat']) {
+      if (fields[key] === undefined) continue
+      const value = finite(fields[key])
+      const limit = key === 'lng' ? 180 : 90
+      if (value == null || Math.abs(value) > limit) {
+        return reply.code(400).send({ error: 'A stop needs valid coordinates' })
+      }
+      fields[key] = value
+    }
+    if (fields.status !== undefined && !STOP_STATUSES.has(String(fields.status))) {
+      return reply.code(400).send({ error: 'That is not a stop status' })
+    }
+    if (fields.seq !== undefined && !Number.isInteger(fields.seq)) {
+      return reply.code(400).send({ error: 'A stop order must be a whole number' })
+    }
+    const stop = await repository.updateStop(
+      user,
+      request.params.tripId,
+      request.params.stopId,
+      fields,
+    )
     if (!stop) return reply.code(404).send({ error: 'Stop not found' })
     return stop
   })
@@ -1205,10 +1664,17 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     const user = await authenticated(request, reply)
     if (!user) return
     const points = Array.isArray(request.body?.points) ? request.body.points : null
-    const valid = points && points.every(point => Array.isArray(point) && point.length === 2 &&
-      finite(point[0]) != null && finite(point[1]) != null && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90)
+    const valid = points?.every(
+      point =>
+        Array.isArray(point) &&
+        point.length === 2 &&
+        finite(point[0]) != null &&
+        finite(point[1]) != null &&
+        Math.abs(point[0]) <= 180 &&
+        Math.abs(point[1]) <= 90,
+    )
     if (!valid) return reply.code(400).send({ error: 'Route points are invalid' })
-    if (!await repository.replaceRoute(user, request.params.tripId, points)) {
+    if (!(await repository.replaceRoute(user, request.params.tripId, points))) {
       return reply.code(403).send({ error: 'You cannot edit this trip' })
     }
     return reply.code(204).send()
@@ -1241,21 +1707,44 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!user) return
     const email = normalizeEmail(request.body?.email)
     const role = request.body?.role === 'editor' ? 'editor' : 'viewer'
-    if (!email || !email.includes('@')) return reply.code(400).send({ error: 'Enter a valid email address' })
+    if (!singleAddress(email)) return reply.code(400).send({ error: 'Enter a valid email address' })
+    /* Nothing else stops one account posting this route in a loop: the invite
+       row is upserted, so every call sends another mail from our identity to
+       an address the recipient never asked us to write to. */
+    const slowDown =
+      inviteLimiter.hit(`user:${user.id}`, inviteRateLimit) ||
+      inviteLimiter.hit(`to:${email}`, inviteTargetRateLimit)
+    if (slowDown) {
+      return reply
+        .header('retry-after', String(slowDown))
+        .code(429)
+        .send({ error: 'Too many invitations just now. Try again shortly.' })
+    }
     const invite = await repository.upsertInvite(user, request.params.tripId, {
-      email, name: String(request.body?.name || '').trim() || null, role,
+      email,
+      name: String(request.body?.name || '').trim() || null,
+      role,
     })
     if (!invite) return reply.code(403).send({ error: 'You cannot manage this trip' })
-    let mailed = true, mailError = null
-    try { await sendTripInvitation(invite) }
-    catch (error) { mailed = false; mailError = error.message }
+    let mailed = true,
+      mailError = null
+    try {
+      await sendTripInvitation(invite)
+    } catch (error) {
+      mailed = false
+      mailError = error.message
+    }
     return reply.code(201).send({ ...invite, mailed, mailError })
   })
 
   app.delete('/api/trips/:tripId/invites/:inviteId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const removed = await repository.revokeInvite(user, request.params.tripId, request.params.inviteId)
+    const removed = await repository.revokeInvite(
+      user,
+      request.params.tripId,
+      request.params.inviteId,
+    )
     if (!removed) return reply.code(404).send({ error: 'Invitation not found' })
     return reply.code(204).send()
   })
@@ -1263,7 +1752,11 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.delete('/api/trips/:tripId/members/:profileId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const result = await repository.removeMember(user, request.params.tripId, request.params.profileId)
+    const result = await repository.removeMember(
+      user,
+      request.params.tripId,
+      request.params.profileId,
+    )
     if (result === 'owner') return reply.code(409).send({ error: 'A trip owner cannot be removed' })
     if (result !== 'removed') return reply.code(404).send({ error: 'Trip member not found' })
     return reply.code(204).send()
@@ -1274,7 +1767,12 @@ export async function buildServer({ repository, fileStore = null, mailer, public
     if (!user) return
     const body = String(request.body?.body || '').trim()
     if (!body) return reply.code(400).send({ error: 'A comment cannot be empty' })
-    const comment = await repository.addComment(user, request.params.tripId, request.params.photoId, body)
+    const comment = await repository.addComment(
+      user,
+      request.params.tripId,
+      request.params.photoId,
+      body,
+    )
     if (!comment) return reply.code(404).send({ error: 'Photo not found' })
     return reply.code(201).send(comment)
   })
@@ -1282,7 +1780,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.delete('/api/trips/:tripId/comments/:commentId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!await repository.deleteComment(user, request.params.tripId, request.params.commentId)) {
+    if (!(await repository.deleteComment(user, request.params.tripId, request.params.commentId))) {
       return reply.code(404).send({ error: 'Comment not found' })
     }
     return reply.code(204).send()
@@ -1291,7 +1789,7 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.put('/api/trips/:tripId/photos/:photoId/like', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!await repository.setLike(user, request.params.tripId, request.params.photoId, true)) {
+    if (!(await repository.setLike(user, request.params.tripId, request.params.photoId, true))) {
       return reply.code(404).send({ error: 'Photo not found' })
     }
     return reply.code(204).send()
@@ -1300,27 +1798,67 @@ export async function buildServer({ repository, fileStore = null, mailer, public
   app.delete('/api/trips/:tripId/photos/:photoId/like', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!await repository.setLike(user, request.params.tripId, request.params.photoId, false)) {
+    if (!(await repository.setLike(user, request.params.tripId, request.params.photoId, false))) {
       return reply.code(404).send({ error: 'Photo not found' })
     }
     return reply.code(204).send()
   })
 
   app.get('/api/attractions', async (request, reply) => {
-    if (!repository.loadAttractions) return reply.code(404).send({ error: 'Attractions are not configured' })
+    if (!repository.loadAttractions)
+      return reply.code(404).send({ error: 'Attractions are not configured' })
     const bounds = {
-      west: finite(request.query?.west), east: finite(request.query?.east),
-      south: finite(request.query?.south), north: finite(request.query?.north),
+      west: finite(request.query?.west),
+      east: finite(request.query?.east),
+      south: finite(request.query?.south),
+      north: finite(request.query?.north),
     }
-    if (Object.values(bounds).some(value => value == null)) return reply.code(400).send({ error: 'Map bounds are required' })
+    if (Object.values(bounds).some(value => value == null))
+      return reply.code(400).send({ error: 'Map bounds are required' })
     const limit = Math.min(Math.max(Math.trunc(finite(request.query?.limit) || 1000), 1), 1000)
     const values = await repository.loadAttractions(bounds, {
-      headlineOnly: request.query?.headlineOnly === 'true', limit,
+      headlineOnly: request.query?.headlineOnly === 'true',
+      limit,
     })
     return values.map(value => ({
-      id: value.id, n: value.name, d: value.descr || '', k: value.category,
-      f: value.imageFile, x: value.lng, y: value.lat, t: value.extract || '',
+      id: value.id,
+      n: value.name,
+      d: value.descr || '',
+      k: value.category,
+      f: value.imageFile,
+      x: value.lng,
+      y: value.lat,
+      t: value.extract || '',
     }))
+  })
+
+  /* The inside of an airport, from Overpass via a shared server-side cache:
+     one fetch per airport per month rather than one per phone. Unauthenticated
+     like the attractions, and the raw Overpass JSON goes back as-is — the app
+     owns the conversion. */
+  const indoor = indoorCache || createIndoorCache({ userAgent: `OffWeGo (${publicUrl})` })
+  app.get('/api/airports/indoor', async (request, reply) => {
+    const lng = finite(request.query?.lng),
+      lat = finite(request.query?.lat)
+    if (lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
+      return reply.code(400).send({ error: 'A position is required' })
+    }
+    /* Nobody has to sign in for this, and every miss fans out to three public
+       Overpass mirrors. Walking the coordinates a thousandth of a degree at a
+       time would be a guaranteed miss every time, and their ban would land on
+       us rather than on whoever was walking. */
+    const retryAfter = indoorLimiter.hit(request.ip || 'unknown', indoorRateLimit)
+    if (retryAfter) {
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Too many airport lookups' })
+    }
+    try {
+      return await indoor.get(lng, lat)
+    } catch {
+      return reply.code(502).send({ error: 'The map source is not answering' })
+    }
   })
 
   return app

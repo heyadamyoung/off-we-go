@@ -12,7 +12,13 @@ function fakeStream() {
   const body = new ReadableStream({
     start(controller) {
       push = text => controller.enqueue(encoder.encode(text))
-      close = () => { try { controller.close() } catch { /* already closed */ } }
+      close = () => {
+        try {
+          controller.close()
+        } catch {
+          /* already closed */
+        }
+      }
     },
   })
   return { body, write: text => push(text), end: () => close() }
@@ -48,7 +54,10 @@ test('a change frame says what changed, and does not look like a position', asyn
   const streams = createTripStreams(deps({ open: async () => socket }))
   const changes = []
   const fixes = []
-  const stop = streams.watch('trip-a', { onChange: kind => changes.push(kind), onFix: fix => fixes.push(fix) })
+  const stop = streams.watch('trip-a', {
+    onChange: kind => changes.push(kind),
+    onFix: fix => fixes.push(fix),
+  })
   await settle()
 
   socket.write('event: changed\ndata: {"kind":"photos"}\n\n')
@@ -80,7 +89,14 @@ test('a frame split across two reads is still one frame', async () => {
 
 test('everything watching one trip shares one connection', async () => {
   let opened = 0
-  const streams = createTripStreams(deps({ open: async () => { opened += 1; return fakeStream() } }))
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        opened += 1
+        return fakeStream()
+      },
+    }),
+  )
   const stopOne = streams.watch('trip-a', { onFix: () => {} })
   const stopTwo = streams.watch('trip-a', { onChange: () => {} })
   await settle()
@@ -98,19 +114,25 @@ test('everything watching one trip shares one connection', async () => {
    no updates at all. */
 test('a stream that will not open falls back to asking', async () => {
   const asked = []
-  const streams = createTripStreams(deps({
-    open: async () => { throw new Error('refused') },
-    poll: async (tripId, options) => {
-      asked.push(options.cursor)
-      return { fixes: [{ lng: 3, lat: 4 }], cursor: 6 }
-    },
-    retryDelay: () => 1,
-    pollEvery: 1,
-  }))
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        throw new Error('refused')
+      },
+      poll: async (_tripId, options) => {
+        asked.push(options.cursor)
+        return { fixes: [{ lng: 3, lat: 4 }], cursor: 6 }
+      },
+      retryDelay: () => 1,
+      pollEvery: 1,
+    }),
+  )
   const fixes = []
   const states = []
-  const stop = streams.watch('trip-a',
-    { onFix: fix => fixes.push(fix), onState: value => states.push(value) })
+  const stop = streams.watch('trip-a', {
+    onFix: fix => fixes.push(fix),
+    onState: value => states.push(value),
+  })
 
   await new Promise(resolve => setTimeout(resolve, 40))
   stop()
@@ -122,9 +144,14 @@ test('a stream that will not open falls back to asking', async () => {
 
 test('the cursor a listener brings is where the stream starts', async () => {
   const opened = []
-  const streams = createTripStreams(deps({
-    open: async path => { opened.push(path); return fakeStream() },
-  }))
+  const streams = createTripStreams(
+    deps({
+      open: async path => {
+        opened.push(path)
+        return fakeStream()
+      },
+    }),
+  )
   const stop = streams.watch('trip-a', { onFix: () => {}, cursor: 42, hours: 48 })
   await settle()
 

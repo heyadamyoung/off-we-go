@@ -1,11 +1,46 @@
 const API = 'https://en.wikipedia.org/w/api.php'
 
+/* The slice of Wikipedia's query envelope this app actually reads. The API
+   returns far more; everything else stays unknown on purpose. */
+export interface WikiPage {
+  pageid: number
+  title: string
+  description?: string
+  coordinates?: Array<{ lat: number; lon: number }>
+  pageprops?: { page_image_free?: string }
+  extract?: string
+  fullurl?: string
+  thumbnail?: { source?: string }
+  pageimage?: string
+  images?: Array<{ title: string }>
+  imageinfo?: Array<{ thumburl?: string }>
+  pageviews?: Record<string, number | null>
+  [key: string]: unknown
+}
+
+export interface WikiGeosearchHit {
+  pageid: number
+  title: string
+  lat: number
+  lon: number
+  dist?: number
+}
+
+export interface WikiQueryResponse {
+  query?: {
+    pages?: Record<string, WikiPage>
+    geosearch?: WikiGeosearchHit[]
+  }
+}
+
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 /* Wikipedia refuses a request with no User-Agent. A browser always sends one;
    Node does not, which is why the seed script has to say who it is. */
 let apiHeaders: HeadersInit = {}
-export function setApiHeaders(headers: HeadersInit = {}) { apiHeaders = headers }
+export function setApiHeaders(headers: HeadersInit = {}) {
+  apiHeaders = headers
+}
 
 /* And it refuses too many of them: about two a second, after which it answers
    429 for a while. A single gate here rather than a delay at each call site,
@@ -16,10 +51,16 @@ export function setApiHeaders(headers: HeadersInit = {}) { apiHeaders = headers 
    dropped: the map just quietly held fewer attractions than it should have. */
 let minGap = 450
 let lastCall = 0
-export function setApiThrottle(ms: number) { minGap = ms || 0 }
+export function setApiThrottle(ms: number) {
+  minGap = ms || 0
+}
 
-async function ask(params: Record<string, string>, signal?: AbortSignal): Promise<any> {
-  const url = API + '?' + new URLSearchParams({ action: 'query', format: 'json', origin: '*', ...params })
+/* Each call site knows the shape its query produces; the transport does not.
+   The generic keeps that knowledge at the caller instead of laundering it
+   through `any`. */
+async function ask<T = unknown>(params: Record<string, string>, signal?: AbortSignal): Promise<T> {
+  const url =
+    API + '?' + new URLSearchParams({ action: 'query', format: 'json', origin: '*', ...params })
   for (let attempt = 0; attempt < 4; attempt++) {
     if (minGap) {
       const wait = lastCall + minGap - Date.now()
@@ -29,7 +70,7 @@ async function ask(params: Record<string, string>, signal?: AbortSignal): Promis
     const res = await fetch(url, { signal, headers: apiHeaders })
     if (res.ok) {
       const text = await res.text()
-      if (text.startsWith('{')) return JSON.parse(text)
+      if (text.startsWith('{')) return JSON.parse(text) as T
     }
     if (attempt === 3) break
     // Honour Retry-After when it is offered; otherwise back off steeply, since

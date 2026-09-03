@@ -16,16 +16,16 @@ const LADDER = [
   { w: 800,  h: 600 },   // card  — hero image, photo grid, filmstrip covers
   { w: 1280, h: 960 },   // full  — the photo viewer only
 ];
-const snap = (w, h) => {
+const snap = (w: number, h: number) => {
   const want = Math.max(w, h);
   return LADDER.find(r => r.w >= want) || LADDER[LADDER.length - 1];
 };
 
-export const pic = (kw, lock, w = 1200, h = 800) => {
+export const pic = (kw: string, lock: number, w = 1200, h = 800) => {
   const r = snap(w, h);
   return `https://loremflickr.com/${r.w}/${r.h}/${kw}?lock=${lock}`;
 };
-export const picFallback = (seed, w = 1200, h = 800) => {
+export const picFallback = (seed: string, w = 1200, h = 800) => {
   const r = snap(w, h);
   return `https://picsum.photos/seed/${seed}/${r.w}/${r.h}`;
 };
@@ -38,7 +38,7 @@ export const FAMILY = [
   { id: 'u5', handle: 'uncle-kai', name: 'Uncle Kai', role: 'Following', avatar: 'https://randomuser.me/api/portraits/men/32.jpg' },
   { id: 'u6', handle: 'aunt-nia', name: 'Aunt Nia', role: 'Following', avatar: 'https://randomuser.me/api/portraits/women/12.jpg' },
 ];
-export const byName = n => FAMILY.find(f => f.name === n) || FAMILY[0];
+export const byName = (n: string) => FAMILY.find(f => f.name === n) || FAMILY[0];
 
 export const TRIP = {
   title: 'Amsterdam Weekend',

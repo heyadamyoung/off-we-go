@@ -21,21 +21,35 @@ export interface TripItem {
 
 const text = (value?: string | null) => (value || '').toLowerCase()
 
+/* Nothing on this trip is ever "Untitled": a stop without a name is at least
+   its kind, and a photograph without a caption is at least its time and place.
+   The fallback happens here, at render time — stored data stays honest. */
 export function stopItem(stop: Stop): TripItem {
   return {
-    id: stop.id, kind: 'stop', title: stop.name || 'Untitled stop',
+    id: stop.id,
+    kind: 'stop',
+    title: stop.name || stop.kind || 'Stop',
     meta: [stop.time, stop.kind].filter(Boolean).join(' · ') || 'No time set',
-    day: stop.day || '', time: stop.time || '', status: stop.status || 'planned',
-    seq: stop.seq ?? Number.MAX_SAFE_INTEGER, stop,
+    day: stop.day || '',
+    time: stop.time || '',
+    status: stop.status || 'planned',
+    seq: stop.seq ?? Number.MAX_SAFE_INTEGER,
+    stop,
   }
 }
 
 export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
   return {
-    id: photo.id, kind: 'photo', title: photo.caption || 'Photo',
+    id: photo.id,
+    kind: 'photo',
+    title: photo.caption || [photo.when, stop?.name].filter(Boolean).join(' · ') || 'Photo',
     meta: [photo.when, photo.by].filter(Boolean).join(' · '),
-    day: stop?.day || '', time: photo.when || stop?.time || '', status: 'photo',
-    seq: stop?.seq ?? Number.MAX_SAFE_INTEGER, photo, stop,
+    day: stop?.day || '',
+    time: photo.when || stop?.time || '',
+    status: 'photo',
+    seq: stop?.seq ?? Number.MAX_SAFE_INTEGER,
+    photo,
+    stop,
   }
 }
 
@@ -50,7 +64,13 @@ interface ItemsInput {
 
 /* A query searches the whole trip rather than the chosen day: looking for
    somewhere you cannot remember the date of is the whole point of searching. */
-export function tripItems({ stops, photos, day, query = '', withPhotos = true }: ItemsInput): TripItem[] {
+export function tripItems({
+  stops,
+  photos,
+  day,
+  query = '',
+  withPhotos = true,
+}: ItemsInput): TripItem[] {
   const needle = query.trim().toLowerCase()
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
   const items: TripItem[] = stops.map(stopItem)
@@ -59,12 +79,15 @@ export function tripItems({ stops, photos, day, query = '', withPhotos = true }:
       items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
     }
   }
-  const onDay = needle || day === ALL_DAYS
-    ? items
-    : items.filter(item => item.day === day)
+  const onDay = needle || day === ALL_DAYS ? items : items.filter(item => item.day === day)
   const matched = needle
-    ? onDay.filter(item => text(item.title).includes(needle) || text(item.meta).includes(needle)
-      || text(item.stop?.note).includes(needle) || text(item.day).includes(needle))
+    ? onDay.filter(
+        item =>
+          text(item.title).includes(needle) ||
+          text(item.meta).includes(needle) ||
+          text(item.stop?.note).includes(needle) ||
+          text(item.day).includes(needle),
+      )
     : onDay
   return matched.sort((a, b) => {
     if (a.day !== b.day) return a.day < b.day ? -1 : 1
