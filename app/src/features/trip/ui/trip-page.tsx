@@ -209,6 +209,39 @@ function Trip({
 
       <TripCards page={page} canEdit={canEdit} patch={patch} />
 
+      {/* The advisory layer, its own storey above the chrome row: the make-it
+          meter and the quiet-phone notices. Squeezed INTO the phone's one-line
+          chrome they crushed the Now capsule to a bare dot, and pass-through
+          taps landed on the sparkle beneath — these float, and eat their own
+          taps. */}
+      {!panelOpen && (
+        <div
+          className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--trip-1)+56px)] z-[4]
+                     flex flex-col items-center gap-2">
+          <MakeIt
+            segments={transport.segments}
+            travellers={markers
+              .filter(marker => !marker.stale)
+              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
+            now={clock}
+          />
+          {data.source !== 'sample' &&
+            quietPhones(phones, new Date(clock)).map(phone => (
+              <div
+                key={phone.id}
+                role="status"
+                className="glass pointer-events-auto max-w-full rounded-2xl px-3.5 py-1.5
+                           text-[11px] text-muted">
+                <b className="text-ink">{phone.name}</b> hasn’t shared for{' '}
+                {phone.minutesQuiet >= 90
+                  ? `${Math.round(phone.minutesQuiet / 60)} h`
+                  : `${phone.minutesQuiet} min`}{' '}
+                — opening Off We Go on that phone restarts sharing
+              </div>
+            ))}
+        </div>
+      )}
+
       <MapChrome>
         <ScopeToggle
           shifted={panelOpen}
@@ -220,30 +253,6 @@ function Trip({
         {/* A demo has no phone to wait for: the sample trip never shows the
             GPS nudge, which read as something broken in the one trip everyone
             sees first. */}
-        {!panelOpen && (
-          <MakeIt
-            segments={transport.segments}
-            travellers={markers
-              .filter(marker => !marker.stale)
-              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
-            now={clock}
-          />
-        )}
-        {/* A phone that went dark without a pause — usually an app update
-            eating the background watcher — is named, with the cure. */}
-        {!panelOpen &&
-          data.source !== 'sample' &&
-          quietPhones(phones, new Date(clock)).map(phone => (
-            <div
-              key={phone.id}
-              className="glass pointer-events-none rounded-full px-3.5 py-1.5 text-[11px] text-muted">
-              <b className="text-ink">{phone.name}</b> hasn’t shared for{' '}
-              {phone.minutesQuiet >= 90
-                ? `${Math.round(phone.minutesQuiet / 60)} h`
-                : `${phone.minutesQuiet} min`}{' '}
-              — opening Off We Go on that phone restarts sharing
-            </div>
-          ))}
         {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
           <NowCapsule
             text={progressCopy.text}
