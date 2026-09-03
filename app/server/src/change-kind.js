@@ -7,6 +7,7 @@ const RULES = [
   [/^\/api\/trips\/[^/]+\/comments\//, 'comments'],
   [/^\/api\/trips\/[^/]+\/photos/, 'photos'],
   [/^\/api\/trips\/[^/]+\/(stops|route)/, 'stops'],
+  [/^\/api\/trips\/[^/]+\/segments/, 'segments'],
   [/^\/api\/trips\/[^/]+\/(invites|members|devices)/, 'people'],
   [/^\/api\/trips\/[^/]+$/, 'trip'],
 ]

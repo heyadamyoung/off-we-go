@@ -52,6 +52,14 @@ export function createDiskFileStore({ directory }) {
       }
       return { storagePath, thumbPath }
     },
+    /* A leg's paperwork, stored as it arrived: a boarding pass loses its QR
+       to recompression, so documents are bytes in, bytes out. */
+    async storeDocument({ tripId, bytes, extension }) {
+      const safe = /^[a-z0-9]{1,8}$/i.test(String(extension || '')) ? extension : 'bin'
+      const storagePath = `${tripId}/docs/${randomUUID()}.${safe}`
+      await writeAtomic(storagePath, bytes)
+      return { storagePath, bytes: bytes.length }
+    },
     async storeAvatar({ profileId, bytes }) {
       // A stable path prevents replaced profile images from becoming
       // unreferenced personal data on disk.

@@ -171,6 +171,39 @@ export function createMailboxReader({
       })
     },
 
+    /* The attachments on one message: what a booking email is carrying. */
+    async listAttachments(userId, { mailboxId, messageId }) {
+      const connection = await resolve(userId, mailboxId)
+      const found = await graph(
+        connection,
+        `/me/messages/${encodeURIComponent(messageId)}/attachments` +
+          '?$select=id,name,contentType,size',
+      )
+      return (found.value || []).map(a => ({
+        id: a.id,
+        name: a.name,
+        mime: a.contentType,
+        bytes: a.size,
+      }))
+    },
+
+    /* One attachment's bytes — a boarding pass or rail PDF, byte-for-byte. */
+    async getAttachment(userId, { mailboxId, messageId, attachmentId }) {
+      const connection = await resolve(userId, mailboxId)
+      const attachment = await graph(
+        connection,
+        `/me/messages/${encodeURIComponent(messageId)}/attachments/` +
+          encodeURIComponent(attachmentId),
+      )
+      if (!attachment.contentBytes) throw new Error('That attachment has no file content.')
+      if ((attachment.size || 0) > 12_000_000) throw new Error('That attachment is too large.')
+      return {
+        name: attachment.name || 'Document',
+        mime: attachment.contentType || 'application/octet-stream',
+        bytes: Buffer.from(attachment.contentBytes, 'base64'),
+      }
+    },
+
     // The Inner pair exists so the spans wrap whole operations; call the
     // un-suffixed methods, which are the traced door.
     async readMessageInner(userId, { mailboxId, messageId }) {

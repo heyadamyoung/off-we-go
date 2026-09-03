@@ -3,6 +3,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { z } from 'zod'
 import { AGENT_TOKEN_PREFIX, AGENT_TOKEN_TTL_MS, readAgentToken } from './agent-token.js'
+import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
 import { span } from './tracing.js'
 
 const SCOPES = ['trips:read', 'trips:write']
@@ -422,6 +423,20 @@ function buildMcpServer({
     )
   }
 
+  register(
+    'list_segments',
+    {
+      description:
+        'The trip’s travel legs — flights, trains, buses, ferries, drives — in departure order, with passengers, seats, deadlines, gates or platforms, and attached documents.',
+      inputSchema: z.object({ tripId: entityId }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ tripId }) => {
+      const segments = await repository.listSegments(user, tripId)
+      return segments ? result(segments) : toolFailure('No accessible trip was found.')
+    },
+  )
+
   if (!scopes.includes('trips:write')) return server
 
   register(
@@ -668,6 +683,195 @@ function buildMcpServer({
         : toolFailure('The trip or photo was not found.'),
     ),
   )
+
+  /* ---- travel segments: the getting-there layer ---------------------- */
+  const segmentShape = {
+    mode: z.enum(SEGMENT_MODES),
+    carrier: z.string().trim().max(80).nullable().optional(),
+    number: z.string().trim().max(20).nullable().optional(),
+    ref: z.string().trim().max(40).nullable().optional(),
+    fromName: z.string().trim().min(1).max(160),
+    fromCode: z.string().trim().max(8).nullable().optional(),
+    fromLng: z.number().min(-180).max(180).nullable().optional(),
+    fromLat: z.number().min(-90).max(90).nullable().optional(),
+    toName: z.string().trim().min(1).max(160),
+    toCode: z.string().trim().max(8).nullable().optional(),
+    toLng: z.number().min(-180).max(180).nullable().optional(),
+    toLat: z.number().min(-90).max(90).nullable().optional(),
+    departsAt: z.iso.datetime(),
+    arrivesAt: z.iso.datetime().nullable().optional(),
+    departTz: z.string().max(64).nullable().optional(),
+    arriveTz: z.string().max(64).nullable().optional(),
+    terminal: z.string().trim().max(40).nullable().optional(),
+    gate: z.string().trim().max(20).nullable().optional(),
+    platform: z.string().trim().max(20).nullable().optional(),
+    passengers: z
+      .array(
+        z.object({
+          personId: z.string().max(80).optional(),
+          name: z.string().trim().min(1).max(120),
+          seat: z.string().trim().max(20).optional(),
+        }),
+      )
+      .max(12)
+      .optional(),
+    bags: z
+      .object({
+        checked: z.string().max(80).optional(),
+        carryOn: z.string().max(80).optional(),
+        personal: z.boolean().optional(),
+      })
+      .nullable()
+      .optional(),
+    deadlines: z
+      .object({
+        checkinOpensAt: z.iso.datetime().optional(),
+        checkinClosesAt: z.iso.datetime().optional(),
+        bagsCloseAt: z.iso.datetime().optional(),
+        boardingAt: z.iso.datetime().optional(),
+        doorsAt: z.iso.datetime().optional(),
+      })
+      .nullable()
+      .optional(),
+    costAmount: z.number().min(0).max(1_000_000).nullable().optional(),
+    costCurrency: z.string().trim().length(3).nullable().optional(),
+    notes: z.string().max(5000).nullable().optional(),
+  }
+  register(
+    'add_segment',
+    {
+      description:
+        'Add a travel leg to an editable trip: flight, train, bus, ferry or drive. Give departsAt in UTC ISO; deadlines (check-in, bag drop, boarding, doors) derive automatically per mode when omitted. Passengers are the trip’s own people with their seats.',
+      inputSchema: z.object({ tripId: entityId, ...segmentShape }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('segments', async ({ tripId, ...input }) => {
+      const segment = await repository.createSegment(user, tripId, {
+        ...input,
+        deadlines: input.deadlines ?? deriveDeadlines(input.mode, input.departsAt),
+      })
+      return segment
+        ? result(segment)
+        : toolFailure('The trip was not found or is not editable by this user.')
+    }),
+  )
+  register(
+    'update_segment',
+    {
+      description:
+        'Update a travel leg — times, gate or platform, seats, deadlines, status. A gate change keeps its history. When amending from an airline or rail email, say so in statusNote (e.g. "gate change, from Air Canada’s email") and set status to delayed, changed or cancelled as the email says.',
+      inputSchema: z.object({
+        tripId: entityId,
+        segmentId: entityId,
+        ...Object.fromEntries(
+          Object.entries(segmentShape).map(([key, schema]) => [key, schema.optional()]),
+        ),
+        status: z.enum(['scheduled', 'delayed', 'changed', 'cancelled', 'done']).optional(),
+        statusNote: z.string().max(300).nullable().optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('segments', async ({ tripId, segmentId, ...changes }) => {
+      const segment = await repository.updateSegment(user, tripId, segmentId, changes)
+      return segment
+        ? result(segment)
+        : toolFailure('The segment was not found or is not editable by this user.')
+    }),
+  )
+  register(
+    'remove_segment',
+    {
+      description: 'Remove a travel leg and its attached documents from an editable trip.',
+      inputSchema: z.object({ tripId: entityId, segmentId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('segments', async ({ tripId, segmentId }) => {
+      const removed = await repository.deleteSegment(user, tripId, segmentId)
+      if (!removed) return toolFailure('The segment was not found or is not editable by this user.')
+      if (fileStore) {
+        for (const path of removed.paths || []) {
+          try {
+            await fileStore.remove(path)
+            await repository.completeFileDeletion?.(path)
+          } catch (error) {
+            await repository.failFileDeletion?.(path, error.message, clock())
+          }
+        }
+      }
+      return result({ deleted: true, segmentId })
+    }),
+  )
+  /* The document jump: a booking email's attachment becomes the leg's
+     paperwork without ever leaving the conversation. Assistant-only because
+     it reaches through the connected mailbox. */
+  if (assistant && mailbox && fileStore) {
+    register(
+      'attach_mail_document',
+      {
+        description:
+          'Pull an attachment off a mailbox message (see search_mailbox, then list its attachments via this tool’s error hints or read_mailbox_message) and file it on a travel leg as a document — a boarding pass, rail PDF, receipt. Bytes are stored exactly as sent; a recompressed QR does not scan.',
+        inputSchema: z.object({
+          tripId: entityId,
+          segmentId: entityId,
+          messageId: z.string().min(1).max(512),
+          attachmentId: z.string().min(1).max(512).optional(),
+          mailboxId: entityId.optional(),
+          personId: z.string().max(80).nullable().optional(),
+          name: z.string().trim().max(160).optional(),
+          kind: z.enum(['pass', 'ticket', 'receipt', 'visa', 'other']).optional(),
+        }),
+        annotations: { destructiveHint: false, openWorldHint: true },
+      },
+      write(
+        'segments',
+        async ({ tripId, segmentId, messageId, attachmentId, mailboxId, personId, name, kind }) => {
+          try {
+            let chosen = attachmentId
+            if (!chosen) {
+              const attachments = await mailbox.listAttachments(user.id, { mailboxId, messageId })
+              if (!attachments.length) return toolFailure('That message has no attachments.')
+              if (attachments.length > 1) {
+                return toolFailure(
+                  'Several attachments — pass attachmentId: ' +
+                    attachments.map(a => `${a.name} (${a.id})`).join(', '),
+                )
+              }
+              chosen = attachments[0].id
+            }
+            const file = await mailbox.getAttachment(user.id, {
+              mailboxId,
+              messageId,
+              attachmentId: chosen,
+            })
+            if (!file.mime.startsWith('image/') && file.mime !== 'application/pdf') {
+              return toolFailure('Documents are images or PDFs; this attachment is ' + file.mime)
+            }
+            const extension =
+              file.mime === 'application/pdf'
+                ? 'pdf'
+                : (file.mime.split('/')[1] || 'bin').slice(0, 8)
+            const stored = await fileStore.storeDocument({ tripId, bytes: file.bytes, extension })
+            const doc = await repository.addSegmentDocument(user, tripId, segmentId, {
+              personId: personId || null,
+              name: (name || file.name).slice(0, 160),
+              kind: kind || 'ticket',
+              mime: file.mime,
+              storagePath: stored.storagePath,
+              bytes: stored.bytes,
+            })
+            if (!doc) {
+              await fileStore.remove(stored.storagePath).catch(() => {})
+              return toolFailure('The segment was not found or is not editable by this user.')
+            }
+            const { storagePath: _hidden, ...safe } = doc
+            return result(safe)
+          } catch (error) {
+            return toolFailure(error.message)
+          }
+        },
+      ),
+    )
+  }
 
   /* Hand-laid airport walkways: assistant-only like the mailbox tools, but
      in the write tier — they change what every traveller's gate routes walk,

@@ -19,6 +19,8 @@ const profileShape = profile => ({
 
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const walkways = new Map()
+  const segments = new Map()
+  const segmentDocuments = new Map()
   const fakeUuid = (namespace, value) =>
     `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
@@ -897,6 +899,78 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async deleteAirportWalkway(id) {
       return walkways.delete(id)
+    },
+
+    /* ---- travel segments: the postgres contract, in Maps ---------------- */
+    async listSegments(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      return [...segments.values()]
+        .filter(s => s.tripId === tripId)
+        .sort((a, b) => new Date(a.departsAt) - new Date(b.departsAt))
+        .map(s => ({
+          ...s,
+          documents: [...segmentDocuments.values()].filter(d => d.segmentId === s.id),
+        }))
+    },
+    async createSegment(user, tripId, input) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const id = 'segment-' + (segments.size + 1)
+      const row = {
+        id,
+        tripId,
+        gateWas: null,
+        status: 'scheduled',
+        statusNote: null,
+        passengers: [],
+        ...input,
+      }
+      segments.set(id, row)
+      return { ...row, documents: [] }
+    },
+    async updateSegment(user, tripId, segmentId, changes) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const row = segments.get(segmentId)
+      if (!row || row.tripId !== tripId) return null
+      if (changes.gate !== undefined && changes.gate !== row.gate) row.gateWas = row.gate
+      Object.assign(row, changes)
+      return { ...row }
+    },
+    async deleteSegment(user, tripId, segmentId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const row = segments.get(segmentId)
+      if (!row || row.tripId !== tripId) return null
+      const paths = [...segmentDocuments.values()]
+        .filter(d => d.segmentId === segmentId)
+        .map(d => d.storagePath)
+      for (const [key, d] of segmentDocuments)
+        if (d.segmentId === segmentId) segmentDocuments.delete(key)
+      segments.delete(segmentId)
+      return { deleted: true, paths }
+    },
+    async addSegmentDocument(user, tripId, segmentId, doc) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const segment = segments.get(segmentId)
+      if (!segment || segment.tripId !== tripId) return null
+      const id = 'document-' + (segmentDocuments.size + 1)
+      const row = { id, segmentId, ...doc }
+      segmentDocuments.set(id, row)
+      return { ...row }
+    },
+    async findSegmentDocument(user, tripId, documentId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const row = segmentDocuments.get(documentId)
+      if (!row) return null
+      const segment = segments.get(row.segmentId)
+      return segment && segment.tripId === tripId ? { ...row } : null
+    },
+    async deleteSegmentDocument(user, tripId, documentId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const row = segmentDocuments.get(documentId)
+      if (!row) return null
+      const segment = segments.get(row.segmentId)
+      if (!segment || segment.tripId !== tripId) return null
+      segmentDocuments.delete(documentId)
+      return { storagePath: row.storagePath }
     },
   }
 }

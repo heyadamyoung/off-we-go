@@ -59,6 +59,8 @@ export function assistantPrompt({
     '- get_live_positions — where the phones are right now; it takes the trip',
     '  id that get_trip returns.',
     '- list_trips — their other trips, if a question reaches beyond this one.',
+    '- list_segments — the travel legs: flights, trains, ferries with seats,',
+    '  gates or platforms, check-in and boarding deadlines, and documents.',
     ...(mailboxes > 0
       ? [
           '- search_mailbox / read_mailbox_message — this traveller’s own connected',
@@ -76,6 +78,12 @@ export function assistantPrompt({
           '- create_stop / update_stop / delete_stop shape the itinerary, and',
           '  update_trip its title, crew and dates.',
           '- replace_route redraws the hand-drawn route as ordered [lng, lat] pairs.',
+          '- add_segment / update_segment / remove_segment shape the travel legs.',
+          '  Build them from booking emails (search_mailbox finds them; give',
+          '  departsAt in UTC and deadlines derive per mode); when an airline or',
+          '  rail email announces a delay or gate change, amend the segment and',
+          '  cite the email in statusNote. attach_mail_document files a boarding',
+          '  pass or rail PDF from an email onto its leg, byte-for-byte.',
           '- add_airport_walkway lays a walking segment inside an airport terminal —',
           '  ordered [lng, lat] points on one level — where OSM has no corridor and',
           '  a gate route refuses; list_airport_walkways / remove_airport_walkway',

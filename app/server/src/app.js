@@ -27,6 +27,7 @@ import { createIndoorCache } from './airport-indoor.js'
 import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 import { validChunk } from './replay-store.js'
+import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -1686,6 +1687,159 @@ export async function buildServer({
     if (!user) return
     const removed = await repository.deleteMailboxConnection(user.id, request.params.id)
     if (!removed) return reply.code(404).send({ error: 'That mailbox is not connected' })
+    return reply.code(204).send()
+  })
+
+  /* ---- segments: the getting-there layer ------------------------------
+     Every leg of a travel day as one shape. The change-kind table announces
+     these to watching browsers like any other trip edit. */
+  const SEGMENT_MODE = value => SEGMENT_MODES.includes(String(value || ''))
+  app.get('/api/trips/:tripId/segments', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const segments = await repository.listSegments(user, request.params.tripId)
+    if (!segments) return reply.code(403).send({ error: 'You cannot view this trip' })
+    return {
+      segments: segments.map(segment => ({
+        ...segment,
+        documents: (segment.documents || []).map(({ storagePath, ...doc }) => ({
+          ...doc,
+          src: mediaUrl(storagePath),
+        })),
+      })),
+    }
+  })
+  app.post('/api/trips/:tripId/segments', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const body = request.body || {}
+    if (!SEGMENT_MODE(body.mode))
+      return reply
+        .code(400)
+        .send({ error: `A segment mode is one of: ${SEGMENT_MODES.join(', ')}` })
+    if (!String(body.fromName || '').trim() || !String(body.toName || '').trim()) {
+      return reply.code(400).send({ error: 'A segment needs where it leaves and where it lands' })
+    }
+    const departsAt = dateFrom(body.departsAt)
+    if (!departsAt) return reply.code(400).send({ error: 'A segment needs a departure time' })
+    const segment = await repository.createSegment(user, request.params.tripId, {
+      ...body,
+      departsAt,
+      arrivesAt: body.arrivesAt ? dateFrom(body.arrivesAt) : null,
+      // Type one time; the countdown writes itself. Editable ever after.
+      deadlines: body.deadlines ?? deriveDeadlines(body.mode, departsAt),
+    })
+    if (!segment) return reply.code(403).send({ error: 'You cannot edit this trip' })
+    stamp({ 'segment.id': segment.id, 'segment.mode': segment.mode })
+    return segment
+  })
+  app.patch('/api/trips/:tripId/segments/:segmentId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const body = request.body || {}
+    if (body.mode !== undefined && !SEGMENT_MODE(body.mode)) {
+      return reply
+        .code(400)
+        .send({ error: `A segment mode is one of: ${SEGMENT_MODES.join(', ')}` })
+    }
+    const segment = await repository.updateSegment(
+      user,
+      request.params.tripId,
+      request.params.segmentId,
+      body,
+    )
+    if (!segment) return reply.code(404).send({ error: 'That segment was not found' })
+    stamp({ 'segment.id': segment.id })
+    return segment
+  })
+  app.delete('/api/trips/:tripId/segments/:segmentId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const removed = await repository.deleteSegment(
+      user,
+      request.params.tripId,
+      request.params.segmentId,
+    )
+    if (!removed) return reply.code(404).send({ error: 'That segment was not found' })
+    for (const path of removed.paths || []) {
+      if (!fileStore) continue
+      try {
+        await fileStore.remove(path)
+        await repository.completeFileDeletion?.(path)
+      } catch (error) {
+        await repository.failFileDeletion?.(path, error.message, clock())
+      }
+    }
+    return reply.code(204).send()
+  })
+  app.post(
+    '/api/trips/:tripId/segments/:segmentId/documents',
+    { bodyLimit: 16 * 1024 * 1024 },
+    async (request, reply) => {
+      const user = await authenticated(request, reply)
+      if (!user) return
+      if (!fileStore) return reply.code(503).send({ error: 'Document storage is not configured' })
+      let bytes = null
+      let mime = ''
+      const fields = {}
+      for await (const part of request.parts()) {
+        if (part.type === 'file') {
+          mime = String(part.mimetype || '')
+          // Passes and tickets: images and PDFs, stored byte-for-byte — a
+          // recompressed QR is a QR that does not scan at the gate.
+          if (!mime.startsWith('image/') && mime !== 'application/pdf') {
+            return reply.code(415).send({ error: 'Documents are images or PDFs' })
+          }
+          bytes = await part.toBuffer()
+        } else fields[part.fieldname] = part.value
+      }
+      if (!bytes?.length) return reply.code(400).send({ error: 'Choose a document to attach' })
+      const name = String(fields.name || '').trim() || 'Document'
+      const extension =
+        mime === 'application/pdf' ? 'pdf' : (mime.split('/')[1] || 'bin').slice(0, 8)
+      const stored = await fileStore.storeDocument({
+        tripId: request.params.tripId,
+        bytes,
+        extension,
+      })
+      const doc = await repository.addSegmentDocument(
+        user,
+        request.params.tripId,
+        request.params.segmentId,
+        {
+          personId: String(fields.personId || '').trim() || null,
+          name: name.slice(0, 160),
+          kind: String(fields.kind || 'ticket').slice(0, 40),
+          mime,
+          storagePath: stored.storagePath,
+          bytes: stored.bytes,
+        },
+      )
+      if (!doc) {
+        await fileStore.remove(stored.storagePath).catch(() => {})
+        return reply.code(404).send({ error: 'That segment was not found' })
+      }
+      const { storagePath, ...safe } = doc
+      return { ...safe, src: mediaUrl(storagePath) }
+    },
+  )
+  app.delete('/api/trips/:tripId/segments/documents/:documentId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const removed = await repository.deleteSegmentDocument(
+      user,
+      request.params.tripId,
+      request.params.documentId,
+    )
+    if (!removed) return reply.code(404).send({ error: 'That document was not found' })
+    if (fileStore) {
+      try {
+        await fileStore.remove(removed.storagePath)
+        await repository.completeFileDeletion?.(removed.storagePath)
+      } catch (error) {
+        await repository.failFileDeletion?.(removed.storagePath, error.message, clock())
+      }
+    }
     return reply.code(204).send()
   })
 

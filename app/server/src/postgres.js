@@ -51,6 +51,60 @@ const camelTrip = value => ({
   endsOn: value.ends_on ? String(value.ends_on).slice(0, 10) : null,
 })
 
+/* One shape for a travel segment, whatever the column names underneath. */
+const segmentRow = row =>
+  row
+    ? {
+        id: row.id,
+        tripId: row.trip_id,
+        mode: row.mode,
+        carrier: row.carrier,
+        number: row.number,
+        ref: row.ref,
+        fromName: row.from_name,
+        fromCode: row.from_code,
+        fromLng: row.from_lng,
+        fromLat: row.from_lat,
+        toName: row.to_name,
+        toCode: row.to_code,
+        toLng: row.to_lng,
+        toLat: row.to_lat,
+        departsAt: row.departs_at,
+        arrivesAt: row.arrives_at,
+        departTz: row.depart_tz,
+        arriveTz: row.arrive_tz,
+        terminal: row.terminal,
+        gate: row.gate,
+        gateWas: row.gate_was,
+        platform: row.platform,
+        passengers: row.passengers || [],
+        bags: row.bags || null,
+        deadlines: row.deadlines || null,
+        costAmount: row.cost_amount == null ? null : Number(row.cost_amount),
+        costCurrency: row.cost_currency,
+        status: row.status,
+        statusNote: row.status_note,
+        notes: row.notes,
+        documents: row.documents ?? undefined,
+        updatedAt: row.updated_at,
+      }
+    : null
+
+/* One shape for a segment's document. The storage path stays server-side. */
+const documentRow = row =>
+  row
+    ? {
+        id: row.id,
+        segmentId: row.segment_id,
+        personId: row.person_id,
+        name: row.name,
+        kind: row.kind,
+        mime: row.mime,
+        bytes: row.bytes,
+        storagePath: row.storage_path,
+      }
+    : null
+
 /* One shape for a hand-laid airport walkway. */
 const walkwayRow = row =>
   row
@@ -962,6 +1016,217 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         client.release()
       }
     },
+    /* ---- segments: the getting-there layer -----------------------------
+       One shape for every mode of travel; documents are the leg's paperwork
+       and ride the same deletion queue as photos when they go. */
+    async listSegments(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `select s.*, coalesce(d.documents, '[]'::json) as documents
+        from segments s
+        left join lateral (
+          select json_agg(json_build_object(
+            'id', sd.id, 'personId', sd.person_id, 'name', sd.name,
+            'kind', sd.kind, 'mime', sd.mime, 'bytes', sd.bytes,
+            'storagePath', sd.storage_path
+          ) order by sd.created_at) as documents
+          from segment_documents sd where sd.segment_id = s.id
+        ) d on true
+        where s.trip_id = $1 order by s.departs_at`,
+        [tripId],
+      )
+      return result.rows.map(segmentRow)
+    },
+    async createSegment(user, tripId, input) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `insert into segments
+        (trip_id,mode,carrier,number,ref,from_name,from_code,from_lng,from_lat,
+         to_name,to_code,to_lng,to_lat,departs_at,arrives_at,depart_tz,arrive_tz,
+         terminal,gate,platform,passengers,bags,deadlines,cost_amount,cost_currency,
+         status,status_note,notes)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+               $20,$21,$22,$23,$24,$25,'scheduled',null,$26) returning *`,
+        [
+          tripId,
+          input.mode,
+          input.carrier ?? null,
+          input.number ?? null,
+          input.ref ?? null,
+          input.fromName,
+          input.fromCode ?? null,
+          input.fromLng ?? null,
+          input.fromLat ?? null,
+          input.toName,
+          input.toCode ?? null,
+          input.toLng ?? null,
+          input.toLat ?? null,
+          input.departsAt,
+          input.arrivesAt ?? null,
+          input.departTz ?? null,
+          input.arriveTz ?? null,
+          input.terminal ?? null,
+          input.gate ?? null,
+          input.platform ?? null,
+          JSON.stringify(input.passengers ?? []),
+          input.bags ? JSON.stringify(input.bags) : null,
+          input.deadlines ? JSON.stringify(input.deadlines) : null,
+          input.costAmount ?? null,
+          input.costCurrency ?? null,
+          input.notes ?? null,
+        ],
+      )
+      return segmentRow({ ...result.rows[0], documents: [] })
+    },
+    async updateSegment(user, tripId, segmentId, changes) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const current = await pool.query('select * from segments where id=$1 and trip_id=$2', [
+        segmentId,
+        tripId,
+      ])
+      const row = current.rows[0]
+      if (!row) return null
+      // A gate change keeps its history: the old gate slides into gate_was.
+      const gateWas =
+        changes.gate !== undefined && changes.gate !== row.gate ? row.gate : row.gate_was
+      const merged = {
+        mode: changes.mode ?? row.mode,
+        carrier: changes.carrier === undefined ? row.carrier : changes.carrier,
+        number: changes.number === undefined ? row.number : changes.number,
+        ref: changes.ref === undefined ? row.ref : changes.ref,
+        from_name: changes.fromName ?? row.from_name,
+        from_code: changes.fromCode === undefined ? row.from_code : changes.fromCode,
+        from_lng: changes.fromLng === undefined ? row.from_lng : changes.fromLng,
+        from_lat: changes.fromLat === undefined ? row.from_lat : changes.fromLat,
+        to_name: changes.toName ?? row.to_name,
+        to_code: changes.toCode === undefined ? row.to_code : changes.toCode,
+        to_lng: changes.toLng === undefined ? row.to_lng : changes.toLng,
+        to_lat: changes.toLat === undefined ? row.to_lat : changes.toLat,
+        departs_at: changes.departsAt ?? row.departs_at,
+        arrives_at: changes.arrivesAt === undefined ? row.arrives_at : changes.arrivesAt,
+        depart_tz: changes.departTz === undefined ? row.depart_tz : changes.departTz,
+        arrive_tz: changes.arriveTz === undefined ? row.arrive_tz : changes.arriveTz,
+        terminal: changes.terminal === undefined ? row.terminal : changes.terminal,
+        gate: changes.gate === undefined ? row.gate : changes.gate,
+        platform: changes.platform === undefined ? row.platform : changes.platform,
+        passengers:
+          changes.passengers === undefined
+            ? JSON.stringify(row.passengers)
+            : JSON.stringify(changes.passengers),
+        bags:
+          changes.bags === undefined
+            ? row.bags
+              ? JSON.stringify(row.bags)
+              : null
+            : changes.bags
+              ? JSON.stringify(changes.bags)
+              : null,
+        deadlines:
+          changes.deadlines === undefined
+            ? row.deadlines
+              ? JSON.stringify(row.deadlines)
+              : null
+            : changes.deadlines
+              ? JSON.stringify(changes.deadlines)
+              : null,
+        cost_amount: changes.costAmount === undefined ? row.cost_amount : changes.costAmount,
+        cost_currency:
+          changes.costCurrency === undefined ? row.cost_currency : changes.costCurrency,
+        status: changes.status ?? row.status,
+        status_note: changes.statusNote === undefined ? row.status_note : changes.statusNote,
+        notes: changes.notes === undefined ? row.notes : changes.notes,
+      }
+      const result = await pool.query(
+        `update segments set
+          mode=$3,carrier=$4,number=$5,ref=$6,from_name=$7,from_code=$8,from_lng=$9,
+          from_lat=$10,to_name=$11,to_code=$12,to_lng=$13,to_lat=$14,departs_at=$15,
+          arrives_at=$16,depart_tz=$17,arrive_tz=$18,terminal=$19,gate=$20,gate_was=$21,
+          platform=$22,passengers=$23,bags=$24,deadlines=$25,cost_amount=$26,
+          cost_currency=$27,status=$28,status_note=$29,notes=$30,updated_at=now()
+        where id=$1 and trip_id=$2 returning *`,
+        [
+          segmentId,
+          tripId,
+          merged.mode,
+          merged.carrier,
+          merged.number,
+          merged.ref,
+          merged.from_name,
+          merged.from_code,
+          merged.from_lng,
+          merged.from_lat,
+          merged.to_name,
+          merged.to_code,
+          merged.to_lng,
+          merged.to_lat,
+          merged.departs_at,
+          merged.arrives_at,
+          merged.depart_tz,
+          merged.arrive_tz,
+          merged.terminal,
+          merged.gate,
+          gateWas,
+          merged.platform,
+          merged.passengers,
+          merged.bags,
+          merged.deadlines,
+          merged.cost_amount,
+          merged.cost_currency,
+          merged.status,
+          merged.status_note,
+          merged.notes,
+        ],
+      )
+      return result.rows[0] ? segmentRow({ ...result.rows[0], documents: undefined }) : null
+    },
+    async deleteSegment(user, tripId, segmentId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const docs = await pool.query(
+        'select storage_path from segment_documents where segment_id=$1',
+        [segmentId],
+      )
+      const result = await pool.query('delete from segments where id=$1 and trip_id=$2', [
+        segmentId,
+        tripId,
+      ])
+      if (!result.rowCount) return null
+      return { deleted: true, paths: docs.rows.map(d => d.storage_path) }
+    },
+    async addSegmentDocument(user, tripId, segmentId, doc) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const owner = await pool.query('select 1 from segments where id=$1 and trip_id=$2', [
+        segmentId,
+        tripId,
+      ])
+      if (!owner.rowCount) return null
+      const result = await pool.query(
+        `insert into segment_documents(segment_id,person_id,name,kind,mime,storage_path,bytes)
+        values($1,$2,$3,$4,$5,$6,$7) returning *`,
+        [segmentId, doc.personId ?? null, doc.name, doc.kind, doc.mime, doc.storagePath, doc.bytes],
+      )
+      return documentRow(result.rows[0])
+    },
+    async findSegmentDocument(user, tripId, documentId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `select sd.* from segment_documents sd
+        join segments s on s.id = sd.segment_id
+        where sd.id=$1 and s.trip_id=$2`,
+        [documentId, tripId],
+      )
+      return result.rows[0] ? documentRow(result.rows[0]) : null
+    },
+    async deleteSegmentDocument(user, tripId, documentId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `delete from segment_documents sd using segments s
+        where sd.id=$1 and sd.segment_id=s.id and s.trip_id=$2
+        returning sd.storage_path`,
+        [documentId, tripId],
+      )
+      return result.rows[0] ? { storagePath: result.rows[0].storage_path } : null
+    },
+
     async canEditTrip(userId, tripId) {
       return ['owner', 'editor'].includes(await memberRole(pool, userId, tripId))
     },
