@@ -33,8 +33,8 @@ importers:
         specifier: 7.6.8
         version: 7.6.8(@capacitor/core@7.6.8)
       '@capacitor/keyboard':
-        specifier: ^8.0.5
-        version: 8.0.5(@capacitor/core@7.6.8)
+        specifier: ^7.0.6
+        version: 7.0.6(@capacitor/core@7.6.8)
       '@capacitor/local-notifications':
         specifier: 7.0.4
         version: 7.0.4(@capacitor/core@7.6.8)
@@ -328,10 +328,10 @@ packages:
     peerDependencies:
       '@capacitor/core': ^7.6.0
 
-  '@capacitor/keyboard@8.0.5':
-    resolution: {integrity: sha512-oFXygC4eKYA5l2MdpTR06L2M/4x6e2SLD5yS1T9+UBDKTkzyvhWKEhbYLUaTIBPpLKqlfGudJw1X73S1H9eUzQ==}
+  '@capacitor/keyboard@7.0.6':
+    resolution: {integrity: sha512-mH9EHo4EnBA9zJAi6domGVB/PdEkcm0h27nJDHG4Y3fd2oKsheCxDRXlYrbgj8hcyQPe0cGWqAfzfwKzkWQoFQ==}
     peerDependencies:
-      '@capacitor/core': '>=8.0.0'
+      '@capacitor/core': '>=7.0.0'
 
   '@capacitor/local-notifications@7.0.4':
     resolution: {integrity: sha512-A6xd64dcgWX75w3yrah83JN/NkiBH6kF0oXCFAt2Vrp5potnyNQgasibRyCmIY5RIn3slkDl3mUPkplXaIk8pw==}
@@ -3626,7 +3626,7 @@ snapshots:
     dependencies:
       '@capacitor/core': 7.6.8
 
-  '@capacitor/keyboard@8.0.5(@capacitor/core@7.6.8)':
+  '@capacitor/keyboard@7.0.6(@capacitor/core@7.6.8)':
     dependencies:
       '@capacitor/core': 7.6.8
 
