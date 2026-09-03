@@ -1,6 +1,12 @@
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
+# Codex is a Rust binary: unlike node, it trusts the SYSTEM certificate store,
+# which this slim image ships empty. Without these roots every TLS connection
+# to the model fails "UnknownIssuer" and codex retries until it is killed —
+# the assistant hangs at "Thinking…" forever.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod

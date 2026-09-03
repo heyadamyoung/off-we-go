@@ -91,7 +91,10 @@ export function createCodexRunner({
         const fail = settle(reject)
         const timer = setTimeout(() => {
           child.kill('SIGKILL')
-          fail(new Error(`codex exec did not answer within ${timeoutMs}ms`))
+          // The stderr tail rides along: a hang usually names its cause there
+          // ("waiting for network", a certificate error), and losing it once
+          // cost a production debugging session a container-level repro.
+          fail(new Error(`codex exec did not answer within ${timeoutMs}ms: ${stderr.trim()}`))
         }, timeoutMs)
         timer.unref?.()
         child.stderr.on('data', chunk => {
