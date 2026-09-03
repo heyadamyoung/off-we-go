@@ -33,12 +33,25 @@ export default function HomeShell({
   return (
     <main className="fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink">
       <Globe places={places} home={home} live={live} waiting={waiting} />
-      {/* Reading over a spinning planet needs the planet to give way on the
-          left, not the text to grow a box. */}
+      {/* Reading over a spinning planet needs the planet to give way, not the
+          text to grow a box. Two regimes: side by side on a desktop the left
+          third goes solid; stacked on a phone the percentages put the text
+          over bare planet, so there the wash runs top-down instead — solid
+          behind the reading column, the planet coming through below it. */}
       <div
         className="pointer-events-none absolute inset-0
-                      [background:linear-gradient(90deg,var(--c-bg)_0%,var(--c-bg)_34%,transparent_64%),linear-gradient(0deg,var(--c-bg)_0%,transparent_22%)]"
+                      max-md:[background:linear-gradient(180deg,var(--c-bg)_0%,color-mix(in_srgb,var(--c-bg)_88%,transparent)_44%,color-mix(in_srgb,var(--c-bg)_45%,transparent)_66%,transparent_88%)]
+                      md:[background:linear-gradient(90deg,var(--c-bg)_0%,var(--c-bg)_34%,transparent_64%),linear-gradient(0deg,var(--c-bg)_0%,transparent_22%)]"
       />
+      {/* The wide sub-pages read to the bottom of the screen, so the planet
+          stays a backdrop the whole way down rather than surfacing under the
+          last paragraph. */}
+      {wide && (
+        <div
+          className="pointer-events-none absolute inset-0 md:hidden
+                        [background:color-mix(in_srgb,var(--c-bg)_82%,transparent)]"
+        />
+      )}
       {/* Above the column below it, not level with it: the account menu opens
           out of this bar, and a menu that shares a z-index with the page it
           covers is painted over by whatever comes later in the document. */}

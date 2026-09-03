@@ -180,7 +180,9 @@
    phone needs two rows where the desktop fits one — day chips and search will
    not share 390 pixels — and every floating control has to move with it. */
 :root {
-  --trip-bar: calc(196px + env(safe-area-inset-bottom, 0px));
+  /* 212, not 196: a card is an image, a two-line title and a meta line, and at
+     196 the meta line was clipped mid-glyph by the bottom of the bar. */
+  --trip-bar: calc(212px + env(safe-area-inset-bottom, 0px));
   --trip-top: calc(116px + env(safe-area-inset-top, 0px));
   --trip-1: calc(var(--trip-bar) + 16px);
   --trip-2: calc(var(--trip-1) + 46px);
@@ -222,6 +224,9 @@
   .btn:hover { filter: brightness(1.08) }
   .btn:disabled { opacity: .5; cursor: default; filter: none }
   .btn-accent { background: var(--c-accent); color: var(--c-accent-ink) }
+  /* Not amber at half strength — that read as a second, mustard accent beside
+     the real one. A disabled action steps out of the accent entirely. */
+  .btn-accent:disabled { background: var(--c-raised-2); color: var(--c-faint); opacity: 1 }
   .btn-ghost { background: var(--c-panel); border-color: var(--c-line); color: var(--c-ink) }
   .btn-solid { background: var(--c-ink); color: var(--c-bg) }
   .btn-danger { background: transparent; border-color: var(--c-danger); color: var(--c-danger) }

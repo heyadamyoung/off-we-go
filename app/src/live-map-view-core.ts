@@ -54,7 +54,10 @@ export function visibleMapPadding({
   panelOpen?: boolean
 }): MapPadding {
   if (width < 640) return { top: 128, right: 20, bottom: 202, left: 20 }
-  return { top: 40, right: 40, bottom: 228, left: panelOpen ? 500 : 40 }
+  /* 104, not 40: the desktop toolbar floats at 24px and runs ~68px tall, and a
+     fitted stop at 40 landed its pin and label underneath it. The bottom
+     follows the bar height in styles.css (--trip-bar + margin). */
+  return { top: 104, right: 40, bottom: 244, left: panelOpen ? 500 : 40 }
 }
 
 /* Where to put the thing being focused: the centre of the visible band, which

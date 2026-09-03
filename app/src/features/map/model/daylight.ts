@@ -27,12 +27,14 @@ const TINT = [
   { alt: 8, c: [255, 206, 146], a: 0.16, name: 'afternoon' },
   { alt: 2, c: [255, 168, 86], a: 0.26, name: 'golden hour' },
   { alt: -2, c: [255, 138, 72], a: 0.3, name: 'sunset' },
-  // Below here the basemap is dark, and a bright wash over near-black only
-  // muddies it to brown — so the colours deepen and the alphas drop right off.
-  { alt: -5, c: [190, 96, 110], a: 0.13, name: 'dusk' },
-  { alt: -10, c: [124, 84, 176], a: 0.12, name: 'twilight' },
-  { alt: -16, c: [56, 78, 168], a: 0.11, name: 'blue hour' },
-  { alt: -22, c: [22, 40, 90], a: 0.1, name: 'night' },
+  // Below here the basemap is dark, and any warm wash over near-black muddies
+  // it to brown — 0.13 of dusk rose was still enough to turn the whole city
+  // umber. Down here the phase is a whisper: the ground stays the app's own
+  // blue-black and the colour only just says which part of the night it is.
+  { alt: -5, c: [190, 96, 110], a: 0.06, name: 'dusk' },
+  { alt: -10, c: [124, 84, 176], a: 0.055, name: 'twilight' },
+  { alt: -16, c: [56, 78, 168], a: 0.05, name: 'blue hour' },
+  { alt: -22, c: [22, 40, 90], a: 0.045, name: 'night' },
 ]
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
 const hex = (c: number[]) => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('')

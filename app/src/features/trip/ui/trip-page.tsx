@@ -193,7 +193,10 @@ function Trip({
           onHere={() => patch({ day: liveDay || days[0], sel: undefined })}
           onWhole={() => patch({ day: ALL_DAYS, sel: undefined })}
         />
-        {!panelOpen && (
+        {/* A demo has no phone to wait for: the sample trip never shows the
+            GPS nudge, which read as something broken in the one trip everyone
+            sees first. */}
+        {!panelOpen && (hasBackend || progressCopy.tone !== 'waiting') && (
           <NowCapsule
             text={progressCopy.text}
             meta={progressCopy.meta}

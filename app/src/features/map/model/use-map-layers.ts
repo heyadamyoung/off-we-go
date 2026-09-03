@@ -177,32 +177,23 @@ export default function useMapLayers({
         // Below the route, so the trip always reads on top of the scenery.
         ...(map.getLayer('route-halo') ? { beforeId: 'route-halo' } : {}),
         filter: ['any', ['get', 'big'], ['>=', ['zoom'], 11]],
+        /* Scenery, not signal. A category rainbow made hundreds of dots read
+           as content and drowned the one colour that means something here —
+           so at rest every sight is the same quiet grey, the big ones a step
+           brighter, and the category shows itself in the card on tap. Amber
+           stays reserved for the trip. */
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 2.4, 10, 3.4, 14, 5, 17, 7],
           'circle-color': [
-            'match',
-            ['get', 'k'],
-            'castle',
-            '#c98bdb',
-            'museum',
-            '#6fb1ff',
-            'worship',
-            '#9aa6b8',
-            'outdoors',
-            '#57c78a',
-            'history',
-            '#d8a25f',
-            'culture',
-            '#e07ea8',
-            'food',
-            '#e8a33d',
-            'fun',
-            '#4fc9d4',
-            '#8b93a3',
+            'case',
+            ['coalesce', ['get', 'big'], false],
+            themeRef.current === 'light' ? '#6E7887' : '#98A2B3',
+            themeRef.current === 'light' ? '#8B94A3' : '#77818F',
           ],
           'circle-stroke-width': 1.4,
-          'circle-stroke-color': 'rgba(8,11,16,.75)',
-          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.72, 12, 0.95],
+          'circle-stroke-color':
+            themeRef.current === 'light' ? 'rgba(255,255,255,.8)' : 'rgba(8,11,16,.75)',
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 12, 0.85],
         },
       })
       map.addLayer({

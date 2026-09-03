@@ -16,8 +16,9 @@ interface TripBarProps {
   onSelect: (item: TripItem) => void
   /** present when this person can add stops — the empty day offers the verb */
   onAddStop?: () => void
-  /* A phone showing a panel has no room for the bar underneath it, and the bar
-     is the same day in a second form — the panel says it better. */
+  /* A panel and the bar are the same day in two forms, and the panel says it
+     better — so the bar yields whenever one is open, at every width. On a
+     phone there was no room anyway; on a desktop it was a duplicate. */
   behindPanel?: boolean
 }
 
@@ -47,7 +48,7 @@ const TripBar = memo(function TripBar({
       className={
         'glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col ' +
         'border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px] ' +
-        (behindPanel ? 'max-sm:hidden' : '')
+        (behindPanel ? 'hidden' : '')
       }>
       {/* The day chips and the search box each want the full width of a phone,
           so below 640px they take a line each instead of splitting one. */}

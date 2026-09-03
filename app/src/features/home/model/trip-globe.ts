@@ -70,11 +70,14 @@ export function tripPlaces(trip: TripSummary): GlobePlace[] {
     places.push(next)
   }
   /* Only the ends get a name, so a dense trip does not become a wall of
-     labels — and a there-and-back trip gets one, not two on top of each other. */
+     labels. "Apart" is judged at the globe's scale, not the street's: a trip
+     whose first and last stop are both in one city is one place from orbit,
+     and two name tags there stack into an unreadable pile. */
   if (places.length) {
     const last = places[places.length - 1]
     last.label = true
-    if (places.length > 1 && !near(places[0], last)) places[0].label = true
+    const apart = Math.abs(places[0].lng - last.lng) > 2 || Math.abs(places[0].lat - last.lat) > 2
+    if (places.length > 1 && apart) places[0].label = true
   }
   return places
 }

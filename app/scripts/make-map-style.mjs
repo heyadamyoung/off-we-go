@@ -47,13 +47,13 @@ const CASE = '#080A0E'
    quietest, motorways strongest — enough hierarchy to read a city, never
    enough to compete with the trail. */
 const ROADS = [
-  [/^(road|tunnel|bridge)_service_fill/, '#151A22'],
-  [/^(road|tunnel|bridge)_minor_fill/, '#1B212C'],
-  [/^(road|tunnel|bridge)_sec_(fill|case_noramp)$/, '#232A37'],
-  [/^(road|tunnel|bridge)_pri_fill/, '#2A3341'],
-  [/^(road|tunnel|bridge)_trunk_fill/, '#303A48'],
-  [/^(road|tunnel|bridge)_mot_fill/, '#35404F'],
-  [/^(road|tunnel|bridge)_path$/, '#141A22'],
+  [/^(road|tunnel|bridge)_service_fill/, '#171D26'],
+  [/^(road|tunnel|bridge)_minor_fill/, '#1F2632'],
+  [/^(road|tunnel|bridge)_sec_(fill|case_noramp)$/, '#28303F'],
+  [/^(road|tunnel|bridge)_pri_fill/, '#303A4A'],
+  [/^(road|tunnel|bridge)_trunk_fill/, '#364252'],
+  [/^(road|tunnel|bridge)_mot_fill/, '#3B4757'],
+  [/^(road|tunnel|bridge)_path$/, '#161C25'],
 ]
 
 const paint = (layer, key, value) => {
