@@ -91,7 +91,7 @@ export default function NewTripPage({ step }: { step: number }) {
                 className={
                   'grid size-5 place-items-center rounded-full text-[11px] not-italic ' +
                   (step === number
-                    ? 'bg-accent text-accent-ink'
+                    ? 'bg-ink text-canvas'
                     : step > number
                       ? 'bg-accent-soft text-accent'
                       : 'bg-raised2')

@@ -209,7 +209,8 @@
   --trip-4: calc(var(--trip-3) + 42px);
 }
 @media (max-width: 639px) {
-  :root { --trip-bar: calc(180px + env(safe-area-inset-bottom, 0px)) }
+  /* 196: the 180 the two rows needed, plus the grab handle's own line. */
+  :root { --trip-bar: calc(196px + env(safe-area-inset-bottom, 0px)) }
   /* The bar collapsed to its peek: the grab handle and the day chips. The
      class lives on the trip screen root, so every floating control that
      hangs off --trip-1..4 rides down with it and the map gets the room. */
@@ -593,7 +594,8 @@
 .vcap .ct { font-size: 13px; color: rgb(255 255 255 / .38); white-space: nowrap; font-variant-numeric: tabular-nums }
 .vfilm { flex: none; display: flex; gap: 8px; padding: 0 20px 20px; overflow-x: auto }
 .vfilm button { width: 106px; height: 68px; border-radius: 8px; overflow: hidden; opacity: .4; border: 2px solid transparent; flex: none }
-.vfilm button.on { opacity: 1; border-color: var(--c-accent) }
+/* Selection grammar: ink, not amber — same as every selected state. */
+.vfilm button.on { opacity: 1; border-color: var(--c-ink) }
 .vfilm img { width: 100%; height: 100%; object-fit: cover }
 .vside { border-left: 1px solid var(--c-line); display: flex; flex-direction: column; min-height: 0; background: var(--c-panel-solid) }
 .vminimap { height: 230px; flex: none; position: relative; border-bottom: 1px solid var(--c-line); overflow: hidden }

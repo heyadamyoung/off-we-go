@@ -208,8 +208,9 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
           {shown.map(photo => (
             <button
               key={photo.id}
+              aria-label={photo.caption || 'Photo'}
               className={
-                'relative aspect-square overflow-hidden rounded-xl bg-raised ' +
+                'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
                 (selected === photo.id ? 'outline outline-2 -outline-offset-2 outline-accent' : '')
               }
               onClick={() =>

@@ -94,7 +94,8 @@ export function SheetTab({
       className={
         '-mb-px flex-none whitespace-nowrap border-b-2 px-3 pb-2.5 pt-3 ' +
         'text-xs font-bold ' +
-        (on ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink')
+        // Selection is ink everywhere; amber stays the journey's.
+        (on ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink')
       }>
       {children}
     </button>

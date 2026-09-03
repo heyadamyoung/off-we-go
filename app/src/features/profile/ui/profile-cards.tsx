@@ -153,9 +153,7 @@ export function PrivacyCard({
             key={option.value}
             className={
               'flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-xs ' +
-              (privacy.discoverable === option.value
-                ? 'border-accent bg-accent-soft'
-                : 'border-line')
+              (privacy.discoverable === option.value ? 'border-line2 bg-raised2' : 'border-line')
             }>
             <input
               type="radio"
@@ -168,7 +166,7 @@ export function PrivacyCard({
               className={
                 'size-3.5 flex-none rounded-full ' +
                 (privacy.discoverable === option.value
-                  ? 'border-4 border-accent'
+                  ? 'border-4 border-ink'
                   : 'border-[1.5px] border-line2')
               }
             />
