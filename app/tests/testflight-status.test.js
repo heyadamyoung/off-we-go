@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { describeBuild, describeGroup, readable, utc } from '../scripts/testflightStatus.mjs'
+import {
+  describeBuild,
+  describeGroup,
+  describeTrain,
+  readable,
+  utc,
+} from '../scripts/testflightStatus.mjs'
 
 test('Apple’s states are said in words a person can act on', () => {
   assert.equal(readable('READY_FOR_BETA_TESTING'), 'approved — they can install it')
@@ -94,4 +100,29 @@ test('a build with no submission of its own says so, rather than looking unrevie
 test('times are all said in the same zone', () => {
   assert.equal(utc('2026-09-01T23:45:00Z'), '2026-09-01 23:45Z')
   assert.equal(utc('2026-09-01T16:45:00-07:00'), '2026-09-01 23:45Z')
+})
+
+/* The trains section exists because "why do I see two versions?" cannot be
+   answered from a recent-builds window that one busy day fills entirely. */
+test('a version train names its newest build, and says when it is expired', () => {
+  assert.equal(
+    describeTrain({
+      version: '1.0',
+      platform: 'IOS',
+      build: '56',
+      uploaded: '2026-09-03T16:59:00Z',
+    }),
+    'version 1.0 (IOS) — latest build 56, uploaded 2026-09-03 16:59Z',
+  )
+  assert.match(
+    describeTrain({
+      version: '0.1',
+      platform: 'IOS',
+      build: '2',
+      uploaded: '2026-08-30T10:00:00Z',
+      expired: true,
+    }),
+    /latest build 2, uploaded 2026-08-30 10:00Z, expired/,
+  )
+  assert.equal(describeTrain({ version: '1.1', platform: 'IOS' }), 'version 1.1 (IOS) — no builds')
 })

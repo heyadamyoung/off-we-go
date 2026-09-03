@@ -43,6 +43,15 @@ export function describeGroup(group, testers) {
   return `${group?.attributes?.name} (${kind}): ${people.length ? people.join(', ') : 'nobody yet'}`
 }
 
+/** One line per version train: the fossil record behind "why two versions?". */
+export function describeTrain({ version, platform, build, uploaded, expired }) {
+  if (!build) return `version ${version} (${platform}) — no builds`
+  return (
+    `version ${version} (${platform}) — latest build ${build}, uploaded ${utc(uploaded)}` +
+    (expired ? ', expired' : '')
+  )
+}
+
 /** One line per build: what it is, and who can install it. */
 export function describeBuild({
   version,
@@ -94,6 +103,29 @@ async function main() {
       () => null,
     )
     console.log(describeGroup(group, testers?.data))
+  }
+  console.log('')
+
+  /* Every version train the app has ever put on TestFlight, not just the
+     trains the recent builds happen to ride: builds expire after ninety days
+     but their train stays listed in the TestFlight app, so a stray version
+     from before the pin-at-1.0 rule keeps showing until its builds die. */
+  const trains = await api(`/apps/${app.id}/preReleaseVersions?limit=50`, token)
+  for (const train of trains?.data || []) {
+    const latest = await api(
+      `/preReleaseVersions/${train.id}/builds?limit=1&sort=-uploadedDate`,
+      token,
+    ).catch(() => null)
+    const newest = latest?.data?.[0]
+    console.log(
+      describeTrain({
+        version: train.attributes?.version,
+        platform: train.attributes?.platform,
+        build: newest?.attributes?.version,
+        uploaded: newest?.attributes?.uploadedDate,
+        expired: newest?.attributes?.expired,
+      }),
+    )
   }
   console.log('')
 
