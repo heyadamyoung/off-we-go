@@ -35,10 +35,10 @@ export default function UploadTray({
               <img
                 src={upload.preview}
                 alt=""
-                className="size-9 flex-none rounded-md object-cover"
+                className="size-9 flex-none rounded-lg object-cover"
               />
             ) : (
-              <span className="grid size-9 flex-none place-items-center rounded-md bg-raised text-faint">
+              <span className="grid size-9 flex-none place-items-center rounded-lg bg-raised text-faint">
                 <Icon n="camera" s={14} />
               </span>
             )}

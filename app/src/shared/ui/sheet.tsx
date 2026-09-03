@@ -37,7 +37,7 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim; it is not an interaction */}
       <div
         className={
-          'modal dlg rise flex max-h-full w-full flex-col overflow-hidden rounded-[18px] ' +
+          'modal dlg rise flex max-h-full w-full flex-col overflow-hidden rounded-2xl ' +
           'border border-line bg-solid shadow-panel ' +
           (wide ? 'max-w-[640px] ' : 'max-w-[520px] ') +
           (tabs ? 'h-[min(100%,560px)]' : '')

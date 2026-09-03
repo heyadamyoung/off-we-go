@@ -43,7 +43,7 @@ export default function AssistantChat({
   return (
     <div
       className="sheet rise absolute bottom-[var(--trip-2)] right-4 z-[7] flex w-[380px] flex-col
-                    overflow-hidden rounded-[18px]
+                    overflow-hidden rounded-2xl
                     max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-2)_-_12px)]
                     max-sm:inset-x-3 max-sm:bottom-[var(--trip-1)] max-sm:w-auto
                     max-sm:max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-1)_-_12px)]">

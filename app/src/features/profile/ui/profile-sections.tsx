@@ -245,7 +245,7 @@ export function TripsSection({ trips }: SectionProps) {
             action={
               <span
                 className={
-                  'rounded-md border px-2 py-1 text-[11px] font-bold ' +
+                  'rounded-lg border px-2 py-1 text-[11px] font-bold ' +
                   (trip.role === 'owner'
                     ? 'border-accent-soft bg-accent-soft text-accent'
                     : 'border-line text-faint')

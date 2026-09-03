@@ -258,7 +258,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
                 {person.memberRole === 'viewer' ? 'following' : 'travelling'}
               </span>
             </div>
-            <span className="rounded-md border border-line px-2 py-1.5 text-[11px] font-bold text-faint">
+            <span className="rounded-lg border border-line px-2 py-1.5 text-[11px] font-bold text-faint">
               {person.memberRole === 'owner'
                 ? 'Owner'
                 : person.memberRole === 'editor'

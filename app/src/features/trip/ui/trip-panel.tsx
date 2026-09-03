@@ -46,7 +46,7 @@ export default function TripPanel(props: PanelProps) {
   return (
     <aside
       className="sheet rise absolute bottom-[var(--trip-1)] left-7 top-[var(--trip-top)] z-[6] flex
-                      w-[440px] flex-col overflow-hidden rounded-[18px]
+                      w-[440px] flex-col overflow-hidden rounded-2xl
                       max-lg:inset-x-4 max-lg:w-auto
                       max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-none max-sm:border-x-0
                       max-sm:border-b-0">
@@ -99,7 +99,7 @@ function Row({
     <button
       onClick={onClick}
       className={
-        'flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left ' +
+        'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ' +
         (selected ? 'bg-accent-soft' : 'hover:bg-raised2')
       }>
       <span className="tnum w-10 flex-none text-[11px] text-faint">{time}</span>
@@ -209,7 +209,7 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
             <button
               key={photo.id}
               className={
-                'relative aspect-square overflow-hidden rounded-[10px] bg-raised ' +
+                'relative aspect-square overflow-hidden rounded-xl bg-raised ' +
                 (selected === photo.id ? 'outline outline-2 -outline-offset-2 outline-accent' : '')
               }
               onClick={() =>

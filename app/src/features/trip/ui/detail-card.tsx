@@ -30,7 +30,7 @@ export default function DetailCard(props: DetailCardProps) {
       className={
         'detailcard sheet rise absolute top-[var(--trip-top)] z-[7] flex w-[360px] flex-col ' +
         'overflow-hidden ' +
-        'rounded-[18px] transition-[left] max-lg:inset-x-4 max-lg:bottom-[var(--trip-1)] max-lg:top-auto ' +
+        'rounded-2xl transition-[left] max-lg:inset-x-4 max-lg:bottom-[var(--trip-1)] max-lg:top-auto ' +
         /* Anchored to the bottom, it grew upwards with its own text: a stop with
          a long note pushed its header — and the only way to close it — up
          behind the top bar. It gets the room between the chrome and the day
