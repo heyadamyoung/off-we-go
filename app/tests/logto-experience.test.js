@@ -21,7 +21,10 @@ function recordingClient() {
         }
         return { ok: true }
       },
-      async acceptSession(session) { accepted = session; return session },
+      async acceptSession(session) {
+        accepted = session
+        return session
+      },
     },
     accepted: () => accepted,
   }
@@ -33,13 +36,16 @@ test('custom sign-in uses Logto password verification and saves the returned app
 
   await experience.signIn(' Invited@Example.com ', 'correct horse battery staple')
 
-  assert.deepEqual(recorder.calls.map(call => [call.path, call.method]), [
-    ['/auth/experience/start', 'POST'],
-    ['/auth/experience', 'PUT'],
-    ['/auth/experience/verification/password', 'POST'],
-    ['/auth/experience/identification', 'POST'],
-    ['/auth/experience/submit', 'POST'],
-  ])
+  assert.deepEqual(
+    recorder.calls.map(call => [call.path, call.method]),
+    [
+      ['/auth/experience/start', 'POST'],
+      ['/auth/experience', 'PUT'],
+      ['/auth/experience/verification/password', 'POST'],
+      ['/auth/experience/identification', 'POST'],
+      ['/auth/experience/submit', 'POST'],
+    ],
+  )
   assert.deepEqual(recorder.calls[2].body, {
     identifier: { type: 'email', value: 'invited@example.com' },
     password: 'correct horse battery staple',
@@ -53,23 +59,31 @@ test('custom account creation verifies the email before setting a password', asy
   const recorder = recordingClient()
   const experience = createLogtoExperienceClient(recorder.api)
 
-  const verificationId = await experience.sendRegistrationCode(' Invited@Example.com ', ' @Adam-Young ')
+  const verificationId = await experience.sendRegistrationCode(
+    ' Invited@Example.com ',
+    ' @Adam-Young ',
+  )
   await experience.completeRegistration({
-    verificationId, code: '204913', password: 'a sufficiently long password',
+    verificationId,
+    code: '204913',
+    password: 'a sufficiently long password',
   })
 
   assert.equal(verificationId, 'email-code')
-  assert.deepEqual(recorder.calls.map(call => [call.path, call.method]), [
-    ['/auth/experience/start', 'POST'],
-    ['/auth/experience', 'PUT'],
-    ['/auth/experience/handle', 'POST'],
-    ['/auth/experience/verification/verification-code', 'POST'],
-    ['/auth/experience/verification/verification-code/verify', 'POST'],
-    ['/auth/experience/profile', 'POST'],
-    ['/auth/experience/profile', 'POST'],
-    ['/auth/experience/identification', 'POST'],
-    ['/auth/experience/submit', 'POST'],
-  ])
+  assert.deepEqual(
+    recorder.calls.map(call => [call.path, call.method]),
+    [
+      ['/auth/experience/start', 'POST'],
+      ['/auth/experience', 'PUT'],
+      ['/auth/experience/handle', 'POST'],
+      ['/auth/experience/verification/verification-code', 'POST'],
+      ['/auth/experience/verification/verification-code/verify', 'POST'],
+      ['/auth/experience/profile', 'POST'],
+      ['/auth/experience/profile', 'POST'],
+      ['/auth/experience/identification', 'POST'],
+      ['/auth/experience/submit', 'POST'],
+    ],
+  )
   assert.deepEqual(recorder.calls[2].body, { handle: ' @Adam-Young ' })
   assert.deepEqual(recorder.calls[4].body, {
     identifier: { type: 'email', value: 'invited@example.com' },
@@ -77,7 +91,10 @@ test('custom account creation verifies the email before setting a password', asy
     code: '204913',
   })
   assert.deepEqual(recorder.calls[5].body, { type: 'username', value: 'wayfare_adam_young' })
-  assert.deepEqual(recorder.calls[6].body, { type: 'password', value: 'a sufficiently long password' })
+  assert.deepEqual(recorder.calls[6].body, {
+    type: 'password',
+    value: 'a sufficiently long password',
+  })
   assert.equal(recorder.calls[8].headers['x-wayfare-experience'], 'opaque-interaction')
   assert.equal(recorder.accepted().user.email, 'invited@example.com')
 })
@@ -91,5 +108,43 @@ test('requesting another registration code keeps the reserved handle interaction
 
   assert.equal(recorder.calls.filter(call => call.path === '/auth/experience/start').length, 1)
   assert.equal(recorder.calls.filter(call => call.path === '/auth/experience/handle').length, 2)
-  assert.equal(recorder.calls.filter(call => call.path.endsWith('/verification/verification-code')).length, 2)
+  assert.equal(
+    recorder.calls.filter(call => call.path.endsWith('/verification/verification-code')).length,
+    2,
+  )
+})
+
+test('code sign-in verifies the emailed code and never asks for a password', async () => {
+  const recorder = recordingClient()
+  const experience = createLogtoExperienceClient(recorder.api)
+
+  const verificationId = await experience.sendSignInCode(' Grandma-Jo@Example.com ')
+  await experience.signInWithCode({
+    email: 'grandma-jo@example.com',
+    verificationId,
+    code: ' 314159 ',
+  })
+
+  assert.deepEqual(
+    recorder.calls.map(call => [call.path, call.method]),
+    [
+      ['/auth/experience/start', 'POST'],
+      ['/auth/experience', 'PUT'],
+      ['/auth/experience/verification/verification-code', 'POST'],
+      ['/auth/experience/verification/verification-code/verify', 'POST'],
+      ['/auth/experience/identification', 'POST'],
+      ['/auth/experience/submit', 'POST'],
+    ],
+  )
+  assert.deepEqual(recorder.calls[1].body, { interactionEvent: 'SignIn' })
+  assert.deepEqual(recorder.calls[2].body, {
+    identifier: { type: 'email', value: 'grandma-jo@example.com' },
+    interactionEvent: 'SignIn',
+  })
+  assert.deepEqual(recorder.calls[3].body, {
+    identifier: { type: 'email', value: 'grandma-jo@example.com' },
+    verificationId: 'email-code',
+    code: '314159',
+  })
+  assert.equal(recorder.accepted().accessToken, 'app-token')
 })
