@@ -140,7 +140,6 @@ function Trip({
             canEdit={canEdit}
             editing={editing}
             placing={!!placing}
-            following={following}
             theme={theme}
             attractions={showAttractions}
             onAttractions={toggleAttractions}
@@ -150,7 +149,6 @@ function Trip({
               setPlacing(placing ? null : {})
               patch({ sel: undefined })
             }}
-            onFollow={toggleFollow}
             onAdd={() => patch({ sheet: 'add' })}
             onTheme={() => {
               const next = theme === 'dark' ? 'light' : 'dark'

@@ -71,13 +71,10 @@ const TripBar = memo(function TripBar({
               key={value}
               className={'chip' + (day === value ? ' sel' : '')}
               onClick={() => onDay(value)}>
+              {/* The live dot stays amber even on the ink-inverted selected
+                  chip — it marks the journey's day, and that is amber's job. */}
               {value === liveDay && (
-                <span
-                  className={
-                    'size-1.5 rounded-full ' +
-                    (day === value ? 'bg-accent-ink' : 'bg-accent shadow-[0_0_8px_var(--c-glow)]')
-                  }
-                />
+                <span className="size-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--c-glow)]" />
               )}
               {value}
             </button>

@@ -16,13 +16,11 @@ interface ClusterProps {
   canEdit: boolean
   editing: boolean
   placing: boolean
-  following: boolean
   theme: string
   attractions: boolean
   onAttractions: () => void
   onSettings: () => void
   onPlace: () => void
-  onFollow: () => void
   onAdd: () => void
   onTheme: () => void
   onEdit: () => void
@@ -39,9 +37,10 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
      that hides below 768px, so on a phone the pin IS "add a stop" — and the
      pencil stays visible while edit mode is on, or there would be no way to
      leave it. */
+  /* No Follow here: the locate button in the map controls is the same toggle,
+     and one state does not get two buttons in two grammars on one screen. */
   const actions: Array<[string, string, string, string, boolean, () => void, string?]> = [
     ['pin', 'Place a pin', 'Pin', 'pinplus', props.placing, props.onPlace],
-    ['live', 'Follow live position', 'Follow', 'locate', props.following, props.onFollow],
     ['add', 'Add photos', 'Upload', 'camera', false, props.onAdd],
   ]
   if (props.canEdit) {

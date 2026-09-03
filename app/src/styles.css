@@ -74,9 +74,12 @@
   /* 4.5:1 on raised-2, the lightest surface faint text actually sits on —
      the old #78828F passed on the page ground and quietly failed inside cards. */
   --c-faint: #8791A0;
-  /* One accent. Amber is the journey — the travelled trail, the live pulse,
-     the active state. Everything else stays greyscale, and amber is never a
-     paragraph colour: it marks, it never narrates. */
+  /* One accent, rationed. Amber is the journey — the travelled trail, the
+     live pulse, the pins, plus the two affordances convention owes it: links
+     and the focus ring. Selection and active states are NOT amber; they
+     invert to ink, so on the map the brightest warm thing is always the trip
+     itself. Everything else stays greyscale, and amber is never a paragraph
+     colour: it marks, it never narrates. */
   --c-accent: #F0A63C;
   --c-accent-bright: #FFB454;
   --c-accent-soft: rgb(240 166 60 / 0.16);
@@ -279,7 +282,10 @@
   }
   .tb:hover { background: var(--c-raised-2); color: var(--c-ink) }
   .tb.active { background: var(--c-raised-2); color: var(--c-ink) }
-  .tb.on { background: var(--c-accent); color: var(--c-accent-ink) }
+  /* Selection is one grammar everywhere: ink inversion. Amber stays the
+     journey's — a toolbar toggle lighting up brighter than the trail was the
+     loudest thing on the screen for the least important reason. */
+  .tb.on { background: var(--c-ink); color: var(--c-bg) }
   .tb[data-tip]::after {
     content: attr(data-tip);
     position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
@@ -303,7 +309,8 @@
   }
 
   /* A named view tab: the icon keeps its word, so nothing has to be guessed.
-     The active one is amber with a small underline — state, not decoration. */
+     The active one is ink with a small underline — state, not decoration,
+     and not the journey's amber. */
   .tbv {
     position: relative; flex: none; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 3px;
@@ -312,10 +319,10 @@
     color: var(--c-muted); transition: background .15s, color .15s;
   }
   .tbv:hover { background: var(--c-raised-2); color: var(--c-ink) }
-  .tbv.active { color: var(--c-accent) }
+  .tbv.active { color: var(--c-ink) }
   .tbv.active::after {
     content: ""; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
-    width: 16px; height: 2px; border-radius: 2px; background: var(--c-accent);
+    width: 16px; height: 2px; border-radius: 2px; background: var(--c-ink);
   }
 
   .avatar {
@@ -335,7 +342,7 @@
     transition: background .15s, color .15s;
   }
   .chip:hover { color: var(--c-ink); background: var(--c-raised-2) }
-  .chip.sel { background: var(--c-accent); color: var(--c-accent-ink) }
+  .chip.sel { background: var(--c-ink); color: var(--c-bg) }
 
   /* a labelled toggle row on the profile page */
   .sw { display: flex; align-items: center; gap: 12px; padding: 9px 0; font-size: 13px; cursor: pointer }
