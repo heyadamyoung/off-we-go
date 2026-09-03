@@ -34,7 +34,9 @@
 
   handle {
     root * /srv
-    try_files {path} /index.html
+    # {path}/ lets a real directory serve its own index.html (the /adhoc/
+    # install page) instead of falling through to the app shell.
+    try_files {path} {path}/ /index.html
     file_server
   }
 
