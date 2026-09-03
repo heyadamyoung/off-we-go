@@ -11,7 +11,6 @@ export default function SegmentChain({
   now,
   canEdit,
   onEdit,
-  onAdd,
   onShowGate,
   onAttach,
 }: {
@@ -19,28 +18,19 @@ export default function SegmentChain({
   now: number
   canEdit: boolean
   onEdit: (segment: Segment) => void
+  /** taken by the Travel panel's header action; the chain itself never adds */
   onAdd: () => void
   onShowGate: (segment: Segment) => void
   onAttach: (segment: Segment, file: File) => void
 }) {
   const picking = useRef<Segment | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  if (!segments.length && !canEdit) return null
+  if (!segments.length) return null
 
   const verdictWord = { roomy: 'roomy', tight: 'tight', short: 'too short' } as const
 
   return (
     <section className="mb-4">
-      <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="m-0 text-[11px] font-extrabold uppercase tracking-[.12em] text-faint">
-          Getting there
-        </h3>
-        {canEdit && (
-          <button className="mini" onClick={onAdd}>
-            Add a leg
-          </button>
-        )}
-      </div>
       <div className="flex flex-col gap-2">
         {segments.map((segment, index) => {
           const previous = segments[index - 1]

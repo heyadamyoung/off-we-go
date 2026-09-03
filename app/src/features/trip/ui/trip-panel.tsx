@@ -27,7 +27,7 @@ interface PanelProps {
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>
-  /** the getting-there layer, rendered at the head of the timeline */
+  /** the getting-there chain: the Travel view is its home */
   transport?: {
     segments: Segment[]
     now: number
@@ -41,6 +41,10 @@ interface PanelProps {
 
 const HEADINGS: Record<string, [string, string]> = {
   timeline: ['Timeline', 'Every stop in order, with what everyone photographed along the way.'],
+  travel: [
+    'Getting there',
+    'Every leg of the journey — deadlines, seats and documents in one chain.',
+  ],
   photos: ['Photos', 'Everything anyone has taken on this trip, newest first.'],
   sights: ['Sights nearby', 'Places worth a detour, from where the map is looking.'],
   people: ['People', 'Who is travelling, and who is following from home.'],
@@ -56,6 +60,10 @@ export default function TripPanel(props: PanelProps) {
     ) : props.view === 'people' ? (
       <button className="mini mini-accent" onClick={props.onInvite}>
         Invite someone
+      </button>
+    ) : props.view === 'travel' && props.transport?.canEdit ? (
+      <button className="mini mini-accent" onClick={props.transport.onAdd}>
+        Add a leg
       </button>
     ) : null
 
@@ -86,6 +94,7 @@ export default function TripPanel(props: PanelProps) {
         className="flex-1 overflow-y-auto px-2 pb-4 pt-2
                       max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
         {props.view === 'timeline' && <Timeline {...props} />}
+        {props.view === 'travel' && <Travel {...props} />}
         {props.view === 'photos' && <Photos {...props} />}
         {props.view === 'sights' && <SightsList {...props.sights} />}
         {props.view === 'people' && (
@@ -128,19 +137,32 @@ function Row({
   )
 }
 
-function Timeline({ stops, photos, selected, onSelect, transport, legs }: PanelProps) {
+/* The Travel view: the chain is the whole page. The header carries the name
+   and the add action, so the chain itself is bare legs and gaps. */
+function Travel({ transport }: PanelProps) {
+  if (!transport || !transport.segments.length)
+    return (
+      <p className="hint p-4">
+        {transport?.canEdit
+          ? 'No legs yet. Add the flight or train that starts the trip.'
+          : 'No travel legs on this trip yet.'}
+      </p>
+    )
+  return (
+    <div className="px-3 pt-3">
+      <SegmentChain {...transport} />
+    </div>
+  )
+}
+
+function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
   const days = [...new Set(stops.map(stop => stop.day).filter(Boolean))]
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  if (!stops.length && !transport?.segments.length)
+  if (!stops.length)
     return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>
 
   return (
     <>
-      {transport && (transport.segments.length > 0 || transport.canEdit) && (
-        <div className="px-3 pt-3">
-          <SegmentChain {...transport} />
-        </div>
-      )}
       {days.map(day => {
         const here = stops.filter(stop => stop.day === day)
         return (

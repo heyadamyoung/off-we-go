@@ -930,7 +930,7 @@ test('the status capsule takes its own taps — the AI button must not blanket t
 
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  await page.getByRole('button', { name: 'Travel', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Getting there' })).toBeVisible()
   // The sample legs are built relative to now, so the demo's travel day is
   // forever tomorrow: the train to Schiphol, then the KLM flight home.

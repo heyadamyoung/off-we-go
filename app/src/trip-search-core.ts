@@ -3,7 +3,7 @@
    which sheet is up. That makes every view linkable and the back button do what
    people expect, and it keeps this parsing testable away from React. */
 
-export const TRIP_VIEWS = ['map', 'timeline', 'photos', 'sights', 'people'] as const
+export const TRIP_VIEWS = ['map', 'timeline', 'travel', 'photos', 'sights', 'people'] as const
 export const TRIP_SHEETS = ['add', 'settings'] as const
 export const SETTINGS_TABS = ['trip', 'people', 'phones'] as const
 export const ALL_DAYS = 'all'

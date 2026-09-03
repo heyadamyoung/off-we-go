@@ -5,6 +5,7 @@ import type { TripView } from '../../../trip-search-core'
 export const VIEWS: Array<[TripView, string, string]> = [
   ['map', 'Map', 'map'],
   ['timeline', 'Timeline', 'list'],
+  ['travel', 'Travel', 'plane'],
   ['photos', 'Photos', 'grid'],
   ['sights', 'Sights', 'star'],
   ['people', 'People', 'people'],
