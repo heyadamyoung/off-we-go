@@ -108,24 +108,28 @@ export default function useAirportIndoor({
     let gone = false
     setLoading(true)
     setFeatures(null)
+    /* The toasts deliberately outlive the view. A terminal that fails to
+       load can take most of a minute to say so, and by then the traveller
+       has zoomed away — which flips `gone` and, when it guarded the toasts
+       too, swallowed every failure they ever asked about. State updates
+       stay guarded; the news does not. */
     indoorForStop(stop)
       .then(found => {
-        if (gone) return
         if (!found.length) {
           toastRef.current('No one has mapped the inside of ' + stop.name + ' yet', 'error')
-          setStop(null)
+          if (!gone) setStop(null)
           return
         }
+        if (gone) return
         setFeatures(found)
         setLevel(defaultLevel(levelsOf(found)))
       })
       .catch(() => {
-        if (gone) return
         toastRef.current(
           'The terminal map for ' + stop.name + ' did not load — try again in a moment',
           'error',
         )
-        setStop(null)
+        if (!gone) setStop(null)
       })
       .finally(() => {
         if (!gone) setLoading(false)
