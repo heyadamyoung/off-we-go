@@ -1,6 +1,20 @@
 name: iOS Ad Hoc
 
 on:
+  # Only what ends up inside the binary, same filter as TestFlight, so the
+  # registered-device link always serves the latest app without rebuilding
+  # for server-only or Android-only changes.
+  push:
+    branches: [main]
+    paths:
+      - 'app/src/**'
+      - 'app/public/**'
+      - 'app/ios/**'
+      - 'app/capacitor.config.json'
+      - 'app/pnpm-lock.yaml'
+      - 'app/vite.config.ts'
+      - 'app/tsconfig.json'
+      - '.github/workflows/ios-adhoc.yml'
   workflow_dispatch:
 
 permissions:
@@ -8,7 +22,8 @@ permissions:
 
 concurrency:
   group: off-we-go-ios-adhoc
-  cancel-in-progress: false
+  # A flurry of pushes should leave one build, not five. The last one wins.
+  cancel-in-progress: true
 
 jobs:
   build-and-publish:
