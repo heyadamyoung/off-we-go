@@ -43,14 +43,16 @@ export function describeGroup(group, testers) {
   return `${group?.attributes?.name} (${kind}): ${people.length ? people.join(', ') : 'nobody yet'}`
 }
 
-/** One line per version train: the fossil record behind "why two versions?". */
-export function describeTrain({ version, platform, build, uploaded, expired, unknown }) {
+/** One line per version train: every build it carries, newest first — the
+    fossil record behind "why two versions?" and "why is my phone offering
+    an old build?". */
+export function describeTrain({ version, platform, builds, unknown }) {
   if (unknown) return `version ${version} (${platform}) — builds unknown, Apple refused the ask`
-  if (!build) return `version ${version} (${platform}) — no builds`
-  return (
-    `version ${version} (${platform}) — latest build ${build}, uploaded ${utc(uploaded)}` +
-    (expired ? ', expired' : '')
-  )
+  if (!builds?.length) return `version ${version} (${platform}) — no builds`
+  const listed = builds
+    .map(b => `${b.build} (${utc(b.uploaded)}${b.expired ? ', expired' : ''})`)
+    .join(', ')
+  return `version ${version} (${platform}) — builds: ${listed}`
 }
 
 /** One line per build: what it is, and who can install it. */
@@ -126,17 +128,18 @@ async function main() {
     const version = train.attributes?.version
     const latest = await api(
       `/builds?filter[app]=${app.id}&filter[preReleaseVersion.version]=` +
-        `${encodeURIComponent(version)}&sort=-uploadedDate&limit=1`,
+        `${encodeURIComponent(version)}&sort=-uploadedDate&limit=10`,
       token,
     ).catch(() => null)
-    const newest = latest?.data?.[0]
     console.log(
       describeTrain({
         version,
         platform: train.attributes?.platform,
-        build: newest?.attributes?.version,
-        uploaded: newest?.attributes?.uploadedDate,
-        expired: newest?.attributes?.expired,
+        builds: latest?.data?.map(b => ({
+          build: b.attributes?.version,
+          uploaded: b.attributes?.uploadedDate,
+          expired: b.attributes?.expired,
+        })),
         unknown: !latest,
       }),
     )

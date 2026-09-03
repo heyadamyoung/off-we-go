@@ -104,25 +104,17 @@ test('times are all said in the same zone', () => {
 
 /* The trains section exists because "why do I see two versions?" cannot be
    answered from a recent-builds window that one busy day fills entirely. */
-test('a version train names its newest build, and says when it is expired', () => {
+test('a version train lists every build it carries, expiry marked', () => {
   assert.equal(
     describeTrain({
-      version: '1.0',
+      version: '1.1',
       platform: 'IOS',
-      build: '56',
-      uploaded: '2026-09-03T16:59:00Z',
+      builds: [
+        { build: '57', uploaded: '2026-09-03T18:05:00Z' },
+        { build: '14', uploaded: '2026-09-01T20:00:00Z', expired: true },
+      ],
     }),
-    'version 1.0 (IOS) — latest build 56, uploaded 2026-09-03 16:59Z',
-  )
-  assert.match(
-    describeTrain({
-      version: '0.1',
-      platform: 'IOS',
-      build: '2',
-      uploaded: '2026-08-30T10:00:00Z',
-      expired: true,
-    }),
-    /latest build 2, uploaded 2026-08-30 10:00Z, expired/,
+    'version 1.1 (IOS) — builds: 57 (2026-09-03 18:05Z), 14 (2026-09-01 20:00Z, expired)',
   )
   assert.equal(describeTrain({ version: '1.1', platform: 'IOS' }), 'version 1.1 (IOS) — no builds')
   // A refused ask must not read as an empty train — that lie shipped once.
