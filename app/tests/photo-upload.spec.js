@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
 
+test.beforeEach(async ({ page }) => {
+  // Freeze the demo's walking traveller: layout and offline assertions need a
+  // world that holds still. Set before boot; the router strips query params.
+  await page.addInitScript(() => {
+    window.__offwegoStill = true
+  })
+})
+
 test('selected photo thumbnails reveal their location source and expected map placement', async ({
   page,
   context,

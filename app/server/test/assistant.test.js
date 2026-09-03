@@ -39,7 +39,7 @@ test('the assistant gets the conversation and a scoped token, never a data dump'
       method: 'POST',
       url: '/api/trips',
       headers: { authorization: owner },
-      payload: { title: 'Iceland loop', crew: 'The Youngs' },
+      payload: { title: 'Iceland loop', crew: 'The Explorers' },
     })
   ).json()
   await app.inject({

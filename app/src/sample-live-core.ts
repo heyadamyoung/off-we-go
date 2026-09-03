@@ -182,9 +182,16 @@ function alexFixAt(epochMs: number): LiveFix {
   }
 }
 
+/* Alex reports fifteen seconds behind Maya, always. The progress narration
+   follows whichever phone reported last — a deliberate, tested rule — and a
+   tie here made the story flip between Maya's full journey and Alex's
+   table-holding, which has no Friday in it and read as "heading to the
+   airport". Maya is the narrator; Alex is company. */
+const ALEX_LAG_MS = 15_000
+
 /** the fixes a subscribe tick delivers: where everyone is right now */
 export function sampleLiveNow(now = new Date()): LiveFix[] {
-  return [mayaFixAt(now.getTime()), alexFixAt(now.getTime())]
+  return [mayaFixAt(now.getTime()), alexFixAt(now.getTime() - ALEX_LAG_MS)]
 }
 
 /** the full backlog a page load asks for: the morning walk, the laps since */
@@ -227,7 +234,7 @@ export function sampleLiveHistory(now = new Date()): { devices: Device[]; fixes:
   for (let t = loopZeroMs; t <= nowMs; t += FIX_STEP_S * 1000) fixes.push(mayaFixAt(t))
 
   // Alex has been holding the Foodhallen table for three quarters of an hour.
-  for (let t = nowMs - 45 * 60_000; t <= nowMs; t += 60_000) fixes.push(alexFixAt(t))
+  for (let t = nowMs - 45 * 60_000; t <= nowMs - ALEX_LAG_MS; t += 60_000) fixes.push(alexFixAt(t))
 
   const devices: Device[] = [
     { id: MAYA, name: "Maya's phone", userId: 'u1', lastSeen: now },

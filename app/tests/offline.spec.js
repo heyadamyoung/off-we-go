@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
 
+test.beforeEach(async ({ page }) => {
+  // Freeze the demo's walking traveller: layout and offline assertions need a
+  // world that holds still. Set before boot; the router strips query params.
+  await page.addInitScript(() => {
+    window.__offwegoStill = true
+  })
+})
+
 /* The whole point of the offline work, asserted end to end: pull the plug and
    reload, and the app is still there with a map under it. This needs the built
    app — the shell worker is not registered in development — which is what the

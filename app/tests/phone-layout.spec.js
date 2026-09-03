@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
 
+test.beforeEach(async ({ page }) => {
+  // Freeze the demo's walking traveller: layout and offline assertions need a
+  // world that holds still. Set before boot; the router strips query params.
+  await page.addInitScript(() => {
+    window.__offwegoStill = true
+  })
+})
+
 /* A sweep rather than another one-off: every screen this app has, at the two
    phone widths that matter, checking the two faults that kept being reported —
    something sticking out through the side of what contains it, and a control

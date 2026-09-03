@@ -5,6 +5,10 @@ import { test, expect } from '@playwright/test'
 
 test.describe.configure({ mode: 'parallel' })
 test.beforeEach(async ({ page }) => {
+  // Freeze the demo's walking traveller; layout assertions need stillness.
+  await page.addInitScript(() => {
+    window.__offwegoStill = true
+  })
   await page.route('https://en.wikipedia.org/**', route =>
     route.fulfill({
       contentType: 'application/json',

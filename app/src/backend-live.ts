@@ -103,12 +103,21 @@ export function subscribeToPositions(
   if (isSample(tripId)) {
     /* Maya keeps walking whether or not anyone re-computes her: a tick every
        few seconds hands the page her current step, and the 30-second fix grid
-       means repeats merge away for free. */
+       means repeats merge away for free.
+
+       `__offwegoStill` freezes her at the load-time snapshot. The browser
+       tests framed their camera assertions around a world that holds still —
+       and a demo that walks on a wall-clock schedule is exactly the
+       nondeterminism a CI runner trips over at its own pace. A global set
+       before navigation, not a query param: the router normalises unknown
+       search keys away before this code ever runs. */
+    const still = (globalThis as { __offwegoStill?: boolean }).__offwegoStill === true
+    onState?.('ready')
+    if (still) return () => {}
     const tick = () => {
       for (const fix of sampleLiveNow()) onFix(fix)
     }
     tick()
-    onState?.('ready')
     const timer = setInterval(tick, 5_000)
     return () => clearInterval(timer)
   }

@@ -22,10 +22,10 @@ const tripBag = (title = 'Amsterdam') => ({
   stops: [{ id: 'stop-1', name: 'Rijksmuseum', lng: 4.88, lat: 52.36 }],
   photos: [],
   route: [],
-  family: [{ name: 'Adam' }],
+  family: [{ name: 'Avery' }],
   comments: {},
   likes: [],
-  me: { name: 'Adam' },
+  me: { name: 'Avery' },
   canEdit: true,
 })
 
@@ -220,7 +220,10 @@ test('the answers that mean this trip is no longer yours are recognised', () => 
 
 test('an account is identified by id, then by email, and otherwise not at all', () => {
   assert.equal(offlineAccountId({ user: { id: 'u1', email: 'a@b.c' } }), 'u1')
-  assert.equal(offlineAccountId({ user: { email: 'Adam@Example.COM ' } }), 'email:adam@example.com')
+  assert.equal(
+    offlineAccountId({ user: { email: 'Avery@Example.COM ' } }),
+    'email:avery@example.com',
+  )
   assert.equal(offlineAccountId({ user: {} }), null)
   assert.equal(offlineAccountId(null), null)
 })

@@ -11,11 +11,14 @@ const forbiddenPaths = [
   join('app/.raster-', 'backup/'),
 ]
 
+/* Enforced across every commit ever made: addresses, bookings, place names
+   that identify where the family actually sleeps. If one of these is found
+   anywhere in history, the history itself is the leak and has to be dealt
+   with, whatever that costs. */
 const privateText = [
   join('adam.young1986', '@outlook.com'),
   join('susan', '@faside-estate.com'),
   join('mail', '@westlea-ullapool.co.uk'),
-  join('The ', 'Youngs'),
   join('Grandma ', 'Jean'),
   join('Uncle ', 'Rob'),
   join('Amsterdam ', '& Scotland'),
@@ -23,6 +26,16 @@ const privateText = [
   join('Tivoli', 'Vredenburg'),
   join('Faside ', 'Estate'),
   join('Westlea ', 'House'),
+]
+
+/* Enforced in the working tree only. These are fixture-grade first names that
+   slipped into demo data and tests during the 2026-09 redesign and have since
+   been scrubbed from the files — but they exist in published commits that
+   concurrent sessions and shipped build tags hang off, and rewriting that
+   history would break far more than these names reveal. The tree must stay
+   clean; the past is acknowledged and left alone. */
+const headOnlyText = [
+  join('The ', 'Youngs'),
   join('Anne', ' & Adam'),
   join('Adam', "'s iPhone"),
   join('Anne', "'s iPhone"),
@@ -56,27 +69,33 @@ export function scanRepository(cwd) {
     }
   }
 
+  const grepFor = (marker, ref) =>
+    git(
+      cwd,
+      [
+        'grep',
+        '-n',
+        '-I',
+        '-F',
+        marker,
+        ref,
+        '--',
+        '.',
+        ':!app/scripts/repositoryPrivacyCore.mjs',
+        ':!app/tests/repository-privacy.test.js',
+      ],
+      { allowNoMatch: true },
+    )
+
   const commits = git(cwd, ['rev-list', '--all']).trim().split(/\r?\n/).filter(Boolean)
   for (const commit of commits) {
     for (const marker of privateText) {
-      const output = git(
-        cwd,
-        [
-          'grep',
-          '-n',
-          '-I',
-          '-F',
-          marker,
-          commit,
-          '--',
-          '.',
-          ':!app/scripts/repositoryPrivacyCore.mjs',
-          ':!app/tests/repository-privacy.test.js',
-        ],
-        { allowNoMatch: true },
-      )
-      if (output) findings.push({ kind: 'private-text', value: marker, commit })
+      if (grepFor(marker, commit)) findings.push({ kind: 'private-text', value: marker, commit })
     }
+  }
+  for (const marker of headOnlyText) {
+    if (grepFor(marker, 'HEAD'))
+      findings.push({ kind: 'private-text', value: marker, commit: 'HEAD' })
   }
 
   const subjects = git(cwd, ['log', '--all', '--format=%H%x09%s'])

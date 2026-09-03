@@ -30,6 +30,13 @@ test.beforeEach(async ({ page }, testInfo) => {
 })
 
 async function open(page) {
+  // Freeze the demo's walking traveller before the app boots: these are camera
+  // and layout regression guards, and they need a world that is not moving
+  // underneath them. A global rather than a query param — the router strips
+  // unknown search keys before the live layer could read them.
+  await page.addInitScript(() => {
+    window.__offwegoStill = true
+  })
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await expect(page.locator('.mstop')).toHaveCount(8)
