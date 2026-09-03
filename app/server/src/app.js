@@ -24,6 +24,7 @@ import { signAgentToken } from './agent-token.js'
 import { createLogtoExperienceService } from './logto-experience.js'
 import { normalizeProfileHandle } from './slugs.js'
 import { createIndoorCache } from './airport-indoor.js'
+import { createMailboxReader } from './mailbox-read.js'
 
 const normalizeEmail = value =>
   String(value || '')
@@ -214,6 +215,16 @@ export async function buildServer({
   const assistantLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const mailboxBox = mailboxTokenKey ? createSecretBox(mailboxTokenKey) : null
   const connectorReady = !!(microsoft?.clientId && mailboxBox)
+  // What the assistant reads a connected inbox through; nothing else uses it.
+  const mailboxReader = connectorReady
+    ? createMailboxReader({
+        repository,
+        box: mailboxBox,
+        microsoft,
+        fetchImpl: connectorFetch,
+        clock,
+      })
+    : null
   const presenceByTrip = new Map()
   const presenceTtlMs = 45_000
   const allowedOrigins = new Set([
@@ -725,6 +736,7 @@ export async function buildServer({
     sendInvite: sendTripInvitation,
     /* Tool edits reach watching browsers the same way route edits do. */
     announce: touched,
+    mailboxReader,
   })
 
   app.delete('/api/account', async (request, reply) => {
@@ -835,9 +847,18 @@ export async function buildServer({
     if (!trip) return reply.code(404).send({ error: 'No trip found' })
     const canEdit = ['owner', 'editor'].includes(trip.role)
     const scopes = canEdit ? ['trips:read', 'trips:write'] : ['trips:read']
+    // Told about the mailbox tools only when there is a mailbox behind them.
+    const mailboxes = mailboxReader ? await repository.listMailboxConnections(user.id) : []
     try {
       const answer = await assistant.run(
-        assistantPrompt({ user, trip, canEdit, now: clock(), messages }),
+        assistantPrompt({
+          user,
+          trip,
+          canEdit,
+          mailboxes: mailboxes.length,
+          now: clock(),
+          messages,
+        }),
         { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
       )
       return { reply: answer }

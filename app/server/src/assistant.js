@@ -39,7 +39,14 @@ export function readAssistantMessages(body) {
    an editor's agent is told it can edit and how to do so carefully; a
    viewer's agent holds a token that has no write tools, and is told so,
    rather than left to discover it mid-answer. */
-export function assistantPrompt({ user, trip, canEdit = false, now = new Date(), messages }) {
+export function assistantPrompt({
+  user,
+  trip,
+  canEdit = false,
+  mailboxes = 0,
+  now = new Date(),
+  messages,
+}) {
   return [
     'You are the travel assistant inside Off We Go, a private family trip',
     'journal. The travellers ask you anything about their trip: plans, places,',
@@ -52,6 +59,17 @@ export function assistantPrompt({ user, trip, canEdit = false, now = new Date(),
     '- get_live_positions — where the phones are right now; it takes the trip',
     '  id that get_trip returns.',
     '- list_trips — their other trips, if a question reaches beyond this one.',
+    ...(mailboxes > 0
+      ? [
+          '- search_mailbox / read_mailbox_message — this traveller’s own connected',
+          '  Outlook inbox, read-only: booking confirmations, tickets, reservation',
+          '  changes, plans sent by email. Search when a question smells of a',
+          '  booking; quote only what the question needs, never dump whole emails.',
+          ...(mailboxes > 1
+            ? ['  Several mailboxes are connected; list_mailboxes names them.']
+            : []),
+        ]
+      : []),
     ...(canEdit
       ? [
           'This traveller can edit the trip, so when they ask you to change it, do:',

@@ -248,14 +248,28 @@ function buildMcpServer({
   logger,
   clock,
   announce,
+  mailbox = null,
+  assistant = false,
 }) {
+  const mailTools = !!(assistant && mailbox)
   const server = new McpServer(
     { name: 'Off We Go Trips', version: '1.0.0' },
     {
       instructions:
-        'Use these tools to read and maintain the authenticated user’s Off We Go trips. IDs returned by get_trip are required by mutation tools.',
+        'Use these tools to read and maintain the authenticated user’s Off We Go trips. IDs returned by get_trip are required by mutation tools.' +
+        (mailTools
+          ? ' The mailbox tools read the asking traveller’s own connected inbox, read-only.'
+          : ''),
     },
   )
+  // Reader errors are written for the traveller; hand them over as-is.
+  const ask = handler => async args => {
+    try {
+      return result(await handler(args))
+    } catch (error) {
+      return toolFailure(error.message)
+    }
+  }
   /* A change made through a tool must reach the browsers watching that trip
      the same way a change made through the app does — the announce hook is
      the same one the HTTP routes fire, these tools just have to say which
@@ -333,6 +347,55 @@ function buildMcpServer({
         : toolFailure('No accessible trip was found.')
     },
   )
+  /* Mailbox tools ride ONLY the in-app assistant's agent token — never an
+     external MCP client's grant. The consent screen those clients passed
+     asked about trips; mail must not arrive on a trips scope, however
+     read-only. They sit in the read tier because a mailbox belongs to the
+     asking traveller, not to their role on a trip: a viewer's assistant may
+     read that viewer's own inbox. The reader resolves every mailbox through
+     the asking user's own rows, so the gate here is consent, not reach. */
+  if (mailTools) {
+    server.registerTool(
+      'list_mailboxes',
+      {
+        description:
+          'The mailboxes the asking traveller has connected: id, address and whether one needs reconnecting.',
+        inputSchema: z.object({}),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      ask(() => mailbox.listMailboxes(user.id)),
+    )
+    server.registerTool(
+      'search_mailbox',
+      {
+        description:
+          'Recent messages from the traveller’s connected inbox — newest first, or ranked matches when `search` is given (bookings, confirmations, plans). mailboxId is only needed when several mailboxes are connected.',
+        inputSchema: z.object({
+          mailboxId: entityId.optional(),
+          search: z.string().trim().min(1).max(200).optional(),
+          top: z.number().int().min(1).max(25).optional(),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+      ask(({ mailboxId, search, top }) =>
+        mailbox.listMessages(user.id, { mailboxId, search, top }),
+      ),
+    )
+    server.registerTool(
+      'read_mailbox_message',
+      {
+        description:
+          'One full message from the traveller’s connected inbox, as plain text, by the id search_mailbox returned.',
+        inputSchema: z.object({
+          mailboxId: entityId.optional(),
+          messageId: z.string().min(1).max(512),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+      ask(({ mailboxId, messageId }) => mailbox.readMessage(user.id, { mailboxId, messageId })),
+    )
+  }
+
   if (!scopes.includes('trips:write')) return server
 
   server.registerTool(
@@ -656,6 +719,7 @@ export async function registerMcpRoutes(
     authenticate,
     sendInvite,
     announce = null,
+    mailboxReader = null,
   },
 ) {
   const root = normalizeRoot(publicUrl)
@@ -985,6 +1049,8 @@ export async function registerMcpRoutes(
         logger: app.log,
         clock,
         announce,
+        mailbox: mailboxReader,
+        assistant: authInfo.clientId === 'wayfare-assistant',
         sendInvite: async invitation => {
           const email = invitation.email
           const now = clock().getTime()
