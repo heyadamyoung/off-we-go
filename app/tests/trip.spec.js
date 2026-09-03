@@ -151,7 +151,9 @@ test('escape closes the photo viewer without closing what is behind it', async (
   await open(page)
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
   await expect(page).toHaveURL(/view=photos/)
-  await page.locator('.fcard-photo').first().click()
+  // The film strip yields to the panel now, at every width: the panel's own
+  // grid is where a photo gets opened while a view is up.
+  await page.locator('.pgrid-photo').first().click()
   await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
 
   await page.keyboard.press('Escape')
@@ -229,8 +231,9 @@ test('a successful action shows a toast with a check mark', async ({ page }) => 
 test('a toast stays horizontally centred throughout its entrance animation', async ({ page }) => {
   await open(page)
   const positions = await page.evaluate(async () => {
+    // Follow lives only in the map controls now; the cluster's duplicate is gone.
     const button = [...document.querySelectorAll('button')].find(
-      b => b.getAttribute('aria-label') === 'Follow live position',
+      b => b.title === 'Follow the travellers',
     )
     button.click()
     const toast = await new Promise(resolve =>
@@ -420,7 +423,7 @@ test('following the travellers actually zooms in, and then holds still', async (
   await page.evaluate(() => window.__offwegoMap.jumpTo({ center: [4.75, 52.32], zoom: 9 }))
   await expect.poll(async () => (await camera()).zoom).toBeLessThan(9.5)
 
-  await page.getByRole('button', { name: 'Follow live position' }).click()
+  await page.getByRole('button', { name: 'Follow the travellers' }).click()
   await expect
     .poll(async () => (await camera()).zoom, {
       message: 'following should bring the travellers to street level',

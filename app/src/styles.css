@@ -344,6 +344,11 @@
      just short of the neighbour's slop to the sides. */
   .hitslop { position: relative }
   .hitslop::after { content: ''; position: absolute; inset: -8px -2px }
+  /* Inside a strip that scrolls sideways, the vertical slop is clipped dead
+     for tapping anyway — but it still counts as overflow, and gave the day
+     chips seven phantom pixels of up-and-down scroll. Only the sideways
+     share survives there. */
+  .fdays .hitslop::after { inset: 0 -2px }
 
   .chip {
     flex: none; display: flex; align-items: center; gap: 6px;
