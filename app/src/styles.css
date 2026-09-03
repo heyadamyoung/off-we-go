@@ -67,9 +67,13 @@
   --c-raised-2: #232A38;
   --c-line: rgb(255 255 255 / 0.08);
   --c-line-2: rgb(255 255 255 / 0.15);
-  --c-ink: #F2F4F7;
+  /* A step short of white: 16:1 on the ground instead of 17.7:1, under the
+     halation ceiling where near-white body text shimmers for astigmatic eyes. */
+  --c-ink: #E6E9EE;
   --c-muted: #99A3B2;
-  --c-faint: #78828F;
+  /* 4.5:1 on raised-2, the lightest surface faint text actually sits on —
+     the old #78828F passed on the page ground and quietly failed inside cards. */
+  --c-faint: #8791A0;
   /* One accent. Amber is the journey — the travelled trail, the live pulse,
      the active state. Everything else stays greyscale, and amber is never a
      paragraph colour: it marks, it never narrates. */
@@ -94,14 +98,18 @@
   --c-line-2: rgb(16 20 28 / 0.18);
   --c-ink: #12161F;
   --c-muted: #5B6473;
-  --c-faint: #8A93A3;
-  --c-accent: #B9741A;
+  /* Both re-derived for AA on the light ground: the old faint (#8A93A3) sat
+     at 2.6:1 — decorative-only territory — and the old accent (#B9741A) put
+     white button labels at 3.4:1. Same hues, dropped until the numbers pass:
+     faint 4.5:1 on the page, the accent 4.9:1 as text and 5.8:1 under white. */
+  --c-faint: #626B7A;
+  --c-accent: #8F5A10;
   --c-accent-bright: #D18A26;
-  --c-accent-soft: rgb(185 116 26 / 0.14);
+  --c-accent-soft: rgb(143 90 16 / 0.14);
   --c-accent-ink: #FFFFFF;
   --c-danger: #C73F3F;
   --c-shadow: 0 8px 30px rgb(16 20 28 / 0.16);
-  --c-glow: rgb(185 116 26 / 0.35);
+  --c-glow: rgb(143 90 16 / 0.35);
 }
 
 @theme inline {

@@ -135,12 +135,13 @@ for (const layer of style.layers) {
     continue
   }
   if (id.startsWith('roadname')) {
-    paint(layer, 'text-color', '#4C5665')
+    // 3.3:1 on the ground — cartography may whisper, labels still have to read.
+    paint(layer, 'text-color', '#5F6A7C')
     paint(layer, 'text-halo-color', GROUND)
     continue
   }
   if (id.startsWith('watername') || id === 'waterway_label') {
-    paint(layer, 'text-color', '#31465C')
+    paint(layer, 'text-color', '#4A6685')
     paint(layer, 'text-halo-color', GROUND)
     continue
   }
