@@ -409,6 +409,19 @@ function buildMcpServer({
       ),
     )
     register(
+      'list_mail_attachments',
+      {
+        description:
+          'The attachments on one mailbox message — id, name, type, size — so attach_mail_document can name exactly which file becomes a travel leg’s paperwork.',
+        inputSchema: z.object({
+          mailboxId: entityId.optional(),
+          messageId: z.string().min(1).max(512),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+      ask(({ mailboxId, messageId }) => mailbox.listAttachments(user.id, { mailboxId, messageId })),
+    )
+    register(
       'read_mailbox_message',
       {
         description:
@@ -992,6 +1005,43 @@ function buildMcpServer({
     }),
   )
 
+  register(
+    'remove_member',
+    {
+      description:
+        'Remove a member from a trip the authenticated user owns. Their photos and comments stay; their access ends. Member ids come from get_trip.',
+      inputSchema: z.object({ tripId: entityId, profileId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('people', async ({ tripId, profileId }) =>
+      (await repository.removeMember(user, tripId, profileId))
+        ? result({ removed: true, profileId })
+        : toolFailure('The member was not found, or only the owner can remove members.'),
+    ),
+  )
+  register(
+    'remove_document',
+    {
+      description:
+        'Remove a document from a travel leg — a superseded boarding pass, a wrong attachment. The file is deleted from storage.',
+      inputSchema: z.object({ tripId: entityId, documentId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('segments', async ({ tripId, documentId }) => {
+      const removed = await repository.deleteSegmentDocument(user, tripId, documentId)
+      if (!removed)
+        return toolFailure('The document was not found or is not editable by this user.')
+      if (fileStore) {
+        try {
+          await fileStore.remove(removed.storagePath)
+          await repository.completeFileDeletion?.(removed.storagePath)
+        } catch (error) {
+          await repository.failFileDeletion?.(removed.storagePath, error.message, clock())
+        }
+      }
+      return result({ removed: true, documentId })
+    }),
+  )
   register(
     'revoke_invitation',
     {
