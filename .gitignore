@@ -21,3 +21,5 @@ app/m2-*.png
 app/live.png
 app/audit*.mjs
 app/*.tmp.mjs
+app/.tanstack/
+/*.jpeg
