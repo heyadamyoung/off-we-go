@@ -90,6 +90,9 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_METRICS_EXPORTER: none
       OTEL_LOGS_EXPORTER: none
+      # No cloud-metadata probing: the default detectors wait out a timeout
+      # against GCP/AWS endpoints that will never answer this VPS.
+      OTEL_NODE_RESOURCE_DETECTORS: env,host,os
       REPLAY_DIR: /data/replays
     volumes:
       - ./data/uploads:/data/uploads
@@ -101,7 +104,11 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      # NODE_OPTIONS is cleared: the probe inherits the container env, and
+      # loading the whole OTel SDK per probe blew the five-second budget —
+      # the server listened in seconds while its own healthcheck timed out,
+      # and the deploy rolled a healthy release back. Loki told the story.
+      test: ["CMD-SHELL", "NODE_OPTIONS='' node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12
