@@ -247,7 +247,15 @@ export async function buildServer({
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['content-type', 'authorization', 'x-wayfare-experience'],
+    // traceparent/tracestate: the native shells call cross-origin, and their
+    // Faro spans propagate context so a tap and its SQL share one trace.
+    allowedHeaders: [
+      'content-type',
+      'authorization',
+      'x-wayfare-experience',
+      'traceparent',
+      'tracestate',
+    ],
     maxAge: 86400,
   })
   await app.register(formbody)

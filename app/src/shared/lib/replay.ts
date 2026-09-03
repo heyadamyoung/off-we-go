@@ -16,8 +16,9 @@ const SESSION_CAP_EVENTS = 60_000 // a long session ends quietly, not hugely
 let started = false
 
 export function startReplay() {
-  if (started || !import.meta.env.PROD) return
-  if (typeof window === 'undefined' || !/^https:/.test(window.location.origin)) return
+  // The shells record too: uploads ride authClient, whose base is absolute
+  // in a native build, so the webview's odd origin never matters here.
+  if (started || !import.meta.env.PROD || typeof window === 'undefined') return
   started = true
 
   const begin = async () => {
