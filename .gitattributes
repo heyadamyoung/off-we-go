@@ -1,1 +1,4 @@
 *.sh text eol=lf
+# One line-ending story on every platform: the repo is LF, the checkout is LF.
+# Git decides text vs binary on its own; nothing here forces a binary file.
+* text=auto eol=lf
