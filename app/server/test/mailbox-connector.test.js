@@ -84,7 +84,10 @@ test('connecting a mailbox sends you to Microsoft and brings back a usable conne
     link.searchParams.get('redirect_uri'),
     'https://offwego.example.com/api/connectors/outlook/callback',
   )
-  assert.equal(link.searchParams.get('prompt'), 'select_account')
+  /* No forced account picker on a first connection: Microsoft's /common
+     endpoint misroutes fresh-session personal accounts when select_account is
+     sent, so the first sign-in lets HRD route the typed identity naturally. */
+  assert.equal(link.searchParams.get('prompt'), null)
   assert.ok(link.searchParams.get('code_challenge'), 'PKCE, because the code alone is not enough')
 
   assert.equal(callback.statusCode, 302)
@@ -95,6 +98,19 @@ test('connecting a mailbox sends you to Microsoft and brings back a usable conne
   assert.equal(listed.connections.length, 1)
   assert.equal(listed.connections[0].email, 'adam@outlook.com')
   assert.equal(listed.connections[0].needsReconnect, false)
+})
+
+test('a second mailbox gets the account picker; the first never does', async () => {
+  const { app, repository } = await server()
+  SESSION.value = await authenticate(repository, 'owner@example.com')
+
+  /* Without the picker, Microsoft silently reconnects the first account — and
+     by the second connection a Microsoft session exists, which is the one
+     condition under which select_account routes personal accounts correctly. */
+  await connect(app)
+  const { started } = await connect(app)
+  const link = new URL(started.json().authorizeUrl)
+  assert.equal(link.searchParams.get('prompt'), 'select_account')
 })
 
 /* The screen shows which mailbox is connected; it must never show what opens

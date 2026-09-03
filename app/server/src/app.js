@@ -1519,6 +1519,18 @@ export async function buildServer({
       redirectTo: typeof request.body?.redirectTo === 'string' ? request.body.redirectTo : null,
       expiresAt: new Date(clock().getTime() + 10 * 60_000),
     })
+    /* prompt=select_account only once a mailbox is already connected.
+
+       Microsoft's /common endpoint currently misroutes personal accounts when
+       the account picker is forced on a fresh browser session — Home Realm
+       Discovery sends them down the organisational path and refuses them with
+       "you can't sign in here with a personal account". The first connection
+       is exactly that fresh-session case, so it goes without the prompt and
+       lets Microsoft authenticate whatever identity is typed. A SECOND mailbox
+       still needs the picker (without it Microsoft silently reconnects the
+       first account) — and by then a Microsoft session cookie exists, which is
+       precisely the condition under which the picker routes correctly. */
+    const connected = await repository.listMailboxConnections(user.id)
     return {
       authorizeUrl: authorizeUrl({
         clientId: microsoft.clientId,
@@ -1526,10 +1538,7 @@ export async function buildServer({
         redirectUri: connectorRedirect,
         state,
         challenge: challengeFor(verifier),
-        // Always offer the account picker: connecting a second mailbox is the
-        // normal case, and without this Microsoft signs you into the first one
-        // again without asking.
-        prompt: 'select_account',
+        prompt: connected.length ? 'select_account' : undefined,
       }),
     }
   })
