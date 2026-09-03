@@ -128,7 +128,11 @@ if [[ -z "$deployment_domain" ]]; then
   echo "WAYFARE_DOMAIN is missing from $APP_ROOT/.env." >&2
   exit 67
 fi
-curl --fail --silent --show-error --retry 12 --retry-delay 5 \
+# --retry-all-errors, because --retry alone only covers curl's built-in
+# transient list (408, 429, the classic 5xx). Cloudflare answers 521 while
+# the web container's host port rebinds during the up, which is not on that
+# list — so a one-second flap failed the whole deploy and rolled it back.
+curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
   "https://${deployment_domain}/api/health" >/dev/null
 bash -n "$APP_ROOT/deploy/github-deploy.sh"
 install -o root -g root -m 755 \
