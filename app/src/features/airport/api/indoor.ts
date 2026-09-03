@@ -19,6 +19,10 @@ const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
+  // VK Maps: planet-wide and free; last because its proxy cuts ~30s queries.
+  // The survey of the free-mirror world lives with the server's copy of this
+  // list in server/src/airport-indoor.js — read it before adding one here.
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
 // The version in the prefix retires caches from before routes and landmarks,

@@ -13,6 +13,19 @@ const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
+  /* VK Maps' public instance: planet-wide, free, no stated limits, big iron —
+     but its front proxy cuts queries at about thirty seconds, so the very
+     largest terminals (Pearson wants 24-33) can 504 here while the three
+     above finish. Last for that reason.
+
+     The rest of the free world, surveyed 2026-09-03, for whoever next goes
+     looking: kumi still answers but has left the wiki's public list;
+     osm.jp's TLS certificate is expired; and the regional instances
+     (osm.ch and friends) are traps for this file — they answer 200 with
+     EMPTY results for anywhere outside their extract, and a cache would
+     remember that emptiness as "nobody mapped this airport" for a month.
+     Everything else on the wiki wants an API key. */
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
 function queryFor(lng, lat, radius = 1500) {
