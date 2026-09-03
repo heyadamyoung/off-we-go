@@ -88,6 +88,15 @@ const mailboxRow = row =>
 
 export async function createPostgresRepository({ databaseUrl, adminEmail }) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
+  /* An idle client losing its connection is Tuesday: Postgres restarted, a
+     deploy recreated it, the network blinked. The pool discards the client
+     and dials fresh on the next query — but only if somebody is listening.
+     Without this handler the event is FATAL: node kills the process, the
+     fresh api dies inside its deploy health window, and the release rolls
+     back "unhealthy" with nothing wrong. Loki caught it doing exactly that. */
+  pool.on('error', error => {
+    console.warn('postgres idle client error (survived):', error.message)
+  })
   const admin = String(adminEmail || '')
     .trim()
     .toLowerCase()
