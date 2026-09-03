@@ -1894,6 +1894,7 @@ export async function buildServer({
        us rather than on whoever was walking. */
     const retryAfter = indoorLimiter.hit(clientAddress(request), indoorRateLimit)
     if (retryAfter) {
+      request.log.info({ client: clientAddress(request) }, 'airport indoor rate limited')
       return reply
         .header('retry-after', String(retryAfter))
         .code(429)
@@ -1908,7 +1909,10 @@ export async function buildServer({
         ? await repository.listAirportWalkways(lng, lat).catch(() => [])
         : []
       return mergeWalkways(body, walkways)
-    } catch {
+    } catch (error) {
+      // The night the gates vanished per-phone there was no record of what
+      // anyone was served; this line is that record.
+      request.log.warn({ err: error, lng, lat }, 'airport indoor fetch failed')
       return reply.code(502).send({ error: 'The map source is not answering' })
     }
   })

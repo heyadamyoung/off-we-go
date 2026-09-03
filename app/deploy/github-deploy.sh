@@ -55,7 +55,7 @@ done < <(find "$staged_app/deploy" -type f -name '*.sh' -print0)
 # Everything the two image builds read. A release that omits one of these
 # is rejected here, with the missing name, rather than failing minutes
 # later as an unreadable docker cache-key error.
-for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile; do
+for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile deploy/alloy.config; do
   if [[ ! -e "$staged_app/$required_path" ]]; then
     echo "Release is missing app/$required_path." >&2
     exit 66

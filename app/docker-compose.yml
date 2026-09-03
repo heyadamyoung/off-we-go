@@ -118,9 +118,38 @@ services:
       api:
         condition: service_healthy
 
+  # Log shipping to Grafana Cloud Loki. The night the family's gates vanished
+  # per-phone, there was no record of what the server answered anyone — this
+  # is that record. Reads container stdout off the Docker socket, read-only,
+  # and sleeps politely when no token is configured, so the stack deploys the
+  # same with observability on or off.
+  alloy:
+    image: grafana/alloy:v1.5.1
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - >
+        if [ -z "$$GRAFANA_LOKI_TOKEN" ]; then
+        echo "GRAFANA_LOKI_TOKEN is not set; log shipping is off.";
+        sleep infinity;
+        fi;
+        exec alloy run --disable-reporting --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    environment:
+      # The stack's own coordinates, read off its Loki datasource; only the
+      # token is secret, and it rides the release pipeline like the others.
+      GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL:-https://logs-prod-018.grafana.net/loki/api/v1/push}
+      GRAFANA_LOKI_USER: ${GRAFANA_LOKI_USER:-1619648}
+      GRAFANA_LOKI_TOKEN: ${GRAFANA_LOKI_TOKEN:-}
+    volumes:
+      - ./deploy/alloy.config:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+
 volumes:
   postgres_data:
   logto_postgres_data:
   codex_data:
   caddy_data:
   caddy_config:
+  alloy_data:

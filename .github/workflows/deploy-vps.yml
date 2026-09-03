@@ -119,6 +119,7 @@ jobs:
           MS_TENANT: ${{ secrets.MS_TENANT }}
           MAILBOX_TOKEN_KEY: ${{ secrets.MAILBOX_TOKEN_KEY }}
           CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
+          GRAFANA_LOKI_TOKEN: ${{ secrets.GRAFANA_LOKI_TOKEN }}
           # Not secrets, just knobs — but nobody edits the box by hand, so they
           # ride the same pipeline. Empty values are skipped by merge-env.sh,
           # which leaves the compose defaults (luna, xhigh) in charge.
@@ -132,6 +133,7 @@ jobs:
             echo "MS_TENANT=$MS_TENANT"
             echo "MAILBOX_TOKEN_KEY=$MAILBOX_TOKEN_KEY"
             echo "CODEX_AUTH_JSON_B64=$CODEX_AUTH_JSON_B64"
+            echo "GRAFANA_LOKI_TOKEN=$GRAFANA_LOKI_TOKEN"
             echo "WAYFARE_AI_MODEL=$WAYFARE_AI_MODEL"
             echo "WAYFARE_AI_REASONING=$WAYFARE_AI_REASONING"
           } > app/deploy/release.env
