@@ -63,13 +63,16 @@ test('a build nobody has released says so plainly', () => {
 test('a group says who is in it, so an invitation can be checked rather than assumed', () => {
   const group = { attributes: { name: 'Wayfare Friends & Family', isInternalGroup: false } }
   const testers = [
-    { attributes: { email: 'steve.lazurko@gmail.com' } },
-    { attributes: { email: 'adam@example.com' } },
+    { attributes: { email: 'steve.lazurko@gmail.com', state: 'INVITED' } },
+    { attributes: { email: 'adam@example.com', state: 'INSTALLED' } },
+    // Older API answers carry no state; the address must still print.
+    { attributes: { email: 'kid@example.com' } },
   ]
 
   assert.equal(
     describeGroup(group, testers),
-    'Wayfare Friends & Family (external): adam@example.com, steve.lazurko@gmail.com',
+    'Wayfare Friends & Family (external): adam@example.com (installed),' +
+      ' kid@example.com, steve.lazurko@gmail.com (invited)',
   )
   assert.match(describeGroup(group, []), /nobody yet$/)
 })

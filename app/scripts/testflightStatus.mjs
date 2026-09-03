@@ -36,9 +36,16 @@ export const utc = value => `${new Date(value).toISOString().replace('T', ' ').s
 export const readable = (state, audience = 'external') =>
   BY_AUDIENCE[audience]?.[state] || READABLE[state] || state || 'unknown'
 
-/** Who is in a group, so "did the invitation land?" has an answer. */
+/** Who is in a group, so "did the invitation land?" has an answer. Apple
+    tracks each tester's state — invited is an email sitting unopened,
+    accepted or installed is a person who can actually receive builds. */
 export function describeGroup(group, testers) {
-  const people = (testers || []).map(tester => tester.attributes?.email || tester.id).sort()
+  const people = (testers || [])
+    .map(tester => {
+      const state = tester.attributes?.state
+      return (tester.attributes?.email || tester.id) + (state ? ` (${state.toLowerCase()})` : '')
+    })
+    .sort()
   const kind = group?.attributes?.isInternalGroup ? 'internal' : 'external'
   return `${group?.attributes?.name} (${kind}): ${people.length ? people.join(', ') : 'nobody yet'}`
 }
