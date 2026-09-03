@@ -17,6 +17,7 @@ import { MapChrome, MapControls, NowCapsule, ScopeToggle, TripTitle } from './tr
 import { TripCluster } from './trip-cluster'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
+import { MakeIt, SegmentEditor } from '../../transport'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
@@ -66,6 +67,7 @@ function Trip({
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
     progressCopy, latestGpsPosition, liveStop, liveDay, liveStops,
+    transport, segmentEditing, setSegmentEditing, clock, showGate,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, removePhoto, removeComment,
     indoor, editing, routeDraft, places, startEditing, pickPlace, onStopMove,
@@ -182,6 +184,25 @@ function Trip({
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
+          transport={{
+            segments: transport.segments,
+            now: clock,
+            canEdit,
+            onEdit: segment => setSegmentEditing(segment.id),
+            onAdd: () => setSegmentEditing('new'),
+            onShowGate: showGate,
+            onAttach: (segment, file) => transport.attachDocument(segment.id, file, {}),
+          }}
+        />
+      )}
+
+      {segmentEditing !== null && (
+        <SegmentEditor
+          segment={transport.segments.find(s => s.id === segmentEditing) || null}
+          people={family}
+          onSave={transport.saveSegment}
+          onDelete={transport.removeSegment}
+          onClose={() => setSegmentEditing(null)}
         />
       )}
 
@@ -198,6 +219,15 @@ function Trip({
         {/* A demo has no phone to wait for: the sample trip never shows the
             GPS nudge, which read as something broken in the one trip everyone
             sees first. */}
+        {!panelOpen && (
+          <MakeIt
+            segments={transport.segments}
+            travellers={markers
+              .filter(marker => !marker.stale)
+              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
+            now={clock}
+          />
+        )}
         {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
           <NowCapsule
             text={progressCopy.text}

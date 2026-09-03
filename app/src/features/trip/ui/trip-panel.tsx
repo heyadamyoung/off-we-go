@@ -2,8 +2,10 @@ import type { ReactNode } from 'react'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { SightsList, type SightsListProps } from '../../sights'
+import { SegmentChain } from '../../transport'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
+import type { Segment } from '../../../segments-core'
 import type { Person, Stop, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
 
@@ -22,6 +24,16 @@ interface PanelProps {
   /** absent for read-only viewers — the button goes with it */
   onAddPhotos?: () => void
   sights: SightsListProps
+  /** the getting-there layer, rendered at the head of the timeline */
+  transport?: {
+    segments: Segment[]
+    now: number
+    canEdit: boolean
+    onEdit: (segment: Segment) => void
+    onAdd: () => void
+    onShowGate: (segment: Segment) => void
+    onAttach: (segment: Segment, file: File) => void
+  }
 }
 
 const HEADINGS: Record<string, [string, string]> = {
@@ -113,14 +125,19 @@ function Row({
   )
 }
 
-function Timeline({ stops, photos, selected, onSelect }: PanelProps) {
+function Timeline({ stops, photos, selected, onSelect, transport }: PanelProps) {
   const days = [...new Set(stops.map(stop => stop.day).filter(Boolean))]
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  if (!stops.length)
+  if (!stops.length && !transport?.segments.length)
     return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>
 
   return (
     <>
+      {transport && (transport.segments.length > 0 || transport.canEdit) && (
+        <div className="px-3 pt-3">
+          <SegmentChain {...transport} />
+        </div>
+      )}
       {days.map(day => {
         const here = stops.filter(stop => stop.day === day)
         return (

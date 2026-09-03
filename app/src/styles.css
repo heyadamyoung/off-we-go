@@ -85,6 +85,9 @@
   --c-accent-soft: rgb(240 166 60 / 0.16);
   --c-accent-ink: #2A1A05;
   --c-danger: #F06A6A;
+  /* travel verdicts: on pace, and cutting it close */
+  --c-ok: #4ADE80;
+  --c-tight: #FF9A6B;
   --c-shadow: 0 8px 30px rgb(0 0 0 / 0.45);
   --c-glow: rgb(255 180 84 / 0.5);
 }
@@ -111,6 +114,8 @@
   --c-accent-soft: rgb(143 90 16 / 0.14);
   --c-accent-ink: #FFFFFF;
   --c-danger: #C73F3F;
+  --c-ok: #067647;
+  --c-tight: #B4540A;
   --c-shadow: 0 8px 30px rgb(16 20 28 / 0.16);
   --c-glow: rgb(143 90 16 / 0.35);
 }
@@ -145,6 +150,8 @@
   --color-accent-soft: var(--c-accent-soft);
   --color-accent-ink: var(--c-accent-ink);
   --color-danger: var(--c-danger);
+  --color-ok: var(--c-ok);
+  --color-tight: var(--c-tight);
 
   --shadow-panel: var(--c-shadow);
   --shadow-glow: 0 0 18px var(--c-glow);

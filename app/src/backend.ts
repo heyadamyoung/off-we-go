@@ -16,6 +16,7 @@ import {
 } from './offline-trip-core'
 
 export { authClient, functionsUrl, hasBackend } from './backend-base'
+export * from './backend-segments'
 export * from './backend-social'
 export * from './backend-live'
 import type {
