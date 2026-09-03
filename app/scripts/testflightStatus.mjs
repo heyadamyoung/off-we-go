@@ -68,7 +68,11 @@ export function describeBuild({
   // null means the ask failed — not the same claim as "assigned to nobody",
   // and conflating them once had this report telling the owner the family
   // was cut off while every build was reaching them.
-  const where = groups ? (groups.length ? groups.join(', ') : 'no external group') : 'groups unknown'
+  const where = groups
+    ? groups.length
+      ? groups.join(', ')
+      : 'no external group'
+    : 'groups unknown'
   return (
     `${release || '?'} build ${version} (${when})  processing: ${readable(processingState, 'internal')}` +
     `  internal: ${readable(internalState, 'internal')}` +
@@ -148,10 +152,9 @@ async function main() {
   let membershipKnown = true
   for (const group of groups?.data || []) {
     if (group.attributes?.isInternalGroup) continue
-    const linked = await api(
-      `/betaGroups/${group.id}/relationships/builds?limit=200`,
-      token,
-    ).catch(() => null)
+    const linked = await api(`/betaGroups/${group.id}/relationships/builds?limit=200`, token).catch(
+      () => null,
+    )
     if (!linked) {
       membershipKnown = false
       continue
