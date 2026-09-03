@@ -24,6 +24,7 @@ import { signAgentToken } from './agent-token.js'
 import { createLogtoExperienceService } from './logto-experience.js'
 import { normalizeProfileHandle } from './slugs.js'
 import { createIndoorCache } from './airport-indoor.js'
+import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 
 const normalizeEmail = value =>
@@ -1899,7 +1900,14 @@ export async function buildServer({
         .send({ error: 'Too many airport lookups' })
     }
     try {
-      return await indoor.get(lng, lat)
+      const body = await indoor.get(lng, lat)
+      /* Hand-laid walkways ride along at serve time, not cache-fill time, so
+         a segment the assistant adds routes immediately instead of waiting
+         out the month-long Overpass cache. */
+      const walkways = repository.listAirportWalkways
+        ? await repository.listAirportWalkways(lng, lat).catch(() => [])
+        : []
+      return mergeWalkways(body, walkways)
     } catch {
       return reply.code(502).send({ error: 'The map source is not answering' })
     }

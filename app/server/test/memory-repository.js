@@ -18,6 +18,7 @@ const profileShape = profile => ({
 })
 
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
+  const walkways = new Map()
   const fakeUuid = (namespace, value) =>
     `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
@@ -871,6 +872,31 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const uniquePaths = [...new Set(paths.filter(Boolean))]
       for (const path of uniquePaths) fileDeletionQueue.set(path, new Date(0))
       return uniquePaths
+    },
+
+    /* ---- hand-laid airport walkways: the postgres contract, in a Map ---- */
+    async addAirportWalkway({ userId, level, name, points }) {
+      const id = 'walkway-' + (walkways.size + 1)
+      const row = {
+        id,
+        lng: points[0][0],
+        lat: points[0][1],
+        level: level || '0',
+        name: name || null,
+        points,
+        createdBy: userId || null,
+        createdAt: new Date(),
+      }
+      walkways.set(id, row)
+      return row
+    },
+    async listAirportWalkways(lng, lat) {
+      return [...walkways.values()].filter(
+        row => Math.abs(row.lng - lng) < 0.03 && Math.abs(row.lat - lat) < 0.03,
+      )
+    },
+    async deleteAirportWalkway(id) {
+      return walkways.delete(id)
     },
   }
 }

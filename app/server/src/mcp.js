@@ -643,6 +643,76 @@ function buildMcpServer({
     ),
   )
 
+  /* Hand-laid airport walkways: assistant-only like the mailbox tools, but
+     in the write tier — they change what every traveller's gate routes walk,
+     which is an editor's kind of power. The rows become corridor ways in the
+     indoor payload; the client's island-stitcher welds them to the mapped
+     network, so points need not touch OSM's coordinates exactly. */
+  if (assistant) {
+    server.registerTool(
+      'add_airport_walkway',
+      {
+        description:
+          'Lay a walking segment inside an airport where OSM has no corridor, so gate-to-gate routes stop refusing. Ordered [longitude, latitude] points, all within the same terminal, on one OSM level ("0", "1", or "0;1" spanning both).',
+        inputSchema: z.object({
+          points: z
+            .array(z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]))
+            .min(2)
+            .max(200),
+          level: z
+            .string()
+            .trim()
+            .regex(/^-?\d+(;-?\d+)*$/)
+            .optional(),
+          name: z.string().trim().max(120).optional(),
+        }),
+        annotations: { destructiveHint: false, openWorldHint: false },
+      },
+      ask(async ({ points, level, name }) => {
+        if (!repository.addAirportWalkway) throw new Error('This server cannot store walkways.')
+        const [first] = points
+        if (points.some(p => Math.abs(p[0] - first[0]) > 0.03 || Math.abs(p[1] - first[1]) > 0.03))
+          throw new Error('Walkway points must all sit within the same airport (~3km).')
+        return repository.addAirportWalkway({
+          userId: user.id,
+          level: level || '0',
+          name: name || null,
+          points,
+        })
+      }),
+    )
+    server.registerTool(
+      'list_airport_walkways',
+      {
+        description:
+          'The hand-laid walking segments near an airport position — what add_airport_walkway has added, with ids for removal.',
+        inputSchema: z.object({
+          lng: z.number().min(-180).max(180),
+          lat: z.number().min(-90).max(90),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      ask(async ({ lng, lat }) => {
+        if (!repository.listAirportWalkways) throw new Error('This server cannot store walkways.')
+        return repository.listAirportWalkways(lng, lat)
+      }),
+    )
+    server.registerTool(
+      'remove_airport_walkway',
+      {
+        description: 'Remove a hand-laid walking segment by the id list_airport_walkways returned.',
+        inputSchema: z.object({ walkwayId: entityId }),
+        annotations: { destructiveHint: true, openWorldHint: false },
+      },
+      ask(async ({ walkwayId }) => {
+        if (!repository.deleteAirportWalkway) throw new Error('This server cannot store walkways.')
+        if (!(await repository.deleteAirportWalkway(walkwayId)))
+          throw new Error('No walkway has that id.')
+        return { removed: true, walkwayId }
+      }),
+    )
+  }
+
   server.registerTool(
     'list_invitations',
     {

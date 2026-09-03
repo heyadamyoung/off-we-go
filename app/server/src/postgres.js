@@ -51,6 +51,21 @@ const camelTrip = value => ({
   endsOn: value.ends_on ? String(value.ends_on).slice(0, 10) : null,
 })
 
+/* One shape for a hand-laid airport walkway. */
+const walkwayRow = row =>
+  row
+    ? {
+        id: row.id,
+        lng: row.lng,
+        lat: row.lat,
+        level: row.level,
+        name: row.name,
+        points: row.points,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+      }
+    : null
+
 /* One shape for a connected mailbox, whatever the column names underneath. */
 const mailboxRow = row =>
   row
@@ -163,6 +178,31 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         await client.query('select pg_advisory_unlock(9152027)').catch(() => {})
         client.release()
       }
+    },
+
+    /* ---- hand-laid airport walkways -----------------------------------
+       Segments the assistant adds where OSM has no corridor; served merged
+       into the indoor payload for any query within ~3km of their anchor. */
+    async addAirportWalkway({ userId, level, name, points }) {
+      const [lng, lat] = points[0]
+      const result = await pool.query(
+        `insert into airport_walkways(lng,lat,level,name,points,created_by)
+        values($1,$2,$3,$4,$5,$6) returning *`,
+        [lng, lat, level || '0', name || null, JSON.stringify(points), userId || null],
+      )
+      return walkwayRow(result.rows[0])
+    },
+    async listAirportWalkways(lng, lat) {
+      const result = await pool.query(
+        `select * from airport_walkways
+        where abs(lng-$1) < 0.03 and abs(lat-$2) < 0.03 order by created_at`,
+        [lng, lat],
+      )
+      return result.rows.map(walkwayRow)
+    },
+    async deleteAirportWalkway(id) {
+      const result = await pool.query('delete from airport_walkways where id=$1', [id])
+      return result.rowCount > 0
     },
 
     /* The durable half of the airport-indoor cache: raw Overpass JSON by
