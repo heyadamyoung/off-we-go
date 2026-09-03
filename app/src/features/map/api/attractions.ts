@@ -67,6 +67,8 @@ const KINDS: Array<[string, RegExp]> = [
     /theatre|theater|concert hall|opera house|cinema|arts centre|arts center|stadium|arena|square|plein|piazza|market square/i,
   ],
   ['food', /distillery|brewery|winery|restaurant|market|food hall|pub\b|inn\b/i],
+  // Airports carry their own indoor maps, which makes them somewhere to go.
+  ['transit', /\bairport\b|\bairfield\b|luchthaven/i],
   [
     'fun',
     /zoo|aquarium|theme park|amusement|observatory|planetarium|lighthouse|windmill|smock mill|tower mill|watermill|bridge|pier|viewpoint|funicular|cable car|pleasure/i,
@@ -78,7 +80,7 @@ const KINDS: Array<[string, RegExp]> = [
 const kindOf = (text: string) => (KINDS.find(([, re]) => re.test(text)) || ['place'])[0]
 
 // Worth a pin even when the whole country is on screen.
-const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun'])
+const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun', 'transit'])
 
 /* Things geotagged like places that are not places to go. Settlements are the
    big one: every village in Scotland has an article, and a map peppered with
@@ -123,8 +125,8 @@ const NOT_AN_ATTRACTION = new RegExp(
     'roundabout',
     'motorway',
     'junction',
-    'airport',
-    'airfield',
+    // airports were once in this list; they left it when the app learned to
+    // draw their insides — an airport is a destination here, not a road
     'ferry terminal',
     'car park',
     // buildings named only as buildings

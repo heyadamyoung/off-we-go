@@ -25,15 +25,18 @@
    pass refreshes rather than duplicates, and a run that dies halfway can simply
    be started again.
    =========================================================================== */
+/* Run through tsx (the deploy does): the classifier lives with the map code
+   in TypeScript now — one classifier, whether a browser walks a view live or
+   this script walks a country into the table. The old '../src/places.js'
+   import outlived that move, which is why no database ever got seeded. */
 import pg from 'pg'
 import {
-  cellsCovering,
   attractionsInCell,
-  isHeadline,
-  setApiHeaders,
-  setApiThrottle,
+  cellsCovering,
   extractsFor,
-} from '../src/places.js'
+  isHeadline,
+} from '../src/features/map/api/attractions.ts'
+import { setApiHeaders, setApiThrottle } from '../src/shared/api/wikipedia-client.ts'
 
 // Wikimedia asks scripts to identify themselves, and refuses them otherwise.
 setApiHeaders({ 'User-Agent': 'Off We Go/1.0 (family trip viewer; support@threadway.ai)' })

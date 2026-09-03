@@ -136,4 +136,20 @@ install -o root -g root -m 755 \
 printf '%s\n' "$release_sha" > .deployed-sha
 trap - ERR
 
+# One-time: a fresh database holds no attractions until the seeder has walked
+# the default regions, and the seeder can only run here, next to the database.
+# Detached — Wikipedia at two calls a second takes a while — and gated on the
+# table being empty, so an ordinary deploy never walks it again. The throwaway
+# container installs dev dependencies (tsx) into the release tree; the next
+# deploy's rsync --delete sweeps that away.
+attractions_count="$(docker compose exec -T db psql -U wayfare -d wayfare -Atc \
+  'select count(*) from attractions' 2>/dev/null || echo unknown)"
+if [[ "$attractions_count" == "0" ]]; then
+  echo "Attractions table is empty; seeding the default regions in the background."
+  setsid nohup docker compose run --rm --no-deps --user root \
+    -v "$APP_ROOT:/seed" -w /seed --entrypoint sh api \
+    -c 'corepack enable && pnpm install --frozen-lockfile && pnpm exec tsx scripts/seed-attractions.mjs' \
+    > "$APP_ROOT/seed-attractions.log" 2>&1 < /dev/null &
+fi
+
 echo "Off We Go deployed at $release_sha."

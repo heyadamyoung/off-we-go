@@ -14,6 +14,10 @@ import {
 test('an airport is recognised by its name or keywords, a hotel is not', () => {
   assert.equal(isAirportStop({ name: 'Schiphol Airport', kw: 'airport,terminal' }), true)
   assert.equal(isAirportStop({ name: 'AMS', kw: 'airport' }), true)
+  // The plane icon is a declaration all by itself: real stops get named
+  // "Schiphol" or "EDI", which no wording regex can catch.
+  assert.equal(isAirportStop({ name: 'Schiphol', icon: 'plane' }), true)
+  assert.equal(isAirportStop({ name: 'Schiphol' }), false)
   assert.equal(isAirportStop({ name: 'Aéroport de Paris-Charles-de-Gaulle' }), true)
   assert.equal(isAirportStop({ name: 'Hotel Jakarta', kw: 'hotel,lobby' }), false)
   // "terminal" alone is a ferry terminal as often as an airport

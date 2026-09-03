@@ -36,6 +36,10 @@ const AIRPORT = /\bairport\b|\bairfield\b|luchthaven|flughafen|a[eé]roport|aero
 
 export function isAirportStop(stop: Stop | null | undefined) {
   if (!stop) return false
+  /* The plane icon is the strongest signal there is: a stop named just
+     "Schiphol" or "EDI" says nothing an airport regex can catch, but the
+     person who placed it chose the aeroplane. */
+  if (stop.icon === 'plane') return true
   return AIRPORT.test(`${stop.name || ''} ${stop.kw || ''} ${stop.kind || ''}`)
 }
 
