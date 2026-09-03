@@ -7,7 +7,7 @@ export default function AssistantButton({ on, onClick }: { on: boolean; onClick:
   return (
     <button
       className={
-        'glass absolute bottom-[calc(var(--trip-1)+175px)] right-4 z-[4] grid size-11 ' +
+        'glass hitslop absolute bottom-[calc(var(--trip-1)+175px)] right-4 z-[4] grid size-11 ' +
         'place-items-center rounded-full max-sm:static max-sm:size-9 max-sm:flex-none ' +
         (on ? 'bg-accent text-accent-ink' : 'text-accent hover:bg-raised2')
       }

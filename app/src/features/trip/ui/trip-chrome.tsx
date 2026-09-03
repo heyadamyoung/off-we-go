@@ -131,9 +131,11 @@ export const MapControls = memo(function MapControls({
   onZoom: (by: number) => void
   onFit: () => void
 }) {
+  /* 44px on a phone, the platform's touch floor — a hit-slop shadow would be
+     clipped by the pill's own overflow, so the buttons are simply that size. */
   const button =
     'wc grid size-10 place-items-center border-b border-line text-ink last:border-b-0 ' +
-    'hover:bg-raised2 max-sm:size-9 max-sm:border-b-0 max-sm:border-r max-sm:last:border-r-0'
+    'hover:bg-raised2 max-sm:size-11 max-sm:border-b-0 max-sm:border-r max-sm:last:border-r-0'
   return (
     <div
       className="wctl glass absolute bottom-[var(--trip-1)] right-4 z-[4] flex flex-col

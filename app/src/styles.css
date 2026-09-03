@@ -210,6 +210,10 @@
 }
 @media (max-width: 639px) {
   :root { --trip-bar: calc(180px + env(safe-area-inset-bottom, 0px)) }
+  /* The bar collapsed to its peek: the grab handle and the day chips. The
+     class lives on the trip screen root, so every floating control that
+     hangs off --trip-1..4 rides down with it and the map gets the room. */
+  .barpeek { --trip-bar: calc(76px + env(safe-area-inset-bottom, 0px)) }
 }
 
 /* --------------------------------------------------------------- components
@@ -333,6 +337,12 @@
   }
   .avatar img { width: 100%; height: 100%; object-fit: cover }
   .avatar.plain { background: var(--c-raised-2); color: var(--c-muted); font-weight: 700 }
+
+  /* Touch and sight are different budgets: the visual box stays compact while
+     the touchable box reaches the 44pt floor. Generous above and below, and
+     just short of the neighbour's slop to the sides. */
+  .hitslop { position: relative }
+  .hitslop::after { content: ''; position: absolute; inset: -8px -2px }
 
   .chip {
     flex: none; display: flex; align-items: center; gap: 6px;

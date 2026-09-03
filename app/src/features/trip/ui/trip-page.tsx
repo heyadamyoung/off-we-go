@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { hasBackend } from '../../../backend'
 import { absoluteTripHref } from '../../../app-routes-core'
@@ -58,6 +58,8 @@ function Trip({
     [navigate],
   )
 
+  // Phone only: the bottom bar collapsed to its peek, the map keeping the room.
+  const [barPeek, setBarPeek] = useState(false)
   const page = useTripPage({ data, busyEditing, search, patch, notify, reload })
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
@@ -77,7 +79,10 @@ function Trip({
 
   return (
     <div
-      className="tripscreen fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink"
+      className={
+        'tripscreen fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink' +
+        (barPeek ? ' barpeek' : '')
+      }
       onScroll={event => {
         const screen = event.currentTarget
         if (screen.scrollTop || screen.scrollLeft) {
@@ -253,6 +258,8 @@ function Trip({
         onDay={value => patch({ day: value, sel: undefined })}
         onQuery={value => patch({ q: value || undefined })}
         onSelect={select}
+        peek={barPeek}
+        onPeek={setBarPeek}
       />
 
       {viewer && viewerList && viewerList.length > 0 && (

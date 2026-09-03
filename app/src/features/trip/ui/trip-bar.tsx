@@ -20,6 +20,10 @@ interface TripBarProps {
      better — so the bar yields whenever one is open, at every width. On a
      phone there was no room anyway; on a desktop it was a duplicate. */
   behindPanel?: boolean
+  /* Phone only: collapsed to the handle and the day chips, the map keeps the
+     height. The state lives on the page so the floating chrome moves with it. */
+  peek?: boolean
+  onPeek?: (peek: boolean) => void
 }
 
 const TripBar = memo(function TripBar({
@@ -34,6 +38,8 @@ const TripBar = memo(function TripBar({
   onSelect,
   onAddStop,
   behindPanel,
+  peek,
+  onPeek,
 }: TripBarProps) {
   const chips = useRef<HTMLDivElement>(null)
 
@@ -50,6 +56,15 @@ const TripBar = memo(function TripBar({
         'border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px] ' +
         (behindPanel ? 'hidden' : '')
       }>
+      {onPeek && (
+        <button
+          className="hitslop mx-auto mt-1.5 hidden h-2 w-12 flex-none rounded-full
+                        bg-line2 max-sm:block"
+          aria-label={peek ? 'Show the day’s cards' : 'Collapse to the map'}
+          aria-expanded={!peek}
+          onClick={() => onPeek(!peek)}
+        />
+      )}
       {/* The day chips and the search box each want the full width of a phone,
           so below 640px they take a line each instead of splitting one. */}
       <div
@@ -62,14 +77,14 @@ const TripBar = memo(function TripBar({
                         [mask-image:linear-gradient(to_right,#000_calc(100%-40px),transparent)]
                         [scrollbar-width:none]">
           <button
-            className={'chip' + (day === ALL_DAYS ? ' sel' : '')}
+            className={'chip hitslop' + (day === ALL_DAYS ? ' sel' : '')}
             onClick={() => onDay(ALL_DAYS)}>
             All days
           </button>
           {days.map(value => (
             <button
               key={value}
-              className={'chip' + (day === value ? ' sel' : '')}
+              className={'chip hitslop' + (day === value ? ' sel' : '')}
               onClick={() => onDay(value)}>
               {/* The live dot stays amber even on the ink-inverted selected
                   chip — it marks the journey's day, and that is amber's job. */}
@@ -81,8 +96,11 @@ const TripBar = memo(function TripBar({
           ))}
         </div>
         <label
-          className="fsearch flex h-8 w-[230px] flex-none items-center gap-2 rounded-full border
-                          border-line bg-raised px-3 text-faint max-sm:w-full">
+          className={
+            'fsearch flex h-8 w-[230px] flex-none items-center gap-2 rounded-full border ' +
+            'border-line bg-raised px-3 text-faint max-sm:h-10 max-sm:w-full' +
+            (peek ? ' max-sm:hidden' : '')
+          }>
           <Icon n="search" s={14} />
           <input
             className="min-w-0 flex-1 border-0 bg-transparent text-xs text-ink outline-none
@@ -96,8 +114,11 @@ const TripBar = memo(function TripBar({
         </label>
       </div>
       <div
-        className="flex flex-1 items-stretch gap-2.5 overflow-x-auto overflow-y-hidden px-4
-                      pb-3.5 pt-1.5 max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5">
+        className={
+          'flex flex-1 items-stretch gap-2.5 overflow-x-auto overflow-y-hidden px-4 ' +
+          'pb-3.5 pt-1.5 max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5' +
+          (peek ? ' max-sm:hidden' : '')
+        }>
         {items.length ? (
           items.map((item, index) => (
             <Card
