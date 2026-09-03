@@ -228,7 +228,12 @@ export default function useIndoorLayers(
         id: 'indoor-gate',
         type: 'circle',
         source: 'indoor',
-        minzoom: 14,
+        /* 13, not 14: a small airport's whole terminal fills a phone at
+           thirteen-and-a-half, which is as zoomed-in as anyone goes there —
+           and at fourteen its gates sat one pinch away, invisible, at the
+           exact airport the family was flying home from. The source is empty
+           unless a terminal is open, so a low floor costs nothing. */
+        minzoom: 13,
         ...below,
         filter: ['==', ['get', 'kind'], 'gate'],
         paint: {
@@ -242,7 +247,7 @@ export default function useIndoorLayers(
         id: 'indoor-gate-label',
         type: 'symbol',
         source: 'indoor',
-        minzoom: 15,
+        minzoom: 14,
         ...below,
         filter: ['==', ['get', 'kind'], 'gate'],
         layout: {
