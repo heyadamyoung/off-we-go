@@ -114,12 +114,17 @@ export default function useLiveTrip({
      the route endpoint or first stop is only a neutral map centre: no traveller
      marker is rendered there and no stop is claimed as current. */
   const track = route
+  /* Content-keyed for the same reason as livePoints below: latestGpsPosition
+     is a fresh array every 30-second progress recompute, and a new `live`
+     identity re-armed the follow ease with nobody having moved. */
+  const liveKey = latestGpsPosition ? latestGpsPosition.join(',') : null
+  // biome-ignore lint/correctness/useExhaustiveDependencies: liveKey carries latestGpsPosition's content; the array identity churns by design
   const live = useMemo<Coordinates>(() => {
     if (latestGpsPosition) return latestGpsPosition
     if (track.length) return track[track.length - 1]
     const s = stops[0]
     return s ? [s.lng, s.lat] : [4.876, 52.367]
-  }, [latestGpsPosition, track, stops])
+  }, [liveKey, track, stops])
   const daylight = useDaylight(live)
   const mapTheme = mapOverride || daylight.base
   /* The wash was drawn for the basemap the sun would have chosen. Laid over the
@@ -141,7 +146,15 @@ export default function useLiveTrip({
     () => livePhoneMarkers({ fixes, fresh, phones, family }),
     [fixes, fresh, phones, family],
   )
-  const livePoints: Coordinates[] = useMemo(() => followPoints(fresh, fixes), [fresh, fixes])
+  /* Stable by CONTENT, not by derivation: progress recomputes on a 30-second
+     clock and hands back fresh arrays every time, and a new identity here
+     re-armed the follow ease — the camera nudged itself half a chrome-offset
+     north twice a minute, forever. The points may only change identity when a
+     phone actually moved. */
+  const rawPoints: Coordinates[] = useMemo(() => followPoints(fresh, fixes), [fresh, fixes])
+  const pointsKey = rawPoints.map(point => point.join(',')).join(';')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key IS the content; rawPoints identity churns by design
+  const livePoints = useMemo(() => rawPoints, [pointsKey])
 
   /* Each phone's path, cleaned for drawing: poor fixes out, a long quiet gap
      starts a new line instead of a false straight across town, and jitter is

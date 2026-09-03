@@ -164,24 +164,21 @@ const MapCanvas = memo(function MapCanvas({
   /* ---- keep the camera in step with the app -----------------------------
      Only moves when the app actually asks for somewhere else; the position we
      report back on moveend lands here again and must not start a second move. */
-  const fitted = useRef('')
   useEffect(() => {
     if (!map) return
     const pad = padding || 32
     const ms = view.ms == null ? 420 : view.ms
     if (view.bounds) {
-      // Live positions arrive on a timer; re-fitting the same box every time one
-      // does turns a still map into one that keeps sliding under the reader.
-      const key = JSON.stringify(view.bounds) + JSON.stringify(pad)
-      if (key === fitted.current) return
-      fitted.current = key
-      /* cameraForBounds, not fitBounds: fitBounds PERSISTS object padding in
+      /* No dedupe here any more: the live layer only issues a new view when a
+         phone actually moved (positions are content-keyed), so an identical
+         bounds command is a person asking again — and swallowing it left the
+         Follow button dead whenever the travellers were standing still.
+         cameraForBounds, not fitBounds: fitBounds PERSISTS object padding in
          the transform, whose vertical bias made every zoom crawl the map north. */
       const camera = map.cameraForBounds(view.bounds, { padding: pad, maxZoom: 15 })
       if (camera) map.easeTo({ ...camera, duration: ms, essential: true })
       return
     }
-    fitted.current = ''
     const c = map.getCenter()
     if (
       Math.abs(c.lng - view.center[0]) < 1e-7 &&

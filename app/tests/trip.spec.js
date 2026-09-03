@@ -447,12 +447,16 @@ test('following the travellers actually zooms in, and then holds still', async (
   await expect.poll(async () => (await camera()).zoom).toBeLessThan(9.5)
 
   await page.getByRole('button', { name: 'Follow the travellers' }).click()
+  /* Two phones report in the sample now, so following frames them BOTH — a
+     box across a couple of kilometres of city sits nearer 13 than 15. The
+     guard's job is unchanged: the original bug was a toggle that did not
+     move the camera at all, and from zoom 9 any real engagement clears this. */
   await expect
     .poll(async () => (await camera()).zoom, {
-      message: 'following should bring the travellers to street level',
+      message: 'following should dive toward the travellers',
       timeout: 5000,
     })
-    .toBeGreaterThan(14)
+    .toBeGreaterThan(11.5)
 
   // And having arrived it stays: live positions arrive on a timer, and a map
   // that re-frames itself every time one does cannot be read.
