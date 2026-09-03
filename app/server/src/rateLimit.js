@@ -1,3 +1,17 @@
+/* The address a limiter should key on. Cloudflare fronts everything, and
+   trusting it via trustProxy would also trust the client-editable leftmost
+   X-Forwarded-For — so the edge's own header carries the truth instead:
+   cf-connecting-ip is stamped per connection by Cloudflare and cannot be
+   forged through it. Keying on request.ip lumped every phone behind one
+   Cloudflare address into a shared bucket — a family at one airport split
+   thirty lookups between them, and the second phone starved while the
+   first worked. */
+export function clientAddress(request) {
+  const header = request.headers?.['cf-connecting-ip']
+  const value = Array.isArray(header) ? header[0] : header
+  return String(value || request.ip || 'unknown')
+}
+
 export function createWindowRateLimiter({ clock = Date.now, maxEntries = 10_000 } = {}) {
   const windows = new Map()
   let operations = 0

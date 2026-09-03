@@ -28,6 +28,14 @@ const MIRRORS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
+/* Overpass's cruellest failure mode: HTTP 200, a JSON body, and a `remark`
+   confessing the query died mid-run — with whatever elements it had so far.
+   A terminal served from such a body has floors and no gates, looks merely
+   sparse, raises no toast, and once this cache went month-durable a single
+   bad answer became a month of "the gates are gone". Partial answers are
+   failures, everywhere: never cached, never served, never a fallback. */
+export const isPartial = body => !!(body?.remark && /error|timed?\s*out/i.test(String(body.remark)))
+
 function queryFor(lng, lat, radius = 1500) {
   const around = `(around:${radius},${lat.toFixed(5)},${lng.toFixed(5)})`
   return (
@@ -82,7 +90,9 @@ export function createIndoorCache({
       signal: AbortSignal.timeout(deadlineMs),
     })
     if (!res.ok) throw new Error('Overpass answered ' + res.status)
-    return res.json()
+    const body = await res.json()
+    if (isPartial(body)) throw new Error('Overpass sent a partial result: ' + body.remark)
+    return body
   }
 
   /* Hedged rather than strictly serial: the primary gets a head start, then
@@ -129,8 +139,11 @@ export function createIndoorCache({
       let flight = pending.get(key)
       if (!flight) {
         flight = (async () => {
-          // The durable copy first — a restart forgot this Map, not the month.
-          const durable = store ? await store.read(key).catch(() => null) : null
+          // The durable copy first — a restart forgot this Map, not the
+          // month. A partial row (cached before partials were refused) is
+          // treated as absent, so the next ask heals it.
+          let durable = store ? await store.read(key).catch(() => null) : null
+          if (durable && isPartial(durable.body)) durable = null
           if (durable && clock().getTime() - durable.at < ttlMs) {
             remember(key, { at: durable.at, body: durable.body })
             return durable.body

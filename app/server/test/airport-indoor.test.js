@@ -70,6 +70,44 @@ test('a mirror that sits on the connection is overtaken by the next one', async 
   assert.equal(answered.length, 2)
 })
 
+/* Overpass's cruellest failure: HTTP 200, a remark confessing the query died
+   mid-run, and whatever elements it had so far. Cached, that is a month of
+   floors without gates that looks merely sparse and raises no toast. */
+test('a partial answer is a failure the next mirror gets to correct', async () => {
+  const asked = []
+  const cache = createIndoorCache({
+    hedgeMs: 5,
+    fetchImpl: async url => {
+      asked.push(url)
+      if (url.includes('overpass-api.de')) {
+        return ok({ elements: [], remark: 'runtime error: Query timed out in "query"' })
+      }
+      return ok(BODY)
+    },
+  })
+  assert.deepEqual(await cache.get(4.7639, 52.3105), BODY)
+  assert.equal(asked.length, 2)
+})
+
+test('a partial row already in the store is healed by the next ask', async () => {
+  const store = shelfStore()
+  store.shelf.set(KEY, {
+    body: { elements: [], remark: 'runtime error: Query timed out' },
+    at: Date.now(),
+  })
+  let asked = 0
+  const cache = createIndoorCache({
+    fetchImpl: async () => {
+      asked++
+      return ok(BODY)
+    },
+    store,
+  })
+  assert.deepEqual(await cache.get(4.7639, 52.3105), BODY)
+  assert.equal(asked, 1, 'the poisoned row must not satisfy the read')
+  assert.deepEqual(store.shelf.get(KEY).body, BODY, 'and the fresh answer replaces it')
+})
+
 test('when every mirror fails the caller hears about it', async () => {
   const cache = createIndoorCache({
     hedgeMs: 1,

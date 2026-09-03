@@ -4,7 +4,7 @@ import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { registerMcpRoutes } from './mcp.js'
-import { createWindowRateLimiter } from './rateLimit.js'
+import { clientAddress, createWindowRateLimiter } from './rateLimit.js'
 import { createLiveStream } from './live-stream.js'
 import { changeKind } from './change-kind.js'
 import { createSecretBox } from './secret-box.js'
@@ -375,7 +375,7 @@ export async function buildServer({
   app.get('/api/auth/oidc/start', async (request, reply) => {
     privateAuthReply(reply)
     if (!identityProvider) return reply.code(503).send({ error: 'OIDC sign-in is not configured' })
-    const retryAfter = authIpLimiter.hit(request.ip, {
+    const retryAfter = authIpLimiter.hit(clientAddress(request), {
       max: authRateLimit.maxPerIp,
       windowMs: authRateLimit.windowMs,
     })
@@ -495,7 +495,7 @@ export async function buildServer({
   app.post('/api/auth/experience/start', async (request, reply) => {
     privateAuthReply(reply)
     if (!experience) return reply.code(503).send({ error: 'Sign-in is not configured' })
-    const retryAfter = authIpLimiter.hit(request.ip, {
+    const retryAfter = authIpLimiter.hit(clientAddress(request), {
       max: authRateLimit.maxPerIp,
       windowMs: authRateLimit.windowMs,
     })
@@ -561,7 +561,7 @@ export async function buildServer({
         'verification/verification-code/verify',
       ].includes(path)
     ) {
-      let retryAfter = authIpLimiter.hit(request.ip, {
+      let retryAfter = authIpLimiter.hit(clientAddress(request), {
         max: authRateLimit.maxPerIp,
         windowMs: authRateLimit.windowMs,
       })
@@ -1892,7 +1892,7 @@ export async function buildServer({
        Overpass mirrors. Walking the coordinates a thousandth of a degree at a
        time would be a guaranteed miss every time, and their ban would land on
        us rather than on whoever was walking. */
-    const retryAfter = indoorLimiter.hit(request.ip || 'unknown', indoorRateLimit)
+    const retryAfter = indoorLimiter.hit(clientAddress(request), indoorRateLimit)
     if (retryAfter) {
       return reply
         .header('retry-after', String(retryAfter))

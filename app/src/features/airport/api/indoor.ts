@@ -82,7 +82,13 @@ async function askMirror(base: string, query: string) {
     signal: AbortSignal.timeout(40_000),
   })
   if (!res.ok) throw new Error('Overpass answered ' + res.status)
-  return indoorFeatures((await res.json()) as OverpassResponse)
+  const body = (await res.json()) as OverpassResponse & { remark?: string }
+  // Overpass's cruellest failure: HTTP 200, a remark confessing the query
+  // died mid-run, and whatever elements it had so far — floors, no gates.
+  if (body.remark && /error|timed?\s*out/i.test(String(body.remark))) {
+    throw new Error('Overpass sent a partial result: ' + body.remark)
+  }
+  return indoorFeatures(body)
 }
 
 /* The server's shared cache. The guard outlives the server's own worst case —
