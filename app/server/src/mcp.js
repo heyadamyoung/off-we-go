@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { z } from 'zod'
+import { AGENT_TOKEN_PREFIX, AGENT_TOKEN_TTL_MS, readAgentToken } from './agent-token.js'
 
 const SCOPES = ['trips:read', 'trips:write']
 const ACCESS_TOKEN_TTL_MS = 60 * 60_000
@@ -12,11 +13,15 @@ const REQUEST_TOKEN_TTL_MS = 10 * 60_000
 const newToken = prefix => `${prefix}${randomBytes(32).toString('base64url')}`
 const tokenHash = value => createHash('sha256').update(value).digest('hex')
 const normalizeRoot = value => String(value).replace(/\/$/, '')
-const oauthError = (reply, error, description, status = 400) => reply.code(status)
-  .header('cache-control', 'no-store').send({ error, error_description: description })
+const oauthError = (reply, error, description, status = 400) =>
+  reply
+    .code(status)
+    .header('cache-control', 'no-store')
+    .send({ error, error_description: description })
 
 function safeEqual(left, right) {
-  const a = Buffer.from(left), b = Buffer.from(right)
+  const a = Buffer.from(left),
+    b = Buffer.from(right)
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
@@ -34,15 +39,25 @@ function readAuthorizationRequest(value, secret, now) {
   if (!safeEqual(signature, expected)) return null
   try {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    if (!Number.isFinite(parsed.issuedAt) || parsed.issuedAt > now.getTime() + 60_000 ||
-      now.getTime() - parsed.issuedAt > REQUEST_TOKEN_TTL_MS) return null
+    if (
+      !Number.isFinite(parsed.issuedAt) ||
+      parsed.issuedAt > now.getTime() + 60_000 ||
+      now.getTime() - parsed.issuedAt > REQUEST_TOKEN_TTL_MS
+    )
+      return null
     return parsed
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
-const escapeHtml = value => String(value ?? '')
-  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;').replaceAll("'", '&#039;')
+const escapeHtml = value =>
+  String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
 
 function validRedirect(value) {
   if (typeof value !== 'string' || value.length > 2048) return false
@@ -51,20 +66,31 @@ function validRedirect(value) {
     if (url.hash || url.username || url.password) return false
     if (url.protocol === 'https:') return true
     return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-  } catch { return false }
+  } catch {
+    return false
+  }
 }
 
 function redirectMatches(registeredUri, requestedUri) {
   if (registeredUri === requestedUri) return true
   try {
-    const registered = new URL(registeredUri), requested = new URL(requestedUri)
+    const registered = new URL(registeredUri),
+      requested = new URL(requestedUri)
     const loopbackHosts = ['localhost', '127.0.0.1', '[::1]']
-    return registered.protocol === 'http:' && requested.protocol === 'http:' &&
-      registered.hostname === requested.hostname && loopbackHosts.includes(registered.hostname) &&
-      registered.pathname === requested.pathname && registered.search === requested.search &&
-      registered.hash === requested.hash && registered.username === requested.username &&
+    return (
+      registered.protocol === 'http:' &&
+      requested.protocol === 'http:' &&
+      registered.hostname === requested.hostname &&
+      loopbackHosts.includes(registered.hostname) &&
+      registered.pathname === requested.pathname &&
+      registered.search === requested.search &&
+      registered.hash === requested.hash &&
+      registered.username === requested.username &&
       registered.password === requested.password
-  } catch { return false }
+    )
+  } catch {
+    return false
+  }
 }
 
 function safeMetadataUrl(value) {
@@ -72,12 +98,18 @@ function safeMetadataUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) return null
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' && !url.username && !url.password && !url.hash ? url.href : null
-  } catch { return null }
+    return url.protocol === 'https:' && !url.username && !url.password && !url.hash
+      ? url.href
+      : null
+  } catch {
+    return null
+  }
 }
 
 function requestedScopes(value) {
-  const values = String(value || 'trips:read').split(/\s+/).filter(Boolean)
+  const values = String(value || 'trips:read')
+    .split(/\s+/)
+    .filter(Boolean)
   if (!values.length || values.some(scope => !SCOPES.includes(scope))) return null
   if (values.includes('trips:write') && !values.includes('trips:read')) values.push('trips:read')
   return SCOPES.filter(scope => values.includes(scope))
@@ -85,18 +117,19 @@ function requestedScopes(value) {
 
 const authRedirect = (request, values) => {
   const redirect = new URL(request.redirectUri)
-  for (const [key, value] of Object.entries(values)) if (value != null) redirect.searchParams.set(key, value)
+  for (const [key, value] of Object.entries(values))
+    if (value != null) redirect.searchParams.set(key, value)
   return redirect.href
 }
 
-function consentPage({ client, requestToken, scopes, root, redirectUri, continuation }) {
+function consentPage({ client, requestToken, scopes, redirectUri, continuation }) {
   const nonce = randomBytes(18).toString('base64url')
   const name = escapeHtml(client.clientName)
   const clientUri = safeMetadataUrl(client.clientUri)
   const redirect = new URL(redirectUri)
   const redirectOrigin = escapeHtml(redirect.origin)
-  const returnsToThisDevice = redirect.protocol === 'http:'
-    && ['127.0.0.1', 'localhost', '[::1]'].includes(redirect.hostname)
+  const returnsToThisDevice =
+    redirect.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(redirect.hostname)
   const writeRequested = scopes.includes('trips:write')
   const signInHref = escapeHtml(`/?continue=${encodeURIComponent(continuation)}`)
   const html = `<!doctype html>
@@ -173,224 +206,483 @@ const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value,
 const toolFailure = message => ({ isError: true, content: [{ type: 'text', text: message }] })
 const entityId = z.uuid()
 const pgInteger = z.number().int().min(0).max(2_147_483_647)
-const externalUrl = z.url().max(2048).refine(value => ['http:', 'https:'].includes(new URL(value).protocol), {
-  message: 'Use an HTTP or HTTPS URL',
-})
+const externalUrl = z
+  .url()
+  .max(2048)
+  .refine(value => ['http:', 'https:'].includes(new URL(value).protocol), {
+    message: 'Use an HTTP or HTTPS URL',
+  })
 
 function tripForMcp(row) {
   return {
-    id: row.id, slug: row.slug, title: row.title, crew: row.crew, dates: row.dates,
-    dayCount: row.dayCount, startsOn: row.startsOn, endsOn: row.endsOn,
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    crew: row.crew,
+    dates: row.dates,
+    dayCount: row.dayCount,
+    startsOn: row.startsOn,
+    endsOn: row.endsOn,
     members: row.members.map(member => ({
-      id: member.profileId, handle: member.handle, name: member.displayName, role: member.role,
+      id: member.profileId,
+      handle: member.handle,
+      name: member.displayName,
+      role: member.role,
     })),
     stops: row.stops,
-    photos: row.photos.map(({ storagePath: _storagePath, thumbPath: _thumbPath, ...photo }) => photo),
-    route: row.route, comments: row.comments, likes: row.likes,
+    photos: row.photos.map(
+      ({ storagePath: _storagePath, thumbPath: _thumbPath, ...photo }) => photo,
+    ),
+    route: row.route,
+    comments: row.comments,
+    likes: row.likes,
   }
 }
 
-function buildMcpServer({ repository, user, scopes, fileStore, sendInvite, logger, clock }) {
-  const server = new McpServer({ name: 'Off We Go Trips', version: '1.0.0' }, {
-    instructions: 'Use these tools to read and maintain the authenticated user’s Off We Go trips. IDs returned by get_trip are required by mutation tools.',
-  })
-  server.registerTool('list_trips', {
-    description: 'List every trip accessible to the authenticated user, including IDs, slugs and the user’s role.',
-    inputSchema: z.object({}),
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  }, async () => result(await repository.listTrips(user)))
-  server.registerTool('get_trip', {
-    description: 'Get the authenticated user’s current trip, or a trip selected by slug.',
-    inputSchema: z.object({ slug: z.string().trim().min(1).max(200).regex(/^[a-z0-9-]+$/).optional() }),
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  }, async ({ slug }) => {
-    const trip = await repository.loadCurrentTrip(user, slug || null)
-    return trip ? result(tripForMcp(trip)) : toolFailure('No accessible trip was found.')
-  })
+function buildMcpServer({
+  repository,
+  user,
+  scopes,
+  fileStore,
+  sendInvite,
+  logger,
+  clock,
+  announce,
+}) {
+  const server = new McpServer(
+    { name: 'Off We Go Trips', version: '1.0.0' },
+    {
+      instructions:
+        'Use these tools to read and maintain the authenticated user’s Off We Go trips. IDs returned by get_trip are required by mutation tools.',
+    },
+  )
+  /* A change made through a tool must reach the browsers watching that trip
+     the same way a change made through the app does — the announce hook is
+     the same one the HTTP routes fire, these tools just have to say which
+     trip and what kind of change, since no URL is here to say it for them. */
+  const write = (kind, handler) => async args => {
+    const outcome = await handler(args)
+    if (!outcome?.isError && args.tripId) announce?.(args.tripId, kind)
+    return outcome
+  }
+  server.registerTool(
+    'list_trips',
+    {
+      description:
+        'List every trip accessible to the authenticated user, including IDs, slugs and the user’s role.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => result(await repository.listTrips(user)),
+  )
+  server.registerTool(
+    'get_trip',
+    {
+      description: 'Get the authenticated user’s current trip, or a trip selected by slug.',
+      inputSchema: z.object({
+        slug: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .regex(/^[a-z0-9-]+$/)
+          .optional(),
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ slug }) => {
+      const trip = await repository.loadCurrentTrip(user, slug || null)
+      return trip ? result(tripForMcp(trip)) : toolFailure('No accessible trip was found.')
+    },
+  )
+  server.registerTool(
+    'get_live_positions',
+    {
+      description:
+        'Live phone positions for an accessible trip: the registered devices and their GPS fixes from the last `hours` (default 24). The trip id comes from get_trip or list_trips.',
+      inputSchema: z.object({
+        tripId: entityId,
+        hours: z.number().int().min(1).max(720).optional(),
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ tripId, hours = 24 }) => {
+      const live = await repository.loadLive(
+        user,
+        tripId,
+        new Date(clock().getTime() - hours * 3600_000),
+      )
+      return live
+        ? result({
+            devices: live.devices.map(device => ({
+              id: device.id,
+              name: device.name,
+              slug: device.slug,
+              lastSeen: device.lastSeen,
+              pausedAt: device.pausedAt,
+            })),
+            fixes: live.fixes.map(fix => ({
+              deviceId: fix.deviceId,
+              lng: fix.lng,
+              lat: fix.lat,
+              at: fix.at,
+              speed: fix.speed,
+              accuracy: fix.accuracy,
+            })),
+          })
+        : toolFailure('No accessible trip was found.')
+    },
+  )
   if (!scopes.includes('trips:write')) return server
 
-  server.registerTool('create_trip', {
-    description: 'Create a Off We Go trip owned by the authenticated user.',
-    inputSchema: z.object({
-      title: z.string().trim().min(1).max(160), crew: z.string().max(240).nullable().optional(),
-      dates: z.string().max(160).nullable().optional(), dayCount: z.number().int().min(1).max(1000).optional(),
-      startsOn: z.iso.date().nullable().optional(), endsOn: z.iso.date().nullable().optional(),
-    }), annotations: { destructiveHint: false, openWorldHint: false },
-  }, async input => result(await repository.createTrip(user, input)))
+  server.registerTool(
+    'create_trip',
+    {
+      description: 'Create a Off We Go trip owned by the authenticated user.',
+      inputSchema: z.object({
+        title: z.string().trim().min(1).max(160),
+        crew: z.string().max(240).nullable().optional(),
+        dates: z.string().max(160).nullable().optional(),
+        dayCount: z.number().int().min(1).max(1000).optional(),
+        startsOn: z.iso.date().nullable().optional(),
+        endsOn: z.iso.date().nullable().optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    async input => result(await repository.createTrip(user, input)),
+  )
 
-  server.registerTool('update_trip', {
-    description: 'Update the title, crew, dates or date range of an editable trip.',
-    inputSchema: z.object({
-      tripId: entityId, title: z.string().trim().min(1).max(160).optional(),
-      crew: z.string().max(240).nullable().optional(), dates: z.string().max(160).nullable().optional(),
-      dayCount: z.number().int().min(1).max(1000).optional(), startsOn: z.iso.date().nullable().optional(),
-      endsOn: z.iso.date().nullable().optional(),
-    }), annotations: { destructiveHint: false, openWorldHint: false },
-  }, async ({ tripId, ...changes }) => {
-    const trip = await repository.updateTrip(user, tripId, changes)
-    return trip ? result(trip) : toolFailure('The trip was not found or is not editable by this user.')
-  })
+  server.registerTool(
+    'update_trip',
+    {
+      description: 'Update the title, crew, dates or date range of an editable trip.',
+      inputSchema: z.object({
+        tripId: entityId,
+        title: z.string().trim().min(1).max(160).optional(),
+        crew: z.string().max(240).nullable().optional(),
+        dates: z.string().max(160).nullable().optional(),
+        dayCount: z.number().int().min(1).max(1000).optional(),
+        startsOn: z.iso.date().nullable().optional(),
+        endsOn: z.iso.date().nullable().optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('trip', async ({ tripId, ...changes }) => {
+      const trip = await repository.updateTrip(user, tripId, changes)
+      return trip
+        ? result(trip)
+        : toolFailure('The trip was not found or is not editable by this user.')
+    }),
+  )
 
-  server.registerTool('create_stop', {
-    description: 'Add a stop with valid longitude and latitude to an editable trip.',
-    inputSchema: z.object({
-      tripId: entityId, name: z.string().trim().min(1).max(200),
-      lng: z.number().min(-180).max(180), lat: z.number().min(-90).max(90),
-      kind: z.string().max(80).nullable().optional(), icon: z.string().max(80).optional(), day: pgInteger.max(10_000).nullable().optional(),
-      time: z.string().max(80).nullable().optional(), status: z.enum(['done', 'now', 'next', 'planned']).optional(), note: z.string().max(5000).nullable().optional(),
-      src: externalUrl.nullable().optional(), sourceUrl: externalUrl.nullable().optional(), seq: pgInteger.optional(),
-    }), annotations: { destructiveHint: false, openWorldHint: false },
-  }, async ({ tripId, ...input }) => {
-    const stop = await repository.createStop(user, tripId, {
-      kind: null, icon: 'pin', day: null, time: null, status: 'planned', note: null,
-      src: null, sourceUrl: null, seq: 0, ...input,
-    })
-    return stop ? result(stop) : toolFailure('The trip was not found or is not editable by this user.')
-  })
+  server.registerTool(
+    'create_stop',
+    {
+      description: 'Add a stop with valid longitude and latitude to an editable trip.',
+      inputSchema: z.object({
+        tripId: entityId,
+        name: z.string().trim().min(1).max(200),
+        lng: z.number().min(-180).max(180),
+        lat: z.number().min(-90).max(90),
+        kind: z.string().max(80).nullable().optional(),
+        icon: z.string().max(80).optional(),
+        day: pgInteger.max(10_000).nullable().optional(),
+        time: z.string().max(80).nullable().optional(),
+        status: z.enum(['done', 'now', 'next', 'planned']).optional(),
+        note: z.string().max(5000).nullable().optional(),
+        src: externalUrl.nullable().optional(),
+        sourceUrl: externalUrl.nullable().optional(),
+        seq: pgInteger.optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('stops', async ({ tripId, ...input }) => {
+      const stop = await repository.createStop(user, tripId, {
+        kind: null,
+        icon: 'pin',
+        day: null,
+        time: null,
+        status: 'planned',
+        note: null,
+        src: null,
+        sourceUrl: null,
+        seq: 0,
+        ...input,
+      })
+      return stop
+        ? result(stop)
+        : toolFailure('The trip was not found or is not editable by this user.')
+    }),
+  )
 
-  server.registerTool('update_stop', {
-    description: 'Update fields on an existing trip stop.',
-    inputSchema: z.object({
-      tripId: entityId, stopId: entityId, name: z.string().trim().min(1).max(200).optional(),
-      lng: z.number().min(-180).max(180).optional(), lat: z.number().min(-90).max(90).optional(),
-      kind: z.string().max(80).nullable().optional(), icon: z.string().max(80).optional(), day: pgInteger.max(10_000).nullable().optional(),
-      time: z.string().max(80).nullable().optional(), status: z.enum(['done', 'now', 'next', 'planned']).optional(), note: z.string().max(5000).nullable().optional(),
-      src: externalUrl.nullable().optional(), sourceUrl: externalUrl.nullable().optional(), seq: pgInteger.optional(),
-    }), annotations: { destructiveHint: false, openWorldHint: false },
-  }, async ({ tripId, stopId, ...changes }) => {
-    const stop = await repository.updateStop(user, tripId, stopId, changes)
-    return stop ? result(stop) : toolFailure('The stop was not found or is not editable by this user.')
-  })
+  server.registerTool(
+    'update_stop',
+    {
+      description: 'Update fields on an existing trip stop.',
+      inputSchema: z.object({
+        tripId: entityId,
+        stopId: entityId,
+        name: z.string().trim().min(1).max(200).optional(),
+        lng: z.number().min(-180).max(180).optional(),
+        lat: z.number().min(-90).max(90).optional(),
+        kind: z.string().max(80).nullable().optional(),
+        icon: z.string().max(80).optional(),
+        day: pgInteger.max(10_000).nullable().optional(),
+        time: z.string().max(80).nullable().optional(),
+        status: z.enum(['done', 'now', 'next', 'planned']).optional(),
+        note: z.string().max(5000).nullable().optional(),
+        src: externalUrl.nullable().optional(),
+        sourceUrl: externalUrl.nullable().optional(),
+        seq: pgInteger.optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('stops', async ({ tripId, stopId, ...changes }) => {
+      const stop = await repository.updateStop(user, tripId, stopId, changes)
+      return stop
+        ? result(stop)
+        : toolFailure('The stop was not found or is not editable by this user.')
+    }),
+  )
 
-  server.registerTool('delete_stop', {
-    description: 'Delete a stop from an editable trip. Photos at that stop remain but become unassigned.',
-    inputSchema: z.object({ tripId: entityId, stopId: entityId }),
-    annotations: { destructiveHint: true, openWorldHint: false },
-  }, async ({ tripId, stopId }) => await repository.deleteStop(user, tripId, stopId)
-    ? result({ deleted: true, stopId }) : toolFailure('The stop was not found or is not editable by this user.'))
+  server.registerTool(
+    'delete_stop',
+    {
+      description:
+        'Delete a stop from an editable trip. Photos at that stop remain but become unassigned.',
+      inputSchema: z.object({ tripId: entityId, stopId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('stops', async ({ tripId, stopId }) =>
+      (await repository.deleteStop(user, tripId, stopId))
+        ? result({ deleted: true, stopId })
+        : toolFailure('The stop was not found or is not editable by this user.'),
+    ),
+  )
 
-  server.registerTool('replace_route', {
-    description: 'Replace all route points for an editable trip with ordered [longitude, latitude] pairs.',
-    inputSchema: z.object({
-      tripId: entityId, points: z.array(z.tuple([
-        z.number().min(-180).max(180), z.number().min(-90).max(90),
-      ])).max(10000),
-    }), annotations: { destructiveHint: true, openWorldHint: false },
-  }, async ({ tripId, points }) => await repository.replaceRoute(user, tripId, points)
-    ? result({ replaced: true, pointCount: points.length }) : toolFailure('The trip was not found or is not editable by this user.'))
+  server.registerTool(
+    'replace_route',
+    {
+      description:
+        'Replace all route points for an editable trip with ordered [longitude, latitude] pairs.',
+      inputSchema: z.object({
+        tripId: entityId,
+        points: z
+          .array(z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]))
+          .max(10000),
+      }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('stops', async ({ tripId, points }) =>
+      (await repository.replaceRoute(user, tripId, points))
+        ? result({ replaced: true, pointCount: points.length })
+        : toolFailure('The trip was not found or is not editable by this user.'),
+    ),
+  )
 
-  server.registerTool('update_photo', {
-    description: 'Update a photo caption or assign it to a stop.',
-    inputSchema: z.object({
-      tripId: entityId, photoId: entityId,
-      caption: z.string().max(2000).optional(), stopId: entityId.nullable().optional(),
-    }), annotations: { destructiveHint: false, openWorldHint: false },
-  }, async ({ tripId, photoId, ...changes }) => {
-    const photo = await repository.updatePhoto(user, tripId, photoId, changes)
-    return photo ? result({ id: photo.id, stopId: photo.stopId, caption: photo.caption })
-      : toolFailure('The photo was not found or is not editable by this user.')
-  })
+  server.registerTool(
+    'update_photo',
+    {
+      description: 'Update a photo caption or assign it to a stop.',
+      inputSchema: z.object({
+        tripId: entityId,
+        photoId: entityId,
+        caption: z.string().max(2000).optional(),
+        stopId: entityId.nullable().optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('photos', async ({ tripId, photoId, ...changes }) => {
+      const photo = await repository.updatePhoto(user, tripId, photoId, changes)
+      return photo
+        ? result({ id: photo.id, stopId: photo.stopId, caption: photo.caption })
+        : toolFailure('The photo was not found or is not editable by this user.')
+    }),
+  )
 
-  server.registerTool('delete_photo', {
-    description: 'Permanently delete a trip photo and its stored resized copies.',
-    inputSchema: z.object({ tripId: entityId, photoId: entityId }),
-    annotations: { destructiveHint: true, openWorldHint: false },
-  }, async ({ tripId, photoId }) => {
-    const removed = await repository.deletePhoto(user, tripId, photoId)
-    if (!removed) return toolFailure('The photo was not found or is not editable by this user.')
-    if (fileStore) {
-      const failures = []
-      for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean)) {
-        try {
-          await fileStore.remove(path)
-          await repository.completeFileDeletion?.(path)
-        } catch (error) {
-          failures.push({ path, error })
-          await repository.failFileDeletion?.(path, error.message, clock())
+  server.registerTool(
+    'delete_photo',
+    {
+      description: 'Permanently delete a trip photo and its stored resized copies.',
+      inputSchema: z.object({ tripId: entityId, photoId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('photos', async ({ tripId, photoId }) => {
+      const removed = await repository.deletePhoto(user, tripId, photoId)
+      if (!removed) return toolFailure('The photo was not found or is not editable by this user.')
+      if (fileStore) {
+        const failures = []
+        for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean)) {
+          try {
+            await fileStore.remove(path)
+            await repository.completeFileDeletion?.(path)
+          } catch (error) {
+            failures.push({ path, error })
+            await repository.failFileDeletion?.(path, error.message, clock())
+          }
+        }
+        if (failures.length) {
+          logger?.error(
+            { failures, tripId, photoId },
+            'MCP photo record deleted but stored file cleanup failed',
+          )
+          return toolFailure(
+            'The photo record was deleted, but stored-file cleanup failed and requires administrator reconciliation.',
+          )
         }
       }
-      if (failures.length) {
-        logger?.error({ failures, tripId, photoId }, 'MCP photo record deleted but stored file cleanup failed')
-        return toolFailure('The photo record was deleted, but stored-file cleanup failed and requires administrator reconciliation.')
+      return result({ deleted: true, photoId })
+    }),
+  )
+
+  server.registerTool(
+    'add_comment',
+    {
+      description: 'Add a comment to a photo in an accessible trip.',
+      inputSchema: z.object({
+        tripId: entityId,
+        photoId: entityId,
+        body: z.string().trim().min(1).max(4000),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('comments', async ({ tripId, photoId, body }) => {
+      const comment = await repository.addComment(user, tripId, photoId, body)
+      return comment ? result(comment) : toolFailure('The trip or photo was not found.')
+    }),
+  )
+
+  server.registerTool(
+    'delete_comment',
+    {
+      description: 'Delete the user’s comment, or any comment when the user can edit the trip.',
+      inputSchema: z.object({ tripId: entityId, commentId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('comments', async ({ tripId, commentId }) =>
+      (await repository.deleteComment(user, tripId, commentId))
+        ? result({ deleted: true, commentId })
+        : toolFailure('The comment was not found or cannot be deleted by this user.'),
+    ),
+  )
+
+  server.registerTool(
+    'set_photo_like',
+    {
+      description: 'Like or unlike a photo in an accessible trip.',
+      inputSchema: z.object({ tripId: entityId, photoId: entityId, liked: z.boolean() }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('photos', async ({ tripId, photoId, liked }) =>
+      (await repository.setLike(user, tripId, photoId, liked))
+        ? result({ photoId, liked })
+        : toolFailure('The trip or photo was not found.'),
+    ),
+  )
+
+  server.registerTool(
+    'list_invitations',
+    {
+      description: 'List invitations for a trip owned by the authenticated user.',
+      inputSchema: z.object({ tripId: entityId }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ tripId }) => {
+      const invitations = await repository.listInvites(user, tripId)
+      return invitations
+        ? result(invitations)
+        : toolFailure('Only a trip owner can view invitations.')
+    },
+  )
+
+  server.registerTool(
+    'invite_person',
+    {
+      description:
+        'Create a pending trip invitation and send an email telling the recipient to sign in and accept it.',
+      inputSchema: z.object({
+        tripId: entityId,
+        email: z.string().email(),
+        name: z.string().trim().max(160).nullable().optional(),
+        role: z.enum(['editor', 'viewer']).default('viewer'),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: true },
+    },
+    write('people', async ({ tripId, email, name, role }) => {
+      const normalizedEmail = email.trim().toLowerCase()
+      const invitation = await repository.upsertInvite(user, tripId, {
+        email: normalizedEmail,
+        name: name || null,
+        role,
+      })
+      if (!invitation) return toolFailure('Only a trip owner can send invitations.')
+      try {
+        await sendInvite(invitation)
+        return result({ ...invitation, mailed: true })
+      } catch {
+        return result({
+          ...invitation,
+          mailed: false,
+          mailError: 'The invitation was saved, but its email could not be sent.',
+        })
       }
-    }
-    return result({ deleted: true, photoId })
-  })
+    }),
+  )
 
-  server.registerTool('add_comment', {
-    description: 'Add a comment to a photo in an accessible trip.',
-    inputSchema: z.object({ tripId: entityId, photoId: entityId, body: z.string().trim().min(1).max(4000) }),
-    annotations: { destructiveHint: false, openWorldHint: false },
-  }, async ({ tripId, photoId, body }) => {
-    const comment = await repository.addComment(user, tripId, photoId, body)
-    return comment ? result(comment) : toolFailure('The trip or photo was not found.')
-  })
-
-  server.registerTool('delete_comment', {
-    description: 'Delete the user’s comment, or any comment when the user can edit the trip.',
-    inputSchema: z.object({ tripId: entityId, commentId: entityId }),
-    annotations: { destructiveHint: true, openWorldHint: false },
-  }, async ({ tripId, commentId }) => await repository.deleteComment(user, tripId, commentId)
-    ? result({ deleted: true, commentId }) : toolFailure('The comment was not found or cannot be deleted by this user.'))
-
-  server.registerTool('set_photo_like', {
-    description: 'Like or unlike a photo in an accessible trip.',
-    inputSchema: z.object({ tripId: entityId, photoId: entityId, liked: z.boolean() }),
-    annotations: { destructiveHint: false, openWorldHint: false },
-  }, async ({ tripId, photoId, liked }) => await repository.setLike(user, tripId, photoId, liked)
-    ? result({ photoId, liked }) : toolFailure('The trip or photo was not found.'))
-
-  server.registerTool('list_invitations', {
-    description: 'List invitations for a trip owned by the authenticated user.',
-    inputSchema: z.object({ tripId: entityId }),
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  }, async ({ tripId }) => {
-    const invitations = await repository.listInvites(user, tripId)
-    return invitations ? result(invitations) : toolFailure('Only a trip owner can view invitations.')
-  })
-
-  server.registerTool('invite_person', {
-    description: 'Create a pending trip invitation and send an email telling the recipient to sign in and accept it.',
-    inputSchema: z.object({
-      tripId: entityId, email: z.string().email(), name: z.string().trim().max(160).nullable().optional(),
-      role: z.enum(['editor', 'viewer']).default('viewer'),
-    }), annotations: { destructiveHint: false, openWorldHint: true },
-  }, async ({ tripId, email, name, role }) => {
-    const normalizedEmail = email.trim().toLowerCase()
-    const invitation = await repository.upsertInvite(user, tripId, { email: normalizedEmail, name: name || null, role })
-    if (!invitation) return toolFailure('Only a trip owner can send invitations.')
-    try { await sendInvite(invitation); return result({ ...invitation, mailed: true }) }
-    catch { return result({ ...invitation, mailed: false, mailError: 'The invitation was saved, but its email could not be sent.' }) }
-  })
-
-  server.registerTool('revoke_invitation', {
-    description: 'Revoke an invitation and remove that invited member from the trip.',
-    inputSchema: z.object({ tripId: entityId, invitationId: entityId }),
-    annotations: { destructiveHint: true, openWorldHint: false },
-  }, async ({ tripId, invitationId }) => await repository.revokeInvite(user, tripId, invitationId)
-    ? result({ revoked: true, invitationId }) : toolFailure('The invitation was not found or cannot be revoked by this user.'))
+  server.registerTool(
+    'revoke_invitation',
+    {
+      description: 'Revoke an invitation and remove that invited member from the trip.',
+      inputSchema: z.object({ tripId: entityId, invitationId: entityId }),
+      annotations: { destructiveHint: true, openWorldHint: false },
+    },
+    write('people', async ({ tripId, invitationId }) =>
+      (await repository.revokeInvite(user, tripId, invitationId))
+        ? result({ revoked: true, invitationId })
+        : toolFailure('The invitation was not found or cannot be revoked by this user.'),
+    ),
+  )
   return server
 }
 
-export async function registerMcpRoutes(app, {
-  repository, fileStore, publicUrl, oauthSecret, clock, authenticate, sendInvite,
-}) {
+export async function registerMcpRoutes(
+  app,
+  {
+    repository,
+    fileStore,
+    publicUrl,
+    oauthSecret,
+    clock,
+    authenticate,
+    sendInvite,
+    announce = null,
+  },
+) {
   const root = normalizeRoot(publicUrl)
   const resource = `${root}/mcp`
   const resourceMetadataUrl = `${root}/.well-known/oauth-protected-resource/mcp`
   const authorizationMetadata = {
-    issuer: root, authorization_endpoint: `${root}/oauth/authorize`,
-    token_endpoint: `${root}/oauth/token`, registration_endpoint: `${root}/oauth/register`,
-    revocation_endpoint: `${root}/oauth/revoke`, scopes_supported: SCOPES,
-    response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'],
-    token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'],
+    issuer: root,
+    authorization_endpoint: `${root}/oauth/authorize`,
+    token_endpoint: `${root}/oauth/token`,
+    registration_endpoint: `${root}/oauth/register`,
+    revocation_endpoint: `${root}/oauth/revoke`,
+    scopes_supported: SCOPES,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    token_endpoint_auth_methods_supported: ['none'],
+    code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
   }
   const protectedMetadata = {
-    resource, authorization_servers: [root], scopes_supported: SCOPES,
-    bearer_methods_supported: ['header'], resource_name: 'Off We Go Trips',
+    resource,
+    authorization_servers: [root],
+    scopes_supported: SCOPES,
+    bearer_methods_supported: ['header'],
+    resource_name: 'Off We Go Trips',
   }
-  const oauthWindows = new Map(), inviteWindows = new Map()
+  const oauthWindows = new Map(),
+    inviteWindows = new Map()
   const limited = (key, max, windowMs) => {
     const now = clock().getTime()
     let window = oauthWindows.get(key)
@@ -406,46 +698,79 @@ export async function registerMcpRoutes(app, {
     }
     window.count++
     return window.count > max
-      ? Math.max(1, Math.ceil((window.startedAt + windowMs - now) / 1000)) : 0
+      ? Math.max(1, Math.ceil((window.startedAt + windowMs - now) / 1000))
+      : 0
   }
   const throttle = (request, reply, bucket, max, windowMs = 15 * 60_000) => {
     const retryAfter = limited(`${bucket}:${request.ip}`, max, windowMs)
     if (!retryAfter) return false
     reply.header('retry-after', String(retryAfter)).code(429).send({
-      error: 'temporarily_unavailable', error_description: 'Too many OAuth requests',
+      error: 'temporarily_unavailable',
+      error_description: 'Too many OAuth requests',
     })
     return true
   }
 
-  app.get('/.well-known/oauth-authorization-server', async (_request, reply) => reply.send(authorizationMetadata))
-  app.get('/.well-known/oauth-protected-resource/mcp', async (_request, reply) => reply.send(protectedMetadata))
+  app.get('/.well-known/oauth-authorization-server', async (_request, reply) =>
+    reply.send(authorizationMetadata),
+  )
+  app.get('/.well-known/oauth-protected-resource/mcp', async (_request, reply) =>
+    reply.send(protectedMetadata),
+  )
 
   app.post('/oauth/register', { bodyLimit: 64 * 1024 }, async (request, reply) => {
     if (throttle(request, reply, 'register', 20)) return
     const body = request.body || {}
     const redirectUris = Array.isArray(body.redirect_uris) ? [...new Set(body.redirect_uris)] : []
-    if (!redirectUris.length || redirectUris.length > 10 || redirectUris.some(uri => !validRedirect(uri))) {
-      return oauthError(reply, 'invalid_redirect_uri', 'Provide HTTPS or loopback HTTP redirect URIs without fragments')
+    if (
+      !redirectUris.length ||
+      redirectUris.length > 10 ||
+      redirectUris.some(uri => !validRedirect(uri))
+    ) {
+      return oauthError(
+        reply,
+        'invalid_redirect_uri',
+        'Provide HTTPS or loopback HTTP redirect URIs without fragments',
+      )
     }
     if (body.token_endpoint_auth_method && body.token_endpoint_auth_method !== 'none') {
-      return oauthError(reply, 'invalid_client_metadata', 'Off We Go dynamically registers public clients only')
+      return oauthError(
+        reply,
+        'invalid_client_metadata',
+        'Off We Go dynamically registers public clients only',
+      )
     }
-    const clientUri = safeMetadataUrl(body.client_uri), logoUri = safeMetadataUrl(body.logo_uri)
+    const clientUri = safeMetadataUrl(body.client_uri),
+      logoUri = safeMetadataUrl(body.logo_uri)
     if ((body.client_uri && !clientUri) || (body.logo_uri && !logoUri)) {
       return oauthError(reply, 'invalid_client_metadata', 'Client metadata URLs must use HTTPS')
     }
     const client = await repository.registerMcpClient({
-      id: newToken('wf_client_'), clientName: String(body.client_name || 'MCP client').trim().slice(0, 100) || 'MCP client',
-      redirectUris, clientUri, logoUri, scopes: SCOPES,
+      id: newToken('wf_client_'),
+      clientName:
+        String(body.client_name || 'MCP client')
+          .trim()
+          .slice(0, 100) || 'MCP client',
+      redirectUris,
+      clientUri,
+      logoUri,
+      scopes: SCOPES,
     })
-    return reply.code(201).header('cache-control', 'no-store').send({
-      client_id: client.id, client_id_issued_at: Math.floor(clock().getTime() / 1000),
-      client_name: client.clientName, redirect_uris: client.redirectUris,
-      token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'], scope: SCOPES.join(' '),
-      ...(client.clientUri ? { client_uri: client.clientUri } : {}),
-      ...(client.logoUri ? { logo_uri: client.logoUri } : {}),
-    })
+    return reply
+      .code(201)
+      .header('cache-control', 'no-store')
+      .send({
+        client_id: client.id,
+        client_id_issued_at: Math.floor(clock().getTime() / 1000),
+        client_name: client.clientName,
+        redirect_uris: client.redirectUris,
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: SCOPES.join(' '),
+        ...(client.clientUri ? { client_uri: client.clientUri } : {}),
+        ...(client.logoUri ? { logo_uri: client.logoUri } : {}),
+      })
   })
 
   app.get('/oauth/authorize', async (request, reply) => {
@@ -456,77 +781,132 @@ export async function registerMcpRoutes(app, {
     if (!client.redirectUris.some(uri => redirectMatches(uri, redirectUri))) {
       return oauthError(reply, 'invalid_request', 'The redirect URI is not registered')
     }
-    const fail = (error, description) => reply.redirect(authRedirect({ redirectUri }, {
-      error, error_description: description, state: query.state, iss: root,
-    }))
-    if (query.response_type !== 'code') return fail('unsupported_response_type', 'Only authorization code flow is supported')
-    if (query.code_challenge_method !== 'S256' || !/^[A-Za-z0-9_-]{43,128}$/.test(String(query.code_challenge || ''))) {
+    const fail = (error, description) =>
+      reply.redirect(
+        authRedirect(
+          { redirectUri },
+          {
+            error,
+            error_description: description,
+            state: query.state,
+            iss: root,
+          },
+        ),
+      )
+    if (query.response_type !== 'code')
+      return fail('unsupported_response_type', 'Only authorization code flow is supported')
+    if (
+      query.code_challenge_method !== 'S256' ||
+      !/^[A-Za-z0-9_-]{43,128}$/.test(String(query.code_challenge || ''))
+    ) {
       return fail('invalid_request', 'PKCE with the S256 challenge method is required')
     }
     const scopes = requestedScopes(query.scope)
     if (!scopes) return fail('invalid_scope', 'Only trips:read and trips:write can be requested')
     const wantedResource = String(query.resource || resource)
-    if (wantedResource !== resource) return fail('invalid_target', 'The token resource must be the Off We Go MCP endpoint')
+    if (wantedResource !== resource)
+      return fail('invalid_target', 'The token resource must be the Off We Go MCP endpoint')
     const authorizationRequest = {
-      issuedAt: clock().getTime(), clientId: client.id, redirectUri, scopes,
-      state: String(query.state || ''), codeChallenge: String(query.code_challenge), resource,
+      issuedAt: clock().getTime(),
+      clientId: client.id,
+      redirectUri,
+      scopes,
+      state: String(query.state || ''),
+      codeChallenge: String(query.code_challenge),
+      resource,
     }
     const requestToken = signAuthorizationRequest(authorizationRequest, oauthSecret)
     const page = consentPage({
-      client, requestToken, scopes, root, redirectUri,
+      client,
+      requestToken,
+      scopes,
+      root,
+      redirectUri,
       continuation: request.raw.url,
     })
-    return reply.header('content-type', 'text/html; charset=utf-8')
+    return reply
+      .header('content-type', 'text/html; charset=utf-8')
       .header('cache-control', 'no-store')
-      .header('content-security-policy', `default-src 'none'; img-src 'self'; script-src 'nonce-${page.nonce}'; style-src 'nonce-${page.nonce}'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`)
-      .header('x-frame-options', 'DENY').header('x-content-type-options', 'nosniff')
+      .header(
+        'content-security-policy',
+        `default-src 'none'; img-src 'self'; script-src 'nonce-${page.nonce}'; style-src 'nonce-${page.nonce}'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+      )
+      .header('x-frame-options', 'DENY')
+      .header('x-content-type-options', 'nosniff')
       .send(page.html)
   })
 
   app.post('/api/oauth/consent', { bodyLimit: 16 * 1024 }, async (request, reply) => {
-    const authorizationRequest = readAuthorizationRequest(request.body?.requestToken, oauthSecret, clock())
-    if (!authorizationRequest) return reply.code(400).send({ error: 'This authorization request has expired. Start the connection again.' })
+    const authorizationRequest = readAuthorizationRequest(
+      request.body?.requestToken,
+      oauthSecret,
+      clock(),
+    )
+    if (!authorizationRequest)
+      return reply
+        .code(400)
+        .send({ error: 'This authorization request has expired. Start the connection again.' })
     const client = await repository.findMcpClient(authorizationRequest.clientId)
-    if (!client || !client.redirectUris.some(uri => redirectMatches(uri, authorizationRequest.redirectUri))) {
+    if (!client?.redirectUris.some(uri => redirectMatches(uri, authorizationRequest.redirectUri))) {
       return reply.code(400).send({ error: 'The OAuth client is no longer registered.' })
     }
     if (request.body?.approve !== true) {
-      return { redirectTo: authRedirect(authorizationRequest, {
-        error: 'access_denied', error_description: 'The user declined access',
-        state: authorizationRequest.state, iss: root,
-      }) }
+      return {
+        redirectTo: authRedirect(authorizationRequest, {
+          error: 'access_denied',
+          error_description: 'The user declined access',
+          state: authorizationRequest.state,
+          iss: root,
+        }),
+      }
     }
     const user = await authenticate(request, reply)
     if (!user) return
     const approved = requestedScopes(request.body?.scope)
     if (!approved || approved.some(scope => !authorizationRequest.scopes.includes(scope))) {
-      return reply.code(400).send({ error: 'Approved permissions must be a subset of the requested permissions.' })
+      return reply
+        .code(400)
+        .send({ error: 'Approved permissions must be a subset of the requested permissions.' })
     }
     const code = newToken('wf_code_')
     await repository.createMcpAuthorizationCode({
-      hash: tokenHash(code), userId: user.id, clientId: authorizationRequest.clientId,
-      redirectUri: authorizationRequest.redirectUri, scopes: approved,
-      resource: authorizationRequest.resource, codeChallenge: authorizationRequest.codeChallenge,
+      hash: tokenHash(code),
+      userId: user.id,
+      clientId: authorizationRequest.clientId,
+      redirectUri: authorizationRequest.redirectUri,
+      scopes: approved,
+      resource: authorizationRequest.resource,
+      codeChallenge: authorizationRequest.codeChallenge,
       expiresAt: new Date(clock().getTime() + AUTH_CODE_TTL_MS),
     })
-    return { redirectTo: authRedirect(authorizationRequest, {
-      code, state: authorizationRequest.state, iss: root,
-    }) }
+    return {
+      redirectTo: authRedirect(authorizationRequest, {
+        code,
+        state: authorizationRequest.state,
+        iss: root,
+      }),
+    }
   })
 
   const tokenPair = () => {
-    const accessToken = newToken('wf_mcp_'), refreshToken = newToken('wf_refresh_')
+    const accessToken = newToken('wf_mcp_'),
+      refreshToken = newToken('wf_refresh_')
     return {
-      accessToken, refreshToken,
-      accessHash: tokenHash(accessToken), refreshHash: tokenHash(refreshToken),
+      accessToken,
+      refreshToken,
+      accessHash: tokenHash(accessToken),
+      refreshHash: tokenHash(refreshToken),
       accessExpiresAt: new Date(clock().getTime() + ACCESS_TOKEN_TTL_MS),
       refreshExpiresAt: new Date(clock().getTime() + REFRESH_TOKEN_TTL_MS),
     }
   }
 
   const tokenResponse = (tokens, grant) => ({
-    access_token: tokens.accessToken, token_type: 'Bearer', expires_in: ACCESS_TOKEN_TTL_MS / 1000,
-    refresh_token: tokens.refreshToken, scope: grant.scopes.join(' '),
+    access_token: tokens.accessToken,
+    token_type: 'Bearer',
+    expires_in: ACCESS_TOKEN_TTL_MS / 1000,
+    refresh_token: tokens.refreshToken,
+    scope: grant.scopes.join(' '),
   })
 
   app.post('/oauth/token', { bodyLimit: 16 * 1024 }, async (request, reply) => {
@@ -535,7 +915,8 @@ export async function registerMcpRoutes(app, {
     const client = await repository.findMcpClient(String(body.client_id || ''))
     if (!client) return oauthError(reply, 'invalid_client', 'Unknown public client', 401)
     const wantedResource = String(body.resource || resource)
-    if (wantedResource !== resource) return oauthError(reply, 'invalid_target', 'The token resource is invalid')
+    if (wantedResource !== resource)
+      return oauthError(reply, 'invalid_target', 'The token resource is invalid')
     if (body.grant_type === 'authorization_code') {
       const verifier = String(body.code_verifier || '')
       if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) {
@@ -544,24 +925,46 @@ export async function registerMcpRoutes(app, {
       const challenge = createHash('sha256').update(verifier).digest('base64url')
       const tokens = tokenPair()
       const grant = await repository.redeemMcpAuthorizationCode({
-        codeHash: tokenHash(String(body.code || '')), now: clock(), clientId: client.id,
-        redirectUri: String(body.redirect_uri || ''), resource: wantedResource,
-        codeChallenge: challenge, accessHash: tokens.accessHash, refreshHash: tokens.refreshHash,
-        accessExpiresAt: tokens.accessExpiresAt, refreshExpiresAt: tokens.refreshExpiresAt,
+        codeHash: tokenHash(String(body.code || '')),
+        now: clock(),
+        clientId: client.id,
+        redirectUri: String(body.redirect_uri || ''),
+        resource: wantedResource,
+        codeChallenge: challenge,
+        accessHash: tokens.accessHash,
+        refreshHash: tokens.refreshHash,
+        accessExpiresAt: tokens.accessExpiresAt,
+        refreshExpiresAt: tokens.refreshExpiresAt,
       })
-      if (!grant) return oauthError(reply, 'invalid_grant', 'The authorization code is invalid, expired, or failed PKCE verification')
-      return reply.header('cache-control', 'no-store').header('pragma', 'no-cache').send(tokenResponse(tokens, grant))
+      if (!grant)
+        return oauthError(
+          reply,
+          'invalid_grant',
+          'The authorization code is invalid, expired, or failed PKCE verification',
+        )
+      return reply
+        .header('cache-control', 'no-store')
+        .header('pragma', 'no-cache')
+        .send(tokenResponse(tokens, grant))
     }
     if (body.grant_type === 'refresh_token') {
       const tokens = tokenPair()
       const grant = await repository.rotateMcpRefreshToken({
-        refreshHash: tokenHash(String(body.refresh_token || '')), now: clock(), clientId: client.id,
-        resource: wantedResource, accessHash: tokens.accessHash,
-        replacementRefreshHash: tokens.refreshHash, accessExpiresAt: tokens.accessExpiresAt,
+        refreshHash: tokenHash(String(body.refresh_token || '')),
+        now: clock(),
+        clientId: client.id,
+        resource: wantedResource,
+        accessHash: tokens.accessHash,
+        replacementRefreshHash: tokens.refreshHash,
+        accessExpiresAt: tokens.accessExpiresAt,
         refreshExpiresAt: tokens.refreshExpiresAt,
       })
-      if (!grant) return oauthError(reply, 'invalid_grant', 'The refresh token is invalid or expired')
-      return reply.header('cache-control', 'no-store').header('pragma', 'no-cache').send(tokenResponse(tokens, grant))
+      if (!grant)
+        return oauthError(reply, 'invalid_grant', 'The refresh token is invalid or expired')
+      return reply
+        .header('cache-control', 'no-store')
+        .header('pragma', 'no-cache')
+        .send(tokenResponse(tokens, grant))
     }
     return oauthError(reply, 'unsupported_grant_type', 'Use authorization_code or refresh_token')
   })
@@ -572,53 +975,106 @@ export async function registerMcpRoutes(app, {
     return reply.header('cache-control', 'no-store').code(200).send()
   })
 
-  const mcpHandler = createMcpHandler(({ authInfo }) => buildMcpServer({
-    repository, user: authInfo.user, scopes: authInfo.scopes, fileStore, logger: app.log, clock,
-    sendInvite: async invitation => {
-      const email = invitation.email
-      const now = clock().getTime()
-      const increment = (key, max) => {
-        let window = inviteWindows.get(key)
-        if (!window || now - window.startedAt >= 60 * 60_000) {
-          window = { startedAt: now, count: 0 }
-          inviteWindows.set(key, window)
-          if (inviteWindows.size > 10_000) {
-            for (const [candidate, value] of inviteWindows) {
-              if (now - value.startedAt >= 60 * 60_000) inviteWindows.delete(candidate)
+  const mcpHandler = createMcpHandler(
+    ({ authInfo }) =>
+      buildMcpServer({
+        repository,
+        user: authInfo.user,
+        scopes: authInfo.scopes,
+        fileStore,
+        logger: app.log,
+        clock,
+        announce,
+        sendInvite: async invitation => {
+          const email = invitation.email
+          const now = clock().getTime()
+          const increment = (key, max) => {
+            let window = inviteWindows.get(key)
+            if (!window || now - window.startedAt >= 60 * 60_000) {
+              window = { startedAt: now, count: 0 }
+              inviteWindows.set(key, window)
+              if (inviteWindows.size > 10_000) {
+                for (const [candidate, value] of inviteWindows) {
+                  if (now - value.startedAt >= 60 * 60_000) inviteWindows.delete(candidate)
+                }
+                while (inviteWindows.size > 10_000)
+                  inviteWindows.delete(inviteWindows.keys().next().value)
+              }
             }
-            while (inviteWindows.size > 10_000) inviteWindows.delete(inviteWindows.keys().next().value)
+            return ++window.count > max
           }
-        }
-        return ++window.count > max
-      }
-      if (increment(`user:${authInfo.user.id}`, 10) || increment(`target:${authInfo.user.id}:${email}`, 3)) {
-        throw new Error('Invitation email rate limit exceeded')
-      }
-      return sendInvite(invitation)
-    },
-  }), { legacy: 'stateless' })
+          if (
+            increment(`user:${authInfo.user.id}`, 10) ||
+            increment(`target:${authInfo.user.id}:${email}`, 3)
+          ) {
+            throw new Error('Invitation email rate limit exceeded')
+          }
+          return sendInvite(invitation)
+        },
+      }),
+    { legacy: 'stateless' },
+  )
   const nodeHandler = toNodeHandler(mcpHandler, {
-    onerror(error) { app.log.error({ err: error }, 'MCP transport error') },
+    onerror(error) {
+      app.log.error({ err: error }, 'MCP transport error')
+    },
   })
-  app.addHook('onClose', async () => { await mcpHandler.close() })
+  app.addHook('onClose', async () => {
+    await mcpHandler.close()
+  })
 
   app.route({
-    method: ['GET', 'POST', 'DELETE'], url: '/mcp', bodyLimit: 1024 * 1024,
+    method: ['GET', 'POST', 'DELETE'],
+    url: '/mcp',
+    bodyLimit: 1024 * 1024,
     async handler(request, reply) {
       if (request.headers.origin && request.headers.origin !== root) {
         return reply.code(403).send({ error: 'Origin is not allowed' })
       }
       const authorization = request.headers.authorization || ''
       const accessToken = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
-      const grant = accessToken ? await repository.findMcpAccessToken(tokenHash(accessToken), clock()) : null
+      /* Two kinds of caller. An OAuth grant is a stranger's app the user
+         consented to, looked up in the database with whatever scopes were
+         approved. An agent token is our own assistant answering one question
+         for one signed-in user: stateless, carrying the scopes the assistant
+         route minted for that user's role on the trip — read-only for a
+         viewer, writes for an editor — and honoured only from loopback,
+         because the codex process shares this container and nobody else has
+         any business at 127.0.0.1. */
+      let grant = null
+      if (accessToken.startsWith(AGENT_TOKEN_PREFIX)) {
+        const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.ip)
+        const agent = loopback ? readAgentToken(accessToken, oauthSecret, clock()) : null
+        if (agent)
+          grant = {
+            user: agent.user,
+            scopes: agent.scopes,
+            clientId: 'wayfare-assistant',
+            resource,
+            accessExpiresAt: new Date(clock().getTime() + AGENT_TOKEN_TTL_MS),
+          }
+      } else if (accessToken) {
+        grant = await repository.findMcpAccessToken(tokenHash(accessToken), clock())
+      }
       if (!grant || grant.resource !== resource || !grant.scopes.includes('trips:read')) {
-        return reply.header('www-authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="trips:read"`)
-          .code(401).send({ error: 'invalid_token', error_description: 'A valid Off We Go MCP token is required' })
+        return reply
+          .header(
+            'www-authenticate',
+            `Bearer resource_metadata="${resourceMetadataUrl}", scope="trips:read"`,
+          )
+          .code(401)
+          .send({
+            error: 'invalid_token',
+            error_description: 'A valid Off We Go MCP token is required',
+          })
       }
       request.raw.auth = {
-        token: accessToken, clientId: grant.clientId, scopes: grant.scopes,
+        token: accessToken,
+        clientId: grant.clientId,
+        scopes: grant.scopes,
         expiresAt: Math.floor(new Date(grant.accessExpiresAt).getTime() / 1000),
-        resource, user: grant.user,
+        resource,
+        user: grant.user,
       }
       reply.hijack()
       await nodeHandler(request.raw, reply.raw, request.body)

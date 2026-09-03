@@ -17,7 +17,11 @@ async function fixture() {
   const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
   const app = await buildServer({
     repository,
-    mailer: { async send(message) { sent.push(message) } },
+    mailer: {
+      async send(message) {
+        sent.push(message)
+      },
+    },
     publicUrl: root,
     sessionSecret: 'test-secret-that-is-long-enough',
   })
@@ -26,7 +30,8 @@ async function fixture() {
 
 async function registerClient(app) {
   const response = await app.inject({
-    method: 'POST', url: '/oauth/register',
+    method: 'POST',
+    url: '/oauth/register',
     payload: {
       client_name: 'Codex Desktop',
       redirect_uris: ['http://127.0.0.1:3210/callback'],
@@ -44,10 +49,13 @@ const pkce = verifier => createHash('sha256').update(verifier).digest('base64url
 async function authorize(app, authorization, clientId, scopes = 'trips:read trips:write') {
   const verifier = 'offwego-test-pkce-verifier-that-is-more-than-forty-three-characters'
   const query = new URLSearchParams({
-    response_type: 'code', client_id: clientId,
+    response_type: 'code',
+    client_id: clientId,
     redirect_uri: 'http://127.0.0.1:3210/callback',
-    scope: scopes, state: 'client-state',
-    code_challenge: pkce(verifier), code_challenge_method: 'S256',
+    scope: scopes,
+    state: 'client-state',
+    code_challenge: pkce(verifier),
+    code_challenge_method: 'S256',
     resource: `${root}/mcp`,
   })
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
@@ -65,7 +73,9 @@ async function authorize(app, authorization, clientId, scopes = 'trips:read trip
   assert.ok(requestToken)
 
   const consent = await app.inject({
-    method: 'POST', url: '/api/oauth/consent', headers: { authorization },
+    method: 'POST',
+    url: '/api/oauth/consent',
+    headers: { authorization },
     payload: { requestToken, approve: true, scope: scopes },
   })
   assert.equal(consent.statusCode, 200)
@@ -78,10 +88,14 @@ async function authorize(app, authorization, clientId, scopes = 'trips:read trip
 
 async function exchangeCode(app, clientId, code, verifier) {
   const response = await app.inject({
-    method: 'POST', url: '/oauth/token',
+    method: 'POST',
+    url: '/oauth/token',
     ...form({
-      grant_type: 'authorization_code', client_id: clientId, code,
-      redirect_uri: 'http://127.0.0.1:3210/callback', code_verifier: verifier,
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      code,
+      redirect_uri: 'http://127.0.0.1:3210/callback',
+      code_verifier: verifier,
       resource: `${root}/mcp`,
     }),
   })
@@ -91,7 +105,10 @@ async function exchangeCode(app, clientId, code, verifier) {
 
 test('publishes OAuth metadata for the protected MCP resource', async () => {
   const { app } = await fixture()
-  const authorization = await app.inject({ method: 'GET', url: '/.well-known/oauth-authorization-server' })
+  const authorization = await app.inject({
+    method: 'GET',
+    url: '/.well-known/oauth-authorization-server',
+  })
   assert.equal(authorization.statusCode, 200)
   assert.deepEqual(authorization.json(), {
     issuer: root,
@@ -106,14 +123,22 @@ test('publishes OAuth metadata for the protected MCP resource', async () => {
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
   })
-  const resource = await app.inject({ method: 'GET', url: '/.well-known/oauth-protected-resource/mcp' })
+  const resource = await app.inject({
+    method: 'GET',
+    url: '/.well-known/oauth-protected-resource/mcp',
+  })
   assert.equal(resource.statusCode, 200)
   assert.deepEqual(resource.json(), {
-    resource: `${root}/mcp`, authorization_servers: [root],
+    resource: `${root}/mcp`,
+    authorization_servers: [root],
     scopes_supported: ['trips:read', 'trips:write'],
-    bearer_methods_supported: ['header'], resource_name: 'Off We Go Trips',
+    bearer_methods_supported: ['header'],
+    resource_name: 'Off We Go Trips',
   })
-  const unrelatedRootResource = await app.inject({ method: 'GET', url: '/.well-known/oauth-protected-resource' })
+  const unrelatedRootResource = await app.inject({
+    method: 'GET',
+    url: '/.well-known/oauth-protected-resource',
+  })
   assert.equal(unrelatedRootResource.statusCode, 404)
   await app.close()
 })
@@ -127,8 +152,12 @@ test('registers only public clients with safe exact redirect URIs', async () => 
   assert.equal(client.client_secret, undefined)
 
   const unsafe = await app.inject({
-    method: 'POST', url: '/oauth/register',
-    payload: { client_name: 'Bad client', redirect_uris: ['https://good.example/callback#fragment'] },
+    method: 'POST',
+    url: '/oauth/register',
+    payload: {
+      client_name: 'Bad client',
+      redirect_uris: ['https://good.example/callback#fragment'],
+    },
   })
   assert.equal(unsafe.statusCode, 400)
   assert.equal(unsafe.json().error, 'invalid_redirect_uri')
@@ -138,7 +167,8 @@ test('registers only public clients with safe exact redirect URIs', async () => 
 test('describes an unverified redirect without upgrading the client identity', async () => {
   const { app } = await fixture()
   const registration = await app.inject({
-    method: 'POST', url: '/oauth/register',
+    method: 'POST',
+    url: '/oauth/register',
     payload: {
       client_name: 'Not Codex',
       redirect_uris: ['https://client.example/callback'],
@@ -148,10 +178,14 @@ test('describes an unverified redirect without upgrading the client identity', a
     },
   })
   const query = new URLSearchParams({
-    response_type: 'code', client_id: registration.json().client_id,
-    redirect_uri: 'https://client.example/callback', scope: 'trips:read', state: 'client-state',
+    response_type: 'code',
+    client_id: registration.json().client_id,
+    redirect_uri: 'https://client.example/callback',
+    scope: 'trips:read',
+    state: 'client-state',
     code_challenge: pkce('offwego-test-pkce-verifier-that-is-more-than-forty-three-characters'),
-    code_challenge_method: 'S256', resource: `${root}/mcp`,
+    code_challenge_method: 'S256',
+    resource: `${root}/mcp`,
   })
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
   assert.equal(page.statusCode, 200)
@@ -166,9 +200,14 @@ test('allows a registered loopback redirect to use an ephemeral port only', asyn
   const client = await registerClient(app)
   const verifier = 'loopback-port-pkce-verifier-that-is-more-than-forty-three-characters'
   const query = new URLSearchParams({
-    response_type: 'code', client_id: client.client_id,
-    redirect_uri: 'http://127.0.0.1:49876/callback', scope: 'trips:read', state: 'loopback',
-    code_challenge: pkce(verifier), code_challenge_method: 'S256', resource: `${root}/mcp`,
+    response_type: 'code',
+    client_id: client.client_id,
+    redirect_uri: 'http://127.0.0.1:49876/callback',
+    scope: 'trips:read',
+    state: 'loopback',
+    code_challenge: pkce(verifier),
+    code_challenge_method: 'S256',
+    resource: `${root}/mcp`,
   })
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
   assert.equal(page.statusCode, 200)
@@ -184,7 +223,8 @@ test('throttles unauthenticated dynamic client registration', async () => {
   const statuses = []
   for (let index = 0; index < 21; index++) {
     const response = await app.inject({
-      method: 'POST', url: '/oauth/register',
+      method: 'POST',
+      url: '/oauth/register',
       payload: {
         client_name: `Client ${index}`,
         redirect_uris: [`http://127.0.0.1:${4000 + index}/callback`],
@@ -196,9 +236,12 @@ test('throttles unauthenticated dynamic client registration', async () => {
   assert.deepEqual(statuses.slice(0, 20), Array(20).fill(201))
   assert.equal(statuses[20], 429)
   const otherAddress = await app.inject({
-    method: 'POST', url: '/oauth/register', headers: { 'x-forwarded-for': '203.0.113.52' },
+    method: 'POST',
+    url: '/oauth/register',
+    headers: { 'x-forwarded-for': '203.0.113.52' },
     payload: {
-      client_name: 'Different address', redirect_uris: ['http://127.0.0.1:4999/callback'],
+      client_name: 'Different address',
+      redirect_uris: ['http://127.0.0.1:4999/callback'],
       token_endpoint_auth_method: 'none',
     },
   })
@@ -211,14 +254,20 @@ test('a user can decline an authorization request without signing in', async () 
   const client = await registerClient(app)
   const verifier = 'another-offwego-pkce-verifier-that-is-long-enough-for-oauth'
   const query = new URLSearchParams({
-    response_type: 'code', client_id: client.client_id,
-    redirect_uri: 'http://127.0.0.1:3210/callback', scope: 'trips:read', state: 'decline-state',
-    code_challenge: pkce(verifier), code_challenge_method: 'S256', resource: `${root}/mcp`,
+    response_type: 'code',
+    client_id: client.client_id,
+    redirect_uri: 'http://127.0.0.1:3210/callback',
+    scope: 'trips:read',
+    state: 'decline-state',
+    code_challenge: pkce(verifier),
+    code_challenge_method: 'S256',
+    resource: `${root}/mcp`,
   })
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
   const requestToken = page.body.match(/name="request_token" value="([^"]+)"/)?.[1]
   const denied = await app.inject({
-    method: 'POST', url: '/api/oauth/consent',
+    method: 'POST',
+    url: '/api/oauth/consent',
     payload: { requestToken, approve: false },
   })
   assert.equal(denied.statusCode, 200)
@@ -240,10 +289,14 @@ test('runs authorization code with PKCE and rotates refresh tokens', async () =>
   assert.ok(tokens.refresh_token)
 
   const replay = await app.inject({
-    method: 'POST', url: '/oauth/token',
+    method: 'POST',
+    url: '/oauth/token',
     ...form({
-      grant_type: 'authorization_code', client_id: client.client_id, code: grant.code,
-      redirect_uri: 'http://127.0.0.1:3210/callback', code_verifier: grant.verifier,
+      grant_type: 'authorization_code',
+      client_id: client.client_id,
+      code: grant.code,
+      redirect_uri: 'http://127.0.0.1:3210/callback',
+      code_verifier: grant.verifier,
       resource: `${root}/mcp`,
     }),
   })
@@ -251,10 +304,13 @@ test('runs authorization code with PKCE and rotates refresh tokens', async () =>
   assert.equal(replay.json().error, 'invalid_grant')
 
   const refreshed = await app.inject({
-    method: 'POST', url: '/oauth/token',
+    method: 'POST',
+    url: '/oauth/token',
     ...form({
-      grant_type: 'refresh_token', client_id: client.client_id,
-      refresh_token: tokens.refresh_token, resource: `${root}/mcp`,
+      grant_type: 'refresh_token',
+      client_id: client.client_id,
+      refresh_token: tokens.refresh_token,
+      resource: `${root}/mcp`,
     }),
   })
   assert.equal(refreshed.statusCode, 200)
@@ -262,17 +318,25 @@ test('runs authorization code with PKCE and rotates refresh tokens', async () =>
   assert.notEqual(refreshed.json().refresh_token, tokens.refresh_token)
 
   const reusedRefresh = await app.inject({
-    method: 'POST', url: '/oauth/token',
-    ...form({ grant_type: 'refresh_token', client_id: client.client_id, refresh_token: tokens.refresh_token }),
+    method: 'POST',
+    url: '/oauth/token',
+    ...form({
+      grant_type: 'refresh_token',
+      client_id: client.client_id,
+      refresh_token: tokens.refresh_token,
+    }),
   })
   assert.equal(reusedRefresh.statusCode, 400)
   assert.equal(reusedRefresh.json().error, 'invalid_grant')
 
   const replacementAfterReplay = await app.inject({
-    method: 'POST', url: '/oauth/token',
+    method: 'POST',
+    url: '/oauth/token',
     ...form({
-      grant_type: 'refresh_token', client_id: client.client_id,
-      refresh_token: refreshed.json().refresh_token, resource: `${root}/mcp`,
+      grant_type: 'refresh_token',
+      client_id: client.client_id,
+      refresh_token: refreshed.json().refresh_token,
+      resource: `${root}/mcp`,
     }),
   })
   assert.equal(replacementAfterReplay.statusCode, 400)
@@ -294,22 +358,33 @@ test('rejects a low-entropy PKCE verifier even when its challenge matches', asyn
   const client = await registerClient(app)
   const verifier = 'short'
   const query = new URLSearchParams({
-    response_type: 'code', client_id: client.client_id,
-    redirect_uri: 'http://127.0.0.1:3210/callback', scope: 'trips:read', state: 'weak-pkce',
-    code_challenge: pkce(verifier), code_challenge_method: 'S256', resource: `${root}/mcp`,
+    response_type: 'code',
+    client_id: client.client_id,
+    redirect_uri: 'http://127.0.0.1:3210/callback',
+    scope: 'trips:read',
+    state: 'weak-pkce',
+    code_challenge: pkce(verifier),
+    code_challenge_method: 'S256',
+    resource: `${root}/mcp`,
   })
   const page = await app.inject({ method: 'GET', url: `/oauth/authorize?${query}` })
   const requestToken = page.body.match(/name="request_token" value="([^"]+)"/)?.[1]
   const consent = await app.inject({
-    method: 'POST', url: '/api/oauth/consent', headers: { authorization },
+    method: 'POST',
+    url: '/api/oauth/consent',
+    headers: { authorization },
     payload: { requestToken, approve: true, scope: 'trips:read' },
   })
   const code = new URL(consent.json().redirectTo).searchParams.get('code')
   const exchanged = await app.inject({
-    method: 'POST', url: '/oauth/token',
+    method: 'POST',
+    url: '/oauth/token',
     ...form({
-      grant_type: 'authorization_code', client_id: client.client_id, code,
-      redirect_uri: 'http://127.0.0.1:3210/callback', code_verifier: verifier,
+      grant_type: 'authorization_code',
+      client_id: client.client_id,
+      code,
+      redirect_uri: 'http://127.0.0.1:3210/callback',
+      code_verifier: verifier,
       resource: `${root}/mcp`,
     }),
   })
@@ -321,13 +396,16 @@ test('rejects a low-entropy PKCE verifier even when its challenge matches', asyn
 test('requires a scoped OAuth token and can manipulate a trip through MCP tools', async () => {
   const { app, authorization } = await fixture()
   const created = await app.inject({
-    method: 'POST', url: '/api/trips', headers: { authorization },
+    method: 'POST',
+    url: '/api/trips',
+    headers: { authorization },
     payload: { title: 'Scotland 2027', dayCount: 14 },
   })
   assert.equal(created.statusCode, 201)
 
   const missing = await app.inject({
-    method: 'POST', url: '/mcp',
+    method: 'POST',
+    url: '/mcp',
     payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
   })
   assert.equal(missing.statusCode, 401)
@@ -342,7 +420,9 @@ test('requires a scoped OAuth token and can manipulate a trip through MCP tools'
     'mcp-protocol-version': '2025-06-18',
   }
   const listed = await app.inject({
-    method: 'POST', url: '/mcp', headers: mcpHeaders,
+    method: 'POST',
+    url: '/mcp',
+    headers: mcpHeaders,
     payload: { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
   })
   assert.equal(listed.statusCode, 200)
@@ -351,21 +431,35 @@ test('requires a scoped OAuth token and can manipulate a trip through MCP tools'
   assert.match(listed.body, /update_trip/)
 
   const another = await app.inject({
-    method: 'POST', url: '/api/trips', headers: { authorization }, payload: { title: 'Iceland 2028' },
+    method: 'POST',
+    url: '/api/trips',
+    headers: { authorization },
+    payload: { title: 'Iceland 2028' },
   })
   assert.equal(another.statusCode, 201)
   const tripList = await app.inject({
-    method: 'POST', url: '/mcp', headers: mcpHeaders,
-    payload: { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'list_trips', arguments: {} } },
+    method: 'POST',
+    url: '/mcp',
+    headers: mcpHeaders,
+    payload: {
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: { name: 'list_trips', arguments: {} },
+    },
   })
   assert.equal(tripList.statusCode, 200)
   assert.match(tripList.body, /Scotland 2027/)
   assert.match(tripList.body, /Iceland 2028/)
 
   const tripView = await app.inject({
-    method: 'POST', url: '/mcp', headers: mcpHeaders,
+    method: 'POST',
+    url: '/mcp',
+    headers: mcpHeaders,
     payload: {
-      jsonrpc: '2.0', id: 21, method: 'tools/call',
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
       params: { name: 'get_trip', arguments: {} },
     },
   })
@@ -375,16 +469,27 @@ test('requires a scoped OAuth token and can manipulate a trip through MCP tools'
   assert.doesNotMatch(tripView.body, /owner@example\.com/)
 
   const updated = await app.inject({
-    method: 'POST', url: '/mcp', headers: mcpHeaders,
+    method: 'POST',
+    url: '/mcp',
+    headers: mcpHeaders,
     payload: {
-      jsonrpc: '2.0', id: 3, method: 'tools/call',
-      params: { name: 'update_trip', arguments: { tripId: created.json().id, title: 'Highlands 2027' } },
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'update_trip',
+        arguments: { tripId: created.json().id, title: 'Highlands 2027' },
+      },
     },
   })
   assert.equal(updated.statusCode, 200)
   assert.match(updated.body, /Highlands 2027/)
 
-  const loaded = await app.inject({ method: 'GET', url: '/api/trips/current', headers: { authorization } })
+  const loaded = await app.inject({
+    method: 'GET',
+    url: '/api/trips/current',
+    headers: { authorization },
+  })
   assert.equal(loaded.json().trip.title, 'Highlands 2027')
   await app.close()
 })
@@ -395,7 +500,8 @@ test('a read-only grant does not expose mutating trip tools', async () => {
   const grant = await authorize(app, authorization, client.client_id, 'trips:read')
   const tokens = await exchangeCode(app, client.client_id, grant.code, grant.verifier)
   const listed = await app.inject({
-    method: 'POST', url: '/mcp',
+    method: 'POST',
+    url: '/mcp',
     headers: {
       authorization: `Bearer ${tokens.access_token}`,
       accept: 'application/json, text/event-stream',
@@ -406,5 +512,128 @@ test('a read-only grant does not expose mutating trip tools', async () => {
   assert.equal(listed.statusCode, 200)
   assert.match(listed.body, /get_trip/)
   assert.doesNotMatch(listed.body, /update_trip/)
+  await app.close()
+})
+
+test('the in-house agent token reads as its user, cannot write, and works only from inside the box', async () => {
+  const { signAgentToken } = await import('../src/agent-token.js')
+  const { app, authorization } = await fixture()
+  const trip = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/trips',
+      headers: { authorization },
+      payload: { title: 'Scotland 2027' },
+    })
+  ).json()
+  const bearer = token => ({
+    authorization: `Bearer ${token}`,
+    accept: 'application/json, text/event-stream',
+    'mcp-protocol-version': '2025-06-18',
+  })
+  const token = signAgentToken(
+    { id: trip.ownerId, email: 'owner@example.com' },
+    'test-secret-that-is-long-enough',
+  )
+
+  // Read-only by construction: the write tools are never even registered.
+  const listed = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(token),
+    payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+  })
+  assert.equal(listed.statusCode, 200)
+  assert.match(listed.body, /get_trip/)
+  assert.match(listed.body, /get_live_positions/)
+  assert.doesNotMatch(listed.body, /update_trip/)
+  assert.doesNotMatch(listed.body, /invite_person/)
+
+  // And it reads as the user it was minted for.
+  const tripView = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(token),
+    payload: {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'get_trip', arguments: {} },
+    },
+  })
+  assert.equal(tripView.statusCode, 200)
+  assert.match(tripView.body, /Scotland 2027/)
+  const live = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(token),
+    payload: {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'get_live_positions', arguments: { tripId: trip.id } },
+    },
+  })
+  assert.equal(live.statusCode, 200)
+  assert.match(live.body, /devices/)
+
+  // An editor's token carries the write scope, and then the tools are there
+  // and they work — with the same per-trip permission checks as the app.
+  const editorToken = signAgentToken(
+    { id: trip.ownerId, email: 'owner@example.com' },
+    'test-secret-that-is-long-enough',
+    new Date(),
+    ['trips:read', 'trips:write'],
+  )
+  const editorTools = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(editorToken),
+    payload: { jsonrpc: '2.0', id: 6, method: 'tools/list', params: {} },
+  })
+  assert.match(editorTools.body, /update_trip/)
+  const renamed = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(editorToken),
+    payload: {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'update_trip', arguments: { tripId: trip.id, title: 'Highlands 2027' } },
+    },
+  })
+  assert.equal(renamed.statusCode, 200)
+  assert.match(renamed.body, /Highlands 2027/)
+  const reloaded = await app.inject({
+    method: 'GET',
+    url: '/api/trips/current',
+    headers: { authorization },
+  })
+  assert.equal(reloaded.json().trip.title, 'Highlands 2027')
+
+  // The token is worthless from anywhere but loopback — the agent's container.
+  const outside = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(token),
+    remoteAddress: '203.0.113.9',
+    payload: { jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} },
+  })
+  assert.equal(outside.statusCode, 401)
+
+  // And it dies of old age.
+  const stale = signAgentToken(
+    { id: trip.ownerId, email: 'owner@example.com' },
+    'test-secret-that-is-long-enough',
+    new Date(Date.now() - 11 * 60_000),
+  )
+  const expired = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: bearer(stale),
+    payload: { jsonrpc: '2.0', id: 5, method: 'tools/list', params: {} },
+  })
+  assert.equal(expired.statusCode, 401)
   await app.close()
 })

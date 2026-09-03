@@ -77,8 +77,15 @@ services:
       MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
       MS_TENANT: ${MS_TENANT:-common}
       MAILBOX_TOKEN_KEY: ${MAILBOX_TOKEN_KEY:-}
+      CODEX_AUTH_JSON_B64: ${CODEX_AUTH_JSON_B64:-}
+      CODEX_HOME: /data/codex
+      WAYFARE_AI_MODEL: ${WAYFARE_AI_MODEL:-gpt-5.6-sol}
+      WAYFARE_AI_REASONING: ${WAYFARE_AI_REASONING:-xhigh}
     volumes:
       - ./data/uploads:/data/uploads
+      # A named volume rather than a bind mount: Codex rewrites its own login
+      # as tokens rotate, and the image pre-creates this path owned by node.
+      - codex_data:/data/codex
     depends_on:
       db:
         condition: service_healthy
@@ -114,5 +121,6 @@ services:
 volumes:
   postgres_data:
   logto_postgres_data:
+  codex_data:
   caddy_data:
   caddy_config:

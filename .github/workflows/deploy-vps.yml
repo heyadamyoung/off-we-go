@@ -107,6 +107,12 @@ jobs:
           MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
           MS_TENANT: ${{ secrets.MS_TENANT }}
           MAILBOX_TOKEN_KEY: ${{ secrets.MAILBOX_TOKEN_KEY }}
+          CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
+          # Not secrets, just knobs — but nobody edits the box by hand, so they
+          # ride the same pipeline. Empty values are skipped by merge-env.sh,
+          # which leaves the compose defaults (luna, xhigh) in charge.
+          WAYFARE_AI_MODEL: ${{ vars.WAYFARE_AI_MODEL }}
+          WAYFARE_AI_REASONING: ${{ vars.WAYFARE_AI_REASONING }}
         run: |
           umask 077
           {
@@ -114,6 +120,9 @@ jobs:
             echo "MS_CLIENT_SECRET=$MS_CLIENT_SECRET"
             echo "MS_TENANT=$MS_TENANT"
             echo "MAILBOX_TOKEN_KEY=$MAILBOX_TOKEN_KEY"
+            echo "CODEX_AUTH_JSON_B64=$CODEX_AUTH_JSON_B64"
+            echo "WAYFARE_AI_MODEL=$WAYFARE_AI_MODEL"
+            echo "WAYFARE_AI_REASONING=$WAYFARE_AI_REASONING"
           } > app/deploy/release.env
 
       - name: Stream release to the VPS
