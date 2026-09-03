@@ -136,11 +136,36 @@ async function main() {
   /* Already in the group too, so what they need is the email again: a tester
      whose state is still "invited" has an unopened invitation sitting in
      their inbox, and this is the one lever Apple offers to send another. */
-  await api('/betaTesterInvitations', token, {
+  try {
+    await api('/betaTesterInvitations', token, {
+      method: 'POST',
+      body: JSON.stringify(invitationPayload({ testerId: tester.id, appId: app.id })),
+    })
+    console.log(`${email} was already in ${group.name}; the invitation email was sent again`)
+    return
+  } catch (error) {
+    if (error.status !== 409) throw error
+  }
+
+  /* Apple sometimes refuses the resend ("Tester has no installable build")
+     even while the group demonstrably holds approved builds. The escape
+     hatch is to remove the tester and add them afresh, which mints a new
+     invitation — safe ONLY for someone who never accepted, because there is
+     nothing to revoke. An installed tester is never deleted from here. */
+  if (tester.attributes?.state && tester.attributes.state !== 'INVITED') {
+    throw new Error(
+      `${email} is ${tester.attributes.state.toLowerCase()}, not stuck on an invitation —` +
+        ' refusing to delete and re-add them.',
+    )
+  }
+  await api(`/betaTesters/${tester.id}`, token, { method: 'DELETE' })
+  await api('/betaTesters', token, {
     method: 'POST',
-    body: JSON.stringify(invitationPayload({ testerId: tester.id, appId: app.id })),
+    body: JSON.stringify(
+      testerPayload({ email, firstName, lastName: rest.join(' ') || undefined, groupId: group.id }),
+    ),
   })
-  console.log(`${email} was already in ${group.name}; the invitation email was sent again`)
+  console.log(`${email} was re-created from scratch in ${group.name}; a fresh invitation is out`)
 }
 
 if (process.argv[1]?.endsWith('testflightInvite.mjs')) {
