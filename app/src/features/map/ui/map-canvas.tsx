@@ -134,7 +134,8 @@ const MapCanvas = memo(function MapCanvas({
     trail,
     trailFaded,
     sweepIn,
-    onPickAttraction,
+    // Placing or moving a stop, a tap means "here" — never "tell me about this".
+    onPickAttraction: editing || placing ? undefined : onPickAttraction,
   })
   useEffect(() => {
     if (!map || !attractions) return
@@ -142,7 +143,7 @@ const MapCanvas = memo(function MapCanvas({
     if (src) src.setData(attractions)
   }, [map, attractions])
   // The inside of an airport terminal, when a stop has asked for it.
-  useIndoorLayers(map, indoor, themeRef, onPickGate)
+  useIndoorLayers(map, indoor, themeRef, editing || placing ? undefined : onPickGate)
 
   useEffect(() => {
     if (!map || !tint || !map.getLayer('tod-tint')) return

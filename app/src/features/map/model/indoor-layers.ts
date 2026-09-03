@@ -3,10 +3,11 @@ import type {
   FilterSpecification,
   GeoJSONSource,
   Map as MapLibreMap,
-  MapLayerMouseEvent,
+  MapMouseEvent,
 } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
 import { ACCENT } from './map-style'
+import { nearestTap } from './tap-target'
 import { EMPTY_FC } from './use-attractions'
 
 /** A gate somebody tapped: where it is, what it is called, which levels it is on. */
@@ -279,10 +280,12 @@ export default function useIndoorLayers(
     if (map.isStyleLoaded()) add()
     map.on('style.load', add)
 
-    /* A gate is somewhere to go: clicking one asks the page for the walk.
-       Array properties come back from a map click as JSON strings. */
-    const pick = (e: MapLayerMouseEvent) => {
-      const f = e.features?.[0]
+    /* A gate is somewhere to go: tapping one asks the page for the walk.
+       Padded like the attraction dots — a gate is five pixels wide — and
+       array properties come back from a rendered-feature query as JSON
+       strings, the same as they did from a layer click. */
+    const pick = (e: MapMouseEvent) => {
+      const f = nearestTap(map, e.point, 'indoor-gate')
       if (f?.geometry.type !== 'Point') return
       const p = (f.properties || {}) as { ref?: string; name?: string; levels?: string | number[] }
       gateRef.current?.({
@@ -301,12 +304,12 @@ export default function useIndoorLayers(
     const leave = () => {
       map.getCanvas().style.cursor = ''
     }
-    map.on('click', 'indoor-gate', pick)
+    map.on('click', pick)
     map.on('mouseenter', 'indoor-gate', enter)
     map.on('mouseleave', 'indoor-gate', leave)
     return () => {
       map.off('style.load', add)
-      map.off('click', 'indoor-gate', pick)
+      map.off('click', pick)
       map.off('mouseenter', 'indoor-gate', enter)
       map.off('mouseleave', 'indoor-gate', leave)
     }

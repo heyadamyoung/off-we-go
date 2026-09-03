@@ -1,7 +1,8 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
-import type { GeoJSONSource, Map as MapGL, MapLayerMouseEvent } from 'maplibre-gl'
+import type { GeoJSONSource, Map as MapGL, MapMouseEvent } from 'maplibre-gl'
 import { lineOf } from '../../../shared/lib/geo'
 import { ACCENT, ACCENT_BRIGHT, linesOf } from './map-style'
+import { nearestTap } from './tap-target'
 import { EMPTY_FC } from './use-attractions'
 import type { MapCanvasProps } from './map-props'
 
@@ -245,8 +246,14 @@ export default function useMapLayers({
     // The same race as the route layers above.
     const stopWatching = whenStyleReady(map, add)
 
-    const hit = (e: MapLayerMouseEvent) => {
-      const f = e.features?.[0]
+    /* A whole-map click with a padded search, not a layer-scoped one: the
+       layer-scoped kind fires only on a dot's exact rendered pixels, which
+       made the layer feel dead under a thumb until you zoomed the dots big. */
+    const hit = (e: MapMouseEvent) => {
+      // A gate within the same thumb's reach is the more specific ask, and
+      // its own handler in indoor-layers answers it.
+      if (nearestTap(map, e.point, 'indoor-gate')) return
+      const f = nearestTap(map, e.point, 'attr-dot')
       if (f?.geometry.type !== 'Point') return
       /* Feature properties round-trip through the GPU as plain JSON; this is
        the shape featureFor wrote into them. */
@@ -271,12 +278,12 @@ export default function useMapLayers({
     const leave = () => {
       map.getCanvas().style.cursor = ''
     }
-    map.on('click', 'attr-dot', hit)
+    map.on('click', hit)
     map.on('mouseenter', 'attr-dot', enter)
     map.on('mouseleave', 'attr-dot', leave)
     return () => {
       stopWatching()
-      map.off('click', 'attr-dot', hit)
+      map.off('click', hit)
       map.off('mouseenter', 'attr-dot', enter)
       map.off('mouseleave', 'attr-dot', leave)
     }
