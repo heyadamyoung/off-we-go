@@ -142,8 +142,10 @@
     {
       // Unit tests exercise slice internals directly on purpose — the barrel
       // is the boundary for other slices, not for the tests that pin a
-      // module's own behaviour.
-      "includes": ["tests/**"],
+      // module's own behaviour. Node scripts get the same door: the seeder
+      // needs the attractions API without the barrel's browser-only exports
+      // (MapCanvas drags in Vite's ?worker imports, which node cannot load).
+      "includes": ["tests/**", "scripts/**"],
       "linter": {
         "rules": {
           "style": { "noRestrictedImports": "off" }

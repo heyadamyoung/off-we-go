@@ -3,6 +3,7 @@ export {
   attractionsInCell,
   attractionThumb,
   cellsCovering,
+  extractsFor,
   isHeadline,
 } from './api/attractions'
 export { useDaylight } from './model/daylight'
