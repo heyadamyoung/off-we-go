@@ -62,7 +62,7 @@ test('segments belong to editors: created, gate history kept, gone on delete', a
       toName: 'Regina',
       toCode: 'YQR',
       departsAt: '2026-09-19T16:10:00.000Z',
-      passengers: [{ name: 'Adam', seat: '14A' }],
+      passengers: [{ name: 'Maya', seat: '14A' }],
     },
   })
   assert.equal(created.statusCode, 200)

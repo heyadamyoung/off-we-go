@@ -1,6 +1,60 @@
 import { memo, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { quietPhones } from '../../../live-freshness-core'
+import type { PhoneMarker } from '../../../live-markers-core'
+import type { Segment } from '../../../segments-core'
 import Icon from '../../../shared/ui/icon'
-import type { Attraction, Coordinates } from '../../../shared/model/types'
+import type { Attraction, Coordinates, Device } from '../../../shared/model/types'
+import { MakeIt } from '../../transport'
+
+/* The advisory storey: the make-it meter and the quiet-phone notices, floated
+   in their own layer above the chrome row. Squeezed INTO the phone's one-line
+   row they crushed the Now capsule to a bare dot, and pointer-events-none let
+   taps on the banner fall through to the sparkle button beneath. Here they
+   stack over the map, and the notice eats its own taps. */
+export function Advisories({
+  segments,
+  markers,
+  phones,
+  now,
+  sample,
+}: {
+  segments: Segment[]
+  markers: PhoneMarker[]
+  phones: Device[]
+  now: number
+  sample: boolean
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--trip-1)+56px)] z-[4]
+                 flex flex-col items-center gap-2">
+      <MakeIt
+        segments={segments}
+        travellers={markers
+          .filter(marker => !marker.stale)
+          .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
+        now={now}
+      />
+      {/* A phone that went dark without a pause — usually an app update eating
+          the background watcher — is named, with the cure. A demo has no phone
+          to wait for. */}
+      {!sample &&
+        quietPhones(phones, new Date(now)).map(phone => (
+          <div
+            key={phone.id}
+            role="status"
+            className="glass pointer-events-auto max-w-full rounded-2xl px-3.5 py-1.5 text-[11px]
+                       text-muted">
+            <b className="text-ink">{phone.name}</b> hasn’t shared for{' '}
+            {phone.minutesQuiet >= 90
+              ? `${Math.round(phone.minutesQuiet / 60)} h`
+              : `${phone.minutesQuiet} min`}{' '}
+            — opening Off We Go on that phone restarts sharing
+          </div>
+        ))}
+    </div>
+  )
+}
 
 /* The brand is the small caps line, not the badge: at header height the
    portal drawing collapsed into an orange blob and outshone the trip's own

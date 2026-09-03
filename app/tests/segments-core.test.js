@@ -85,8 +85,8 @@ test('the make-it meter tells each traveller the truth about their legs', () => 
   const verdicts = makeIt(
     FLIGHT,
     [
-      { name: 'Adam', lng: -79.6249, lat: 43.6778 },
-      { name: 'Catherine', lng: -79.38, lat: 43.65 },
+      { name: 'Maya', lng: -79.6249, lat: 43.6778 },
+      { name: 'Alex', lng: -79.38, lat: 43.65 },
     ],
     now,
   )

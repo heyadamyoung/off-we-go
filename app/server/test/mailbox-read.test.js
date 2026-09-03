@@ -23,7 +23,7 @@ const connection = over => ({
   provider: 'outlook',
   tenant: 'consumers',
   accountEmail: 'adam@outlook.com',
-  accountName: 'Adam',
+  accountName: 'Maya',
   accessToken: 's:old-access',
   refreshToken: 's:refresh-1',
   expiresAt: soon,
@@ -205,7 +205,7 @@ test('one full message arrives as text, with its people and a truncation guard',
       assert.equal(options.headers.prefer, 'outlook.body-content-type="text"')
       return json({
         ...MESSAGE,
-        toRecipients: [{ emailAddress: { name: 'Adam', address: 'adam@outlook.com' } }],
+        toRecipients: [{ emailAddress: { name: 'Maya', address: 'maya@example.com' } }],
         ccRecipients: [],
         body: { contentType: 'text', content: 'x'.repeat(40_001) },
         webLink: 'https://outlook.live.com/mail/deeplink',
@@ -215,7 +215,7 @@ test('one full message arrives as text, with its people and a truncation guard',
   const message = await reader(repo, net).readMessage('u-1', { messageId: 'm1' })
 
   assert.equal(message.subject, 'Your KLM booking')
-  assert.deepEqual(message.to, [{ name: 'Adam', address: 'adam@outlook.com' }])
+  assert.deepEqual(message.to, [{ name: 'Maya', address: 'maya@example.com' }])
   assert.ok(message.body.endsWith('…(truncated)'))
   assert.equal(message.webLink, 'https://outlook.live.com/mail/deeplink')
 })
