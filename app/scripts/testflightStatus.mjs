@@ -26,6 +26,12 @@ const BY_AUDIENCE = {
   external: {
     READY_FOR_BETA_TESTING: 'approved — they can install it',
     IN_BETA_TESTING: 'approved — they can install it',
+    /* The trap state. Passed review, linked to the group before the review,
+       and serving NOBODY: only IN_BETA_TESTING puts a build on phones. This
+       printed raw as "BETA_APPROVED" once and was read as installable, while
+       the family's TestFlight said 0 builds — the distribute dispatch is the
+       cure. */
+    BETA_APPROVED: 'passed review but NOT serving to testers — run distribute',
   },
 }
 

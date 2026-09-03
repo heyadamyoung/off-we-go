@@ -21,6 +21,10 @@ on:
         description: Set to "superseded" to expire every build below the newest valid one
         required: false
         type: string
+      distribute:
+        description: Set to "latest" to push the newest approved build to external testers
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -37,6 +41,15 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+
+      - name: Distribute the newest approved build to external testers
+        if: ${{ inputs.distribute == 'latest' }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+        run: node scripts/testflightDistribute.mjs
 
       # Before the status report, so the run's log ends on the cleaned state.
       - name: Expire superseded builds
