@@ -410,6 +410,16 @@ test('zooming does not walk the map away from where it was', async ({ page }) =>
       return [c.lng, c.lat]
     })
 
+  /* The drift this test once caught on CI: fitBounds persists object padding
+     into the transform, whose 70px vertical bias crawled the map north a
+     little on every zoom. The app owns its chrome compensation manually, so
+     the transform's padding must always be zero. */
+  const padded = await page.evaluate(() => {
+    const p = window.__offwegoMap.getPadding()
+    return p.top + p.bottom + p.left + p.right
+  })
+  expect(padded, 'transform padding must never persist').toBe(0)
+
   const before = await centre()
   for (let round = 0; round < 3; round += 1) {
     // By name, not position: buttons come and go from this cluster.

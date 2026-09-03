@@ -29,7 +29,6 @@ prewarm()
 // Before any map exists: a style that has already asked for a tile will not
 // ask again, so the handler has to be in place first.
 registerOfflineTiles()
-
 /** photographs stacked on one spot, so a busy corner is one tidy pile */
 interface PhotoGroup {
   key: string
@@ -37,7 +36,6 @@ interface PhotoGroup {
   lat: number
   items: TripPhoto[]
 }
-
 const MapCanvas = memo(function MapCanvas({
   view,
   onView,
@@ -143,7 +141,6 @@ const MapCanvas = memo(function MapCanvas({
     const src = map.getSource<GeoJSONSource>('attr')
     if (src) src.setData(attractions)
   }, [map, attractions])
-
   // The inside of an airport terminal, when a stop has asked for it.
   useIndoorLayers(map, indoor, themeRef, onPickGate)
 
@@ -178,7 +175,10 @@ const MapCanvas = memo(function MapCanvas({
       const key = JSON.stringify(view.bounds) + JSON.stringify(pad)
       if (key === fitted.current) return
       fitted.current = key
-      map.fitBounds(view.bounds, { padding: pad, maxZoom: 15, duration: ms, essential: true })
+      /* cameraForBounds, not fitBounds: fitBounds PERSISTS object padding in
+         the transform, whose vertical bias made every zoom crawl the map north. */
+      const camera = map.cameraForBounds(view.bounds, { padding: pad, maxZoom: 15 })
+      if (camera) map.easeTo({ ...camera, duration: ms, essential: true })
       return
     }
     fitted.current = ''
