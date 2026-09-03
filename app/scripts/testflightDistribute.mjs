@@ -95,12 +95,30 @@ async function main() {
     console.log(`build ${build.attributes?.version} re-linked to ${group.attributes?.name}`)
   }
 
-  await pause(10_000)
-  const after = await describe(build, token)
+  /* The linkage alone is not distribution: Apple parks a linked, approved
+     build at BETA_APPROVED until the notify-testers action fires — that IS
+     the start-testing lever, the two are one endpoint. Build 57 sat linked
+     and approved for three hours serving nobody until this was understood. */
+  await api('/buildBetaNotifications', token, {
+    method: 'POST',
+    body: JSON.stringify({
+      data: {
+        type: 'buildBetaNotifications',
+        relationships: { build: { data: { type: 'builds', id: build.id } } },
+      },
+    }),
+  }).catch(error => console.log(`notify testers: ${error.message}`))
+  console.log('notify-testers fired')
+
+  let after = before
+  for (let attempt = 0; attempt < 6 && after !== 'IN_BETA_TESTING'; attempt++) {
+    await pause(15_000)
+    after = await describe(build, token)
+  }
   console.log(
     after === 'IN_BETA_TESTING'
       ? 'Distributed: external testers can install it now.'
-      : `Still ${after} — the nudge was not enough; the raw states above are the trail.`,
+      : `Still ${after} — the raw states above are the trail.`,
   )
 }
 

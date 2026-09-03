@@ -189,6 +189,41 @@ async function main() {
   } catch (error) {
     console.log(`beta review not submitted: ${error.message}`)
   }
+
+  /* Approval is not distribution. A build linked to the group before review
+     parks at BETA_APPROVED when review passes — approved, linked, serving
+     nobody — until the notify-testers action fires; Apple couples "start
+     testing" and "notify" into one endpoint, so a perfectly quiet external
+     release does not exist. The family losing every build for a day was the
+     price of believing it did. Ride-along approvals land in minutes; wait a
+     bounded while, then fire, and name the fallback when Apple is slow. */
+  let approved = false
+  for (let attempt = 0; attempt < 24 && !approved; attempt++) {
+    await wait(20_000)
+    const review = await api(`/builds/${build.id}/betaAppReviewSubmission`, token).catch(() => null)
+    approved = review?.data?.attributes?.betaReviewState === 'APPROVED'
+  }
+  if (!approved) {
+    console.log(
+      '::warning::Beta review did not approve within eight minutes; when it does, run the',
+    )
+    console.log('::warning::"TestFlight testers and build status" dispatch with distribute=latest.')
+    return
+  }
+  try {
+    await api('/buildBetaNotifications', token, {
+      method: 'POST',
+      body: JSON.stringify({
+        data: {
+          type: 'buildBetaNotifications',
+          relationships: { build: { data: { type: 'builds', id: build.id } } },
+        },
+      }),
+    })
+    console.log(`build ${buildNumber} released to external testers`)
+  } catch (error) {
+    console.log(`::warning::approved but not released: ${error.message} — run distribute=latest`)
+  }
 }
 
 if (process.argv[1]?.endsWith('testflightRelease.mjs')) {
