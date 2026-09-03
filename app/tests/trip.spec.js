@@ -49,6 +49,12 @@ async function open(page) {
   // is left running, its moveend can race a camera action performed by a test.
   await page.evaluate(() => window.__offwegoMap?.stop())
   await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
+  /* On a slow runner the follow effect can have been QUEUED before the toggle
+     above and only issue its ease after the stop — a 900ms glide that starts
+     under the test's feet. Outlive it, then kill anything that started. */
+  await page.waitForTimeout(1100)
+  await page.evaluate(() => window.__offwegoMap?.stop())
+  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
 }
 
 /* Somewhere on the map with nothing on it. Clicking a fixed fraction of the

@@ -77,6 +77,17 @@ jobs:
       - name: Run browser tests
         run: pnpm test
 
+      # A CI-only flake with no trace is unfixable folklore; a failure here
+      # hands its Playwright traces and DOM snapshots to the run page instead.
+      - name: Keep the failure traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-test-results
+          path: app/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   deploy:
     name: Deploy production
     needs: test
