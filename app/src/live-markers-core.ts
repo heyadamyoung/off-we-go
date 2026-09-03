@@ -29,10 +29,17 @@ export function lastKnownFixes(fixes: LiveFix[]): LiveFix[] {
   return [...byDevice.values()]
 }
 
-export function livePhoneMarkers(
-  { fixes, fresh, phones, family }:
-  { fixes: LiveFix[]; fresh: LiveFix[]; phones: Device[]; family: Person[] },
-): PhoneMarker[] {
+export function livePhoneMarkers({
+  fixes,
+  fresh,
+  phones,
+  family,
+}: {
+  fixes: LiveFix[]
+  fresh: LiveFix[]
+  phones: Device[]
+  family: Person[]
+}): PhoneMarker[] {
   const live = new Set((fresh || []).map(keyOf))
 
   return lastKnownFixes(fixes).map(fix => {
@@ -40,6 +47,13 @@ export function livePhoneMarkers(
     const who = phone && (family || []).find(person => person.id === phone.userId)
     const name = who?.name || phone?.name || 'Phone'
     const stale = !live.has(keyOf(fix))
+    /* A reported pause is named as one; mere silence never is. */
+    const pausedAt = phone?.pausedAt ? new Date(phone.pausedAt) : null
+    const paused =
+      stale &&
+      pausedAt != null &&
+      Number.isFinite(pausedAt.getTime()) &&
+      pausedAt.getTime() >= fix.at.getTime()
     return {
       key: keyOf(fix),
       lng: fix.lng,
@@ -47,7 +61,13 @@ export function livePhoneMarkers(
       avatar: who?.avatar || null,
       name,
       stale,
-      title: `${name} · ${stale ? `last seen ${agoLabel(fix.at)}` : agoLabel(fix.at)}`,
+      title: `${name} · ${
+        paused
+          ? `paused sharing · last seen ${agoLabel(fix.at)}`
+          : stale
+            ? `last seen ${agoLabel(fix.at)}`
+            : agoLabel(fix.at)
+      }`,
     }
   })
 }
@@ -57,9 +77,8 @@ export function livePhoneMarkers(
    position, not the box around every phone's last known one — those can be
    continents apart, and the middle of Regina and Amsterdam is the Atlantic. */
 export function followPoints(fresh: LiveFix[], fixes: LiveFix[]): Coordinates[] {
-  if (fresh?.length) return fresh.map(fix => [fix.lng, fix.lat] as Coordinates);
+  if (fresh?.length) return fresh.map(fix => [fix.lng, fix.lat] as Coordinates)
 
-  const [newest] = lastKnownFixes(fixes)
-    .sort((a, b) => b.at.getTime() - a.at.getTime());
-  return newest ? [[newest.lng, newest.lat]] : [];
+  const [newest] = lastKnownFixes(fixes).sort((a, b) => b.at.getTime() - a.at.getTime())
+  return newest ? [[newest.lng, newest.lat]] : []
 }
