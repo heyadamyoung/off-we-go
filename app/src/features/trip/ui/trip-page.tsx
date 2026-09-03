@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import { hasBackend } from '../../../backend'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
 import { ALL_DAYS, type SettingsTab } from '../../../trip-search-core'
@@ -135,10 +134,11 @@ function Trip({
                       items-center gap-2 border-b border-line bg-strong px-4 pb-2
                       pt-[calc(0.75rem+env(safe-area-inset-top,0px))] backdrop-blur-[22px]
                       sm:inset-x-7 sm:top-6 sm:h-auto sm:flex-nowrap sm:items-start sm:gap-3
-                      sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0 sm:backdrop-blur-none">
+                      sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0 sm:backdrop-blur-none
+                      sm:mx-auto sm:max-w-[1760px]">
         <TripTitle title={trip.title} sub={subtitle} />
 
-        <div className="order-3 flex w-full min-w-0 items-center gap-2.5 sm:order-2 sm:w-auto">
+        <div className="order-3 flex w-full min-w-0 items-center gap-2 sm:order-2 sm:w-auto">
           <TripCluster
             view={view}
             onView={setView}
@@ -181,7 +181,7 @@ function Trip({
           onSelect={select}
           onClose={() => patch({ view: undefined })}
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
-          onAddPhotos={() => patch({ sheet: 'add' })}
+          onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
         />
       )}
@@ -199,7 +199,7 @@ function Trip({
         {/* A demo has no phone to wait for: the sample trip never shows the
             GPS nudge, which read as something broken in the one trip everyone
             sees first. */}
-        {!panelOpen && (hasBackend || progressCopy.tone !== 'waiting') && (
+        {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
           <NowCapsule
             text={progressCopy.text}
             meta={progressCopy.meta}
@@ -338,7 +338,7 @@ function Trip({
         <OfflineNote at={offlineAt} className="absolute bottom-[var(--trip-3)] left-4 z-[3]" />
       )}
 
-      {!hasBackend && (
+      {data.source === 'sample' && (
         <div
           className="pointer-events-none absolute bottom-[var(--trip-3)] left-4 z-[3] rounded-full
                         bg-accent-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em]

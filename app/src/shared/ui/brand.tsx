@@ -17,21 +17,30 @@ export function Brandmark({ size = 40, className = '' }: { size?: number; classN
   )
 }
 
-export function Wordmark({
-  className = '',
-  markSize = 62,
-}: {
-  className?: string
-  markSize?: number
-}) {
+/* The brand in chrome is type, not the badge: the portal drawing reads as a
+   logo only at hero sizes, and both marks are still under review — the words
+   and the amber full stop carry the identity fine on their own. */
+export function Wordmark({ className = '' }: { className?: string }) {
   return (
     <div
       className={
-        'flex items-center gap-4 text-xs font-bold uppercase tracking-[.16em] text-faint ' +
+        'font-display whitespace-nowrap text-lg font-extrabold tracking-[-.01em] text-ink ' +
         className
       }>
-      <Brandmark size={markSize} />
-      Off We Go
+      Off we go<span className="text-accent">.</span>
+    </div>
+  )
+}
+
+/* The same lockup at hero size, for the screens the badge used to fill. */
+export function WordmarkHero({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={
+        'font-display whitespace-nowrap text-[40px] font-extrabold leading-none tracking-[-.02em] text-ink ' +
+        className
+      }>
+      Off we go<span className="text-accent">.</span>
     </div>
   )
 }
@@ -47,12 +56,7 @@ export function Screen({ children }: { children: ReactNode }) {
                      pt-[calc(2.5rem+env(safe-area-inset-top,0px))]
                      [background:radial-gradient(900px_500px_at_50%_0%,var(--c-accent-soft),transparent_60%),var(--c-bg)]">
       <div className="flex w-full max-w-[420px] flex-col items-center gap-3 text-center">
-        <img
-          src="/offwego-icon.svg"
-          alt=""
-          aria-hidden="true"
-          className="mb-2 h-[168px] object-contain sm:h-[200px]"
-        />
+        <WordmarkHero className="mb-3" />
         {children}
       </div>
     </main>

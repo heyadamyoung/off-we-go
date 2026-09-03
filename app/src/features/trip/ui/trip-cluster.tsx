@@ -38,11 +38,16 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
      pencil stays visible while edit mode is on, or there would be no way to
      leave it. */
   /* No Follow here: the locate button in the map controls is the same toggle,
-     and one state does not get two buttons in two grammars on one screen. */
-  const actions: Array<[string, string, string, string, boolean, () => void, string?]> = [
-    ['pin', 'Place a pin', 'Pin', 'pinplus', props.placing, props.onPlace],
-    ['add', 'Add photos', 'Upload', 'camera', false, props.onAdd],
-  ]
+     and one state does not get two buttons in two grammars on one screen.
+     Pin and Upload are travellers' verbs — a follower (or a stranger in the
+     sample) only reads, and a button that can only fail is not a feature. */
+  const actions: Array<[string, string, string, string, boolean, () => void, string?]> =
+    props.canEdit
+      ? [
+          ['pin', 'Place a pin', 'Pin', 'pinplus', props.placing, props.onPlace],
+          ['add', 'Add photos', 'Upload', 'camera', false, props.onAdd],
+        ]
+      : []
   if (props.canEdit) {
     actions.unshift([
       'edit',
@@ -87,7 +92,7 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
             <span>{label}</span>
           </button>
         ))}
-        <span className="mx-1 h-5 w-px flex-none bg-line2" />
+        {actions.length > 0 && <span className="mx-1 h-5 w-px flex-none bg-line2" />}
         {actions.map(([key, label, word, icon, on, run, hide]) => (
           <button
             key={key}
@@ -149,7 +154,7 @@ function MoreTools({
   }, [open])
 
   const item =
-    'flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
+    'flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
     'text-ink hover:bg-raised2'
   const pick = (run: () => void) => () => {
     setOpen(false)

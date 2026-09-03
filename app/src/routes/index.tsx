@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { RequireSession } from '../features/auth'
-import { HomePage } from '../features/home'
+import { HomePage, LandingPage } from '../features/home'
 
 const HUMAN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -17,8 +17,9 @@ export const Route = createFileRoute('/')({
 })
 
 function HomeRoute() {
+  /* A stranger gets the landing page, not a sign-in form saying welcome back. */
   return (
-    <RequireSession>
+    <RequireSession signedOut={<LandingPage />}>
       <HomePage />
     </RequireSession>
   )

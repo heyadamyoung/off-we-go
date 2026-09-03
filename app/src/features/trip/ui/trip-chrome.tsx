@@ -1,21 +1,18 @@
 import { memo, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { Brandmark } from '../../../shared/ui/brand'
 import Icon from '../../../shared/ui/icon'
 import type { Attraction, Coordinates } from '../../../shared/model/types'
 
-/* The mark sits beside the title block rather than above it: stacked, it had to
-   shrink to the height of a line of small caps, which is exactly the size at
-   which this particular drawing stops being readable. On a phone the mark keeps
-   the branding but the trip name is what the screen is about, so the small caps
-   and the subtitle go and a long name truncates instead of running under the
-   account menu. */
+/* The brand is the small caps line, not the badge: at header height the
+   portal drawing collapsed into an orange blob and outshone the trip's own
+   name — the words carry it. On a phone even the small caps go; the trip
+   name is what the screen is about, and a long one truncates instead of
+   running under the account menu. */
 export const TripTitle = memo(function TripTitle({ title, sub }: { title: string; sub: string }) {
   return (
     <header className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
-      <Brandmark size={62} className="max-sm:h-10 max-sm:w-auto" />
       <div className="flex min-w-0 flex-col gap-1">
         <div className="font-display text-[11px] font-bold uppercase tracking-[.16em] text-faint max-sm:hidden">
-          Off We Go
+          Off we go<span className="text-accent">.</span>
         </div>
         <h1
           className="font-display m-0 truncate text-[34px] font-extrabold leading-tight tracking-[-.02em]
@@ -65,14 +62,14 @@ export const NowCapsule = memo(function NowCapsule({
   return (
     <button
       className="glass absolute bottom-[var(--trip-1)] left-1/2 z-[4] flex
-                       max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3.5 overflow-hidden
+                       max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 overflow-hidden
                        whitespace-nowrap rounded-full py-2.5 pl-4 pr-5
                        max-sm:static max-sm:min-w-0 max-sm:flex-1 max-sm:translate-x-0
-                       max-sm:gap-2.5 max-sm:py-2 max-sm:pl-3 max-sm:pr-3.5"
+                       max-sm:gap-2 max-sm:py-2 max-sm:pl-3 max-sm:pr-3.5"
       aria-label={[text, meta].filter(Boolean).join('. ')}
       onClick={onClick}>
       <span className={`size-2.5 shrink-0 rounded-full ${dot}`} />
-      <span className="flex min-w-0 items-center gap-3.5">
+      <span className="flex min-w-0 items-center gap-3">
         <b className="truncate text-base font-bold max-sm:text-xs" aria-live="polite">
           {text}
         </b>
@@ -201,7 +198,7 @@ export function EditHint({
 }) {
   return (
     <div
-      className="edithint glass absolute bottom-[var(--trip-1)] left-1/2 z-[8] flex -translate-x-1/2 items-center gap-2.5
+      className="edithint glass absolute bottom-[var(--trip-1)] left-1/2 z-[8] flex -translate-x-1/2 items-center gap-2
                     whitespace-nowrap rounded-full px-4 py-2 text-xs max-md:hidden">
       <b className="text-[11px] font-extrabold uppercase tracking-[.06em] text-accent">
         {routeDraft ? 'Route' : 'Edit mode'}

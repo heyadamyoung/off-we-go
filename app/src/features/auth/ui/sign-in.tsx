@@ -142,7 +142,7 @@ export default function SignInScreen() {
     <Screen>
       <h1 className="text-2xl font-extrabold tracking-tight">{heading}</h1>
       <p className="hint max-w-[380px]">{blurb}</p>
-      <form className="mt-2 flex w-full flex-col gap-3.5 text-left" onSubmit={submit}>
+      <form className="mt-2 flex w-full flex-col gap-3 text-left" onSubmit={submit}>
         {phase === 'details' && (
           <>
             {mode === 'register' && (
@@ -257,6 +257,14 @@ export default function SignInScreen() {
             disabled={busy}>
             {mode === 'signin' ? 'Create account' : 'Sign in'}
           </button>
+        </p>
+      )}
+      {phase === 'details' && (
+        <p className="hint">
+          Just looking?{' '}
+          <a className="font-bold" href="/trips/sample">
+            Wander the sample trip
+          </a>
         </p>
       )}
       {phase === 'code' && (

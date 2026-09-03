@@ -19,7 +19,8 @@ interface PanelProps {
   onSelect: (item: TripItem) => void
   onClose: () => void
   onInvite: () => void
-  onAddPhotos: () => void
+  /** absent for read-only viewers — the button goes with it */
+  onAddPhotos?: () => void
   sights: SightsListProps
 }
 
@@ -33,7 +34,7 @@ const HEADINGS: Record<string, [string, string]> = {
 export default function TripPanel(props: PanelProps) {
   const [title, sub] = HEADINGS[props.view] || ['', '']
   const action =
-    props.view === 'photos' ? (
+    props.view === 'photos' && props.onAddPhotos ? (
       <button className="mini mini-accent" onClick={props.onAddPhotos}>
         Add photos
       </button>
@@ -105,7 +106,7 @@ function Row({
       <span className="tnum w-10 flex-none text-[11px] text-faint">{time}</span>
       {icon}
       <span className="min-w-0 flex-1">
-        <b className="block truncate text-sm font-bold">{title}</b>
+        <b className="block truncate text-sm font-semibold">{title}</b>
         <span className="block truncate text-xs text-muted">{detail}</span>
       </span>
     </button>
@@ -125,7 +126,7 @@ function Timeline({ stops, photos, selected, onSelect }: PanelProps) {
         return (
           <div key={day}>
             <div
-              className="flex items-baseline gap-2.5 px-3 pb-1.5 pt-3.5 text-[11px] font-bold
+              className="flex items-baseline gap-2 px-3 pb-1.5 pt-3.5 text-[11px] font-bold
                             uppercase tracking-[.1em] text-faint">
               <b className="text-ink">{day}</b>
               <span>

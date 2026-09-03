@@ -64,8 +64,11 @@ export async function loadTripBySlug(
   slug: string,
   session: AuthSession | null,
 ): Promise<TripLoadResult> {
+  /* The sample trip is bundled data and the product's public demo: it answers
+     with or without a backend and needs no account. Against a real backend it
+     is read-only — its edits would have nowhere to live past the tab. */
+  if (slug === 'sample') return { ...sampleResult(), canEdit: !hasBackend }
   if (!hasBackend) {
-    if (slug === 'sample') return sampleResult()
     throw Object.assign(new Error('Trip not found'), { status: 404 })
   }
   if (!session) return { needsAuth: true }

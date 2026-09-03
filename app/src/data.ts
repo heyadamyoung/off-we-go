@@ -43,8 +43,9 @@ export const byName = (n: string) => FAMILY.find(f => f.name === n) || FAMILY[0]
 export const TRIP = {
   title: 'Amsterdam Weekend',
   crew: 'Sample Family',
-  dates: '4 – 16 September',
-  dayIndex: 2, dayCount: 13,
+  // A weekend is three days — the dates say what the title says.
+  dates: '4 – 6 September',
+  dayIndex: 2, dayCount: 3,
 };
 
 export const STOPS = [

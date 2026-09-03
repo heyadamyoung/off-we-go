@@ -10,6 +10,9 @@ export const Route = createFileRoute('/trips/$slug')({
 
 function TripRoute() {
   const { slug } = Route.useParams()
+  /* The sample trip is the shop window: anyone may walk in. Everything else
+     waits for a session as before. */
+  if (slug === 'sample') return <TripPage slug={slug} />
   return (
     <RequireSession>
       <TripPage slug={slug} />

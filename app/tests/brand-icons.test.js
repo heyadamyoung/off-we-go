@@ -40,14 +40,16 @@ test('uses genuine vector artwork for the new portal icon and full lockup', asyn
   assert.equal(data[3], 0, 'vector icon background must be transparent')
 })
 
-test('brand UI renders the new vector portal instead of the old pin or raster fallback', () => {
+test('brand UI: the badge stays vector where used, and chrome carries type only', () => {
   const brandmark = renderToStaticMarkup(createElement(Brandmark, { size: 18 }))
   assert.match(brandmark, /<img[^>]+src="\/offwego-icon\.svg"/)
   assert.doesNotMatch(brandmark, /<svg\b/)
 
+  /* Both marks are still under review, so the screens that used to lead with
+     the badge lead with the wordmark: the words, and the amber full stop. */
   const screen = renderToStaticMarkup(createElement(Screen, null, 'Loading'))
-  assert.match(screen, /<img[^>]+src="\/offwego-icon\.svg"/)
-  assert.doesNotMatch(screen, /offwego-icon\.png/)
+  assert.match(screen, /Off we go/)
+  assert.doesNotMatch(screen, /<img\b/)
 })
 
 function parseIco(buffer) {
