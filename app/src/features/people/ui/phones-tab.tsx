@@ -9,6 +9,7 @@ import {
   resetDeviceToken,
 } from '../../../backend'
 import { absolutePairHref } from '../../../app-routes-core'
+import AdoptPhones from './adopt-phones'
 import { isNativeApp, mobilePlatform, mobileTracker } from '../../../mobile'
 import type { TrackerState } from '../../../mobile-tracking-core'
 import { agoLabel } from '../../../shared/lib/geo'
@@ -108,6 +109,7 @@ export default function PhonesTab({
 
   return (
     <>
+      {canEdit && <AdoptPhones tripId={tripId} toast={toast} onChange={onChange} />}
       {isNativeApp && (
         <div className="surface grid grid-cols-[auto_1fr_auto] items-center gap-2 p-3">
           <span

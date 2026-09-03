@@ -35,6 +35,38 @@ const timeOf = (value: Date | string | null | undefined) => {
    same label — one is a decision, the other is the state a parent worries
    about. A phone that has reported again since its pause is not paused, and a
    pause stamped in the future is a clock problem, not a fact. */
+/* A phone that stopped sharing without saying so. The night this was built,
+   a TestFlight auto-update killed both phones' background watchers mid-drive
+   — iOS revives them only when the app is next opened — and the map simply
+   went stale with no explanation. The remedy is information: name the quiet
+   phone and say what reopens it, so the family polices itself. A deliberate
+   pause is excluded — "she turned it off" is not "her update ate it". */
+export const QUIET_PHONE_MS = 30 * 60_000
+
+export function quietPhones(
+  devices:
+    | Array<{
+        id: string
+        name?: string | null
+        lastSeen?: Date | string | null
+        pausedAt?: Date | string | null
+      }>
+    | undefined,
+  now = new Date(),
+) {
+  return (devices || [])
+    .filter(device => device.lastSeen && !device.pausedAt)
+    .map(device => ({
+      id: device.id,
+      name: device.name || 'A phone',
+      minutesQuiet: Math.floor(
+        (now.getTime() - new Date(device.lastSeen as Date | string).getTime()) / 60_000,
+      ),
+    }))
+    .filter(device => device.minutesQuiet >= QUIET_PHONE_MS / 60_000)
+    .sort((a, b) => b.minutesQuiet - a.minutesQuiet)
+}
+
 export function deliberatePause(devices: PausableDevice[] | undefined, now = new Date()) {
   if (!devices?.length) return false
   const heard = devices.filter(

@@ -972,5 +972,37 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       segmentDocuments.delete(documentId)
       return { storagePath: row.storagePath }
     },
+
+    async listAdoptableDevices(user, tripId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const out = []
+      for (const device of devices.values()) {
+        if (device.tripId === tripId) continue
+        if (!(await this.canEditTrip(user.id, device.tripId))) continue
+        out.push({
+          id: device.id,
+          name: device.name,
+          tripId: device.tripId,
+          tripTitle: trips.get(device.tripId)?.title || '',
+          lastSeen: device.lastSeen || null,
+        })
+      }
+      return out
+    },
+    async adoptDevice(user, tripId, deviceId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const device = devices.get(deviceId)
+      if (!device) return null
+      if (!(await this.canEditTrip(user.id, device.tripId))) return null
+      device.tripId = tripId
+      let movedPositions = 0
+      for (const fix of positions.values()) {
+        if (fix.deviceId === deviceId) {
+          fix.tripId = tripId
+          movedPositions++
+        }
+      }
+      return { id: device.id, name: device.name, movedPositions }
+    },
   }
 }

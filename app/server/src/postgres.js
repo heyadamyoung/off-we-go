@@ -1762,6 +1762,43 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         createdAt: value.created_at,
       }
     },
+    /* Phones registered on the user's OTHER editable trips: the ones that
+       post faithfully to the wrong map because a token IS a registration.
+       Surfaced so a mis-homed phone is one tap from the right trip. */
+    async listAdoptableDevices(user, tripId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `select d.*, t.title as trip_title from devices d
+        join trips t on t.id = d.trip_id
+        join trip_members m on m.trip_id = d.trip_id and m.profile_id = $1
+          and m.role in ('owner','editor')
+        where d.trip_id <> $2 order by d.created_at desc`,
+        [user.id, tripId],
+      )
+      return result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        tripId: row.trip_id,
+        tripTitle: row.trip_title,
+        lastSeen: row.last_seen,
+      }))
+    },
+    /* Move a phone — and its last day of positions — to another trip the
+       user edits. The token keeps working; only its home changes. */
+    async adoptDevice(user, tripId, deviceId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const found = await pool.query('select * from devices where id=$1', [deviceId])
+      const device = found.rows[0]
+      if (!device) return null
+      if (!(await this.canEditTrip(user.id, device.trip_id))) return null
+      await pool.query('update devices set trip_id=$2 where id=$1', [deviceId, tripId])
+      const moved = await pool.query(
+        `update positions set trip_id=$2
+        where device_id=$1 and recorded_at > now() - interval '24 hours'`,
+        [deviceId, tripId],
+      )
+      return { id: device.id, name: device.name, movedPositions: moved.rowCount }
+    },
     async listDevices(user, tripId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null
       const result = await pool.query(

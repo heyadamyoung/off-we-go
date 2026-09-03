@@ -1335,6 +1335,27 @@ export async function buildServer({
     })
   })
 
+  app.get('/api/trips/:tripId/devices/adoptable', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const devices = await repository.listAdoptableDevices(user, request.params.tripId)
+    if (!devices) return reply.code(403).send({ error: 'You cannot edit this trip' })
+    return { devices }
+  })
+  app.post('/api/trips/:tripId/devices/:deviceId/adopt', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const adopted = await repository.adoptDevice(
+      user,
+      request.params.tripId,
+      request.params.deviceId,
+    )
+    if (!adopted) return reply.code(404).send({ error: 'That phone was not found on your trips' })
+    stamp({ 'device.id': adopted.id, 'positions.moved': adopted.movedPositions })
+    // The phone's old trip and its new one both change shape.
+    liveStream.announce(request.params.tripId, 'people')
+    return adopted
+  })
   app.get('/api/trips/:tripId/devices', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

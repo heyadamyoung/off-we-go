@@ -17,6 +17,7 @@ import { MapChrome, MapControls, NowCapsule, ScopeToggle, TripTitle } from './tr
 import { TripCluster } from './trip-cluster'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
+import { quietPhones } from '../../../live-freshness-core'
 import { MakeIt, SegmentEditor } from '../../transport'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
@@ -228,6 +229,21 @@ function Trip({
             now={clock}
           />
         )}
+        {/* A phone that went dark without a pause — usually an app update
+            eating the background watcher — is named, with the cure. */}
+        {!panelOpen &&
+          data.source !== 'sample' &&
+          quietPhones(phones, new Date(clock)).map(phone => (
+            <div
+              key={phone.id}
+              className="glass pointer-events-none rounded-full px-3.5 py-1.5 text-[11px] text-muted">
+              <b className="text-ink">{phone.name}</b> hasn’t shared for{' '}
+              {phone.minutesQuiet >= 90
+                ? `${Math.round(phone.minutesQuiet / 60)} h`
+                : `${phone.minutesQuiet} min`}{' '}
+              — opening Off We Go on that phone restarts sharing
+            </div>
+          ))}
         {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
           <NowCapsule
             text={progressCopy.text}

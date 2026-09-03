@@ -43,6 +43,28 @@ export async function listDevices(tripId: Id): Promise<Device[]> {
   const values = await authClient.request<DeviceWire[]>(`${tripPath(tripId)}/devices`)
   return values.map(asDevice)
 }
+/* A token IS a registration: a phone posts to whichever trip minted its
+   token, however faithfully its owner watches a different one. These two
+   are the cure — see the mis-homed phone, bring it here in one tap. */
+export async function listAdoptableDevices(
+  tripId: Id,
+): Promise<Array<{ id: string; name: string; tripTitle: string }>> {
+  if (isSample(tripId)) return []
+  const result = await authClient.request<{
+    devices: Array<{ id: string; name: string; tripTitle: string }>
+  }>(`${tripPath(tripId)}/devices/adoptable`)
+  return result.devices
+}
+
+export async function adoptDevice(
+  tripId: Id,
+  deviceId: string,
+): Promise<{ movedPositions: number }> {
+  return authClient.request(`${tripPath(tripId)}/devices/${encodeURIComponent(deviceId)}/adopt`, {
+    method: 'POST',
+  })
+}
+
 export async function registerDevice(tripId: Id, name: string): Promise<Device> {
   if (isSample(tripId)) throw new Error('Phones require the VPS backend')
   let timezone: string | null = null
