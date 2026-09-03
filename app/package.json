@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/preload-trip-chunks.mjs",
+    "build": "vite build",
     "build:ios": "vite build --mode ios",
     "build:android": "vite build --mode android",
     "brand:icons": "node scripts/generate-brand-icons.mjs",

@@ -132,7 +132,6 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootLayout() {
-  performance.mark('mk:root')
   useEffect(() => trackKeyboardInset(), [])
   useEffect(() => registerAppShell(isNativeApp), [])
 

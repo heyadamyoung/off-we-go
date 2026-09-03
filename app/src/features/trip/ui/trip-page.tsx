@@ -24,13 +24,11 @@ import TripCards from './trip-cards'
 import type { Coordinates, TripData } from '../../../shared/model/types'
 
 export default function TripPage({ slug }: { slug: string }) {
-  performance.mark('mk:trippage')
   const busyEditing = useRef(false)
   const canAdopt = useCallback(() => !busyEditing.current, [])
   const { data, error, reload } = useTripData(slug, canAdopt)
   if (error) return <Boot what="This trip" error={error} onRetry={reload} />
   if (!data) return <Boot what="the trip" />
-  performance.mark('mk:tripdata')
   return <Trip key={data.tripId} data={data} busyEditing={busyEditing} reload={reload} />
 }
 
