@@ -81,8 +81,19 @@ services:
       CODEX_HOME: /data/codex
       WAYFARE_AI_MODEL: ${WAYFARE_AI_MODEL:-gpt-5.6-luna}
       WAYFARE_AI_REASONING: ${WAYFARE_AI_REASONING:-xhigh}
+      # Traces: auto-instrumented at boot via NODE_OPTIONS, shipped to the
+      # alloy sidecar. Metrics and OTel logs stay off — logs already flow
+      # through docker, and pino gains trace ids from the same hook.
+      NODE_OPTIONS: --import=@opentelemetry/auto-instrumentations-node/register
+      OTEL_SERVICE_NAME: offwego-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      REPLAY_DIR: /data/replays
     volumes:
       - ./data/uploads:/data/uploads
+      - ./data/replays:/data/replays
       # A named volume rather than a bind mount: Codex rewrites its own login
       # as tokens rotate, and the image pre-creates this path owned by node.
       - codex_data:/data/codex
@@ -141,6 +152,8 @@ services:
       GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL:-https://logs-prod-018.grafana.net/loki/api/v1/push}
       GRAFANA_LOKI_USER: ${GRAFANA_LOKI_USER:-1619648}
       GRAFANA_LOKI_TOKEN: ${GRAFANA_LOKI_TOKEN:-}
+      GRAFANA_TEMPO_URL: ${GRAFANA_TEMPO_URL:-tempo-prod-13-prod-ca-east-0.grafana.net:443}
+      GRAFANA_TEMPO_USER: ${GRAFANA_TEMPO_USER:-1613949}
     volumes:
       - ./deploy/alloy.config:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro

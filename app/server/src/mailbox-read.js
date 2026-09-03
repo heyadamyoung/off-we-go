@@ -10,6 +10,7 @@
    HTTP said. */
 
 import { expiresAt as tokenLife, isExpired, tokenRequestBody, tokenUrl } from './mailbox-oauth.js'
+import { event, span } from './tracing.js'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 const MESSAGE_FIELDS = 'id,subject,from,receivedDateTime,bodyPreview,hasAttachments'
@@ -53,6 +54,7 @@ export function createMailboxReader({
             refreshToken: box.open(connection.refreshToken),
           }).toString(),
         })
+        event('refresh token', { 'mailbox.id': connection.id, 'refresh.why': why })
         const tokens = await response.json().catch(() => ({}))
         if (!response.ok || !tokens.access_token) {
           await repository.markMailboxNeedsReconnect(connection.id)
@@ -128,7 +130,13 @@ export function createMailboxReader({
       }))
     },
 
-    async listMessages(userId, { mailboxId, search, top = 10 } = {}) {
+    listMessages(userId, { mailboxId, search, top = 10 } = {}) {
+      return span('search mailbox', { 'search.present': !!search }, () =>
+        this.listMessagesInner(userId, { mailboxId, search, top }),
+      )
+    },
+
+    async listMessagesInner(userId, { mailboxId, search, top = 10 } = {}) {
       const connection = await resolve(userId, mailboxId)
       const query = new URLSearchParams({
         $top: String(Math.min(Math.max(1, top), 25)),
@@ -147,7 +155,13 @@ export function createMailboxReader({
       }
     },
 
-    async readMessage(userId, { mailboxId, messageId }) {
+    readMessage(userId, { mailboxId, messageId }) {
+      return span('read message', {}, () => this.readMessageInner(userId, { mailboxId, messageId }))
+    },
+
+    // The Inner pair exists so the spans wrap whole operations; call the
+    // un-suffixed methods, which are the traced door.
+    async readMessageInner(userId, { mailboxId, messageId }) {
       const connection = await resolve(userId, mailboxId)
       const query = new URLSearchParams({
         $select: `${MESSAGE_FIELDS},toRecipients,ccRecipients,body,webLink`,

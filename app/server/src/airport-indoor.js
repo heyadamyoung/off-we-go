@@ -9,6 +9,8 @@
    the raw Overpass JSON goes back to the client, which owns the conversion.
    Keep the two in step. */
 
+import { event, span } from './tracing.js'
+
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -138,30 +140,38 @@ export function createIndoorCache({
       if (kept && clock().getTime() - kept.at < ttlMs) return kept.body
       let flight = pending.get(key)
       if (!flight) {
-        flight = (async () => {
+        flight = span('fetch terminal', { 'airport.key': key }, async active => {
           // The durable copy first — a restart forgot this Map, not the
           // month. A partial row (cached before partials were refused) is
           // treated as absent, so the next ask heals it.
           let durable = store ? await store.read(key).catch(() => null) : null
-          if (durable && isPartial(durable.body)) durable = null
+          if (durable && isPartial(durable.body)) {
+            event('heal partial row', { 'airport.key': key })
+            durable = null
+          }
           if (durable && clock().getTime() - durable.at < ttlMs) {
+            active.setAttribute('cache.tier', 'durable')
             remember(key, { at: durable.at, body: durable.body })
             return durable.body
           }
           let body
           try {
             body = await fromMirrors(queryFor(lng, lat))
+            active.setAttribute('cache.tier', 'mirrors')
           } catch (error) {
             // Floor plans change on the timescale of construction work:
             // last month's terminal beats an outage's empty hands.
-            if (durable) return durable.body
+            if (durable) {
+              active.setAttribute('cache.tier', 'stale-fallback')
+              return durable.body
+            }
             throw error
           }
           const at = clock().getTime()
           remember(key, { at, body })
           if (store) store.write(key, body, at).catch(() => {})
           return body
-        })().finally(() => pending.delete(key))
+        }).finally(() => pending.delete(key))
         pending.set(key, flight)
       }
       return flight

@@ -26,6 +26,8 @@ import { normalizeProfileHandle } from './slugs.js'
 import { createIndoorCache } from './airport-indoor.js'
 import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
+import { validChunk } from './replay-store.js'
+import { span } from './tracing.js'
 
 const normalizeEmail = value =>
   String(value || '')
@@ -132,6 +134,11 @@ export async function buildServer({
   assistant = null,
   assistantRateLimit = { max: 30, windowMs: 10 * 60_000 },
   indoorCache = null,
+  /* Session replay: rrweb chunks from signed-in browsers, kept on this
+     server's disk. The store is optional; without it uploads are politely
+     swallowed. Watching back is for the admin email alone. */
+  replayStore = null,
+  adminEmail = null,
   trustProxy = ['loopback', 'linklocal', 'uniquelocal'],
 }) {
   if (!repository) throw new Error('A repository is required')
@@ -851,22 +858,60 @@ export async function buildServer({
     // Told about the mailbox tools only when there is a mailbox behind them.
     const mailboxes = mailboxReader ? await repository.listMailboxConnections(user.id) : []
     try {
-      const answer = await assistant.run(
-        assistantPrompt({
-          user,
-          trip,
-          canEdit,
-          mailboxes: mailboxes.length,
-          now: clock(),
-          messages,
-        }),
-        { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
+      const answer = await span(
+        'answer question',
+        {
+          'trip.slug': trip.slug,
+          'assistant.can_edit': canEdit,
+          'mailbox.count': mailboxes.length,
+        },
+        () =>
+          assistant.run(
+            assistantPrompt({
+              user,
+              trip,
+              canEdit,
+              mailboxes: mailboxes.length,
+              now: clock(),
+              messages,
+            }),
+            { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
+          ),
       )
       return { reply: answer }
     } catch (error) {
       app.log.error({ err: error }, 'assistant request failed')
       return reply.code(502).send({ error: 'The assistant could not answer' })
     }
+  })
+
+  /* ---- session replay -------------------------------------------------
+     The browser posts rrweb chunks; the owner watches them back. Uploads
+     need only a session; the list and the events are the admin's alone. */
+  const isAdmin = user => !!adminEmail && user.email === adminEmail
+  app.post('/api/replay/chunks', { bodyLimit: 2 * 1024 * 1024 }, async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!replayStore) return reply.code(204).send()
+    const chunk = validChunk(request.body)
+    if (!chunk) return reply.code(400).send({ error: 'Not a replay chunk' })
+    await replayStore.append(user.id, chunk)
+    return reply.code(204).send()
+  })
+  app.get('/api/replay/sessions', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!isAdmin(user)) return reply.code(403).send({ error: 'Replays are for the owner' })
+    if (!replayStore) return { sessions: [] }
+    return { sessions: await replayStore.sessions() }
+  })
+  app.get('/api/replay/sessions/:session/events', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!isAdmin(user)) return reply.code(403).send({ error: 'Replays are for the owner' })
+    const events = replayStore ? await replayStore.events(request.params.session) : null
+    if (!events) return reply.code(404).send({ error: 'No such session' })
+    return { events }
   })
 
   app.put('/api/trips/:tripId/presence', async (request, reply) => {

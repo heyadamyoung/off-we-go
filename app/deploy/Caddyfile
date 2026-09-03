@@ -32,6 +32,12 @@
     reverse_proxy api:3000
   }
 
+  # The browser's telemetry (Faro) lands on our own domain and is handed to
+  # the alloy agent — first-party, so nothing for a blocker to eat.
+  handle /collect* {
+    reverse_proxy alloy:12347
+  }
+
   handle {
     root * /srv
     # {path}/ lets a real directory serve its own index.html (the /adhoc/

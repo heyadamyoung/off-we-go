@@ -13,6 +13,7 @@ import {
   stepMetres,
   walkGraph,
 } from '../../../airport-route-core'
+import { track } from '../../../shared/lib/telemetry'
 import { indoorForStop } from '../api/indoor'
 import type { IndoorGate } from '../../map'
 import type { Coordinates, Stop, Toast } from '../../../shared/model/types'
@@ -108,6 +109,7 @@ export default function useAirportIndoor({
     let gone = false
     setLoading(true)
     setFeatures(null)
+    track('open terminal', { airport: stop.name })
     /* The toasts deliberately outlive the view. A terminal that fails to
        load can take most of a minute to say so, and by then the traveller
        has zoomed away — which flips `gone` and, when it guarded the toasts
