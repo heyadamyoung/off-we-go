@@ -14,6 +14,18 @@ export function event(name, attributes = {}) {
   trace.getActiveSpan()?.addEvent(name, attributes)
 }
 
+/** Widen the current request's span: who asked, from where, about what.
+    This is the wide-event promise — the 3am question is answered by the
+    span itself, not by joining four systems. */
+export function stamp(attributes) {
+  trace.getActiveSpan()?.setAttributes(attributes)
+}
+
+/** The failure lands on the span, whatever the HTTP layer turns it into. */
+export function recordFailure(error) {
+  trace.getActiveSpan()?.recordException(error)
+}
+
 export async function span(name, attributes, work) {
   return tracer.startActiveSpan(name, { attributes }, async active => {
     try {

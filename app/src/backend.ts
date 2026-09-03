@@ -3,6 +3,7 @@ import { safeOAuthContinuation } from './api-client-core'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
 import { authClient, hasBackend, isSample, tripPath } from './backend-base'
+import { track } from './shared/lib/telemetry'
 import { deviceStorage, mobileTracker } from './mobile'
 import { localId } from './offline-edits-core'
 import { withOfflineEdit } from './offline-edits'
@@ -319,6 +320,7 @@ export async function askAssistant(
       'On a real trip, ask me anything about the plan, the places, or where everyone is.'
     )
   }
+  track('ask assistant', { trip: slug, turns: String(messages.length) })
   const result = await authClient.request<{ reply?: string }>('/assistant', {
     method: 'POST',
     body: { trip: slug, messages },

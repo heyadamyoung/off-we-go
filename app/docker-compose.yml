@@ -154,9 +154,14 @@ services:
       GRAFANA_LOKI_TOKEN: ${GRAFANA_LOKI_TOKEN:-}
       GRAFANA_TEMPO_URL: ${GRAFANA_TEMPO_URL:-tempo-prod-13-prod-ca-east-0.grafana.net:443}
       GRAFANA_TEMPO_USER: ${GRAFANA_TEMPO_USER:-1613949}
+      GRAFANA_PROM_URL: ${GRAFANA_PROM_URL:-https://prometheus-prod-32-prod-ca-east-0.grafana.net/api/prom/push}
+      GRAFANA_PROM_USER: ${GRAFANA_PROM_USER:-3247946}
     volumes:
       - ./deploy/alloy.config:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
       - alloy_data:/var/lib/alloy/data
 
 volumes:

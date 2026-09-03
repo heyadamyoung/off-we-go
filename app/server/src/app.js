@@ -27,7 +27,7 @@ import { createIndoorCache } from './airport-indoor.js'
 import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 import { validChunk } from './replay-store.js'
-import { span } from './tracing.js'
+import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
   String(value || '')
@@ -162,6 +162,7 @@ export async function buildServer({
     if (error.code === '22P02') {
       return reply.code(404).send({ error: 'Not found' })
     }
+    recordFailure(error)
     request.log?.error?.({ err: error }, 'request failed')
     const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500
     return reply
@@ -263,7 +264,9 @@ export async function buildServer({
     limits: { files: 1, fileSize: 25 * 1024 * 1024, fields: 20 },
   })
 
-  app.get('/api/health', async (_request, reply) => {
+  // logLevel warn: docker probes this every ten seconds for ever, and two
+  // info lines per probe would be most of what Loki holds. Failures still log.
+  app.get('/api/health', { logLevel: 'warn' }, async (_request, reply) => {
     try {
       await Promise.all([repository.ready?.(), fileStore?.ready?.()])
       /* Which optional pieces this deployment actually came up with. It says
@@ -692,6 +695,9 @@ export async function buildServer({
     const accessToken = bearer(request)
     const user = accessToken ? await repository.findSession(tokenHash(accessToken), clock()) : null
     if (!user) reply.code(401).send({ error: 'Sign in required' })
+    // Every authenticated request's span says who and from where — the wide
+    // event that lets a trace search read "Catherine's requests, tonight".
+    if (user) stamp({ 'user.id': user.id, 'client.address': clientAddress(request) })
     return user
   }
 
@@ -873,8 +879,8 @@ export async function buildServer({
           'assistant.can_edit': canEdit,
           'mailbox.count': mailboxes.length,
         },
-        () =>
-          assistant.run(
+        async active => {
+          const said = await assistant.run(
             assistantPrompt({
               user,
               trip,
@@ -884,7 +890,10 @@ export async function buildServer({
               messages,
             }),
             { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
-          ),
+          )
+          active.setAttributes({ 'answer.length': said.length, 'turn.count': messages.length })
+          return said
+        },
       )
       return { reply: answer }
     } catch (error) {
@@ -903,6 +912,7 @@ export async function buildServer({
     if (!replayStore) return reply.code(204).send()
     const chunk = validChunk(request.body)
     if (!chunk) return reply.code(400).send({ error: 'Not a replay chunk' })
+    stamp({ 'replay.session': chunk.session, 'replay.seq': chunk.seq })
     await replayStore.append(user.id, chunk)
     return reply.code(204).send()
   })
@@ -1380,6 +1390,7 @@ export async function buildServer({
       ? await repository.findDeviceByTokenHash(tokenHash(accessToken))
       : null
     if (!device) return reply.code(401).send({ error: 'Unknown phone' })
+    stamp({ 'device.id': device.id, 'trip.id': device.tripId })
 
     const retryAfter = ingestLimiter.hit(device.id, ingestRateLimit)
     if (retryAfter) {
@@ -1395,6 +1406,7 @@ export async function buildServer({
        that lets the viewers' copy say "paused" instead of guessing from
        silence. The next real fix clears it. */
     if (body.paused === true || body.paused === 'true' || request.query?.paused === 'true') {
+      event('mark paused', { 'device.id': device.id })
       await repository.markDevicePaused(device, clock())
       liveStream.announce(device.tripId)
       return reply.type('text/plain').send('OK')
@@ -1961,6 +1973,12 @@ export async function buildServer({
       const walkways = repository.listAirportWalkways
         ? await repository.listAirportWalkways(lng, lat).catch(() => [])
         : []
+      stamp({
+        'airport.lng': lng,
+        'airport.lat': lat,
+        'element.count': body?.elements?.length ?? 0,
+        'walkway.count': walkways.length,
+      })
       return mergeWalkways(body, walkways)
     } catch (error) {
       // The night the gates vanished per-phone there was no record of what

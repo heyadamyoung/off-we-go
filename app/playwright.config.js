@@ -13,6 +13,11 @@ export default defineConfig({
   testMatch: '**/*.spec.js',
   fullyParallel: false,
   workers: process.env.CI ? 2 : 4,
+  /* CI only, one retry: the sights and place-search specs lean on live
+     Wikipedia, which throttles GitHub's runner addresses in waves — the same
+     two tests failed different runs on different afternoons with the code
+     untouched. Locally a failure stays loud. */
+  retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   expect: { timeout: 15_000 },
   reporter: process.env.CI ? 'github' : 'list',

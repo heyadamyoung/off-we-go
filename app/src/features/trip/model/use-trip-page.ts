@@ -13,6 +13,7 @@ import useLiveTrip from './use-live-trip'
 import useTripPresence from './use-trip-presence'
 import useTripEscape from './use-trip-escape'
 import useOfflineEdits from './use-offline-edits'
+import { track as trackEvent } from '../../../shared/lib/telemetry'
 import { withFace } from './faces'
 import { daysOf } from './trip-items'
 import type {
@@ -67,7 +68,11 @@ export default function useTripPage({
   const [placing, setPlacing] = useState<null | { move?: string }>(null)
   const [photoBy, setPhotoBy] = useState<string | null>(null)
   const [mapOverride, setMapOverride] = useState<string | null>(theme)
-  const [attraction, setAttractionCard] = useState<Attraction | null>(null)
+  const [attraction, setAttractionCardBare] = useState<Attraction | null>(null)
+  const setAttractionCard = useCallback((next: Attraction | null) => {
+    if (next) trackEvent('open attraction', { attraction: String(next.name || next.id) })
+    setAttractionCardBare(next)
+  }, [])
   const viewers = useTripPresence(tripId, family)
 
   /* The AI chat: its transcript lives here so closing the sheet keeps the
@@ -142,7 +147,7 @@ export default function useTripPage({
   const {
     following,
     setFollowing,
-    toggleFollow,
+    toggleFollow: cameraToggleFollow,
     fitAll,
     padding: mapPadding,
   } = useTripCamera({
@@ -154,6 +159,10 @@ export default function useTripPage({
     barPeek,
     setMapView,
   })
+  const toggleFollow = useCallback(() => {
+    trackEvent('toggle follow', { engaged: String(!following) })
+    cameraToggleFollow()
+  }, [cameraToggleFollow, following])
   const liveStop = progress.currentStop || progress.destination
   const day = search.day || liveStop?.day || ALL_DAYS
   const liveStops = useMemo(() => applyLiveStopStatuses(ordered, progress), [ordered, progress])

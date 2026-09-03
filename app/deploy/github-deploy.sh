@@ -165,4 +165,10 @@ if [[ "$(cat "$seed_marker" 2>/dev/null)" != "$ATTRACTIONS_SEED_VERSION" ]]; the
     > "$APP_ROOT/data/seed-attractions.log" 2>&1 < /dev/null &
 fi
 
+# The disk is the quietest way this box dies: dangling images and build
+# cache from many deploys a day. Dangling only — the :rollback tags must
+# survive — and the builder keeps a working set so rebuilds stay quick.
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --keep-storage 8GB >/dev/null 2>&1 || true
+
 echo "Off We Go deployed at $release_sha."

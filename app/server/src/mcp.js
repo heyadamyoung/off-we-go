@@ -3,6 +3,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { z } from 'zod'
 import { AGENT_TOKEN_PREFIX, AGENT_TOKEN_TTL_MS, readAgentToken } from './agent-token.js'
+import { span } from './tracing.js'
 
 const SCOPES = ['trips:read', 'trips:write']
 const ACCESS_TOKEN_TTL_MS = 60 * 60_000
@@ -270,6 +271,18 @@ function buildMcpServer({
       return toolFailure(error.message)
     }
   }
+  /* Every tool call is a span of its own: which tool, who asked, which trip
+     it touched, and whether it worked — the answer to "what did the agent
+     actually do inside that question" without reading a transcript. */
+  const register = (name, config, handler) =>
+    server.registerTool(name, config, args =>
+      span('call tool', { 'tool.name': name, 'user.id': user.id }, async active => {
+        if (args?.tripId) active.setAttribute('trip.id', args.tripId)
+        const outcome = await handler(args)
+        active.setAttribute('tool.ok', !outcome?.isError)
+        return outcome
+      }),
+    )
   /* A change made through a tool must reach the browsers watching that trip
      the same way a change made through the app does — the announce hook is
      the same one the HTTP routes fire, these tools just have to say which
@@ -279,7 +292,7 @@ function buildMcpServer({
     if (!outcome?.isError && args.tripId) announce?.(args.tripId, kind)
     return outcome
   }
-  server.registerTool(
+  register(
     'list_trips',
     {
       description:
@@ -289,7 +302,7 @@ function buildMcpServer({
     },
     async () => result(await repository.listTrips(user)),
   )
-  server.registerTool(
+  register(
     'get_trip',
     {
       description: 'Get the authenticated user’s current trip, or a trip selected by slug.',
@@ -309,7 +322,7 @@ function buildMcpServer({
       return trip ? result(tripForMcp(trip)) : toolFailure('No accessible trip was found.')
     },
   )
-  server.registerTool(
+  register(
     'get_live_positions',
     {
       description:
@@ -355,7 +368,7 @@ function buildMcpServer({
      read that viewer's own inbox. The reader resolves every mailbox through
      the asking user's own rows, so the gate here is consent, not reach. */
   if (mailTools) {
-    server.registerTool(
+    register(
       'list_mailboxes',
       {
         description:
@@ -365,7 +378,7 @@ function buildMcpServer({
       },
       ask(() => mailbox.listMailboxes(user.id)),
     )
-    server.registerTool(
+    register(
       'search_mailbox',
       {
         description:
@@ -381,7 +394,7 @@ function buildMcpServer({
         mailbox.listMessages(user.id, { mailboxId, search, top }),
       ),
     )
-    server.registerTool(
+    register(
       'read_mailbox_message',
       {
         description:
@@ -398,7 +411,7 @@ function buildMcpServer({
 
   if (!scopes.includes('trips:write')) return server
 
-  server.registerTool(
+  register(
     'create_trip',
     {
       description: 'Create a Off We Go trip owned by the authenticated user.',
@@ -415,7 +428,7 @@ function buildMcpServer({
     async input => result(await repository.createTrip(user, input)),
   )
 
-  server.registerTool(
+  register(
     'update_trip',
     {
       description: 'Update the title, crew, dates or date range of an editable trip.',
@@ -438,7 +451,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'create_stop',
     {
       description: 'Add a stop with valid longitude and latitude to an editable trip.',
@@ -478,7 +491,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'update_stop',
     {
       description: 'Update fields on an existing trip stop.',
@@ -508,7 +521,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'delete_stop',
     {
       description:
@@ -523,7 +536,7 @@ function buildMcpServer({
     ),
   )
 
-  server.registerTool(
+  register(
     'replace_route',
     {
       description:
@@ -543,7 +556,7 @@ function buildMcpServer({
     ),
   )
 
-  server.registerTool(
+  register(
     'update_photo',
     {
       description: 'Update a photo caption or assign it to a stop.',
@@ -563,7 +576,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'delete_photo',
     {
       description: 'Permanently delete a trip photo and its stored resized copies.',
@@ -598,7 +611,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'add_comment',
     {
       description: 'Add a comment to a photo in an accessible trip.',
@@ -615,7 +628,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'delete_comment',
     {
       description: 'Delete the user’s comment, or any comment when the user can edit the trip.',
@@ -629,7 +642,7 @@ function buildMcpServer({
     ),
   )
 
-  server.registerTool(
+  register(
     'set_photo_like',
     {
       description: 'Like or unlike a photo in an accessible trip.',
@@ -649,7 +662,7 @@ function buildMcpServer({
      indoor payload; the client's island-stitcher welds them to the mapped
      network, so points need not touch OSM's coordinates exactly. */
   if (assistant) {
-    server.registerTool(
+    register(
       'add_airport_walkway',
       {
         description:
@@ -681,7 +694,7 @@ function buildMcpServer({
         })
       }),
     )
-    server.registerTool(
+    register(
       'list_airport_walkways',
       {
         description:
@@ -697,7 +710,7 @@ function buildMcpServer({
         return repository.listAirportWalkways(lng, lat)
       }),
     )
-    server.registerTool(
+    register(
       'remove_airport_walkway',
       {
         description: 'Remove a hand-laid walking segment by the id list_airport_walkways returned.',
@@ -713,7 +726,7 @@ function buildMcpServer({
     )
   }
 
-  server.registerTool(
+  register(
     'list_invitations',
     {
       description: 'List invitations for a trip owned by the authenticated user.',
@@ -728,7 +741,7 @@ function buildMcpServer({
     },
   )
 
-  server.registerTool(
+  register(
     'invite_person',
     {
       description:
@@ -762,7 +775,7 @@ function buildMcpServer({
     }),
   )
 
-  server.registerTool(
+  register(
     'revoke_invitation',
     {
       description: 'Revoke an invitation and remove that invited member from the trip.',

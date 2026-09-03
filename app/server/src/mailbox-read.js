@@ -131,9 +131,14 @@ export function createMailboxReader({
     },
 
     listMessages(userId, { mailboxId, search, top = 10 } = {}) {
-      return span('search mailbox', { 'search.present': !!search }, () =>
-        this.listMessagesInner(userId, { mailboxId, search, top }),
-      )
+      return span('search mailbox', { 'search.present': !!search }, async active => {
+        const found = await this.listMessagesInner(userId, { mailboxId, search, top })
+        active.setAttributes({
+          'mailbox.address': !!found.mailbox,
+          'message.count': found.messages.length,
+        })
+        return found
+      })
     },
 
     async listMessagesInner(userId, { mailboxId, search, top = 10 } = {}) {
@@ -156,7 +161,14 @@ export function createMailboxReader({
     },
 
     readMessage(userId, { mailboxId, messageId }) {
-      return span('read message', {}, () => this.readMessageInner(userId, { mailboxId, messageId }))
+      return span('read message', {}, async active => {
+        const message = await this.readMessageInner(userId, { mailboxId, messageId })
+        active.setAttributes({
+          'body.length': message.body.length,
+          'message.attachments': message.hasAttachments,
+        })
+        return message
+      })
     },
 
     // The Inner pair exists so the spans wrap whole operations; call the

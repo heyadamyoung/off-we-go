@@ -58,3 +58,21 @@ export function track(name: string, attributes: Record<string, string> = {}) {
     /* never the app's problem */
   }
 }
+
+/** Sessions, errors and events wear the signed-in user's id from here on. */
+export function identify(id: string | undefined) {
+  try {
+    if (id) faro?.api.setUser({ id: String(id) })
+  } catch {
+    /* never the app's problem */
+  }
+}
+
+/** The screen the session is on; route changes call this as they land. */
+export function view(name: string) {
+  try {
+    faro?.api.setView({ name })
+  } catch {
+    /* never the app's problem */
+  }
+}
