@@ -37,7 +37,7 @@ if (process.env.CODEX_AUTH_JSON_B64) {
     assistant = {
       run: createCodexRunner({
         home,
-        model: process.env.WAYFARE_AI_MODEL || 'gpt-5.6-sol',
+        model: process.env.WAYFARE_AI_MODEL || 'gpt-5.6-luna',
         reasoningEffort: process.env.WAYFARE_AI_REASONING || 'xhigh',
         timeoutMs: Number(process.env.WAYFARE_AI_TIMEOUT_MS) || 300_000,
       }),
