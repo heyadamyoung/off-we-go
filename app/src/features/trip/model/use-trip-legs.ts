@@ -8,7 +8,9 @@ import type { Id, Stop, TripLeg } from '../../../shared/model/types'
    quietly stays empty wherever no engine is deployed. */
 export default function useTripLegs({ tripId, stops }: { tripId: Id; stops: Stop[] }) {
   const [legs, setLegs] = useState<TripLeg[]>([])
-  const key = stops.map(stop => `${stop.id}:${stop.day}:${stop.lng}:${stop.lat}:${stop.seq}`).join('|')
+  const key = stops
+    .map(stop => `${stop.id}:${stop.day}:${stop.lng}:${stop.lat}:${stop.seq}`)
+    .join('|')
   useEffect(() => {
     let alive = true
     loadTripLegs(tripId).then(result => {
