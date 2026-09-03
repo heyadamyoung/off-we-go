@@ -1,10 +1,5 @@
 import { ask, type WikiQueryResponse } from '../../../shared/api/wikipedia-client'
-import {
-  NOT_A_PHOTO,
-  NOT_A_PLACE,
-  NOT_SOMEWHERE_YOU_GO,
-  tidy,
-} from '../../../shared/lib/place-format'
+import { NOT_A_PHOTO, tidy } from '../../../shared/lib/place-format'
 import type { AttractionPoi, Coordinates } from '../../../shared/model/types'
 
 const CELL_DEG = 0.12 // ~13 km of latitude, so 10 km circles overlap
@@ -82,119 +77,13 @@ const kindOf = (text: string) => (KINDS.find(([, re]) => re.test(text)) || ['pla
 // Worth a pin even when the whole country is on screen.
 const HEADLINE = new Set(['castle', 'museum', 'outdoors', 'history', 'fun', 'transit'])
 
-/* Things geotagged like places that are not places to go. Settlements are the
-   big one: every village in Scotland has an article, and a map peppered with
-   hamlets tells you nothing about where to spend an afternoon. */
-const IS_A_SETTLEMENT =
-  /^(the )?(capital |former |small |large |market |port |county |cathedral |coastal |fishing |mining |new |old )*(city|town|village|hamlet|burgh|settlement|community|suburb)(\s+(in|of|and|near|on)\b|,|$)/i
-
-const NOT_AN_ATTRACTION = new RegExp(
-  [
-    // administrative and residential
-    'village',
-    'hamlet',
-    'human settlement',
-    'civil parish',
-    'parish',
-    'council area',
-    'electoral',
-    'ward',
-    'constituency',
-    'suburb',
-    'neighbou?rhood',
-    'district',
-    'locality',
-    'county',
-    'region of',
-    'area of',
-    'townland',
-    'arrondissement',
-    'housing estate',
-    'residential',
-    // getting about, rather than arriving
-    'railway station',
-    'metro station',
-    'train station',
-    'bus station',
-    'tram stop',
-    'railway line',
-    'bus route',
-    'road',
-    'street',
-    'thoroughfare',
-    'roundabout',
-    'motorway',
-    'junction',
-    // airports were once in this list; they left it when the app learned to
-    // draw their insides — an airport is a destination here, not a road
-    'ferry terminal',
-    'car park',
-    // buildings named only as buildings
-    'municipal building',
-    'judicial building',
-    'office building',
-    'apartment building',
-    'commercial building',
-    'residential building',
-    'warehouse',
-    'skyscraper',
-    'shopping mall',
-    'shopping centre',
-    'retail park',
-    'industrial estate',
-    'business park',
-    'petrol station',
-    'quarry',
-    'landfill',
-    'wind farm',
-    'power station',
-    'water tower',
-    'telephone exchange',
-    // organisations and things that are not places at all
-    'school',
-    'academy',
-    'college',
-    'university',
-    'hospital',
-    'company',
-    'society',
-    'charity',
-    'trust\b',
-    'association',
-    'institute',
-    'football club',
-    'f.c.',
-    'rowing club',
-    'golf club',
-    'sports club',
-    'newspaper',
-    'band',
-    'political party',
-    'submarine',
-    'shipwreck',
-    'lifeboat station',
-    'surname',
-    'given name',
-    'painting',
-    'novel',
-    'album',
-    'song',
-  ].join('|'),
-  'i',
-)
-
-/* One decision about one article, so the map, the seeder and the tidy-up pass
-   can never drift apart. Everything is judged on Wikipedia's one-line
-   description, which for a place is reliably of the form "castle in Highland,
-   Scotland" — and never on the article prose, which mentions the borough. */
+/* No editorial filter, by the owner's explicit decision (2026-09-03): every
+   geotagged article the search returns earns a dot, villages and roads
+   included. The kind is a label for the card and the pin colour, never a
+   gatekeeper. The old blocklists live on in the sights feature, which is a
+   shortlist and still wants curating; this layer is the map itself. */
 export function classify(description: string | null | undefined) {
-  const d = (description || '').trim()
-  if (!d) return { skip: true, kind: 'place' }
-  if (NOT_AN_ATTRACTION.test(d)) return { skip: true, kind: 'place' }
-  if (NOT_A_PLACE.test(d)) return { skip: true, kind: 'place' }
-  if (NOT_SOMEWHERE_YOU_GO.test(d)) return { skip: true, kind: 'place' }
-  if (IS_A_SETTLEMENT.test(d)) return { skip: true, kind: 'place' }
-  return { skip: false, kind: kindOf(d) }
+  return { kind: kindOf((description || '').trim()) }
 }
 
 // A lead image that is a logo, a locator map or a coat of arms is worse than
@@ -214,8 +103,19 @@ export function attractionThumb(file: string | null | undefined, width = 480) {
   )
 }
 
-const STORE_PREFIX = 'wf-attr-'
+/* The 2 is the cache policy version. Cells never expire, so a browser that
+   walked a region under the old editorial filter would show its thinned-out
+   cells for ever; bumping the prefix orphans them, and the sweep below clears
+   them out rather than leaving dead weight against the storage quota. */
+const STORE_PREFIX = 'wf-attr2-'
 const STORE_CAP = 150 // cells kept before the oldest go
+try {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('wf-attr-')) localStorage.removeItem(key)
+  }
+} catch {
+  // No storage (node, private browsing): nothing stale to sweep either.
+}
 
 function readCell(key: string): AttractionPoi[] | null {
   try {
@@ -278,12 +178,7 @@ export async function attractionsInCell(cell: AttractionCell, signal?: AbortSign
   )
 
   const items: AttractionPoi[] = Object.values(json.query?.pages || {})
-    .filter(p => p.coordinates?.length && p.description)
-    .filter(p => !classify(p.description).skip)
-    /* A place you are already standing in is not somewhere to go: "Edinburgh"
-       described as the capital city earns a pin in the middle of Edinburgh,
-       which is no use to anyone. Anchored to the start of the description so
-       the City Observatory and the City Chambers keep theirs. */
+    .filter(p => p.coordinates?.length)
     .map(p => ({
       id: p.pageid,
       n: p.title.replace(/\s*\([^)]*\)\s*$/, ''),
@@ -295,7 +190,6 @@ export async function attractionsInCell(cell: AttractionCell, signal?: AbortSign
       x: +p.coordinates![0].lon.toFixed(5),
       y: +p.coordinates![0].lat.toFixed(5),
     }))
-    .filter(p => p.k !== 'place' || p.f) // unclassifiable and pictureless is noise
 
   liveCells.set(cell.key, items)
   writeCell(cell.key, items)
