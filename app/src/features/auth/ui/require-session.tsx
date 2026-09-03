@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { hasBackend } from '../../../backend'
 import Boot from '../../../shared/ui/boot'
 import { useSession } from '../model/session'
@@ -14,11 +14,11 @@ export default function RequireSession({
   signedOut,
 }: {
   children: ReactNode
-  signedOut?: ReactNode
+  signedOut?: ReactElement
 }) {
   const { session, ready } = useSession()
   if (!hasBackend) return <>{children}</>
   if (!ready) return <Boot />
-  if (!session) return signedOut ? <>{signedOut}</> : <SignInScreen />
+  if (!session) return signedOut ?? <SignInScreen />
   return <>{children}</>
 }
