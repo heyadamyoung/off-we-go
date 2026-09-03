@@ -125,4 +125,9 @@ test('a version train names its newest build, and says when it is expired', () =
     /latest build 2, uploaded 2026-08-30 10:00Z, expired/,
   )
   assert.equal(describeTrain({ version: '1.1', platform: 'IOS' }), 'version 1.1 (IOS) — no builds')
+  // A refused ask must not read as an empty train — that lie shipped once.
+  assert.match(
+    describeTrain({ version: '1.0', platform: 'IOS', unknown: true }),
+    /builds unknown, Apple refused the ask/,
+  )
 })

@@ -44,7 +44,8 @@ export function describeGroup(group, testers) {
 }
 
 /** One line per version train: the fossil record behind "why two versions?". */
-export function describeTrain({ version, platform, build, uploaded, expired }) {
+export function describeTrain({ version, platform, build, uploaded, expired, unknown }) {
+  if (unknown) return `version ${version} (${platform}) — builds unknown, Apple refused the ask`
   if (!build) return `version ${version} (${platform}) — no builds`
   return (
     `version ${version} (${platform}) — latest build ${build}, uploaded ${utc(uploaded)}` +
@@ -112,18 +113,24 @@ async function main() {
      from before the pin-at-1.0 rule keeps showing until its builds die. */
   const trains = await api(`/apps/${app.id}/preReleaseVersions?limit=50`, token)
   for (const train of trains?.data || []) {
+    /* Not the train's own builds relationship: that endpoint ignores sort
+       and refuses when asked, which first shipped here as every train
+       claiming "no builds". The builds collection filtered by train obeys. */
+    const version = train.attributes?.version
     const latest = await api(
-      `/preReleaseVersions/${train.id}/builds?limit=1&sort=-uploadedDate`,
+      `/builds?filter[app]=${app.id}&filter[preReleaseVersion.version]=` +
+        `${encodeURIComponent(version)}&sort=-uploadedDate&limit=1`,
       token,
     ).catch(() => null)
     const newest = latest?.data?.[0]
     console.log(
       describeTrain({
-        version: train.attributes?.version,
+        version,
         platform: train.attributes?.platform,
         build: newest?.attributes?.version,
         uploaded: newest?.attributes?.uploadedDate,
         expired: newest?.attributes?.expired,
+        unknown: !latest,
       }),
     )
   }
