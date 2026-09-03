@@ -15,6 +15,7 @@ import type { TrackerState } from '../../../mobile-tracking-core'
 import { agoLabel } from '../../../shared/lib/geo'
 import Icon from '../../../shared/ui/icon'
 import { appErrorMessage } from '../../../user-messages-core'
+import useTrackerState from '../model/use-tracker-state'
 import type { Device, Person, Toast } from '../../../shared/model/types'
 
 interface PhonesProps {
@@ -42,10 +43,8 @@ export default function PhonesTab({
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [card, setCard] = useState<Device | null>(null)
-  const [tracking, setTracking] = useState(() => mobileTracker.getState())
+  const tracking = useTrackerState()
   const suggested = `${me?.name || 'My'}'s phone`
-
-  useEffect(() => mobileTracker.subscribe(setTracking), [])
 
   const enableTracking = async (phone: Device) => {
     try {

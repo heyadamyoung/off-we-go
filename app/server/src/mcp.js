@@ -4,7 +4,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import { z } from 'zod'
 import { AGENT_TOKEN_PREFIX, AGENT_TOKEN_TTL_MS, readAgentToken } from './agent-token.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
-import { span } from './tracing.js'
+import { recordFailure, span, stamp } from './tracing.js'
 
 const SCOPES = ['trips:read', 'trips:write']
 const ACCESS_TOKEN_TTL_MS = 60 * 60_000
@@ -265,11 +265,15 @@ function buildMcpServer({
           : ''),
     },
   )
-  // Reader errors are written for the traveller; hand them over as-is.
+  // Reader errors are written for the traveller; hand them over as-is —
+  // but the span keeps the exception, or "what did the tool die of" has no
+  // telemetry answer, only a transcript.
   const ask = handler => async args => {
     try {
       return result(await handler(args))
     } catch (error) {
+      recordFailure(error)
+      stamp({ 'tool.error': String(error.message || error).slice(0, 300) })
       return toolFailure(error.message)
     }
   }
@@ -1026,7 +1030,9 @@ function buildMcpServer({
       try {
         await sendInvite(invitation)
         return result({ ...invitation, mailed: true })
-      } catch {
+      } catch (error) {
+        recordFailure(error)
+        stamp({ 'mail.sent': false, 'mail.error': String(error.message || error).slice(0, 200) })
         return result({
           ...invitation,
           mailed: false,
@@ -1502,8 +1508,12 @@ export async function registerMcpRoutes(
             resource,
             accessExpiresAt: new Date(clock().getTime() + AGENT_TOKEN_TTL_MS),
           }
+        // Three very different failures share this 401 — say which one, or a
+        // network-mode change can kill the whole assistant with no trail.
+        else stamp({ 'mcp.auth_fail': loopback ? 'bad_or_expired_agent_token' : 'not_loopback' })
       } else if (accessToken) {
         grant = await repository.findMcpAccessToken(tokenHash(accessToken), clock())
+        if (!grant) stamp({ 'mcp.auth_fail': 'unknown_oauth_token' })
       }
       if (!grant || grant.resource !== resource || !grant.scopes.includes('trips:read')) {
         return reply

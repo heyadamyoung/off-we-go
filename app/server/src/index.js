@@ -3,7 +3,9 @@ import { createReplayStore } from './replay-store.js'
 import { createDiskFileStore } from './files.js'
 import { createSmtpMailer } from './mailer.js'
 import { buildServer } from './app.js'
+import { writeFile } from 'node:fs/promises'
 import { createCodexRunner, prepareCodexHome } from './codex.js'
+import { createCoverage } from './coverage.js'
 import { productionLoggerOptions } from './logging.js'
 import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
 
@@ -44,9 +46,34 @@ if (process.env.CODEX_AUTH_JSON_B64) {
       }),
     }
   } catch (error) {
-    console.error('The AI assistant is disabled: could not seed the Codex login.', error.message)
+    // Structured, or Loki's `| json` never sees the one line that explains
+    // why the assistant is missing from this deploy.
+    console.error(
+      JSON.stringify({
+        level: 50,
+        evt: 'boot.assistant',
+        msg: 'The AI assistant is disabled: could not seed the Codex login',
+        err: String(error.message || error),
+      }),
+    )
   }
 }
+
+/* The routing engine's coverage follows the trips (coverage.js): the wanted
+   extract list is written onto the shared tiles volume, where the engine's
+   supervisor rebuilds. The logger arrives once the app exists. */
+const coverageLog = { current: console }
+const coverage = process.env.VALHALLA_URL
+  ? createCoverage({
+      listPoints: () => repository.listStopCoordinates(),
+      wantedPath: process.env.VALHALLA_WANTED_FILE || '/valhalla-tiles/wanted_tile_urls',
+      fs: { writeFile },
+      logger: {
+        info: (o, m) => coverageLog.current.info(o, m),
+        warn: (o, m) => coverageLog.current.warn(o, m),
+      },
+    })
+  : null
 
 const app = await buildServer({
   repository,
@@ -80,6 +107,7 @@ const app = await buildServer({
     : null,
   mailboxTokenKey: process.env.MAILBOX_TOKEN_KEY || null,
   valhallaUrl: process.env.VALHALLA_URL || null,
+  coverage,
   assistant,
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
   androidPackageName: process.env.ANDROID_PACKAGE_NAME || 'ai.threadway.wayfare',
@@ -91,6 +119,7 @@ const app = await buildServer({
 })
 
 const port = Number(process.env.PORT || 3000)
+coverageLog.current = app.log
 await app.listen({ host: '0.0.0.0', port })
 
 /* The privacy policy promises GPS fixes are deleted after 30 days; this is
@@ -100,7 +129,10 @@ const prunePositions = () =>
   repository
     .prunePositions()
     .then(removed => {
-      if (removed) app.log.info({ removed }, 'pruned expired GPS fixes')
+      // Always, not only when something was removed: a prune timer that quietly
+      // stopped must not be indistinguishable from a healthy no-op — this job
+      // keeps a privacy promise.
+      app.log.info({ evt: 'prune.positions', removed }, 'GPS fix prune ran')
     })
     .catch(error => app.log.warn({ err: error }, 'GPS fix prune failed'))
 await prunePositions()
@@ -114,7 +146,7 @@ const pruneReplays = () =>
   replaySweep
     .sweep()
     .then(removed => {
-      if (removed) app.log.info({ removed }, 'pruned expired session replays')
+      app.log.info({ evt: 'prune.replays', removed }, 'replay prune ran')
     })
     .catch(error => app.log.warn({ err: error }, 'replay prune failed'))
 await pruneReplays()

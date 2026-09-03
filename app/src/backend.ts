@@ -3,7 +3,7 @@ import { safeOAuthContinuation } from './api-client-core'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
 import { authClient, hasBackend, isSample, tripPath } from './backend-base'
-import { track } from './shared/lib/telemetry'
+import { track, trackError } from './shared/lib/telemetry'
 import { deviceStorage, mobileTracker } from './mobile'
 import { localId } from './offline-edits-core'
 import { withOfflineEdit } from './offline-edits'
@@ -340,7 +340,10 @@ export async function loadTripLegs(
   if (isSample(tripId)) return null
   try {
     return await authClient.request(`${tripPath(tripId)}/legs?mode=${mode}`)
-  } catch {
+  } catch (caught) {
+    // Degrade-to-absence for the UI, never for the telemetry: an unconfigured
+    // engine 503s (expected, quiet), anything else is a recorded failure.
+    if ((caught as { status?: number })?.status !== 503) trackError('load legs', caught)
     return null
   }
 }

@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { track } from '../lib/telemetry'
 import type { ToastTone } from '../model/types'
 
 export interface ToastNotice {
@@ -27,6 +28,9 @@ export function ToastHost({ children }: { children: ReactNode }) {
   const timer = useRef(0)
 
   const notify = useCallback<Notify>((message, tone = 'success') => {
+    // "A user saw an error" is the browser's canonical wide event, and this
+    // is the one place every error toast passes through.
+    if (tone === 'error') track('show error toast', { message })
     setNotice({ message, tone })
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setNotice(null), tone === 'error' ? 5200 : 3000)

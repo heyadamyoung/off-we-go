@@ -49,17 +49,18 @@ the answer is no, the work is not done.
 
 ## How this repo implements it
 
-- **Wide events**: every API request emits one `evt: "request"` record from the
-  `onResponse` hook in `app/server/src/app.js` — method, route template,
-  status, duration, pino's request id — merged with whatever the handler
-  stamped on `request.wide`. Handlers MUST stamp the high-cardinality facts
-  they touch: `request.wide.userId`, `tripId`, `mode`, counts, upstream
-  latencies, model names, outcome/cause on failure. If you handled it, stamp
-  it.
-- **Unit-of-work events beyond HTTP**: MCP tool calls emit `evt: "mcp.tool"`
-  (tool, userId, tripId, ms, failed); the AI assistant emits its ask outcome on
-  the request event (model, canEdit, ms, error cause). Anything that does work
-  on behalf of a person emits one wide event with that person's id on it.
+- **Wide events are OpenTelemetry spans**: every API request gets an
+  auto-instrumented span (NODE_OPTIONS in docker-compose), widened by handlers
+  through `stamp()` from `app/server/src/tracing.js` — the high-cardinality
+  facts they touch: user.id (stamped centrally in `authenticated()`), trip.id,
+  mode, counts, upstream latencies, outcome/cause on failure. Hand-made units
+  of work use `span('verb noun', attrs, work)`; moments inside one use
+  `event()`. If you handled it, stamp it.
+- **Unit-of-work spans beyond HTTP**: every MCP tool call is a `call tool`
+  span (tool.name, user.id, trip.id, tool.ok, tool.error); the assistant's ask
+  is an `answer question` span. Anything that does work on behalf of a person
+  gets a span with that person's id on it. Spans export via Alloy to Tempo;
+  logs to Loki; browser events via Faro to the same stack.
 - **Upstream dependencies** (Valhalla, codex, Microsoft, Logto): every refusal
   logs upstream **status + body snippet + latency**; every timeout carries the
   stderr/cause tail. "It failed" without the upstream's own words is a rule

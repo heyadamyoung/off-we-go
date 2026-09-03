@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { safeExperienceError } from './auth-errors.js'
+import { event } from './tracing.js'
 
 const newToken = () => randomBytes(32).toString('base64url')
 const pkceChallenge = verifier => createHash('sha256').update(verifier).digest('base64url')
@@ -124,6 +125,20 @@ export function createLogtoExperienceService({
       interaction.cookies = mergeCookies(interaction.cookies, response)
       const result = await responseBody(response)
       if (!response.ok) {
+        // The user gets the laundered sentence; the span keeps what Logto
+        // actually said — a config storm and a wrong password look identical
+        // without the provider's own code.
+        let providerCode
+        try {
+          providerCode = JSON.parse(result.text)?.code
+        } catch {
+          providerCode = undefined
+        }
+        event('logto refused', {
+          'logto.status': response.status,
+          'logto.path': normalizedPath,
+          'logto.code': String(providerCode || '').slice(0, 80) || undefined,
+        })
         return {
           status: response.status,
           body: JSON.stringify(safeExperienceError(response.status, result.text, normalizedPath)),

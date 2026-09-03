@@ -78,9 +78,10 @@ services:
       MS_TENANT: ${MS_TENANT:-common}
       MAILBOX_TOKEN_KEY: ${MAILBOX_TOKEN_KEY:-}
       CODEX_AUTH_JSON_B64: ${CODEX_AUTH_JSON_B64:-}
-      # Set to http://valhalla:8002 (a repo variable) once tiles are chosen
-      # below; empty means the legs endpoint honestly 503s and health says so.
-      VALHALLA_URL: ${VALHALLA_URL:-}
+      # On by default: the engine's coverage follows the trips on its own.
+      # Empty this out to turn routing off entirely.
+      VALHALLA_URL: ${VALHALLA_URL:-http://valhalla:8002}
+      VALHALLA_WANTED_FILE: /valhalla-tiles/wanted_tile_urls
       CODEX_HOME: /data/codex
       WAYFARE_AI_MODEL: ${WAYFARE_AI_MODEL:-gpt-5.6-luna}
       WAYFARE_AI_REASONING: ${WAYFARE_AI_REASONING:-xhigh}
@@ -103,6 +104,9 @@ services:
       # A named volume rather than a bind mount: Codex rewrites its own login
       # as tokens rotate, and the image pre-creates this path owned by node.
       - codex_data:/data/codex
+      # Shared with the routing engine: the api writes the wanted-extracts
+      # list here; the engine's supervisor builds from it.
+      - valhalla_tiles:/valhalla-tiles
     depends_on:
       db:
         condition: service_healthy
@@ -122,6 +126,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_API_URL: /api
+        VITE_APP_SHA: ${RELEASE_SHA:-dev}
     restart: unless-stopped
     environment:
       WAYFARE_DOMAIN: ${WAYFARE_DOMAIN}
@@ -176,27 +181,16 @@ services:
 
   valhalla:
     # The routing engine: real road travel times over loopback for the legs
-    # endpoint and the assistant's get_travel_times. Gated like alloy: with no
-    # tile source configured it says so and sleeps, costing nothing. First
-    # start downloads the OSM extract and builds tiles — minutes for a small
-    # country — and the volume keeps them across releases.
+    # endpoint and the assistant's get_travel_times. Nothing to configure —
+    # the api derives which OSM extracts matter from where the trips' stops
+    # are and writes the list onto the shared volume; the supervisor script
+    # downloads, builds and restarts as coverage grows. Until the first stop
+    # exists it idles, costing nothing.
     image: ghcr.io/valhalla/valhalla-scripted:latest
     restart: unless-stopped
-    entrypoint:
-      - sh
-      - -c
-      - >
-        if [ -z "$$tile_urls" ]; then
-        echo "VALHALLA_TILES_URL is not set; the routing engine is off.";
-        sleep infinity;
-        fi;
-        exec /valhalla/scripts/docker-entrypoint.sh build_tiles
-    environment:
-      # e.g. https://download.geofabrik.de/europe/netherlands-latest.osm.pbf —
-      # space-separated URLs for more than one region.
-      tile_urls: ${VALHALLA_TILES_URL:-}
-      serve_tiles: 'True'
+    entrypoint: ['sh', '/supervise.sh']
     volumes:
+      - ./deploy/valhalla-supervise.sh:/supervise.sh:ro
       - valhalla_tiles:/custom_files
 
 volumes:

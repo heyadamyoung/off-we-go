@@ -4,7 +4,7 @@ import { buildTrail } from '../../../trail-core'
 import { LIVE_FIX_MAX_AGE_MS } from '../../../live-freshness-core'
 import { liveRetryDelay, mergeLiveFixes } from '../../../live-positions-core'
 import { aliveFixes, followPoints, livePhoneMarkers } from '../../../live-markers-core'
-import { track as trackEvent } from '../../../shared/lib/telemetry'
+import { track as trackEvent, trackError } from '../../../shared/lib/telemetry'
 import {
   deriveLiveStopProgress,
   describeLiveStopProgress,
@@ -74,8 +74,13 @@ export default function useLiveTrip({
             },
           )
         })
-        .catch(() => {
+        .catch(caught => {
           if (!alive) return
+          // A browser can spend a whole evening in this retry loop; one event
+          // per few failures keeps that evening queryable without a storm.
+          if (failures === 2 || failures % 20 === 0) {
+            trackError('live stream', caught, { failures: String(failures) })
+          }
           setLiveError(true)
           setLiveReady(true)
           retryTimer = setTimeout(connect, liveRetryDelay(failures++))
@@ -160,7 +165,9 @@ export default function useLiveTrip({
       const wasLive = liveness.current.get(marker.key)
       const isLive = !marker.stale
       if (wasLive !== undefined && wasLive !== isLive) {
-        trackEvent('flip phone liveness', { phone: marker.name, live: String(isLive) })
+        // The key, not the name: devices are named after people ("Dad's
+        // phone"), and a name on an attribute is PII the standard forbids.
+        trackEvent('flip phone liveness', { phone: String(marker.key), live: String(isLive) })
       }
       liveness.current.set(marker.key, isLive)
     }

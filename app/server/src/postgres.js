@@ -149,7 +149,16 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
      fresh api dies inside its deploy health window, and the release rolls
      back "unhealthy" with nothing wrong. Loki caught it doing exactly that. */
   pool.on('error', error => {
-    console.warn('postgres idle client error (survived):', error.message)
+    // Structured for Loki's `| json`; console because the pool outlives and
+    // predates any request logger.
+    console.warn(
+      JSON.stringify({
+        level: 40,
+        evt: 'postgres.idle_error',
+        msg: 'postgres idle client error (survived)',
+        err: String(error.message || error),
+      }),
+    )
   })
   const admin = String(adminEmail || '')
     .trim()
@@ -1235,6 +1244,15 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async canReadTrip(userId, tripId) {
       return !!(await memberRole(pool, userId, tripId))
+    },
+    /* Every stop's coordinate across every trip, for the routing engine's
+       self-derived coverage — a maintenance view, deliberately unscoped. */
+    async listStopCoordinates() {
+      const result = await pool.query(
+        `select distinct round(lng::numeric, 2) lng, round(lat::numeric, 2) lat
+         from stops where lng is not null and lat is not null`,
+      )
+      return result.rows.map(value => [Number(value.lng), Number(value.lat)])
     },
     async listStops(user, tripId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null

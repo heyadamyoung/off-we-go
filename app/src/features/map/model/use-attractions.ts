@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import { hasBackend, loadAttractions } from '../../../backend'
+import { trackError } from '../../../shared/lib/telemetry'
 import { attractionsInCell, cellsCovering, isHeadline } from '../api/attractions'
 import type { AttractionPoi, MapView } from '../../../shared/model/types'
 
@@ -88,8 +89,13 @@ function useAttractions(view: MapView, enabled: boolean) {
         if (!alive || !rows) return
         setDbBlankHere(rows.length === 0)
         if (rows.length) setData({ type: 'FeatureCollection', features: rows.map(featureFor) })
-      } catch {
-        if (alive) setDbUp(false) // fall back rather than show nothing
+      } catch (caught) {
+        // Falling back to direct Wikipedia is good UX and a fleet-wide event:
+        // "why are we rate-limited tonight" starts with knowing we migrated.
+        if (alive) {
+          trackError('attractions db', caught)
+          setDbUp(false) // fall back rather than show nothing
+        }
       }
     }, 260)
     return () => {

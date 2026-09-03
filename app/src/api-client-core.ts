@@ -131,9 +131,15 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
       } catch {
         if (raw) message = raw.slice(0, 300)
       }
-      const error: Error & { status?: number; code?: string } = new Error(message)
+      const error: Error & { status?: number; code?: string; requestId?: string } = new Error(
+        message,
+      )
       error.status = response.status
       if (code) error.code = code
+      // The server's request id, so a client error event names the exact
+      // server-side wide event it belongs to — correlation, not guessing.
+      const requestId = response.headers.get('x-request-id')
+      if (requestId) error.requestId = requestId
       throw error
     }
     if (response.status === 204) return null as T

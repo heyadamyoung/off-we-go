@@ -1,4 +1,5 @@
 import { authClient } from '../../backend'
+import { trackError } from './telemetry'
 
 /* Session replay, self-hosted: rrweb records the DOM's own diary and posts it
    in chunks to this server, which keeps it on the VPS disk for the owner to
@@ -29,6 +30,7 @@ export function startReplay() {
       let seq = 0
       let total = 0
       let stop: (() => void) | undefined
+      let chunkFailures = 0
 
       const flush = (last = false) => {
         if (!buffer.length) return
@@ -37,7 +39,11 @@ export function startReplay() {
         // keepalive so the tab closing does not eat the final seconds.
         authClient
           .request('/replay/chunks', { method: 'POST', body: chunk, keepalive: last })
-          .catch(() => {})
+          .catch(caught => {
+            // The observability tool must not itself degrade silently: a hole
+            // in a replay needs one marker saying why, not a mystery.
+            if (++chunkFailures === 3) trackError('replay upload', caught)
+          })
       }
 
       stop = record({

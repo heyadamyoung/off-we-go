@@ -454,6 +454,18 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async canReadTrip(userId, tripId) {
       return !!trips.get(tripId)?.members.some(member => member.profileId === userId)
     },
+    async listStopCoordinates() {
+      const points = new Map()
+      for (const trip of trips.values()) {
+        for (const stop of trip.stops) {
+          if (stop.lng == null || stop.lat == null) continue
+          const lng = Math.round(stop.lng * 100) / 100
+          const lat = Math.round(stop.lat * 100) / 100
+          points.set(`${lng},${lat}`, [lng, lat])
+        }
+      }
+      return [...points.values()]
+    },
     async listStops(user, tripId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null
       return trips

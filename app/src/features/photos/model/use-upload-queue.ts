@@ -10,6 +10,7 @@ import {
   type Upload,
 } from '../../../upload-queue-core'
 import { appErrorMessage } from '../../../user-messages-core'
+import { track } from '../../../shared/lib/telemetry'
 import type { UploadInput, Toast } from '../../../shared/model/types'
 
 interface Queued extends Omit<Upload, 'state'> {
@@ -47,7 +48,11 @@ export default function useUploadQueue({
     )
   }, [])
 
-  const tryAgain = useCallback((key: string) => setUploads(list => retry(list, key)), [])
+  const tryAgain = useCallback((key: string) => {
+    // A person retrying the same photo five times is a fact worth counting.
+    track('retry upload', {})
+    setUploads(list => retry(list, key))
+  }, [])
   const forget = useCallback((key: string) => {
     inputs.current.delete(key)
     setUploads(list => {

@@ -44,11 +44,11 @@ test('health says whether the mailbox connector came up configured', async () =>
 
   assert.deepEqual((await bare.inject({ method: 'GET', url: '/api/health' })).json(), {
     ok: true,
-    connectors: { outlook: false, assistant: false, routing: false },
+    connectors: { outlook: false, assistant: false, routing: false, replay: false },
   })
   assert.deepEqual((await connected.inject({ method: 'GET', url: '/api/health' })).json(), {
     ok: true,
-    connectors: { outlook: true, assistant: false, routing: false },
+    connectors: { outlook: true, assistant: false, routing: false, replay: false },
   })
   await bare.close()
   await connected.close()

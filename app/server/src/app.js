@@ -134,6 +134,9 @@ export async function buildServer({
      MCP tool is simply not registered. */
   valhallaUrl = null,
   routingFetch = fetch,
+  /* Keeps the engine's tiles in step with where the trips actually go —
+     see coverage.js. Injected so tests hand in a recorder. */
+  coverage = null,
   /* The AI assistant is optional the same way: no configured runner, and the
      route says so instead of half-working. `assistant.run` takes a prompt and
      returns the reply — in production that is the Codex CLI on the personal
@@ -165,6 +168,12 @@ export async function buildServer({
      22P02. Unhandled that is a 500, which tells the app the server is having a
      moment and to keep retrying a link that will never work. It is a 404: the
      thing named does not exist, because no such name can. */
+  // Every response names its request, so a browser-side error event can point
+  // at the exact server wide event it belongs to.
+  app.addHook('onSend', async (request, reply) => {
+    reply.header('x-request-id', request.id)
+  })
+
   app.setErrorHandler((error, request, reply) => {
     if (error.code === '22P02') {
       return reply.code(404).send({ error: 'Not found' })
@@ -197,6 +206,9 @@ export async function buildServer({
      fetched one. */
   const touched = (tripId, kind) => {
     if (tripId) liveStream.announce(tripId, kind)
+    // A stop moved or appeared somewhere new: the routing engine's coverage
+    // may need to grow. Settled, not per keystroke.
+    if (kind === 'stops') coverage?.refreshSoon()
   }
 
   /* One hook rather than an announce buried in every route: a request that
@@ -236,6 +248,24 @@ export async function buildServer({
   const assistantLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const mailboxBox = mailboxTokenKey ? createSecretBox(mailboxTokenKey) : null
   const connectorReady = !!(microsoft?.clientId && mailboxBox)
+  /* Which optional pieces THIS boot actually has, and when half-configured,
+     which half is missing — the incident's first question, answered before
+     it is asked. Names of config, never values. */
+  app.log.info(
+    {
+      evt: 'boot.connectors',
+      outlook: connectorReady,
+      outlookMissing: connectorReady
+        ? undefined
+        : [!microsoft?.clientId && 'MS_CLIENT_ID', !mailboxTokenKey && 'MAILBOX_TOKEN_KEY']
+            .filter(Boolean)
+            .join(',') || undefined,
+      assistant: !!assistant,
+      routing: !!routing,
+      replay: !!replayStore,
+    },
+    'optional integrations at boot',
+  )
   // What the assistant reads a connected inbox through; nothing else uses it.
   const mailboxReader = connectorReady
     ? createMailboxReader({
@@ -269,6 +299,9 @@ export async function buildServer({
       'traceparent',
       'tracestate',
     ],
+    // The browser may read the request id back off an error, so a client
+    // error event can name its exact server-side wide event.
+    exposedHeaders: ['x-request-id'],
     maxAge: 86400,
   })
   await app.register(formbody)
@@ -286,7 +319,12 @@ export async function buildServer({
          is, and it is how a release is checked from outside. */
       return {
         ok: true,
-        connectors: { outlook: connectorReady, assistant: !!assistant, routing: !!routing },
+        connectors: {
+          outlook: connectorReady,
+          assistant: !!assistant,
+          routing: !!routing,
+          replay: !!replayStore,
+        },
       }
     } catch (error) {
       app.log.warn({ err: error }, 'readiness check failed')
@@ -747,7 +785,14 @@ export async function buildServer({
   const processFileDeletionQueue = async () => {
     if (!fileStore || !repository.listPendingFileDeletions) return
     const paths = await repository.listPendingFileDeletions(clock(), 50)
-    for (const path of paths) await removeQueuedFile(path)
+    if (!paths.length) return
+    // This queue keeps a privacy promise; a wedged one must not look idle.
+    await span('drain file deletions', { 'queue.pending': paths.length }, async active => {
+      let removed = 0
+      for (const path of paths) if (await removeQueuedFile(path)) removed++
+      active.setAttribute('queue.removed', removed)
+      active.setAttribute('queue.failed', paths.length - removed)
+    })
   }
   let fileDeletionTimer = null
   if (fileStore && repository.listPendingFileDeletions) {
@@ -825,6 +870,14 @@ export async function buildServer({
     })
     const family = row.members.map(member)
     const me = member(row.members.find(value => value.profileId === user.id))
+    // The hottest read resolves its trip by slug — the id exists nowhere in
+    // the URL, so it must ride the span or nothing groups by trip.
+    stamp({
+      'trip.id': row.id,
+      'trip.slug': row.slug,
+      'stop.count': row.stops.length,
+      'photo.count': row.photos.length,
+    })
     return {
       source: 'vps',
       tripId: row.id,
@@ -926,11 +979,17 @@ export async function buildServer({
   app.post('/api/replay/chunks', { bodyLimit: 2 * 1024 * 1024 }, async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    if (!replayStore) return reply.code(204).send()
+    if (!replayStore) {
+      stamp({ 'replay.dropped': 'unconfigured' })
+      return reply.code(204).send()
+    }
     const chunk = validChunk(request.body)
     if (!chunk) return reply.code(400).send({ error: 'Not a replay chunk' })
     stamp({ 'replay.session': chunk.session, 'replay.seq': chunk.seq })
-    await replayStore.append(user.id, chunk)
+    const kept = await replayStore.append(user.id, chunk)
+    // A session at its size cap drops its tail; the hole in the replay needs
+    // a marker saying why, or the owner debugs the recorder instead.
+    if (kept === false) stamp({ 'replay.dropped': 'session_full' })
     return reply.code(204).send()
   })
   app.get('/api/replay/sessions', async (request, reply) => {
@@ -1120,7 +1179,11 @@ export async function buildServer({
     let stored
     try {
       stored = await fileStore.storeAvatar({ profileId: user.id, bytes })
-    } catch {
+    } catch (error) {
+      // A full disk or unwritable volume must not impersonate a bad photo:
+      // the 400 is for the user, the cause is for the span.
+      recordFailure(error)
+      stamp({ 'upload.fail_cause': String(error.message || error).slice(0, 200) })
       return reply.code(400).send({ error: 'That file is not a readable image' })
     }
     const profile = await repository.updateProfile(user, stored)
@@ -1160,6 +1223,12 @@ export async function buildServer({
     }
     if (clientKey && repository.findPhotoByClientKey) {
       const existing = await repository.findPhotoByClientKey(user, request.params.tripId, clientKey)
+      if (existing)
+        stamp({
+          'trip.id': request.params.tripId,
+          'photo.id': existing.id,
+          'photo.dedupe_hit': true,
+        })
       if (existing)
         return {
           ...existing,
@@ -1227,7 +1296,11 @@ export async function buildServer({
     let stored
     try {
       stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes })
-    } catch {
+    } catch (error) {
+      // A full disk or unwritable volume must not impersonate a bad photo:
+      // the 400 is for the user, the cause is for the span.
+      recordFailure(error)
+      stamp({ 'upload.fail_cause': String(error.message || error).slice(0, 200) })
       return reply.code(400).send({ error: 'That file is not a readable image' })
     }
     try {
@@ -1242,6 +1315,14 @@ export async function buildServer({
         clientKey,
       })
       if (!photo) throw new Error('Trip not found')
+      // The richest domain logic on the server deserves the richest span:
+      // "why did her photo land with no pin" is a slice, not a shrug.
+      stamp({
+        'trip.id': request.params.tripId,
+        'photo.id': photo.id,
+        'photo.location_source': locationSource || 'none',
+        'photo.dedupe_hit': false,
+      })
       return reply.code(201).send({
         ...photo,
         src: mediaUrl(photo.storagePath),
@@ -1302,7 +1383,13 @@ export async function buildServer({
     try {
       const bytes = await fileStore.read(storagePath)
       return reply.type('image/jpeg').header('cache-control', 'private, max-age=3600').send(bytes)
-    } catch {
+    } catch (error) {
+      // An unmounted uploads volume must not look like a thousand expired
+      // links: only a true ENOENT is an ordinary 404.
+      if (error.code !== 'ENOENT') {
+        recordFailure(error)
+        stamp({ 'media.fail_cause': error.code || String(error.message).slice(0, 100) })
+      }
       return reply.code(404).send({ error: 'Photo not found' })
     }
   })
@@ -1571,6 +1658,8 @@ export async function buildServer({
     send(livePayload(opening))
 
     let reading = false
+    let failedOnce = false
+    stamp({ 'trip.id': tripId, 'live.hours': hours, 'live.cursor': cursor })
     let again = false
     const deliver = async () => {
       if (reading) {
@@ -1585,9 +1674,18 @@ export async function buildServer({
           if (!next || !open) break
           if (next.fixes.length || next.devices.length) send(livePayload(next))
         } while (again && open)
-      } catch {
+      } catch (error) {
         // A read that fails is not a reason to drop the connection; the next
-        // position will try again, and the browser can always reconnect.
+        // position will try again, and the browser can always reconnect. But
+        // a database refusing every read must not look like a quiet evening:
+        // one event per stream, not one per retry storm.
+        if (!failedOnce) {
+          failedOnce = true
+          event('stream read failed', {
+            'trip.id': tripId,
+            error: String(error.message || error).slice(0, 200),
+          })
+        }
       } finally {
         reading = false
       }
@@ -1716,14 +1814,28 @@ export async function buildServer({
         }).toString(),
       })
       const tokens = await response.json()
-      if (!response.ok || !tokens.access_token)
+      if (!response.ok || !tokens.access_token) {
+        // Microsoft's own words, or "why can nobody connect a mailbox" is
+        // undebuggable from a browser redirect that just says failed.
+        stamp({
+          'connector.step': 'token',
+          'upstream.status': response.status,
+          'upstream.error': String(tokens.error || '').slice(0, 100),
+        })
         throw new Error(tokens.error_description || 'No token')
+      }
 
       const who = await connectorFetch('https://graph.microsoft.com/v1.0/me', {
         headers: { authorization: `Bearer ${tokens.access_token}` },
       })
         .then(result => result.json())
-        .catch(() => ({}))
+        .catch(error => {
+          stamp({
+            'connector.step': 'me',
+            'connector.me_failed': String(error.message).slice(0, 100),
+          })
+          return {}
+        })
 
       await repository.saveMailboxConnection({
         userId: pending.userId,
@@ -1740,7 +1852,9 @@ export async function buildServer({
         expiresAt: expiresAt(tokens, clock()),
       })
       return back('&connected=yes')
-    } catch {
+    } catch (error) {
+      recordFailure(error)
+      stamp({ 'connector.fail_cause': String(error.message || error).slice(0, 200) })
       return back('&connected=failed')
     }
   })
@@ -1830,6 +1944,8 @@ export async function buildServer({
         await fileStore.remove(path)
         await repository.completeFileDeletion?.(path)
       } catch (error) {
+        recordFailure(error)
+        event('file delete deferred', { cause: String(error.message || error).slice(0, 120) })
         await repository.failFileDeletion?.(path, error.message, clock())
       }
     }
@@ -1900,6 +2016,8 @@ export async function buildServer({
         await fileStore.remove(removed.storagePath)
         await repository.completeFileDeletion?.(removed.storagePath)
       } catch (error) {
+        recordFailure(error)
+        event('file delete deferred', { cause: String(error.message || error).slice(0, 120) })
         await repository.failFileDeletion?.(removed.storagePath, error.message, clock())
       }
     }
@@ -2044,9 +2162,14 @@ export async function buildServer({
     try {
       await sendTripInvitation(invite)
     } catch (error) {
+      // The 201 is honest about the row; the span must be honest about the
+      // mail, or a week of SMTP refusals reads as a week of clean creates.
+      recordFailure(error)
+      stamp({ 'mail.sent': false, 'mail.error': String(error.message || error).slice(0, 200) })
       mailed = false
       mailError = error.message
     }
+    stamp({ 'trip.id': request.params.tripId, 'invite.role': role })
     return reply.code(201).send({ ...invite, mailed, mailError })
   })
 
@@ -2176,7 +2299,7 @@ export async function buildServer({
        us rather than on whoever was walking. */
     const retryAfter = indoorLimiter.hit(clientAddress(request), indoorRateLimit)
     if (retryAfter) {
-      request.log.info({ client: clientAddress(request) }, 'airport indoor rate limited')
+      stamp({ rate_limited: true })
       return reply
         .header('retry-after', String(retryAfter))
         .code(429)
@@ -2188,7 +2311,13 @@ export async function buildServer({
          a segment the assistant adds routes immediately instead of waiting
          out the month-long Overpass cache. */
       const walkways = repository.listAirportWalkways
-        ? await repository.listAirportWalkways(lng, lat).catch(() => [])
+        ? await repository.listAirportWalkways(lng, lat).catch(error => {
+            // The corridors the assistant laid by hand must not vanish
+            // silently — that is the exact class this file already mourns.
+            recordFailure(error)
+            event('walkways read failed', { error: String(error.message || error).slice(0, 200) })
+            return []
+          })
         : []
       stamp({
         'airport.lng': lng,
@@ -2204,6 +2333,10 @@ export async function buildServer({
       return reply.code(502).send({ error: 'The map source is not answering' })
     }
   })
+
+  // Where do the trips already go? Answered once per boot, so a fresh deploy
+  // (or a long-stopped box) converges on the right tiles without being asked.
+  coverage?.refresh()
 
   return app
 }

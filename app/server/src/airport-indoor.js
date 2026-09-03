@@ -83,17 +83,39 @@ export function createIndoorCache({
   }
 
   const askMirror = async (base, query) => {
+    const started = clock().getTime()
+    // Each mirror's own verdict, not just the race's last survivor: "which
+    // mirror is 504ing tonight" is a filter on mirror.host.
+    const blame = (status, cause) =>
+      event('mirror failed', {
+        'mirror.host': base,
+        'upstream.status': status,
+        'upstream.cause': cause,
+        'upstream.ms': clock().getTime() - started,
+      })
     // The bare query as the body, and no Content-Type: overpass-api.de's
     // front server answers 406 to a form-encoded header, of all things.
-    const res = await fetchImpl(base, {
-      method: 'POST',
-      body: query,
-      headers: { 'User-Agent': userAgent },
-      signal: AbortSignal.timeout(deadlineMs),
-    })
-    if (!res.ok) throw new Error('Overpass answered ' + res.status)
+    let res
+    try {
+      res = await fetchImpl(base, {
+        method: 'POST',
+        body: query,
+        headers: { 'User-Agent': userAgent },
+        signal: AbortSignal.timeout(deadlineMs),
+      })
+    } catch (error) {
+      blame(0, String(error.name || error.message).slice(0, 80))
+      throw error
+    }
+    if (!res.ok) {
+      blame(res.status, 'refused')
+      throw new Error('Overpass answered ' + res.status)
+    }
     const body = await res.json()
-    if (isPartial(body)) throw new Error('Overpass sent a partial result: ' + body.remark)
+    if (isPartial(body)) {
+      blame(res.status, 'partial')
+      throw new Error('Overpass sent a partial result: ' + body.remark)
+    }
     return body
   }
 
@@ -144,7 +166,18 @@ export function createIndoorCache({
           // The durable copy first — a restart forgot this Map, not the
           // month. A partial row (cached before partials were refused) is
           // treated as absent, so the next ask heals it.
-          let durable = store ? await store.read(key).catch(() => null) : null
+          let durable = store
+            ? await store.read(key).catch(error => {
+                // A broken airport_indoor table silently reverting the cache
+                // to memory-only is the invisible-integration anti-pattern.
+                event('durable store failed', {
+                  op: 'read',
+                  'airport.key': key,
+                  error: String(error.message).slice(0, 120),
+                })
+                return null
+              })
+            : null
           if (durable && isPartial(durable.body)) {
             event('heal partial row', { 'airport.key': key })
             durable = null
@@ -169,7 +202,14 @@ export function createIndoorCache({
           }
           const at = clock().getTime()
           remember(key, { at, body })
-          if (store) store.write(key, body, at).catch(() => {})
+          if (store)
+            store.write(key, body, at).catch(error =>
+              event('durable store failed', {
+                op: 'write',
+                'airport.key': key,
+                error: String(error.message).slice(0, 120),
+              }),
+            )
           return body
         }).finally(() => pending.delete(key))
         pending.set(key, flight)

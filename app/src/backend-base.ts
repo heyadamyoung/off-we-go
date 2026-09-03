@@ -11,7 +11,11 @@ export const functionsUrl = hasBackend ? `${API_URL}/ingest` : null
 export const authClient = createApiClient({
   baseUrl: API_URL || '/api',
   storage: sessionStorage,
-  fetch: globalThis.fetch.bind(globalThis),
+  /* Lazily, never bound at import time: this module loads before telemetry
+     starts, and a pre-bound fetch escapes Faro's tracing patch — which
+     silently costs every API call its browser span AND its traceparent, the
+     whole cross-tier correlation. */
+  fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
 })
 
 export const isSample = (tripId: Id) => tripId === 'sample' || !hasBackend

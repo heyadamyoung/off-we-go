@@ -121,6 +121,9 @@ trap rollback ERR
 
 cd "$APP_ROOT"
 docker compose config --quiet
+# The release sha reaches the web build so browser telemetry can be sliced
+# by deploy.
+export RELEASE_SHA="$release_sha"
 docker compose up -d --build --wait --wait-timeout 180
 bash ./deploy/configure-logto.sh
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"

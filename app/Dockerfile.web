@@ -13,6 +13,10 @@ COPY src ./src
 ENV NODE_OPTIONS=--dns-result-order=ipv4first
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
+# The deploy sha rides into the browser's telemetry as app.version — "which
+# deploy broke it" is the canonical slicing dimension.
+ARG VITE_APP_SHA=dev
+ENV VITE_APP_SHA=$VITE_APP_SHA
 RUN pnpm build
 # A shell that names a file the build did not emit must fail here, not
 # silently paint unstyled in front of everybody.

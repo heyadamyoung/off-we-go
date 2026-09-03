@@ -57,6 +57,14 @@ export function createMailboxReader({
         event('refresh token', { 'mailbox.id': connection.id, 'refresh.why': why })
         const tokens = await response.json().catch(() => ({}))
         if (!response.ok || !tokens.access_token) {
+          // The token endpoint's own words, before they are laundered into a
+          // traveller-friendly sentence: invalid_grant and consent_revoked
+          // need very different mornings.
+          event('refresh refused', {
+            'mailbox.id': connection.id,
+            'upstream.status': response.status,
+            'upstream.error': String(tokens.error || '').slice(0, 100),
+          })
           await repository.markMailboxNeedsReconnect(connection.id)
           throw new Error(
             `The ${connection.accountEmail || 'connected'} mailbox needs reconnecting` +
@@ -76,20 +84,30 @@ export function createMailboxReader({
   }
 
   async function graph(connection, path, headers = {}) {
+    const started = clock().getTime()
     let token = isExpired(connection, clock())
       ? await refresh(connection, 'its sign-in expired')
       : box.open(connection.accessToken)
     let response = await fetchImpl(GRAPH + path, {
       headers: { ...headers, authorization: `Bearer ${token}` },
     })
+    let retried = false
     if (response.status === 401) {
       // The stored expiry lied — a revoked or early-dead token. One retry.
+      retried = true
       token = await refresh(connection, 'Microsoft stopped accepting its token')
       response = await fetchImpl(GRAPH + path, {
         headers: { ...headers, authorization: `Bearer ${token}` },
       })
     }
     const body = await response.json().catch(() => ({}))
+    // "Is Graph slow tonight, or is one mailbox's token dying over and over?"
+    // is a slice on these three fields, never a guess.
+    event('graph call', {
+      'graph.status': response.status,
+      'graph.ms': clock().getTime() - started,
+      'graph.retried': retried,
+    })
     if (!response.ok) {
       throw new Error(body?.error?.message || `The mailbox did not answer (${response.status})`)
     }

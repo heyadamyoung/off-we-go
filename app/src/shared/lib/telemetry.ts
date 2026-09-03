@@ -34,7 +34,11 @@ export function startTelemetry() {
     const escaped = collectRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     faro = initializeFaro({
       url: collectRoot + '/collect',
-      app: { name: 'offwego-' + (mobilePlatform || 'web'), version: '1.1' },
+      app: {
+        name: 'offwego-' + (mobilePlatform || 'web'),
+        // The deploy sha, so "did this start with the release" is a filter.
+        version: String(import.meta.env.VITE_APP_SHA || '').slice(0, 7) || 'dev',
+      },
       sessionTracking: { enabled: true },
       instrumentations: [
         ...getWebInstrumentations(),
@@ -54,6 +58,31 @@ export function startTelemetry() {
 export function track(name: string, attributes: Record<string, string> = {}) {
   try {
     faro?.api.pushEvent(name, attributes)
+  } catch {
+    /* never the app's problem */
+  }
+}
+
+/** A handled failure happened. Handling it well is UX; recording it is
+    observability — a caught error the operator cannot query never happened,
+    which is the invisible-integration anti-pattern wearing a try/catch. */
+export function trackError(
+  action: string,
+  caught: unknown,
+  attributes: Record<string, string> = {},
+) {
+  try {
+    const error = caught instanceof Error ? caught : new Error(String(caught))
+    const status = (caught as { status?: number })?.status
+    const code = (caught as { code?: string })?.code
+    faro?.api.pushError(error, {
+      context: {
+        action,
+        ...(status ? { status: String(status) } : {}),
+        ...(code ? { code } : {}),
+        ...attributes,
+      },
+    })
   } catch {
     /* never the app's problem */
   }
