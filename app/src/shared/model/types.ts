@@ -193,6 +193,15 @@ export interface TripData {
   source?: string
 }
 
+/** Road truth between two consecutive stops of a day, from the routing engine. */
+export interface TripLeg {
+  fromId: Id
+  toId: Id
+  day?: string | null
+  seconds: number
+  meters: number
+}
+
 /** One turn of the AI chat; the transcript lives in the browser. */
 export interface AssistantMessage {
   role: 'user' | 'assistant'

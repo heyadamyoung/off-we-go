@@ -11,14 +11,21 @@ import { AssistantButton, AssistantChat } from '../../assistant'
 import { PhotoViewer, UploadModal, UploadTray } from '../../photos'
 import { TripSettingsSheet } from '../../people'
 import useTripData from '../model/use-trip-data'
+import useTripLegs from '../model/use-trip-legs'
 import { withFace } from '../model/faces'
 import useTripPage from '../model/use-trip-page'
-import { MapChrome, MapControls, NowCapsule, ScopeToggle, TripTitle } from './trip-chrome'
+import {
+  Advisories,
+  MapChrome,
+  MapControls,
+  NowCapsule,
+  ScopeToggle,
+  TripTitle,
+} from './trip-chrome'
 import { TripCluster } from './trip-cluster'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
-import { quietPhones } from '../../../live-freshness-core'
-import { MakeIt, SegmentEditor } from '../../transport'
+import { SegmentEditor } from '../../transport'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
@@ -51,6 +58,7 @@ function Trip({
   const navigate = useNavigate()
   const notify = useToast()
   const { tripId, canEdit } = data
+  const legs = useTripLegs({ tripId, stops: data.stops })
 
   const patch = useCallback(
     (changes: Record<string, unknown>) => {
@@ -184,6 +192,7 @@ function Trip({
           onClose={() => patch({ view: undefined })}
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
+          legs={legs}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
             segments: transport.segments,
@@ -209,37 +218,14 @@ function Trip({
 
       <TripCards page={page} canEdit={canEdit} patch={patch} />
 
-      {/* The advisory layer, its own storey above the chrome row: the make-it
-          meter and the quiet-phone notices. Squeezed INTO the phone's one-line
-          chrome they crushed the Now capsule to a bare dot, and pass-through
-          taps landed on the sparkle beneath — these float, and eat their own
-          taps. */}
       {!panelOpen && (
-        <div
-          className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--trip-1)+56px)] z-[4]
-                     flex flex-col items-center gap-2">
-          <MakeIt
-            segments={transport.segments}
-            travellers={markers
-              .filter(marker => !marker.stale)
-              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
-            now={clock}
-          />
-          {data.source !== 'sample' &&
-            quietPhones(phones, new Date(clock)).map(phone => (
-              <div
-                key={phone.id}
-                role="status"
-                className="glass pointer-events-auto max-w-full rounded-2xl px-3.5 py-1.5
-                           text-[11px] text-muted">
-                <b className="text-ink">{phone.name}</b> hasn’t shared for{' '}
-                {phone.minutesQuiet >= 90
-                  ? `${Math.round(phone.minutesQuiet / 60)} h`
-                  : `${phone.minutesQuiet} min`}{' '}
-                — opening Off We Go on that phone restarts sharing
-              </div>
-            ))}
-        </div>
+        <Advisories
+          segments={transport.segments}
+          markers={markers}
+          phones={phones}
+          now={clock}
+          sample={data.source === 'sample'}
+        />
       )}
 
       <MapChrome>

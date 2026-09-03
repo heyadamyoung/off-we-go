@@ -79,6 +79,7 @@ const app = await buildServer({
       }
     : null,
   mailboxTokenKey: process.env.MAILBOX_TOKEN_KEY || null,
+  valhallaUrl: process.env.VALHALLA_URL || null,
   assistant,
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'ai.threadway.wayfare',
   androidPackageName: process.env.ANDROID_PACKAGE_NAME || 'ai.threadway.wayfare',

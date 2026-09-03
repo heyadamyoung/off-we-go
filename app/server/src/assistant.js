@@ -44,6 +44,7 @@ export function assistantPrompt({
   trip,
   canEdit = false,
   mailboxes = 0,
+  travelTimes = false,
   now = new Date(),
   messages,
 }) {
@@ -61,6 +62,14 @@ export function assistantPrompt({
     '- list_trips — their other trips, if a question reaches beyond this one.',
     '- list_segments — the travel legs: flights, trains, ferries with seats,',
     '  gates or platforms, check-in and boarding deadlines, and documents.',
+    ...(travelTimes
+      ? [
+          '- get_travel_times — real road travel time and distance between each',
+          '  day’s consecutive stops (auto, pedestrian or bicycle). Use it for',
+          '  any "can we make it / how far / in what order" question instead of',
+          '  guessing from distances.',
+        ]
+      : []),
     ...(mailboxes > 0
       ? [
           '- search_mailbox / read_mailbox_message — this traveller’s own connected',

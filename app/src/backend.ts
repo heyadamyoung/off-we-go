@@ -33,6 +33,7 @@ import type {
   Stop,
   Trip,
   TripLandingData,
+  TripLeg,
   TripLoadResult,
   TripSummary,
 } from './shared/model/types'
@@ -327,6 +328,21 @@ export async function askAssistant(
     body: { trip: slug, messages },
   })
   return String(result.reply || '')
+}
+
+/* Road truth is an optional garnish: no engine, no session, sample mode, or a
+   mid-build engine all degrade to "no legs" here — the server keeps the
+   evidence, the itinerary just renders without the labels. */
+export async function loadTripLegs(
+  tripId: Id,
+  mode: 'auto' | 'pedestrian' | 'bicycle' = 'auto',
+): Promise<{ mode: string; legs: TripLeg[] } | null> {
+  if (isSample(tripId)) return null
+  try {
+    return await authClient.request(`${tripPath(tripId)}/legs?mode=${mode}`)
+  } catch {
+    return null
+  }
 }
 
 export async function loadAttractions(

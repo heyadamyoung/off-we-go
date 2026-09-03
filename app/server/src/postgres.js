@@ -1236,6 +1236,28 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async canReadTrip(userId, tripId) {
       return !!(await memberRole(pool, userId, tripId))
     },
+    async listStops(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        'select * from stops where trip_id=$1 order by seq,created_at',
+        [tripId],
+      )
+      return result.rows.map(value => ({
+        id: value.id,
+        name: value.name,
+        kind: value.kind,
+        icon: value.icon,
+        day: value.day,
+        time: value.time,
+        lng: value.lng,
+        lat: value.lat,
+        status: value.status,
+        note: value.note,
+        src: value.image_url,
+        sourceUrl: value.source_url,
+        seq: value.seq,
+      }))
+    },
     async createStop(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const result = await pool.query(

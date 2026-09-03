@@ -454,6 +454,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async canReadTrip(userId, tripId) {
       return !!trips.get(tripId)?.members.some(member => member.profileId === userId)
     },
+    async listStops(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      return trips
+        .get(tripId)
+        .stops.map(stop => ({ ...stop }))
+        .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    },
     async createPhoto(user, tripId, input) {
       const trip = trips.get(tripId)
       const member = trip?.members.find(value => value.profileId === user.id)

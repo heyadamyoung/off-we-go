@@ -78,6 +78,9 @@ services:
       MS_TENANT: ${MS_TENANT:-common}
       MAILBOX_TOKEN_KEY: ${MAILBOX_TOKEN_KEY:-}
       CODEX_AUTH_JSON_B64: ${CODEX_AUTH_JSON_B64:-}
+      # Set to http://valhalla:8002 (a repo variable) once tiles are chosen
+      # below; empty means the legs endpoint honestly 503s and health says so.
+      VALHALLA_URL: ${VALHALLA_URL:-}
       CODEX_HOME: /data/codex
       WAYFARE_AI_MODEL: ${WAYFARE_AI_MODEL:-gpt-5.6-luna}
       WAYFARE_AI_REASONING: ${WAYFARE_AI_REASONING:-xhigh}
@@ -171,6 +174,31 @@ services:
       - /:/host/root:ro
       - alloy_data:/var/lib/alloy/data
 
+  valhalla:
+    # The routing engine: real road travel times over loopback for the legs
+    # endpoint and the assistant's get_travel_times. Gated like alloy: with no
+    # tile source configured it says so and sleeps, costing nothing. First
+    # start downloads the OSM extract and builds tiles — minutes for a small
+    # country — and the volume keeps them across releases.
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - >
+        if [ -z "$$tile_urls" ]; then
+        echo "VALHALLA_TILES_URL is not set; the routing engine is off.";
+        sleep infinity;
+        fi;
+        exec /valhalla/scripts/docker-entrypoint.sh build_tiles
+    environment:
+      # e.g. https://download.geofabrik.de/europe/netherlands-latest.osm.pbf —
+      # space-separated URLs for more than one region.
+      tile_urls: ${VALHALLA_TILES_URL:-}
+      serve_tiles: 'True'
+    volumes:
+      - valhalla_tiles:/custom_files
+
 volumes:
   postgres_data:
   logto_postgres_data:
@@ -178,3 +206,4 @@ volumes:
   caddy_data:
   caddy_config:
   alloy_data:
+  valhalla_tiles:

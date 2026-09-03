@@ -21,6 +21,7 @@ import {
 } from './mailbox-oauth.js'
 import { assistantPrompt, readAssistantMessages } from './assistant.js'
 import { signAgentToken } from './agent-token.js'
+import { LEG_MODES, createValhallaRouting } from './routing.js'
 import { createLogtoExperienceService } from './logto-experience.js'
 import { normalizeProfileHandle } from './slugs.js'
 import { createIndoorCache } from './airport-indoor.js'
@@ -128,6 +129,11 @@ export async function buildServer({
   microsoft = null,
   mailboxTokenKey = null,
   connectorFetch = fetch,
+  /* A routing engine (Valhalla over loopback) is optional like the rest: with
+     no URL the legs endpoint says so, health reports routing: false, and the
+     MCP tool is simply not registered. */
+  valhallaUrl = null,
+  routingFetch = fetch,
   /* The AI assistant is optional the same way: no configured runner, and the
      route says so instead of half-working. `assistant.run` takes a prompt and
      returns the reply — in production that is the Codex CLI on the personal
@@ -170,6 +176,11 @@ export async function buildServer({
       .code(status)
       .send({ error: status === 500 ? 'Something went wrong' : error.message })
   })
+
+  const routing = valhallaUrl
+    ? createValhallaRouting({ url: valhallaUrl, fetch: routingFetch, logger: app.log, clock })
+    : null
+  if (routing) app.log.info({ url: valhallaUrl }, 'routing engine configured')
 
   const ingestLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const indoorLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
@@ -273,7 +284,10 @@ export async function buildServer({
       /* Which optional pieces this deployment actually came up with. It says
          whether the box has the configuration, never what the configuration
          is, and it is how a release is checked from outside. */
-      return { ok: true, connectors: { outlook: connectorReady, assistant: !!assistant } }
+      return {
+        ok: true,
+        connectors: { outlook: connectorReady, assistant: !!assistant, routing: !!routing },
+      }
     } catch (error) {
       app.log.warn({ err: error }, 'readiness check failed')
       return reply.code(503).send({ ok: false })
@@ -757,6 +771,7 @@ export async function buildServer({
     clock,
     authenticate: authenticated,
     sendInvite: sendTripInvitation,
+    routing,
     /* Tool edits reach watching browsers the same way route edits do. */
     announce: touched,
     mailboxReader,
@@ -887,6 +902,7 @@ export async function buildServer({
               trip,
               canEdit,
               mailboxes: mailboxes.length,
+              travelTimes: !!routing,
               now: clock(),
               messages,
             }),
@@ -1463,6 +1479,32 @@ export async function buildServer({
     // seconds of now.
     if (stored !== false) liveStream.announce(device.tripId)
     return ownTracks ? [] : reply.type('text/plain').send('OK')
+  })
+
+  /* Road truth between a day's consecutive stops, when a routing engine is
+     deployed. A leg the engine cannot answer is absent rather than an error:
+     the itinerary must render regardless, and the reason is on the span and
+     in the engine's own logged words. */
+  app.get('/api/trips/:tripId/legs', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!routing) {
+      return reply.code(503).send({ error: 'No routing engine is configured on this server' })
+    }
+    const mode = String(request.query?.mode || 'auto')
+    if (!LEG_MODES.has(mode)) {
+      return reply.code(400).send({ error: 'mode must be auto, pedestrian or bicycle' })
+    }
+    const stops = await repository.listStops(user, request.params.tripId)
+    if (!stops) return reply.code(403).send({ error: 'You cannot view this trip' })
+    const legs = await routing.legsFor(stops, mode)
+    stamp({
+      'trip.id': request.params.tripId,
+      'legs.mode': mode,
+      'legs.stops': stops.length,
+      'legs.answered': legs.length,
+    })
+    return { mode, legs }
   })
 
   app.get('/api/trips/:tripId/live', async (request, reply) => {

@@ -6,7 +6,8 @@ import { SegmentChain } from '../../transport'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
 import type { Segment } from '../../../segments-core'
-import type { Person, Stop, TripPhoto } from '../../../shared/model/types'
+import { legLabel } from '../../../legs-core'
+import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
 
 interface PanelProps {
@@ -24,6 +25,8 @@ interface PanelProps {
   /** absent for read-only viewers — the button goes with it */
   onAddPhotos?: () => void
   sights: SightsListProps
+  /** road truth from the routing engine, keyed by the stop each leg leaves */
+  legs?: Map<Id, TripLeg>
   /** the getting-there layer, rendered at the head of the timeline */
   transport?: {
     segments: Segment[]
@@ -125,7 +128,7 @@ function Row({
   )
 }
 
-function Timeline({ stops, photos, selected, onSelect, transport }: PanelProps) {
+function Timeline({ stops, photos, selected, onSelect, transport, legs }: PanelProps) {
   const days = [...new Set(stops.map(stop => stop.day).filter(Boolean))]
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
   if (!stops.length && !transport?.segments.length)
@@ -186,6 +189,14 @@ function Timeline({ stops, photos, selected, onSelect, transport }: PanelProps) 
                       }
                     />
                   ))}
+                  {legs?.has(stop.id) && (
+                    /* The road between this stop and the next, in the gap
+                       between their rows — a fact of the world, not a row of
+                       the plan, so it is quiet and unclickable. */
+                    <div className="pl-[52px] pr-3 pb-1 text-[11px] text-faint">
+                      ↓ {legLabel(legs.get(stop.id)!)}
+                    </div>
+                  )}
                 </div>
               )
             })}

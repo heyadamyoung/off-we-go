@@ -125,6 +125,10 @@ jobs:
           # which leaves the compose defaults (luna, xhigh) in charge.
           WAYFARE_AI_MODEL: ${{ vars.WAYFARE_AI_MODEL }}
           WAYFARE_AI_REASONING: ${{ vars.WAYFARE_AI_REASONING }}
+          # Routing engine knobs: both empty until tiles are chosen, and then
+          # VALHALLA_URL=http://valhalla:8002 turns the feature on in the api.
+          VALHALLA_URL: ${{ vars.VALHALLA_URL }}
+          VALHALLA_TILES_URL: ${{ vars.VALHALLA_TILES_URL }}
         run: |
           umask 077
           {
@@ -136,6 +140,8 @@ jobs:
             echo "GRAFANA_LOKI_TOKEN=$GRAFANA_LOKI_TOKEN"
             echo "WAYFARE_AI_MODEL=$WAYFARE_AI_MODEL"
             echo "WAYFARE_AI_REASONING=$WAYFARE_AI_REASONING"
+            echo "VALHALLA_URL=$VALHALLA_URL"
+            echo "VALHALLA_TILES_URL=$VALHALLA_TILES_URL"
           } > app/deploy/release.env
 
       - name: Stream release to the VPS

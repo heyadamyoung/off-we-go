@@ -252,6 +252,7 @@ function buildMcpServer({
   announce,
   mailbox = null,
   assistant = false,
+  routing = null,
 }) {
   const mailTools = !!(assistant && mailbox)
   const server = new McpServer(
@@ -374,6 +375,36 @@ function buildMcpServer({
         : toolFailure('No accessible trip was found.')
     },
   )
+  /* Registered only when a routing engine is configured: a tool that always
+     fails is worse for the model than a tool that is not there. */
+  if (routing) {
+    register(
+      'get_travel_times',
+      {
+        description:
+          'Real road travel time and distance between each day’s consecutive stops, from the trip’s own routing engine. Modes: auto (car, default), pedestrian, bicycle. The trip id comes from get_trip or list_trips.',
+        inputSchema: z.object({
+          tripId: entityId,
+          mode: z.enum(['auto', 'pedestrian', 'bicycle']).optional(),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ tripId, mode = 'auto' }) => {
+        const stops = await repository.listStops(user, tripId)
+        if (!stops) return toolFailure('No accessible trip was found.')
+        const named = new Map(stops.map(stop => [stop.id, stop.name]))
+        const legs = await routing.legsFor(stops, mode)
+        return result({
+          mode,
+          legs: legs.map(leg => ({
+            ...leg,
+            from: named.get(leg.fromId) || null,
+            to: named.get(leg.toId) || null,
+          })),
+        })
+      },
+    )
+  }
   /* Mailbox tools ride ONLY the in-app assistant's agent token — never an
      external MCP client's grant. The consent screen those clients passed
      asked about trips; mail must not arrive on a trips scope, however
@@ -1070,6 +1101,7 @@ export async function registerMcpRoutes(
     sendInvite,
     announce = null,
     mailboxReader = null,
+    routing = null,
   },
 ) {
   const root = normalizeRoot(publicUrl)
@@ -1400,6 +1432,7 @@ export async function registerMcpRoutes(
         clock,
         announce,
         mailbox: mailboxReader,
+        routing,
         assistant: authInfo.clientId === 'wayfare-assistant',
         sendInvite: async invitation => {
           const email = invitation.email
