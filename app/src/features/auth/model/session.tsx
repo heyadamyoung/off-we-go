@@ -11,8 +11,15 @@ interface SessionState {
 const SessionContext = createContext<SessionState>({ session: null, ready: !hasBackend })
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthSession | null>(null)
-  const [ready, setReady] = useState(!hasBackend)
+  /* The session already on this device is enough to draw the app with.
+     Revalidating it is a network round trip, and waiting for that before the
+     first render put the whole app — the trip, the map, everything — behind it
+     on every cold load. The subscription below carries the answer when it
+     arrives: restore() clears the session only if the server actually disowns
+     it, and the sign-in screen then replaces whatever was drawn. */
+  const stored = hasBackend ? authClient.getSession() : null
+  const [session, setSession] = useState<AuthSession | null>(stored)
+  const [ready, setReady] = useState(!hasBackend || !!stored)
 
   useEffect(() => {
     if (!hasBackend) return

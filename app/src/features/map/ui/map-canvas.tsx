@@ -1,5 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Map as MapGL, setWorkerUrl, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
+import {
+  Map as MapGL,
+  prewarm,
+  setWorkerUrl,
+  type GeoJSONSource,
+  type MapMouseEvent,
+} from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
@@ -15,6 +21,11 @@ import type { MapCanvasProps } from '../model/map-props'
 import type { Id, TripPhoto } from '../../../shared/model/types'
 
 setWorkerUrl(maplibreWorkerUrl)
+/* Start the worker pool as soon as this module loads rather than when the map
+   is constructed. The chunk lands around 30ms and the map is not built until
+   ~100ms, so the worker can be up and waiting in time it would otherwise spend
+   starting on the critical path. */
+prewarm()
 // Before any map exists: a style that has already asked for a tile will not
 // ask again, so the handler has to be in place first.
 registerOfflineTiles()
@@ -84,7 +95,6 @@ const MapCanvas = memo(function MapCanvas({
   useEffect(() => {
     if (!holder.current) return
     const v = viewRef.current
-    performance.mark('mk:beforemap')
     const m = new MapGL({
       container: holder.current,
       style: STYLE[themeRef.current === 'light' ? 'light' : 'dark'],
