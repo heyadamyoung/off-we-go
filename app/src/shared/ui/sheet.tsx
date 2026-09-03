@@ -46,7 +46,7 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
         aria-modal="true"
         onClick={event => event.stopPropagation()}>
         <div className="flex flex-none items-center justify-between border-b border-line px-[18px] pb-3 pt-4">
-          <b className="text-[18px] font-extrabold tracking-[-.01em]">{title}</b>
+          <b className="text-lg font-extrabold tracking-[-.01em]">{title}</b>
           <button
             className="grid size-8 place-items-center rounded-lg text-muted hover:bg-raised2 hover:text-ink"
             onClick={onClose}
@@ -93,7 +93,7 @@ export function SheetTab({
       onClick={onClick}
       className={
         '-mb-px flex-none whitespace-nowrap border-b-2 px-3 pb-2.5 pt-3 ' +
-        'text-[13px] font-bold ' +
+        'text-xs font-bold ' +
         (on ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink')
       }>
       {children}

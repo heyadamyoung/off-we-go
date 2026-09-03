@@ -247,7 +247,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <b className="block text-[13.5px]">{person.name}</b>
+              <b className="block text-sm">{person.name}</b>
               <span className="text-xs text-muted">
                 {person.handle && (
                   <Link to="/users/$handle" params={{ handle: person.handle }}>
@@ -283,7 +283,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
               {(invite.name || invite.email || '?')[0].toUpperCase()}
             </span>
             <div className="min-w-0 flex-1">
-              <b className="block text-[13.5px]">{invite.name || invite.email}</b>
+              <b className="block text-sm">{invite.name || invite.email}</b>
               <span className="text-xs text-muted">Invited — not signed in yet</span>
             </div>
             {canManage && (
@@ -343,7 +343,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
             <div className="flex gap-2">
               <input
                 className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
-                                text-[12.5px] outline-none"
+                                text-xs outline-none"
                 type="email"
                 required
                 placeholder="them@example.com"
@@ -364,7 +364,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
               value={appLink}
               onFocus={event => event.target.select()}
               className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
-                              text-[12.5px] text-muted outline-none"
+                              text-xs text-muted outline-none"
             />
             <button
               className="btn btn-ghost flex-none"

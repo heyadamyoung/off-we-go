@@ -84,7 +84,7 @@ export default function HomeShell({
 
 export function Crumb({ here }: { here: string }) {
   return (
-    <div className="flex items-center gap-2 text-[13px] text-faint">
+    <div className="flex items-center gap-2 text-xs text-faint">
       <Link to="/" className="text-muted">
         Your trips
       </Link>
@@ -117,7 +117,7 @@ export function MoreLink({
   return (
     <Link
       to={to}
-      className="group flex items-center gap-3.5 border-b border-line py-3 text-[14px] text-ink">
+      className="group flex items-center gap-3.5 border-b border-line py-3 text-sm text-ink">
       <span
         className="grid size-[26px] flex-none place-items-center rounded-lg bg-raised text-muted
                        group-hover:bg-accent group-hover:text-accent-ink">
@@ -125,7 +125,7 @@ export function MoreLink({
       </span>
       <span className="flex-1">
         {title}
-        <span className="block text-[12.5px] text-faint">{detail}</span>
+        <span className="block text-xs text-faint">{detail}</span>
       </span>
       {note && <span className="text-xs font-bold text-faint">{note}</span>}
     </Link>

@@ -23,7 +23,7 @@ export function Card({
 }) {
   return (
     <section className={'surface flex flex-col gap-3 p-[18px] ' + (wide ? 'md:col-span-2' : '')}>
-      <h3 className="m-0 flex items-center justify-between text-[15px] font-extrabold tracking-[-.01em]">
+      <h3 className="m-0 flex items-center justify-between text-base font-extrabold tracking-[-.01em]">
         {title}
         {aside && <span className="text-xs font-semibold text-faint">{aside}</span>}
       </h3>
@@ -46,7 +46,7 @@ export function Row({
   action?: ReactNode
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-line py-2.5 text-[13px] last:border-b-0">
+    <div className="flex items-center gap-3 border-b border-line py-2.5 text-xs last:border-b-0">
       {lead}
       <div className="min-w-0 flex-1">
         <b className="block">{title}</b>
@@ -81,7 +81,7 @@ export function NotificationsCard({
             <i />
             <div className="flex flex-1 flex-col">
               {item.label}
-              {item.detail && <span className="text-[11.5px] text-faint">{item.detail}</span>}
+              {item.detail && <span className="text-[11px] text-faint">{item.detail}</span>}
             </div>
             <div className="flex gap-1.5">
               {item.channels.map(channel => (
@@ -94,7 +94,7 @@ export function NotificationsCard({
                     set(item.key, toggleChannel(choice, channel as Channel))
                   }}
                   className={
-                    'rounded px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[.06em] ' +
+                    'rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[.06em] ' +
                     (choice.on && choice.channels.includes(channel as Channel)
                       ? 'bg-accent-soft text-accent'
                       : 'bg-raised2 text-muted') +
@@ -139,7 +139,7 @@ export function PrivacyCard({
       <i />
       <div className="flex flex-1 flex-col">
         {label}
-        {detail && <span className="text-[11.5px] text-faint">{detail}</span>}
+        {detail && <span className="text-[11px] text-faint">{detail}</span>}
       </div>
     </label>
   )
@@ -152,7 +152,7 @@ export function PrivacyCard({
           <label
             key={option.value}
             className={
-              'flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-[13px] ' +
+              'flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-xs ' +
               (privacy.discoverable === option.value
                 ? 'border-accent bg-accent-soft'
                 : 'border-line')

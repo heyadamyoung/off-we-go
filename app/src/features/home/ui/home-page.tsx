@@ -78,8 +78,8 @@ function FirstVisit({ invites }: { invites: number }) {
               {index + 1}
             </i>
             <div>
-              <b className="block text-[14.5px]">{step.title}</b>
-              <span className="text-[13px] text-muted">{step.detail}</span>
+              <b className="block text-sm">{step.title}</b>
+              <span className="text-xs text-muted">{step.detail}</span>
             </div>
           </div>
         ))}

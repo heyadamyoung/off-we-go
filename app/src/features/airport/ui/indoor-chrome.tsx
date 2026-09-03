@@ -9,7 +9,7 @@ export default function IndoorChrome({ indoor }: { indoor: AirportIndoor }) {
   const capsule =
     'glass absolute left-1/2 top-[calc(var(--trip-top)+14px)] z-[6] flex ' +
     'max-w-[calc(100%-7rem)] -translate-x-1/2 items-center gap-3 whitespace-nowrap ' +
-    'overflow-hidden rounded-full text-[13px]'
+    'overflow-hidden rounded-full text-xs'
   return (
     <>
       <LevelPicker

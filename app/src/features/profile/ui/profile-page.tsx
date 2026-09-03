@@ -122,7 +122,7 @@ export default function ProfilePage() {
           <button
             className="relative size-[76px] flex-none overflow-hidden rounded-full bg-[#5B8DEF]
                              text-[30px] font-extrabold text-[#10141C] max-sm:size-[60px]
-                             max-sm:text-[24px]"
+                             max-sm:text-2xl"
             onClick={() => picker.current?.click()}
             title="Change your picture">
             {profile.avatar ? (
@@ -149,11 +149,11 @@ export default function ProfilePage() {
               rather than ending in an ellipsis. */}
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <h1
-              className="m-0 truncate text-[28px] font-extrabold tracking-[-.02em]
-                           max-sm:text-[21px]">
+              className="m-0 truncate text-[34px] font-extrabold tracking-[-.02em]
+                           max-sm:text-xl">
               {name}
             </h1>
-            <div className="truncate text-[13px] text-muted">
+            <div className="truncate text-xs text-muted">
               {[
                 profile.handle ? `@${profile.handle}` : null,
                 profile.homePlace,
@@ -162,15 +162,13 @@ export default function ProfilePage() {
                 .filter(Boolean)
                 .join(' · ')}
             </div>
-            <div className="mt-1.5 flex gap-4 text-[12.5px] text-muted">
+            <div className="mt-1.5 flex gap-4 text-xs text-muted">
               <span>
-                <b className="tnum mr-1 text-[15px] text-ink">
-                  {profile.tripCount ?? trips.length}
-                </b>
+                <b className="tnum mr-1 text-base text-ink">{profile.tripCount ?? trips.length}</b>
                 trip{(profile.tripCount ?? trips.length) === 1 ? '' : 's'}
               </span>
               <span>
-                <b className="tnum mr-1 text-[15px] text-ink">{profile.photoCount ?? 0}</b>photos
+                <b className="tnum mr-1 text-base text-ink">{profile.photoCount ?? 0}</b>photos
               </span>
             </div>
           </div>

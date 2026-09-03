@@ -49,7 +49,7 @@ export default function AssistantChat({
                     max-sm:max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-1)_-_12px)]">
       <div className="flex flex-none items-center gap-2.5 border-b border-line px-4 py-3">
         <Icon n="spark" s={16} className="text-accent" />
-        <b className="flex-1 text-[13px] font-extrabold">Ask about this trip</b>
+        <b className="flex-1 text-xs font-extrabold">Ask about this trip</b>
         <button
           className="grid size-[30px] place-items-center rounded-lg text-muted hover:bg-raised2
                            hover:text-ink"
@@ -63,7 +63,7 @@ export default function AssistantChat({
         ref={scroller}
         className="flex min-h-[120px] flex-col gap-2.5 overflow-y-auto px-4 py-3.5">
         {messages.length === 0 && (
-          <p className="m-0 text-[13px] leading-relaxed text-muted">
+          <p className="m-0 text-xs leading-relaxed text-muted">
             {canEdit
               ? 'Whatever you want to know — the plan, the places, where everyone is. ' +
                 'You can also ask for changes: "add a stop at the ferry dock on day 3". ' +
@@ -77,7 +77,7 @@ export default function AssistantChat({
             // biome-ignore lint/suspicious/noArrayIndexKey: chat turns are append-only and carry no ids; index is their identity
             key={index}
             className={
-              'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ' +
+              'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-xs leading-relaxed ' +
               (message.role === 'user'
                 ? 'self-end rounded-br-md bg-accent text-accent-ink'
                 : 'self-start rounded-bl-md bg-raised2 text-ink')
@@ -86,12 +86,12 @@ export default function AssistantChat({
           </div>
         ))}
         {busy && (
-          <div className="flex items-center gap-2 self-start px-1 text-[13px] text-muted">
+          <div className="flex items-center gap-2 self-start px-1 text-xs text-muted">
             <Icon n="spark" s={13} className="animate-pulse text-accent" />
             Thinking…
           </div>
         )}
-        {error && !busy && <div className="self-start px-1 text-[12.5px] text-muted">{error}</div>}
+        {error && !busy && <div className="self-start px-1 text-xs text-muted">{error}</div>}
       </div>
 
       <div className="flex flex-none items-end gap-2 border-t border-line p-3">
@@ -101,7 +101,7 @@ export default function AssistantChat({
           rows={2}
           placeholder="Ask anything about the trip"
           className="min-w-0 flex-1 resize-none rounded-xl border border-line bg-canvas px-3 py-2
-                     text-[13px] leading-relaxed outline-none focus:border-accent"
+                     text-xs leading-relaxed outline-none focus:border-accent"
           onChange={event => setText(event.target.value)}
           onKeyDown={event => {
             if (event.key === 'Enter' && !event.shiftKey) {

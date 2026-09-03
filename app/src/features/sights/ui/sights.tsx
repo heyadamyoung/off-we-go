@@ -67,8 +67,8 @@ function AttractionCard({
         </div>
       )}
       <div className="abody flex flex-col gap-1.5 overflow-y-auto p-4">
-        <b className="text-[16px] font-extrabold tracking-[-.01em]">{poi.n}</b>
-        <span className="kind text-[11.5px] font-semibold text-accent">{poi.d}</span>
+        <b className="text-base font-extrabold tracking-[-.01em]">{poi.n}</b>
+        <span className="kind text-[11px] font-semibold text-accent">{poi.d}</span>
         <p className="m-0 line-clamp-4 text-xs leading-relaxed text-muted">{note}</p>
         <div className="aacts mt-1 flex gap-1.5">
           {canEdit && (
@@ -210,9 +210,7 @@ function SightsList({ centre, stops, canEdit, onAdd, onShow, toast }: SightsList
               ) : (
                 <b className="sname text-sm font-bold">{pl.name}</b>
               )}
-              {pl.kind && (
-                <span className="text-[11.5px] font-semibold text-accent">{pl.kind}</span>
-              )}
+              {pl.kind && <span className="text-[11px] font-semibold text-accent">{pl.kind}</span>}
               <p className="m-0 line-clamp-3 text-xs leading-relaxed text-muted">{pl.note}</p>
               <div className="sacts mt-1 flex gap-1.5">
                 <button className="mini" onClick={() => onShow(pl)}>

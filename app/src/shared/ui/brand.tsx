@@ -27,7 +27,7 @@ export function Wordmark({
   return (
     <div
       className={
-        'flex items-center gap-4 text-[13px] font-bold uppercase tracking-[.16em] text-faint ' +
+        'flex items-center gap-4 text-xs font-bold uppercase tracking-[.16em] text-faint ' +
         className
       }>
       <Brandmark size={markSize} />

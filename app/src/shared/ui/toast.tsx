@@ -54,7 +54,7 @@ export default function Toast({ notice }: { notice: ToastNotice | null }) {
         'toast toast-rise fixed left-1/2 top-6 z-[300] flex ' +
         'max-w-[min(520px,calc(100vw-28px))] ' +
         (error ? 'error ' : 'success ') +
-        'items-center gap-2.5 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-panel ' +
+        'items-center gap-2.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-panel ' +
         (error ? 'bg-danger text-white' : 'bg-ink text-canvas')
       }
       role={error ? 'alert' : 'status'}

@@ -28,7 +28,7 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
 
   const name = me?.name || 'You'
   const item =
-    'flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-[13px] ' +
+    'flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
     'text-ink hover:bg-raised2'
 
   return (
@@ -52,7 +52,7 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
           role="menu"
           aria-label="Account">
           <div className="mb-1 border-b border-line px-2.5 pb-2.5 pt-2 text-xs text-muted">
-            <b className="block text-[13px] text-ink">{name}</b>
+            <b className="block text-xs text-ink">{name}</b>
             {me?.handle ? `@${me.handle}` : me?.email}
           </div>
           <Link className={item} to="/" role="menuitem" onClick={() => setOpen(false)}>

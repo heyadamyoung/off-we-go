@@ -65,9 +65,9 @@ export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
     <div className="flex flex-col gap-2 rounded-xl border border-line bg-raised p-3">
       <div className="flex items-center gap-2">
         <Icon n="map" s={15} />
-        <b className="text-[13.5px]">Use this map without a signal</b>
+        <b className="text-sm">Use this map without a signal</b>
       </div>
-      <p className="m-0 text-[12.5px] leading-relaxed text-muted">
+      <p className="m-0 text-xs leading-relaxed text-muted">
         Saves the streets around this trip onto this device, so the map still draws with the data
         off. Your stops, notes and photographs are already kept as you read them.
       </p>
@@ -79,11 +79,11 @@ export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
               style={{ width: `${pct}%` }}
             />
           </div>
-          <span className="text-[11.5px] tabular-nums text-muted">
+          <span className="text-[11px] tabular-nums text-muted">
             {progress.total ? `${pct}%` : 'Working out the area…'}
           </span>
           <button
-            className="text-[12px] font-semibold text-muted hover:text-ink"
+            className="text-xs font-semibold text-muted hover:text-ink"
             onClick={() => stop.current?.abort()}>
             Stop
           </button>
@@ -91,13 +91,13 @@ export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
       ) : (
         <div className="flex items-center gap-2">
           <button
-            className="h-9 rounded-lg bg-accent px-3 text-[12.5px] font-bold text-accent-ink"
+            className="h-9 rounded-lg bg-accent px-3 text-xs font-bold text-accent-ink"
             onClick={save}>
             Save this trip’s map
           </button>
           {!!held && (
             <button
-              className="h-9 rounded-lg border border-line px-3 text-[12.5px] font-semibold text-muted hover:text-ink"
+              className="h-9 rounded-lg border border-line px-3 text-xs font-semibold text-muted hover:text-ink"
               onClick={remove}>
               Remove ({held} tiles)
             </button>

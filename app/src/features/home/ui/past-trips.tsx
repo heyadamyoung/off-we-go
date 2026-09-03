@@ -26,7 +26,7 @@ export default function PastTripsPage() {
       </p>
       {loading && <p className="hint">Loading…</p>}
       {!loading && !past.length && (
-        <div className="rounded-2xl border-[1.5px] border-dashed border-line2 p-6 text-center text-[13px] text-faint">
+        <div className="rounded-2xl border-[1.5px] border-dashed border-line2 p-6 text-center text-xs text-faint">
           Nothing here yet. Your trips land here the day after you come home.
         </div>
       )}
@@ -70,8 +70,8 @@ function PastCard({ trip }: { trip: TripSummary }) {
         <Globe places={tripPlaces(trip)} />
       </div>
       <div className="flex flex-col gap-1">
-        <b className="text-[17px] font-extrabold tracking-[-.01em]">{trip.title}</b>
-        <span className="text-[12.5px] text-muted">
+        <b className="text-lg font-extrabold tracking-[-.01em]">{trip.title}</b>
+        <span className="text-xs text-muted">
           {[trip.dates || formatRange(trip.startsOn, trip.endsOn), trip.crew]
             .filter(Boolean)
             .join(' · ')}

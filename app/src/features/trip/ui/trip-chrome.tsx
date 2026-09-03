@@ -19,7 +19,7 @@ export const TripTitle = memo(function TripTitle({ title, sub }: { title: string
         </div>
         <h1
           className="font-display m-0 truncate text-[34px] font-extrabold leading-tight tracking-[-.02em]
-                       max-sm:text-[19px]">
+                       max-sm:text-lg">
           {title}
         </h1>
         <div className="truncate text-sm text-muted max-sm:hidden">{sub}</div>
@@ -73,13 +73,13 @@ export const NowCapsule = memo(function NowCapsule({
       onClick={onClick}>
       <span className={`size-2.5 shrink-0 rounded-full ${dot}`} />
       <span className="flex min-w-0 items-center gap-3.5">
-        <b className="truncate text-[15px] font-bold max-sm:text-[12.5px]" aria-live="polite">
+        <b className="truncate text-base font-bold max-sm:text-xs" aria-live="polite">
           {text}
         </b>
         {meta && (
           <>
             <span className="h-4 w-px shrink-0 bg-line2 max-sm:hidden" />
-            <span className="tnum truncate text-[13px] text-muted max-sm:hidden">{meta}</span>
+            <span className="tnum truncate text-xs text-muted max-sm:hidden">{meta}</span>
           </>
         )}
       </span>
@@ -100,7 +100,7 @@ export const ScopeToggle = memo(function ScopeToggle({
   onWhole: () => void
   shifted: boolean
 }) {
-  const button = 'rounded-full px-3.5 py-1.5 text-[12.5px] font-bold text-muted'
+  const button = 'rounded-full px-3.5 py-1.5 text-xs font-bold text-muted'
   return (
     /* Hidden on a phone: the day chips an inch below are the same control with
        more of the trip in them, and the status beside it needs the room. */
@@ -168,7 +168,7 @@ export const PlaceHint = memo(function PlaceHint({
   return (
     <div
       className="glass absolute left-1/2 top-6 z-[8] flex -translate-x-1/2 items-center gap-3
-                    whitespace-nowrap rounded-full py-2 pl-4 pr-2 text-[13px]">
+                    whitespace-nowrap rounded-full py-2 pl-4 pr-2 text-xs">
       <Icon n="pinplus" s={14} />
       <span className="text-muted">{what} · Esc cancels</span>
       <button className="rounded-full bg-raised2 px-3 py-1.5 text-xs font-bold" onClick={onCancel}>
@@ -200,7 +200,7 @@ export function EditHint({
   return (
     <div
       className="edithint glass absolute bottom-[var(--trip-1)] left-1/2 z-[8] flex -translate-x-1/2 items-center gap-2.5
-                    whitespace-nowrap rounded-full px-4 py-2 text-[12.5px] max-md:hidden">
+                    whitespace-nowrap rounded-full px-4 py-2 text-xs max-md:hidden">
       <b className="text-[11px] font-extrabold uppercase tracking-[.06em] text-accent">
         {routeDraft ? 'Route' : 'Edit mode'}
       </b>

@@ -88,7 +88,7 @@ const TripBar = memo(function TripBar({
                           border-line bg-raised px-3 text-faint max-sm:w-full">
           <Icon n="search" s={14} />
           <input
-            className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-ink outline-none
+            className="min-w-0 flex-1 border-0 bg-transparent text-xs text-ink outline-none
                             placeholder:text-faint"
             type="search"
             placeholder="Search stops and captions"
@@ -112,7 +112,7 @@ const TripBar = memo(function TripBar({
             />
           ))
         ) : (
-          <div className="flex items-center gap-2.5 self-center px-1.5 text-[13px] text-faint">
+          <div className="flex items-center gap-2.5 self-center px-1.5 text-xs text-faint">
             {query ? (
               `Nothing matches “${query}”.`
             ) : (
@@ -184,8 +184,8 @@ function Card({
         {badge && (
           <span
             className={
-              'absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ' +
-              'uppercase tracking-[.1em] max-sm:px-1 max-sm:text-[8px] ' +
+              'absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ' +
+              'uppercase tracking-[.1em] max-sm:px-1 ' +
               (badge === 'Now'
                 ? 'bg-accent text-accent-ink'
                 : 'border border-accent bg-panel text-accent')
@@ -199,7 +199,7 @@ function Card({
             would otherwise spend two of them, and the row is easier to read
             across when every card is the same shape. */}
         <div
-          className="t line-clamp-2 text-[12.5px] font-bold leading-tight
+          className="t line-clamp-2 text-xs font-bold leading-tight
                         max-sm:line-clamp-1 max-sm:text-[11px]">
           {item.title}
         </div>

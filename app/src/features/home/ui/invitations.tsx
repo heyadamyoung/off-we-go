@@ -37,10 +37,10 @@ export default function InvitationsPage() {
       <Crumb here="Invitations" />
       <PageHeading>Invitations</PageHeading>
       <section className="surface flex flex-col gap-2.5 p-[18px]">
-        <h3 className="m-0 text-[15px] font-extrabold">Waiting for you</h3>
+        <h3 className="m-0 text-base font-extrabold">Waiting for you</h3>
         {loading && <p className="hint">Loading…</p>}
         {!loading && !invites.length && (
-          <div className="rounded-2xl border-[1.5px] border-dashed border-line2 p-6 text-center text-[13px] text-faint">
+          <div className="rounded-2xl border-[1.5px] border-dashed border-line2 p-6 text-center text-xs text-faint">
             Nothing waiting. When somebody invites you along, it shows up here.
           </div>
         )}
@@ -52,11 +52,11 @@ export default function InvitationsPage() {
               {(invite.tripTitle || '?').slice(0, 1).toUpperCase()}
             </span>
             <div>
-              <b className="block text-[15px]">
+              <b className="block text-base">
                 You have been invited to{' '}
                 <em className="not-italic text-accent">{invite.tripTitle}</em>
               </b>
-              <span className="block text-[12.5px] text-muted">
+              <span className="block text-xs text-muted">
                 {invite.role === 'editor'
                   ? 'As a traveller — you can add stops and photos'
                   : 'As a viewer — you see everything, live'}

@@ -22,7 +22,7 @@ export default function UploadTray({
                     overflow-hidden rounded-2xl sm:bottom-[var(--trip-1)]"
       role="status"
       aria-live="polite">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[12px] text-muted">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-xs text-muted">
         {going > 0 && <span className="size-2 animate-pulse rounded-full bg-accent" />}
         {going > 0
           ? `Adding ${going} photo${going === 1 ? '' : 's'}…`
@@ -43,7 +43,7 @@ export default function UploadTray({
               </span>
             )}
             <span className="flex min-w-0 flex-1 flex-col">
-              <b className="truncate text-[12px] font-semibold">{upload.name}</b>
+              <b className="truncate text-xs font-semibold">{upload.name}</b>
               <span className="truncate text-[11px] text-faint">
                 {upload.state === 'failed' ? upload.error : 'Uploading…'}
               </span>

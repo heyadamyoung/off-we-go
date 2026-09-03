@@ -107,7 +107,7 @@ export default function NewTripPage({ step }: { step: number }) {
       {step === 1 && (
         <>
           <section className="surface flex flex-col gap-3 p-[18px]">
-            <h3 className="m-0 text-[15px] font-extrabold">The trip</h3>
+            <h3 className="m-0 text-base font-extrabold">The trip</h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="field">
                 Trip name
@@ -186,7 +186,7 @@ export default function NewTripPage({ step }: { step: number }) {
       {step === 3 && (
         <>
           <section className="surface flex flex-col gap-3 p-[18px]">
-            <h3 className="m-0 flex items-center justify-between text-[15px] font-extrabold">
+            <h3 className="m-0 flex items-center justify-between text-base font-extrabold">
               Link your phone{' '}
               <span className="text-xs font-semibold text-faint">So the map moves with you</span>
             </h3>
@@ -195,7 +195,7 @@ export default function NewTripPage({ step }: { step: number }) {
               position only while the trip is running and only to the people on it. We will take you
               straight there.
             </p>
-            <ul className="m-0 flex list-disc flex-col gap-1 pl-4 text-[12.5px] text-muted">
+            <ul className="m-0 flex list-disc flex-col gap-1 pl-4 text-xs text-muted">
               <li>
                 {fields.title.trim() || 'Your trip'}
                 {span ? ` · ${formatRange(fields.startsOn, fields.endsOn)}` : ''}
@@ -252,7 +252,7 @@ function People({
         group(which).map(guest => (
           <span
             key={guest.email}
-            className="inline-flex items-center gap-2 rounded-full bg-raised2 py-1 pl-1 pr-2.5 text-[12.5px] font-semibold">
+            className="inline-flex items-center gap-2 rounded-full bg-raised2 py-1 pl-1 pr-2.5 text-xs font-semibold">
             <span className="avatar plain size-[22px] border-0 text-[10px]">
               {guest.email.slice(0, 1).toUpperCase()}
             </span>
@@ -274,7 +274,7 @@ function People({
   return (
     <>
       <section className="surface flex flex-col gap-3 p-[18px]">
-        <h3 className="m-0 flex items-center justify-between text-[15px] font-extrabold">
+        <h3 className="m-0 flex items-center justify-between text-base font-extrabold">
           Travelling{' '}
           <span className="text-xs font-semibold text-faint">
             Add photos and stops, share their position
@@ -283,7 +283,7 @@ function People({
         {list('editor')}
       </section>
       <section className="surface flex flex-col gap-3 p-[18px]">
-        <h3 className="m-0 flex items-center justify-between text-[15px] font-extrabold">
+        <h3 className="m-0 flex items-center justify-between text-base font-extrabold">
           Following from home
           <span className="text-xs font-semibold text-faint">
             See everything live; can like and comment
@@ -292,7 +292,7 @@ function People({
         {list('viewer')}
         <div className="flex gap-2">
           <input
-            className="flex-1 rounded-lg border border-line bg-raised px-3 py-2.5 text-[12.5px] outline-none"
+            className="flex-1 rounded-lg border border-line bg-raised px-3 py-2.5 text-xs outline-none"
             placeholder="them@example.com"
             type="email"
             value={email}
@@ -305,7 +305,7 @@ function People({
             }}
           />
           <select
-            className="rounded-lg border border-line bg-raised px-2.5 text-[12.5px]"
+            className="rounded-lg border border-line bg-raised px-2.5 text-xs"
             aria-label="Role"
             value={role}
             onChange={event => setRole(event.target.value as Guest['role'])}>

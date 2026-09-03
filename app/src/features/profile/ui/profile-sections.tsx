@@ -186,7 +186,7 @@ export function AccountSection({ profile, trips }: SectionProps) {
           ) : null
         }
       />
-      <h3 className="mt-1.5 flex items-center justify-between text-[15px] font-extrabold">
+      <h3 className="mt-1.5 flex items-center justify-between text-base font-extrabold">
         Your phones
         <span className="text-xs font-semibold text-faint">Report your position to a trip</span>
       </h3>
@@ -280,7 +280,7 @@ export function DataSection({ download, removeAccount }: SectionProps) {
         }
       />
       <div className="flex flex-col gap-2 rounded-xl border border-danger p-3.5">
-        <h4 className="m-0 text-[13px] text-danger">Delete my account</h4>
+        <h4 className="m-0 text-xs text-danger">Delete my account</h4>
         <p className="hint">
           Removes your profile, comments, likes, phones, GPS history and uploaded photos. A trip
           disappears too if you are its only owner — hand it to someone else first if they should

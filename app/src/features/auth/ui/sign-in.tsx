@@ -236,7 +236,7 @@ export default function SignInScreen() {
       {phase === 'details' && mode === 'signin' && (
         <button
           type="button"
-          className="text-[13px] font-bold text-accent"
+          className="text-xs font-bold text-accent"
           disabled={busy}
           onClick={() => {
             setMethod(value => (value === 'code' ? 'password' : 'code'))
@@ -261,7 +261,7 @@ export default function SignInScreen() {
       )}
       {phase === 'code' && (
         <button
-          className="text-[13px] font-bold text-accent"
+          className="text-xs font-bold text-accent"
           type="button"
           disabled={busy}
           onClick={() => {

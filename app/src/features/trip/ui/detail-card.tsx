@@ -66,8 +66,8 @@ export default function DetailCard(props: DetailCardProps) {
           </span>
         </div>
         <h3 className="m-0 text-xl font-extrabold leading-tight tracking-[-.02em]">{item.title}</h3>
-        {stop?.note && <p className="m-0 text-[13px] leading-relaxed text-muted">{stop.note}</p>}
-        {stop?.kind && <div className="text-[13px] text-muted">{stop.kind}</div>}
+        {stop?.note && <p className="m-0 text-xs leading-relaxed text-muted">{stop.note}</p>}
+        {stop?.kind && <div className="text-xs text-muted">{stop.kind}</div>}
 
         <div className="mt-1 flex items-center gap-2">
           <button

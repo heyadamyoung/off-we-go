@@ -41,7 +41,7 @@ export default function LevelPicker({
           <button
             key={value}
             className={
-              'h-9 border-b border-line text-[13px] font-bold last:border-b-0 ' +
+              'h-9 border-b border-line text-xs font-bold last:border-b-0 ' +
               (value === level
                 ? 'bg-accent text-accent-ink'
                 : 'text-muted hover:bg-raised2 hover:text-ink')

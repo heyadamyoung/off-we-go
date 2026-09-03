@@ -150,7 +150,7 @@ function MoreTools({
   }, [open])
 
   const item =
-    'flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-[13px] ' +
+    'flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
     'text-ink hover:bg-raised2'
   const pick = (run: () => void) => () => {
     setOpen(false)

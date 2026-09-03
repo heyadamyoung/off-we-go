@@ -121,7 +121,7 @@ export default function PhonesTab({
             }
           />
           <div className="flex min-w-0 flex-col gap-0.5">
-            <b className="text-[13px]">
+            <b className="text-xs">
               {tracking.status === 'tracking'
                 ? 'Location sharing is on'
                 : tracking.status === 'waiting'
@@ -132,7 +132,7 @@ export default function PhonesTab({
                       ? 'Location sharing is off'
                       : 'Set up this phone below'}
             </b>
-            <span className="text-[11.5px] leading-snug text-faint">
+            <span className="text-[11px] leading-snug text-faint">
               {tracking.error
                 ? appErrorMessage(new Error(tracking.error), 'share-location')
                 : tracking.queued
@@ -180,7 +180,7 @@ export default function PhonesTab({
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <b className="block text-[13.5px]">{phone.name}</b>
+                <b className="block text-sm">{phone.name}</b>
                 <span className="text-xs text-muted">
                   {phone.pausedAt
                     ? 'Sharing paused'
@@ -223,7 +223,7 @@ export default function PhonesTab({
         <form onSubmit={add} className="flex gap-2">
           <input
             className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
-                            text-[12.5px] outline-none"
+                            text-xs outline-none"
             placeholder={suggested}
             value={name}
             onChange={event => setName(event.target.value)}
@@ -304,11 +304,11 @@ function SetupCard({
 
   const Row = ({ k, v }: { k: string; v: string }) => (
     <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2">
-      <span className="text-[11.5px] text-faint">{k}</span>
+      <span className="text-[11px] text-faint">{k}</span>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: click-to-copy is a convenience; the Copy button beside it is the accessible path */}
       <code
         className="min-w-0 cursor-copy break-all rounded-lg border border-line bg-raised px-2 py-1.5
-                       font-mono text-[11.5px] leading-snug text-ink"
+                       font-mono text-[11px] leading-snug text-ink"
         onClick={() => copy(k, v)}
         title="Click to copy">
         {v}
@@ -368,7 +368,7 @@ function SetupCard({
             </p>
           </div>
           <details>
-            <summary className="cursor-pointer text-[11.5px] font-bold text-faint">
+            <summary className="cursor-pointer text-[11px] font-bold text-faint">
               Advanced — bring your own tracker app
             </summary>
             <div className="mt-2.5 flex flex-col gap-2.5">

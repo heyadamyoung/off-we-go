@@ -52,8 +52,8 @@ export default function TripPanel(props: PanelProps) {
                       max-sm:border-b-0">
       <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
         <div>
-          <h2 className="m-0 text-[22px] font-extrabold tracking-[-.02em]">{title}</h2>
-          <p className="mt-1 text-[12.5px] text-muted">{sub}</p>
+          <h2 className="m-0 text-2xl font-extrabold tracking-[-.02em]">{title}</h2>
+          <p className="mt-1 text-xs text-muted">{sub}</p>
         </div>
         <div className="flex flex-none gap-1.5">
           {action}
@@ -102,10 +102,10 @@ function Row({
         'flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left ' +
         (selected ? 'bg-accent-soft' : 'hover:bg-raised2')
       }>
-      <span className="tnum w-10 flex-none text-[11.5px] text-faint">{time}</span>
+      <span className="tnum w-10 flex-none text-[11px] text-faint">{time}</span>
       {icon}
       <span className="min-w-0 flex-1">
-        <b className="block truncate text-[13.5px] font-bold">{title}</b>
+        <b className="block truncate text-sm font-bold">{title}</b>
         <span className="block truncate text-xs text-muted">{detail}</span>
       </span>
     </button>
@@ -219,7 +219,7 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
               {photo.caption && (
                 <span
                   className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
-                                 to-transparent px-2 pb-1.5 pt-4 text-[10.5px] text-white">
+                                 to-transparent px-2 pb-1.5 pt-4 text-[11px] text-white">
                   {photo.caption}
                 </span>
               )}
