@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { findGroup, testerPayload } from '../scripts/testflightInvite.mjs'
+import { findGroup, invitationPayload, testerPayload } from '../scripts/testflightInvite.mjs'
 
 const groups = [
   { id: 'in', attributes: { name: 'Wayfare Internal', isInternalGroup: true } },
@@ -54,5 +54,19 @@ test('the invitation names the group, and a name is optional', () => {
     email: 'someone@example.com',
     firstName: 'Some',
     lastName: 'One',
+  })
+})
+
+/* A tester already in the group is not an error to report but a person whose
+   invitation email went unopened; the fix is sending it again. */
+test('the re-invitation names the tester and the app, nothing else', () => {
+  assert.deepEqual(invitationPayload({ testerId: 't-9', appId: 'app-1' }), {
+    data: {
+      type: 'betaTesterInvitations',
+      relationships: {
+        betaTester: { data: { type: 'betaTesters', id: 't-9' } },
+        app: { data: { type: 'apps', id: 'app-1' } },
+      },
+    },
   })
 })

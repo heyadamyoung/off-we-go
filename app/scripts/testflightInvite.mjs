@@ -21,6 +21,19 @@ export function findGroup(groups, name) {
   return external.length === 1 ? external[0] : null
 }
 
+/** Re-sending the email to a tester who never opened the first one. */
+export function invitationPayload({ testerId, appId }) {
+  return {
+    data: {
+      type: 'betaTesterInvitations',
+      relationships: {
+        betaTester: { data: { type: 'betaTesters', id: testerId } },
+        app: { data: { type: 'apps', id: appId } },
+      },
+    },
+  }
+}
+
 /** A name is optional; Apple shows the email when there is none. */
 export function testerPayload({ email, firstName, lastName, groupId }) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || ''))
@@ -109,11 +122,25 @@ async function main() {
   const tester = existing?.data?.[0]
   if (!tester) throw new Error(`${email} is already a tester but could not be found to add`)
 
-  await api(`/betaGroups/${group.id}/relationships/betaTesters`, token, {
+  try {
+    await api(`/betaGroups/${group.id}/relationships/betaTesters`, token, {
+      method: 'POST',
+      body: JSON.stringify({ data: [{ type: 'betaTesters', id: tester.id }] }),
+    })
+    console.log(`${email} was already a tester; added to ${group.name}`)
+    return
+  } catch (error) {
+    if (error.status !== 409) throw error
+  }
+
+  /* Already in the group too, so what they need is the email again: a tester
+     whose state is still "invited" has an unopened invitation sitting in
+     their inbox, and this is the one lever Apple offers to send another. */
+  await api('/betaTesterInvitations', token, {
     method: 'POST',
-    body: JSON.stringify({ data: [{ type: 'betaTesters', id: tester.id }] }),
+    body: JSON.stringify(invitationPayload({ testerId: tester.id, appId: app.id })),
   })
-  console.log(`${email} was already a tester; added to ${group.name}`)
+  console.log(`${email} was already in ${group.name}; the invitation email was sent again`)
 }
 
 if (process.argv[1]?.endsWith('testflightInvite.mjs')) {
