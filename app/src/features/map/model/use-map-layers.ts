@@ -12,10 +12,12 @@ interface MapLayerOptions {
   map: MapGL | null
   routeRef: MutableRefObject<NonNullable<MapCanvasProps['route']>>
   trailRef: MutableRefObject<NonNullable<MapCanvasProps['trail']>>
+  trailFadedRef: MutableRefObject<NonNullable<MapCanvasProps['trailFaded']>>
   tintRef: MutableRefObject<MapCanvasProps['tint']>
   themeRef: MutableRefObject<MapCanvasProps['theme']>
   route: NonNullable<MapCanvasProps['route']>
   trail: NonNullable<MapCanvasProps['trail']>
+  trailFaded: NonNullable<MapCanvasProps['trailFaded']>
   sweepIn: (map: MapGL) => void
   onPickAttraction: MapCanvasProps['onPickAttraction']
 }
@@ -57,10 +59,12 @@ export default function useMapLayers({
   map,
   routeRef,
   trailRef,
+  trailFadedRef,
   tintRef,
   themeRef,
   route,
   trail,
+  trailFaded,
   sweepIn,
   onPickAttraction,
 }: MapLayerOptions) {
@@ -113,6 +117,17 @@ export default function useMapLayers({
           'line-dasharray': [1.5, 3.5],
         },
       })
+      /* Yesterday's walking, a ghost under today's: same amber, a third of the
+         strength, no glow — the record stays visible without ever passing for
+         the live line. */
+      map.addSource('trail-faded', { type: 'geojson', data: linesOf(trailFadedRef.current) })
+      map.addLayer({
+        id: 'trail-faded-line',
+        type: 'line',
+        source: 'trail-faded',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ACCENT, 'line-width': 2, 'line-opacity': 0.32 },
+      })
       map.addSource('trail', {
         type: 'geojson',
         data: linesOf(trailRef.current),
@@ -157,6 +172,12 @@ export default function useMapLayers({
       sweepIn(map)
     }
   }, [map, trail])
+
+  useEffect(() => {
+    if (!map) return
+    const src = map.getSource<GeoJSONSource>('trail-faded')
+    if (src) src.setData(linesOf(trailFaded))
+  }, [map, trailFaded])
 
   /* Attractions are drawn by the map itself rather than as DOM markers. There
    can be thousands of them across a country, and a thousand absolutely

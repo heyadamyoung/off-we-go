@@ -147,13 +147,13 @@ test('after leaving an observed stop the itinerary advances to the following sto
   assert.deepEqual(progress.visitedStopIds, ['first'])
 })
 
-test('a fix older than five minutes is reported as stale and never drives the trip state', () => {
+test('a fix older than the freshness window is stale and never drives the trip state', () => {
   const stale = {
     deviceId: 'phone-1',
     lng: 0.02,
     lat: 0,
     accuracy: 7,
-    at: new Date('2026-09-01T17:54:59.000Z'),
+    at: new Date('2026-09-01T17:44:59.000Z'),
   }
 
   const progress = deriveLiveStopProgress({ stops: STOPS, fixes: [stale], now: NOW })
@@ -305,7 +305,7 @@ test('a return trip can revisit co-located first and final stops in sequence', (
       lat: 0,
       accuracy: 8,
       speed: 0,
-      at: new Date('2026-09-01T17:50:00.000Z'),
+      at: new Date('2026-09-01T17:40:00.000Z'),
     },
     {
       deviceId: 'phone-1',
@@ -567,13 +567,13 @@ test('stale GPS is called what it is — silence, never a claimed pause', () => 
       lng: 0,
       lat: 0,
       accuracy: 8,
-      at: new Date('2026-09-01T17:54:59.000Z'),
+      at: new Date('2026-09-01T17:39:59.000Z'),
     },
   ]
   const progress = deriveLiveStopProgress({ stops: STOPS, fixes, now: NOW })
 
   assert.deepEqual(describeLiveStopProgress(progress, NOW), {
-    text: 'No update for 5 min',
+    text: 'No update for 20 min',
     meta: 'Showing the last known position',
     tone: 'waiting',
   })
@@ -605,12 +605,12 @@ test('a pause the phone reported is said plainly', () => {
       lng: 0,
       lat: 0,
       accuracy: 8,
-      at: new Date('2026-09-01T17:54:59.000Z'),
+      at: new Date('2026-09-01T17:39:59.000Z'),
     },
   ]
   const devices = [
     {
-      lastSeen: new Date('2026-09-01T17:54:59.000Z'),
+      lastSeen: new Date('2026-09-01T17:39:59.000Z'),
       pausedAt: new Date('2026-09-01T17:55:30.000Z'),
     },
   ]
@@ -619,7 +619,7 @@ test('a pause the phone reported is said plainly', () => {
   assert.equal(progress.reason, 'paused')
   assert.deepEqual(describeLiveStopProgress(progress, NOW), {
     text: 'Sharing paused',
-    meta: 'Last update 5 min ago',
+    meta: 'Last update 20 min ago',
     tone: 'waiting',
   })
 })
@@ -631,12 +631,12 @@ test('a phone that reported again after its pause is not paused any more', () =>
       lng: 0,
       lat: 0,
       accuracy: 8,
-      at: new Date('2026-09-01T17:54:59.000Z'),
+      at: new Date('2026-09-01T17:39:59.000Z'),
     },
   ]
   const devices = [
     {
-      lastSeen: new Date('2026-09-01T17:54:59.000Z'),
+      lastSeen: new Date('2026-09-01T17:39:59.000Z'),
       pausedAt: new Date('2026-09-01T17:00:00.000Z'),
     },
   ]
@@ -772,7 +772,7 @@ test('map positions expose one fresh reliable fix per reporting phone', () => {
     lng: 4,
     lat: 4,
     accuracy: 10,
-    at: new Date('2026-09-01T17:50:00.000Z'),
+    at: new Date('2026-09-01T17:40:00.000Z'),
   }
 
   const progress = deriveLiveStopProgress({

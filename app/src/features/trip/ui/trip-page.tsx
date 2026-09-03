@@ -66,7 +66,7 @@ function Trip({
     placing, setPlacing, photoBy, setPhotoBy, setMapOverride, setAttractionCard,
     asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
-    phones, setPhones, track, sun, mapTheme, markers, trail,
+    phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
     progressCopy, latestGpsPosition, liveStop, liveDay, liveStops,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, removePhoto, removeComment,
@@ -100,6 +100,7 @@ function Trip({
         photos={photos}
         markers={markers}
         trail={trail}
+        trailFaded={trailFaded}
         selectedStop={selected}
         labels={mapView.zoom > 13}
         onStop={pickStop}

@@ -74,36 +74,41 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
       className="glass relative flex min-w-0 items-center rounded-xl p-1
                     max-sm:border-0 max-sm:bg-transparent max-sm:p-0 max-sm:shadow-none
                     max-sm:backdrop-blur-none">
-      {/* overflow-y-hidden with it: a box that scrolls on one axis computes the
-          other to auto, so the strip could be dragged up and down as well as
-          across — and a row of buttons scrolled half out of its own bar. */}
-      <div
-        ref={strip}
-        className="flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto
-                      max-sm:[overflow-y:clip] max-sm:[scrollbar-width:none]
-                      max-sm:[&::-webkit-scrollbar]:hidden">
-        {VIEWS.map(([key, label, icon]) => (
-          <button
-            key={key}
-            aria-label={label}
-            className={'tbv' + (props.view === key ? ' active' : '')}
-            onClick={() => props.onView(key)}>
-            <Icon n={icon} s={17} />
-            <span>{label}</span>
-          </button>
-        ))}
-        {actions.length > 0 && <span className="mx-1 h-5 w-px flex-none bg-line2" />}
-        {actions.map(([key, label, word, icon, on, run, hide]) => (
-          <button
-            key={key}
-            data-tip={label}
-            aria-label={label}
-            className={'tb lbl' + (on ? ' on' : '') + (hide ? ' ' + hide : '')}
-            onClick={run}>
-            <Icon n={icon} s={17} />
-            <span>{word}</span>
-          </button>
-        ))}
+      {/* The strip and its edge fades share this box, so a fade marks the edge
+          of what scrolls — it must never sit on top of the static More button,
+          where it read as a rendering glitch. overflow-y clipped with it: a box
+          that scrolls on one axis computes the other to auto, and a row of
+          buttons could be dragged half out of its own bar. */}
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={strip}
+          className="noscroll flex min-w-0 items-center gap-0.5 max-sm:overflow-x-auto
+                        max-sm:[overflow-y:clip]">
+          {VIEWS.map(([key, label, icon]) => (
+            <button
+              key={key}
+              aria-label={label}
+              className={'tbv' + (props.view === key ? ' active' : '')}
+              onClick={() => props.onView(key)}>
+              <Icon n={icon} s={17} />
+              <span>{label}</span>
+            </button>
+          ))}
+          {actions.length > 0 && <span className="mx-1 h-5 w-px flex-none bg-line2" />}
+          {actions.map(([key, label, word, icon, on, run, hide]) => (
+            <button
+              key={key}
+              data-tip={label}
+              aria-label={label}
+              className={'tb lbl' + (on ? ' on' : '') + (hide ? ' ' + hide : '')}
+              onClick={run}>
+              <Icon n={icon} s={17} />
+              <span>{word}</span>
+            </button>
+          ))}
+        </div>
+        {more.left && <MoreThisWay side="left" />}
+        {more.right && <MoreThisWay side="right" />}
       </div>
       <MoreTools
         night={night}
@@ -112,8 +117,6 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
         onAttractions={props.onAttractions}
         onTheme={props.onTheme}
       />
-      {more.left && <MoreThisWay side="left" />}
-      {more.right && <MoreThisWay side="right" />}
     </div>
   )
 })

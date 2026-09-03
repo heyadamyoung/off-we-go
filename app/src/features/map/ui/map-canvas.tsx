@@ -49,6 +49,7 @@ const MapCanvas = memo(function MapCanvas({
   photos = [],
   markers = [],
   trail = [],
+  trailFaded = [],
   selectedStop,
   onStop,
   onPhoto,
@@ -79,6 +80,8 @@ const MapCanvas = memo(function MapCanvas({
   routeRef.current = route
   const trailRef = useRef(trail)
   trailRef.current = trail
+  const trailFadedRef = useRef(trailFaded)
+  trailFadedRef.current = trailFaded
   const themeRef = useRef(theme)
   themeRef.current = theme
   const tintRef = useRef(tint)
@@ -89,7 +92,6 @@ const MapCanvas = memo(function MapCanvas({
   const moved = useRef(false)
 
   const sweepIn = useMemo(() => makeTrailSweep({ trailRef, interactive }), [interactive])
-
   /* ---- create once ------------------------------------------------------ */
   // biome-ignore lint/correctness/useExhaustiveDependencies: the map is created exactly once; live values reach it through refs and the effects below
   useEffect(() => {
@@ -127,14 +129,15 @@ const MapCanvas = memo(function MapCanvas({
     map,
     routeRef,
     trailRef,
+    trailFadedRef,
     tintRef,
     themeRef,
     route,
     trail,
+    trailFaded,
     sweepIn,
     onPickAttraction,
   })
-
   useEffect(() => {
     if (!map || !attractions) return
     const src = map.getSource<GeoJSONSource>('attr')

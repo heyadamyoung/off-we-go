@@ -1,7 +1,13 @@
 /* When "live" may be believed: how old a fix can be, how long the trail
    reaches back, and whether a quiet phone went quiet on purpose. */
 
-export const LIVE_FIX_MAX_AGE_MS = 5 * 60_000
+/* Fifteen minutes, not five: a phone doing honest background reporting sends
+   a fix every five to fifteen minutes, so a five-minute window declared the
+   marker quiet between almost every pair of real updates — a traveller who
+   never looked live while genuinely walking. Fifteen keeps the LIVE badge on
+   through a normal reporting cadence and still goes quiet within one missed
+   cycle of a phone that has actually stopped. */
+export const LIVE_FIX_MAX_AGE_MS = 15 * 60_000
 export const LIVE_HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60_000
 export const LIVE_FIX_MAX_ACCURACY_METRES = 100
 

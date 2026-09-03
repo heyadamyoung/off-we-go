@@ -305,7 +305,13 @@ export function describeLiveStopProgress(
     const age = minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`
     return {
       text: `No update for ${age}`,
-      meta: 'Showing the last known position',
+      /* The commonest cause of a long silence in practice is a phone whose
+         token belongs to another trip — it posts faithfully, elsewhere. Point
+         at the one screen that shows which trip each phone reports to. */
+      meta:
+        minutes >= 12 * 60
+          ? 'Last known position · check the phone under Trip settings → Phones'
+          : 'Showing the last known position',
       tone: 'waiting' as const,
     }
   }

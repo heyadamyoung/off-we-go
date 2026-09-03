@@ -146,8 +146,19 @@ export default function useLiveTrip({
   /* Each phone's path, cleaned for drawing: poor fixes out, a long quiet gap
      starts a new line instead of a false straight across town, and jitter is
      simplified away so one street is one stroke. The rules live in
-     trail-core, where they are tested without a map. */
-  const trail = useMemo(() => buildTrail(fixes), [fixes])
+     trail-core, where they are tested without a map.
+
+     Split by age: the last twelve hours draw at full strength, everything
+     before at a ghost — old loops must not impersonate today's walking,
+     which is exactly how a stale trail once read as a live one. */
+  const trail = useMemo(
+    () => buildTrail(fixes.filter(fix => now - fix.at.getTime() <= TRAIL_RECENT_MS)),
+    [fixes, now],
+  )
+  const trailFaded = useMemo(
+    () => buildTrail(fixes.filter(fix => now - fix.at.getTime() > TRAIL_RECENT_MS)),
+    [fixes, now],
+  )
   return {
     phones,
     setPhones,
@@ -160,8 +171,11 @@ export default function useLiveTrip({
     mapTheme,
     markers,
     trail,
+    trailFaded,
     progress,
     progressCopy,
     latestGpsPosition,
   }
 }
+
+const TRAIL_RECENT_MS = 12 * 60 * 60_000

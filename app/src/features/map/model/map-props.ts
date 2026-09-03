@@ -32,6 +32,8 @@ export interface MapCanvasProps {
   photos?: TripPhoto[]
   markers?: PhoneMarker[]
   trail?: Coordinates[][]
+  /** the walked line older than the recency window, drawn as a ghost */
+  trailFaded?: Coordinates[][]
   selectedStop?: Id | null
   onStop?: (id: Id) => void
   onPhoto?: (photos: TripPhoto[], index: number) => void
