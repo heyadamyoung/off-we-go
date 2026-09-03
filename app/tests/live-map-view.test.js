@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { liveFollowView, paddingOffset, visibleMapPadding } from '../src/live-map-view-core.ts'
+import {
+  initialTripView,
+  liveFollowView,
+  paddingOffset,
+  visibleMapPadding,
+} from '../src/live-map-view-core.ts'
 
 test('the following camera waits for the initial GPS snapshot', () => {
   const view = liveFollowView({ center: [-32, 24], zoom: 13.9 }, [], {
@@ -64,4 +69,33 @@ test('focusing puts the target in the middle of the visible band, not the contai
   // An open side panel pushes the target right, away from underneath it.
   const [x] = paddingOffset(visibleMapPadding({ width: 1280, panelOpen: true }))
   assert.ok(x > 0, 'the target should move away from the panel, not under it')
+})
+
+test('a trip that spans countries opens on the whole itinerary, never mid-sea', () => {
+  // Netherlands and Scotland: the old average-of-stops seed put the opening
+  // view at street zoom over the North Sea, with everything off every edge.
+  const view = initialTripView([
+    { lng: 4.9, lat: 52.37 }, // Amsterdam
+    { lng: -3.19, lat: 55.95 }, // Edinburgh
+    { lng: -5.1, lat: 57.4 }, // the Highlands
+  ])
+  assert.ok(view.bounds, 'a spanning trip is a bounds fit, not a point')
+  assert.deepEqual(view.bounds, [
+    [-5.1, 52.37],
+    [4.9, 57.4],
+  ])
+  assert.equal(view.ms, 0, 'the first frame is placed, not animated')
+})
+
+test('a single-stop trip opens on that stop at street level', () => {
+  const view = initialTripView([{ lng: -104.6, lat: 50.45 }])
+  assert.deepEqual(view.center, [-104.6, 50.45])
+  assert.equal(view.zoom, 13.9)
+  assert.equal(view.bounds, undefined)
+})
+
+test('a trip with no stops yet opens somewhere sane instead of nowhere', () => {
+  const view = initialTripView([])
+  assert.ok(Number.isFinite(view.center[0]) && Number.isFinite(view.center[1]))
+  assert.equal(view.bounds, undefined)
 })

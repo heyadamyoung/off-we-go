@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { ALL_DAYS, type TripView } from '../../../trip-search-core'
 import { applyLiveStopStatuses } from '../../../live-stop-progress-core'
+import { initialTripView } from '../../../live-map-view-core'
 import { useAssistant } from '../../assistant'
 import { useAirportIndoor } from '../../airport'
 import { useItineraryEditor } from '../../itinerary'
@@ -110,15 +111,10 @@ export default function useTripPage({
     setFamily((data.family || []).map(withFace))
   }, [data])
 
-  const [mapView, setMapView] = useState<MapView>(() => ({
-    center: data.stops.length
-      ? [
-          data.stops.reduce((total, stop) => total + stop.lng, 0) / data.stops.length,
-          data.stops.reduce((total, stop) => total + stop.lat, 0) / data.stops.length,
-        ]
-      : [4.876, 52.367],
-    zoom: 13.9,
-  }))
+  // The whole itinerary, not the average of it: the mean of a two-country
+  // trip's stops was a street-level view of open water. initialTripView is
+  // pure and tested; the follow effect then takes over for a live family.
+  const [mapView, setMapView] = useState<MapView>(() => initialTripView(data.stops))
   const viewRef = useRef(mapView)
   viewRef.current = mapView
 

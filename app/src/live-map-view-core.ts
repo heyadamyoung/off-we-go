@@ -6,6 +6,34 @@ const validPoint = (point: Coordinates) =>
   Math.abs(point[0]) <= 180 &&
   Math.abs(point[1]) <= 90
 
+/* The first thing a trip shows. Averaging the stops put a two-country trip's
+   opening view at street zoom over the sea between them — the literal middle
+   of the ocean, with everything that matters off every edge. The whole
+   itinerary fits instead; a lone stop is its own centre; and a trip with no
+   stops yet opens where its map was pointed when it had nothing at all. */
+export function initialTripView(stops: Array<{ lng: number; lat: number }>): MapView {
+  const placed = stops.filter(stop => validPoint([stop.lng, stop.lat]))
+  if (!placed.length) return { center: [4.876, 52.367], zoom: 13.9 }
+  const lngs = placed.map(stop => stop.lng)
+  const lats = placed.map(stop => stop.lat)
+  const west = Math.min(...lngs),
+    east = Math.max(...lngs)
+  const south = Math.min(...lats),
+    north = Math.max(...lats)
+  if (placed.length === 1 || (east - west < 1e-6 && north - south < 1e-6)) {
+    return { center: [west, south], zoom: 13.9, ms: 0 }
+  }
+  return {
+    center: [(west + east) / 2, (south + north) / 2],
+    zoom: 5,
+    ms: 0,
+    bounds: [
+      [west, south],
+      [east, north],
+    ],
+  }
+}
+
 export function liveFollowView(
   current: MapView,
   points: Coordinates[],
