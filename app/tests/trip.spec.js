@@ -127,9 +127,9 @@ async function centreOnStop(page, name) {
 
 /* ------------------------------------------------------------- the screen */
 
-/* The basemap licence is not satisfied by an attribution that exists in the
-   markup: CARTO and OpenStreetMap both require it to be visible. It was once
-   rendered underneath the itinerary bar, where nobody could read it. */
+/* The ODbL is not satisfied by an attribution that exists in the markup:
+   OpenStreetMap's credit must be visible. It was once rendered underneath the
+   itinerary bar, where nobody could read it. */
 /* The card's trash button read the draft, which is null whenever the card is
    showing — so it opened the editor and deleted nothing, silently, every time. */
 test('removing a stop from its card actually removes it', async ({ page }) => {
@@ -166,13 +166,24 @@ test('escape closes the photo viewer without closing what is behind it', async (
 test('the basemap credit is visible, clear of the bottom bar', async ({ page }) => {
   await open(page)
 
-  const credit = page.locator('.maplibregl-ctrl-attrib')
+  // The ODbL wants © OpenStreetMap readable with no interaction, and that is
+  // all the corner holds: inert text nobody can mis-tap. The CC-BY design
+  // credits live on /credits.html, behind More tools.
+  const credit = page.locator('.map-credit')
   await expect(credit).toBeVisible()
+  await expect(credit).toContainText('© OpenStreetMap')
+  await expect(credit).toHaveCSS('pointer-events', 'none')
 
   const box = await credit.boundingBox()
   const bar = await page.locator('.tripscreen > .glass.absolute.inset-x-0.bottom-0').boundingBox()
   expect(box, 'the credit has a place on the screen').not.toBeNull()
   if (bar) expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1)
+
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Map credits' })).toHaveAttribute(
+    'href',
+    '/credits.html',
+  )
 })
 
 test('loads the trip with map, markers and the day strip', async ({ page }) => {

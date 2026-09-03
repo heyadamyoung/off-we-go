@@ -30,23 +30,25 @@ interface ClusterProps {
 
 export const TripCluster = memo(function TripCluster(props: ClusterProps) {
   const night = props.theme !== 'light'
-  /* Views are words now, not a glyph quiz, and the everyday actions keep their
-     buttons. The occasional tools — settings, attractions, the map theme —
-     live behind one More menu instead of widening the bar.
+  /* Views and the everyday actions are words now, not a glyph quiz: every
+     button in the bar carries its name. The occasional tools — settings,
+     attractions, the map theme — live behind one More menu instead of
+     widening the bar.
 
      The pin stays out of the menu: edit mode's controls live on a hint bar
      that hides below 768px, so on a phone the pin IS "add a stop" — and the
      pencil stays visible while edit mode is on, or there would be no way to
      leave it. */
-  const actions: Array<[string, string, string, boolean, () => void, string?]> = [
-    ['pin', 'Place a pin', 'pinplus', props.placing, props.onPlace],
-    ['live', 'Follow live position', 'locate', props.following, props.onFollow],
-    ['add', 'Add photos', 'camera', false, props.onAdd],
+  const actions: Array<[string, string, string, string, boolean, () => void, string?]> = [
+    ['pin', 'Place a pin', 'Pin', 'pinplus', props.placing, props.onPlace],
+    ['live', 'Follow live position', 'Follow', 'locate', props.following, props.onFollow],
+    ['add', 'Add photos', 'Upload', 'camera', false, props.onAdd],
   ]
   if (props.canEdit) {
     actions.unshift([
       'edit',
       props.editing ? 'Done editing' : 'Edit the itinerary',
+      props.editing ? 'Done' : 'Edit',
       'pencil',
       props.editing,
       props.onEdit,
@@ -87,14 +89,15 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
           </button>
         ))}
         <span className="mx-1 h-5 w-px flex-none bg-line2" />
-        {actions.map(([key, label, icon, on, run, hide]) => (
+        {actions.map(([key, label, word, icon, on, run, hide]) => (
           <button
             key={key}
             data-tip={label}
             aria-label={label}
-            className={'tb' + (on ? ' on' : '') + (hide ? ' ' + hide : '')}
+            className={'tb lbl' + (on ? ' on' : '') + (hide ? ' ' + hide : '')}
             onClick={run}>
-            <Icon n={icon} s={18} />
+            <Icon n={icon} s={17} />
+            <span>{word}</span>
           </button>
         ))}
       </div>
@@ -157,13 +160,14 @@ function MoreTools({
   return (
     <div className="relative flex-none" ref={holder}>
       <button
-        className={'tb' + (open ? ' active' : '')}
+        className={'tb lbl' + (open ? ' active' : '')}
         data-tip="More tools"
         aria-label="More tools"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}>
-        <Icon n="more" s={18} />
+        <Icon n="more" s={17} />
+        <span>More</span>
       </button>
       {open && (
         <div
@@ -182,6 +186,18 @@ function MoreTools({
             <Icon n={night ? 'sun' : 'moon'} s={14} />
             {night ? 'Day map' : 'Night map'}
           </button>
+          {/* The CC-BY credits the basemap's design owes live here, off the
+              map itself — the corner keeps only the ODbL's line. */}
+          <a
+            className={item}
+            role="menuitem"
+            href="/credits.html"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => setOpen(false)}>
+            <Icon n="map" s={14} />
+            Map credits
+          </a>
         </div>
       )}
     </div>
