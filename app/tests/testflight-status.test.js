@@ -131,3 +131,26 @@ test('a version train names its newest build, and says when it is expired', () =
     /builds unknown, Apple refused the ask/,
   )
 })
+
+/* The sibling lie shipped too: a failed group-membership ask printed as
+   "no external group", which read as the family being cut off while every
+   build was in fact reaching them. */
+test('unknown group membership says unknown, not "no external group"', () => {
+  assert.match(
+    describeBuild({ version: '57', release: '1.1', processingState: 'VALID', groups: null }),
+    /groups: groups unknown/,
+  )
+  assert.match(
+    describeBuild({ version: '57', release: '1.1', processingState: 'VALID', groups: [] }),
+    /groups: no external group/,
+  )
+  assert.match(
+    describeBuild({
+      version: '57',
+      release: '1.1',
+      processingState: 'VALID',
+      groups: ['Wayfare Friends & Family'],
+    }),
+    /groups: Wayfare Friends & Family/,
+  )
+})

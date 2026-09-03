@@ -65,7 +65,10 @@ export function describeBuild({
   submitted,
 }) {
   const when = uploaded ? utc(uploaded) : 'unknown time'
-  const where = groups?.length ? groups.join(', ') : 'no external group'
+  // null means the ask failed — not the same claim as "assigned to nobody",
+  // and conflating them once had this report telling the owner the family
+  // was cut off while every build was reaching them.
+  const where = groups ? (groups.length ? groups.join(', ') : 'no external group') : 'groups unknown'
   return (
     `${release || '?'} build ${version} (${when})  processing: ${readable(processingState, 'internal')}` +
     `  internal: ${readable(internalState, 'internal')}` +
@@ -136,11 +139,32 @@ async function main() {
   }
   console.log('')
 
+  /* Which builds each external group holds, asked group-side: that is the
+     same relationship the release script writes, so it cannot disagree with
+     what actually happened. The build-side betaGroups ask came back empty
+     for builds that were provably assigned, and its swallowed failure had
+     this report claiming "no external group" across the board. */
+  const grouped = new Map() // build id -> group names
+  let membershipKnown = true
+  for (const group of groups?.data || []) {
+    if (group.attributes?.isInternalGroup) continue
+    const linked = await api(
+      `/betaGroups/${group.id}/relationships/builds?limit=200`,
+      token,
+    ).catch(() => null)
+    if (!linked) {
+      membershipKnown = false
+      continue
+    }
+    for (const entry of linked.data || []) {
+      grouped.set(entry.id, [...(grouped.get(entry.id) || []), group.attributes?.name])
+    }
+  }
+
   const builds = await api(`/builds?filter[app]=${app.id}&limit=14&sort=-uploadedDate`, token)
   for (const build of builds?.data || []) {
-    const [detail, groups, release, review] = await Promise.all([
+    const [detail, release, review] = await Promise.all([
       api(`/builds/${build.id}/buildBetaDetail`, token).catch(() => null),
-      api(`/builds/${build.id}/betaGroups`, token).catch(() => null),
       api(`/builds/${build.id}/preReleaseVersion`, token).catch(() => null),
       api(`/builds/${build.id}/betaAppReviewSubmission`, token).catch(() => null),
     ])
@@ -152,7 +176,7 @@ async function main() {
         processingState: build.attributes?.processingState,
         internalState: detail?.data?.attributes?.internalBuildState,
         externalState: detail?.data?.attributes?.externalBuildState,
-        groups: (groups?.data || []).map(group => group.attributes?.name),
+        groups: membershipKnown ? grouped.get(build.id) || [] : null,
         submitted: review?.data?.attributes?.betaReviewState
           ? `${review.data.attributes.betaReviewState}${
               review.data.attributes.submittedDate
