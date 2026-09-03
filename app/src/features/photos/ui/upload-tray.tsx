@@ -30,7 +30,7 @@ export default function UploadTray({
       </div>
       <ul className="m-0 flex max-h-[168px] list-none flex-col gap-1 overflow-y-auto p-1.5">
         {uploads.map(upload => (
-          <li key={upload.key} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1">
+          <li key={upload.key} className="flex items-center gap-2 rounded-lg px-1.5 py-1">
             {upload.preview ? (
               <img
                 src={upload.preview}

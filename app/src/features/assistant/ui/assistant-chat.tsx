@@ -47,7 +47,7 @@ export default function AssistantChat({
                     max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-2)_-_12px)]
                     max-sm:inset-x-3 max-sm:bottom-[var(--trip-1)] max-sm:w-auto
                     max-sm:max-h-[calc(100%_-_var(--trip-top)_-_var(--trip-1)_-_12px)]">
-      <div className="flex flex-none items-center gap-2.5 border-b border-line px-4 py-3">
+      <div className="flex flex-none items-center gap-2 border-b border-line px-4 py-3">
         <Icon n="spark" s={16} className="text-accent" />
         <b className="flex-1 text-xs font-extrabold">Ask about this trip</b>
         <button
@@ -59,9 +59,7 @@ export default function AssistantChat({
         </button>
       </div>
 
-      <div
-        ref={scroller}
-        className="flex min-h-[120px] flex-col gap-2.5 overflow-y-auto px-4 py-3.5">
+      <div ref={scroller} className="flex min-h-[120px] flex-col gap-2 overflow-y-auto px-4 py-3.5">
         {messages.length === 0 && (
           <p className="m-0 text-xs leading-relaxed text-muted">
             {canEdit

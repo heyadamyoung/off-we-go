@@ -28,7 +28,7 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
 
   const name = me?.name || 'You'
   const item =
-    'flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
+    'flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
     'text-ink hover:bg-raised2'
 
   return (

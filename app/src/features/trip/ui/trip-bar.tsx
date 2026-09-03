@@ -115,7 +115,7 @@ const TripBar = memo(function TripBar({
       </div>
       <div
         className={
-          'flex flex-1 items-stretch gap-2.5 overflow-x-auto overflow-y-hidden px-4 ' +
+          'flex flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden px-4 ' +
           'pb-3.5 pt-1.5 max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5' +
           (peek ? ' max-sm:hidden' : '')
         }>
@@ -130,7 +130,7 @@ const TripBar = memo(function TripBar({
             />
           ))
         ) : (
-          <div className="flex items-center gap-2.5 self-center px-1.5 text-xs text-faint">
+          <div className="flex items-center gap-2 self-center px-1.5 text-xs text-faint">
             {query ? (
               `Nothing matches “${query}”.`
             ) : (
@@ -176,9 +176,9 @@ function Card({
         (planned && !selected ? 'border-dashed ' : '') +
         'bg-raised text-left transition-[transform,border-color] hover:-translate-y-0.5 ' +
         (selected
-          ? 'border-accent shadow-[0_0_0_1px_var(--c-accent)]'
+          ? 'border-ink shadow-[0_0_0_1px_var(--c-ink)]'
           : planned
-            ? 'border-line2 hover:border-accent'
+            ? 'border-line2 hover:border-ink'
             : 'border-line hover:border-line2')
       }
       onClick={onSelect}>
@@ -217,7 +217,7 @@ function Card({
             would otherwise spend two of them, and the row is easier to read
             across when every card is the same shape. */}
         <div
-          className="t line-clamp-2 text-xs font-bold leading-tight
+          className="t line-clamp-2 text-xs font-semibold leading-tight
                         max-sm:line-clamp-1 max-sm:text-[11px]">
           {item.title}
         </div>

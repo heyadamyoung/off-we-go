@@ -164,7 +164,7 @@ export default function NewTripPage({ step }: { step: number }) {
               on your globe.
             </p>
           </section>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Link className="btn btn-ghost" to="/">
               Cancel
             </Link>
@@ -207,7 +207,7 @@ export default function NewTripPage({ step }: { step: number }) {
               </li>
             </ul>
           </section>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button className="btn btn-ghost" onClick={() => go(2)}>
               Back
             </button>
@@ -321,7 +321,7 @@ function People({
           link alone — access comes from the invitation, which is sent when the trip is created.
         </p>
       </section>
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <button className="btn btn-ghost" onClick={onBack}>
           Back
         </button>

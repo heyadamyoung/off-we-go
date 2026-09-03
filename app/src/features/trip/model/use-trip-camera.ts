@@ -59,6 +59,27 @@ export function useTripCamera({
     )
   }, [live, livePoints, liveReady, following, setMapView])
 
+  /* The first frame: with no live positions to follow, the opening view is
+     the whole itinerary fitted into the visible band — not the stored centre
+     with a corner stop parked under the toolbar. Runs once; live trips are
+     the follow effect's business and skip it. */
+  const framed = useRef(false)
+  useEffect(() => {
+    if (framed.current || liveReady || livePoints.length || !stops.length) return
+    framed.current = true
+    const lngs = stops.map(stop => stop.lng)
+    const lats = stops.map(stop => stop.lat)
+    setMapView(current => ({
+      center: current.center,
+      zoom: current.zoom,
+      ms: 0,
+      bounds: [
+        [Math.min(...lngs), Math.min(...lats)],
+        [Math.max(...lngs), Math.max(...lats)],
+      ],
+    }))
+  }, [liveReady, livePoints.length, stops, setMapView])
+
   const toggleFollow = useCallback(() => {
     setFollowing(current => {
       engaging.current = !current

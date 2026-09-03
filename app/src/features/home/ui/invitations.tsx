@@ -36,7 +36,7 @@ export default function InvitationsPage() {
     <HomeShell me={profile} wide home={scene.home} places={scene.places}>
       <Crumb here="Invitations" />
       <PageHeading>Invitations</PageHeading>
-      <section className="surface flex flex-col gap-2.5 p-[18px]">
+      <section className="surface flex flex-col gap-2 p-[18px]">
         <h3 className="m-0 text-base font-extrabold">Waiting for you</h3>
         {loading && <p className="hint">Loading…</p>}
         {!loading && !invites.length && (

@@ -109,7 +109,7 @@ export default function PhonesTab({
   return (
     <>
       {isNativeApp && (
-        <div className="surface grid grid-cols-[auto_1fr_auto] items-center gap-2.5 p-3">
+        <div className="surface grid grid-cols-[auto_1fr_auto] items-center gap-2 p-3">
           <span
             className={
               'size-2.5 rounded-full ' +
@@ -323,7 +323,7 @@ function SetupCard({
   )
 
   return (
-    <div className="surface flex flex-col gap-2.5 p-3.5">
+    <div className="surface flex flex-col gap-2 p-3.5">
       <b className="text-sm font-extrabold tracking-[-.01em]">{card.name} — set-up</b>
       {isNativeApp ? (
         <>
@@ -351,7 +351,7 @@ function SetupCard({
           <em className="text-[11px] font-extrabold uppercase not-italic tracking-[.06em] text-accent">
             Pair the phone
           </em>
-          <div className="flex items-start gap-3.5 max-sm:flex-col">
+          <div className="flex items-start gap-3 max-sm:flex-col">
             {qr && (
               <img
                 src={qr}
@@ -371,7 +371,7 @@ function SetupCard({
             <summary className="cursor-pointer text-[11px] font-bold text-faint">
               Advanced — bring your own tracker app
             </summary>
-            <div className="mt-2.5 flex flex-col gap-2.5">
+            <div className="mt-2.5 flex flex-col gap-2">
               <Row k="Device token" v={String(card.token || '')} />
               <Row k="Server URL" v={trackUrl} />
               <p className="hint">

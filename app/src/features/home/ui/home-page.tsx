@@ -59,7 +59,7 @@ export default function HomePage() {
 function FirstVisit({ invites }: { invites: number }) {
   return (
     <>
-      <div className="flex items-center gap-2.5 text-xs font-bold uppercase tracking-[.14em] text-accent">
+      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-accent">
         Welcome
       </div>
       <h1 className="m-0 text-[56px] font-extrabold leading-[.98] tracking-[-.03em] text-balance">
@@ -84,7 +84,7 @@ function FirstVisit({ invites }: { invites: number }) {
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <Link className="btn btn-accent px-5 py-3 text-sm" to="/new">
           <Icon n="plus" s={14} />
           Start your first trip
@@ -112,7 +112,7 @@ function Returning({ trip, invites, past }: { trip: TripSummary; invites: number
 
   return (
     <>
-      <div className="flex items-center gap-2.5 text-xs font-bold uppercase tracking-[.14em] text-accent">
+      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-accent">
         {progress.state === 'live' && (
           <span className="size-2 rounded-full bg-accent shadow-[0_0_0_4px_var(--c-accent-soft),0_0_16px_var(--c-glow)]" />
         )}
@@ -140,7 +140,7 @@ function Returning({ trip, invites, past }: { trip: TripSummary; invites: number
           '.'
         )}
       </p>
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <Link
           className="btn btn-accent px-5 py-3 text-sm"
           to="/trips/$slug"

@@ -52,31 +52,37 @@ export default function HomeShell({
                         [background:color-mix(in_srgb,var(--c-bg)_82%,transparent)]"
         />
       )}
-      {/* Above the column below it, not level with it: the account menu opens
-          out of this bar, and a menu that shares a z-index with the page it
-          covers is painted over by whatever comes later in the document. */}
-      {/* The page is drawn under the status bar — viewport-fit=cover — so on a
-          phone with an island the mark and the account button sat beneath it,
-          visible and untappable. Everything here starts below the safe area. */}
-      <div
-        className="passthrough absolute left-8 right-7 z-30 flex items-center justify-between
-                      top-[calc(1.5rem+env(safe-area-inset-top,0px))] md:left-16">
-        <Link to="/">
-          <Wordmark markSize={44} />
-        </Link>
-        <AccountMenu me={me} />
-      </div>
-      <div
-        className={
-          'passthrough absolute left-8 z-10 flex flex-col gap-5 pr-4 md:left-16 ' +
-          (wide
-            ? 'bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] ' +
-              'top-[calc(6rem+env(safe-area-inset-top,0px))] ' +
-              'w-[min(660px,calc(100%-4rem))] overflow-y-auto'
-            : 'top-[calc(8rem+env(safe-area-inset-top,0px))] w-[min(560px,calc(100%-4rem))] ' +
-              'md:top-[calc(150px+env(safe-area-inset-top,0px))]')
-        }>
-        {children}
+      {/* The chrome's positioning frame: on an ultrawide monitor the planet
+          keeps the whole glass, but the words and controls stop spreading —
+          everything pins to the edges of this centred band instead of the
+          screen's. pointer-events pass through it to the globe. */}
+      <div className="pointer-events-none absolute inset-0 mx-auto max-w-[1760px]">
+        {/* Above the column below it, not level with it: the account menu opens
+            out of this bar, and a menu that shares a z-index with the page it
+            covers is painted over by whatever comes later in the document. */}
+        {/* The page is drawn under the status bar — viewport-fit=cover — so on a
+            phone with an island the mark and the account button sat beneath it,
+            visible and untappable. Everything here starts below the safe area. */}
+        <div
+          className="passthrough absolute left-8 right-7 z-30 flex items-center justify-between
+                        top-[calc(1.5rem+env(safe-area-inset-top,0px))] md:left-16">
+          <Link to="/">
+            <Wordmark />
+          </Link>
+          <AccountMenu me={me} />
+        </div>
+        <div
+          className={
+            'passthrough absolute left-8 z-10 flex flex-col gap-5 pr-4 md:left-16 ' +
+            (wide
+              ? 'bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] ' +
+                'top-[calc(6rem+env(safe-area-inset-top,0px))] ' +
+                'w-[min(660px,calc(100%-4rem))] overflow-y-auto'
+              : 'top-[calc(8rem+env(safe-area-inset-top,0px))] w-[min(560px,calc(100%-4rem))] ' +
+                'md:top-[calc(150px+env(safe-area-inset-top,0px))]')
+          }>
+          {children}
+        </div>
       </div>
     </main>
   )
@@ -117,7 +123,7 @@ export function MoreLink({
   return (
     <Link
       to={to}
-      className="group flex items-center gap-3.5 border-b border-line py-3 text-sm text-ink">
+      className="group flex items-center gap-3 border-b border-line py-3 text-sm text-ink">
       <span
         className="grid size-[26px] flex-none place-items-center rounded-lg bg-raised text-muted
                        group-hover:bg-accent group-hover:text-accent-ink">

@@ -63,7 +63,7 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
         {/* flex-1: the body takes what is left of the sheet, so the buttons stay
             on the bottom edge instead of floating up to meet short content. */}
         <div
-          className="mb flex flex-1 flex-col gap-3.5 overflow-y-auto overflow-x-hidden
+          className="mb flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden
                         overscroll-contain break-words p-[18px]">
           {children}
         </div>
