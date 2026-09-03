@@ -10,6 +10,9 @@
   "plugins": {
     "CapacitorHttp": {
       "enabled": true
+    },
+    "Keyboard": {
+      "resize": "none"
     }
   },
   "android": {

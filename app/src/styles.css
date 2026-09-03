@@ -236,14 +236,19 @@
   /* The chat takes the phone screen while it is open, exactly as the stop
      editor does and for the same reason: floating above the bar it was
      competing with the chrome and the keyboard at once, and with a keyboard
-     up it collapsed to a homeless input. Height, not bottom-inset: Android
-     shrinks the viewport itself (interactive-widget=resizes-content) and
-     --keyboard stays zero; iOS keeps the viewport and --keyboard lifts it. */
+     up it collapsed to a homeless input. Anchored by its bottom, never sized
+     from dvh: where the keyboard shrinks the layout viewport (Android,
+     resizes-content) a fixed bottom edge rides up on its own — while Samsung
+     Internet leaves dvh stale across that resize, which held the sheet at
+     full height with the input below the fold. Where the viewport never
+     moves, --keyboard lifts the edge instead: measured from visualViewport
+     in Safari, announced by the native bridge inside the iOS app. */
   .assist {
     position: fixed;
     inset: 0;
+    bottom: var(--keyboard, 0px);
     width: auto;
-    height: calc(100dvh - var(--keyboard, 0px));
+    height: auto;
     max-height: none;
     border: 0;
     border-radius: 0;
