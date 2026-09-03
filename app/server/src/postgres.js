@@ -165,6 +165,25 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       }
     },
 
+    /* The durable half of the airport-indoor cache: raw Overpass JSON by
+       rounded-coordinate key, so a restart forgets a Map, not the month. */
+    async readAirportIndoor(key) {
+      const result = await pool.query(
+        `select body, (extract(epoch from fetched_at)*1000)::float8 as at
+        from airport_indoor where key=$1`,
+        [key],
+      )
+      return result.rows[0] || null
+    },
+    async writeAirportIndoor(key, body, at) {
+      await pool.query(
+        `insert into airport_indoor(key,body,fetched_at)
+        values($1,$2,to_timestamp($3/1000.0))
+        on conflict(key) do update set body=excluded.body, fetched_at=excluded.fetched_at`,
+        [key, body, at],
+      )
+    },
+
     async emailAllowed(email) {
       if (email === admin) return true
       const result = await pool.query(

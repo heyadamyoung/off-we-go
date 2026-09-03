@@ -84,6 +84,79 @@ test('when every mirror fails the caller hears about it', async () => {
   await assert.rejects(() => cache.get(4.7639, 52.3105), /Overpass answered 429/)
 })
 
+const shelfStore = () => {
+  const shelf = new Map()
+  return {
+    shelf,
+    async read(key) {
+      return shelf.get(key) || null
+    },
+    async write(key, body, at) {
+      shelf.set(key, { body, at })
+    },
+  }
+}
+
+test('a restart re-reads the durable store instead of re-asking Overpass', async () => {
+  let asked = 0
+  const store = shelfStore()
+  const fetchImpl = async () => {
+    asked++
+    return ok(BODY)
+  }
+
+  const before = createIndoorCache({ fetchImpl, store })
+  assert.deepEqual(await before.get(4.7639, 52.3105), BODY)
+  assert.equal(asked, 1)
+  assert.equal(store.shelf.size, 1)
+
+  // A new instance with an empty Map is what every deploy makes.
+  const after = createIndoorCache({ fetchImpl, store })
+  assert.deepEqual(await after.get(4.7639, 52.3105), BODY)
+  assert.equal(asked, 1)
+})
+
+// The cache's own key for the coordinates every test asks with.
+const KEY = (4.7639).toFixed(3) + ',' + (52.3105).toFixed(3)
+
+test('a stale durable row is re-asked and rewritten', async () => {
+  let asked = 0
+  const now = new Date('2026-09-03T12:00:00Z')
+  const store = shelfStore()
+  const fresh = { elements: [{ type: 'node', tags: { aeroway: 'gate', ref: 'E9' } }] }
+  store.shelf.set(KEY, { body: BODY, at: now.getTime() - 5000 })
+
+  const cache = createIndoorCache({
+    fetchImpl: async () => {
+      asked++
+      return ok(fresh)
+    },
+    store,
+    clock: () => now,
+    ttlMs: 1000,
+  })
+  assert.deepEqual(await cache.get(4.7639, 52.3105), fresh)
+  assert.equal(asked, 1)
+  assert.deepEqual(store.shelf.get(KEY), { body: fresh, at: now.getTime() })
+})
+
+test("an outage serves last month's terminal rather than nothing", async () => {
+  const now = new Date('2026-09-03T12:00:00Z')
+  const store = shelfStore()
+  store.shelf.set(KEY, { body: BODY, at: now.getTime() - 5000 })
+
+  const cache = createIndoorCache({
+    hedgeMs: 1,
+    fetchImpl: async () => {
+      throw new Error('all mirrors down')
+    },
+    store,
+    clock: () => now,
+    ttlMs: 1000,
+  })
+  assert.deepEqual(await cache.get(4.7639, 52.3105), BODY)
+})
+
 test('the route serves the cache and insists on a real position', async () => {
   const app = await buildServer({
     repository: createMemoryRepository({ allowedEmails: [] }),

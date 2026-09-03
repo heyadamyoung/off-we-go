@@ -1,4 +1,4 @@
-import { loadAirportIndoor } from '../../../backend'
+import { hasBackend, loadAirportIndoor } from '../../../backend'
 import {
   indoorFeatures,
   overpassQueryFor,
@@ -7,10 +7,14 @@ import {
 } from '../../../airport-indoor-core'
 import type { Stop } from '../../../shared/model/types'
 
-/* Overpass is a public good with no key and no account, which also means no
-   SLA: a few mirrors, tried in turn. A terminal's floor plan changes on the
-   timescale of construction work, so what came back is kept — in memory for
-   the session and in localStorage for the next trip through this airport. */
+/* One ask, for everyone — the owner's explicit call (2026-09-03): the server
+   fetches a terminal from Overpass once, keeps it for the month in Postgres,
+   and every phone pulls that shared copy. Overpass is a public good with no
+   key and no SLA; a fleet of phones re-asking it for the same terminal would
+   be rude and slow in equal measure. The mirrors below serve only a build
+   with no backend at all (local dev) — production phones never touch them.
+   What came back is kept here too: in memory for the session and in
+   localStorage for the next trip through this airport. */
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -77,11 +81,12 @@ async function askMirror(base: string, query: string) {
   return indoorFeatures((await res.json()) as OverpassResponse)
 }
 
-/* The server's shared cache, as one racer among the mirrors. Guarded by its
-   own clock so a route that hangs cannot hold the race open for ever. */
+/* The server's shared cache. The guard outlives the server's own worst case —
+   a cold terminal is hedged mirrors at 42 seconds each over there — so a
+   route that hangs cannot pin the clock spinner up for ever. */
 async function askServer(stop: Stop): Promise<IndoorFeature[]> {
   const guard = new Promise<never>((_, refuse) =>
-    setTimeout(() => refuse(new Error('the server is taking too long')), 45_000),
+    setTimeout(() => refuse(new Error('the server is taking too long')), 60_000),
   )
   const viaServer = await Promise.race([loadAirportIndoor(stop.lng, stop.lat), guard])
   if (viaServer) return indoorFeatures(viaServer)
@@ -146,12 +151,12 @@ export async function indoorForStop(stop: Stop): Promise<IndoorFeature[]> {
   return flight
 }
 
-/* The server's shared cache is the favourite — one warm answer, shared by
-   every phone — but it runs IN the race, not in front of it. It used to be a
-   gate: the phone waited out the server's whole slow failure before asking
-   the first mirror, which put the worst case past a minute and made big
-   airports look like they simply never load. */
+/* With a backend, the server is the only door: it asks Overpass once and
+   everyone shares the answer. A failure surfaces as the toast, and the next
+   tap simply asks again — the server retries upstream on every miss. Only a
+   backend-less build walks the mirrors itself. */
 function fromAnywhere(stop: Stop): Promise<IndoorFeature[]> {
+  if (hasBackend) return askServer(stop)
   const query = overpassQueryFor(stop.lng, stop.lat)
-  return hedged([() => askServer(stop), ...MIRRORS.map(base => () => askMirror(base, query))])
+  return hedged(MIRRORS.map(base => () => askMirror(base, query)))
 }

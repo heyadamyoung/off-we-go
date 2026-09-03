@@ -1845,7 +1845,21 @@ export async function buildServer({
      one fetch per airport per month rather than one per phone. Unauthenticated
      like the attractions, and the raw Overpass JSON goes back as-is — the app
      owns the conversion. */
-  const indoor = indoorCache || createIndoorCache({ userAgent: `OffWeGo (${publicUrl})` })
+  const indoor =
+    indoorCache ||
+    createIndoorCache({
+      userAgent: `OffWeGo (${publicUrl})`,
+      /* Durable in Postgres when the repository can hold it, so a deploy's
+         restart does not send the next phone back to Overpass for a terminal
+         already fetched this month. Test repositories without the methods
+         simply run memory-only, as before. */
+      store: repository.readAirportIndoor
+        ? {
+            read: key => repository.readAirportIndoor(key),
+            write: (key, body, at) => repository.writeAirportIndoor(key, body, at),
+          }
+        : null,
+    })
   app.get('/api/airports/indoor', async (request, reply) => {
     const lng = finite(request.query?.lng),
       lat = finite(request.query?.lat)

@@ -44,9 +44,20 @@ export function createIndoorCache({
      permanent 502, from every mirror, which read as "the route is broken"
      when it was this number. */
   deadlineMs = 42000,
+  /* The durable copy, shared between restarts: { read(key) -> {at, body} or
+     null, write(key, body, at) }. Without it the month-long memory lives and
+     dies with the process, and every deploy sends the next phone back to
+     Overpass for a terminal already paid for. */
+  store = null,
 } = {}) {
   const done = new Map() // key -> { at, body }
   const pending = new Map() // key -> Promise, so a stampede is one request
+
+  const remember = (key, entry) => {
+    done.delete(key) // re-insertion keeps the Map in age order
+    done.set(key, entry)
+    while (done.size > max) done.delete(done.keys().next().value)
+  }
 
   const askMirror = async (base, query) => {
     // The bare query as the body, and no Content-Type: overpass-api.de's
@@ -104,14 +115,27 @@ export function createIndoorCache({
       if (kept && clock().getTime() - kept.at < ttlMs) return kept.body
       let flight = pending.get(key)
       if (!flight) {
-        flight = fromMirrors(queryFor(lng, lat))
-          .then(body => {
-            done.delete(key) // re-insertion keeps the Map in age order
-            done.set(key, { at: clock().getTime(), body })
-            while (done.size > max) done.delete(done.keys().next().value)
-            return body
-          })
-          .finally(() => pending.delete(key))
+        flight = (async () => {
+          // The durable copy first — a restart forgot this Map, not the month.
+          const durable = store ? await store.read(key).catch(() => null) : null
+          if (durable && clock().getTime() - durable.at < ttlMs) {
+            remember(key, { at: durable.at, body: durable.body })
+            return durable.body
+          }
+          let body
+          try {
+            body = await fromMirrors(queryFor(lng, lat))
+          } catch (error) {
+            // Floor plans change on the timescale of construction work:
+            // last month's terminal beats an outage's empty hands.
+            if (durable) return durable.body
+            throw error
+          }
+          const at = clock().getTime()
+          remember(key, { at, body })
+          if (store) store.write(key, body, at).catch(() => {})
+          return body
+        })().finally(() => pending.delete(key))
         pending.set(key, flight)
       }
       return flight
