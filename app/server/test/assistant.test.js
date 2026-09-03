@@ -368,6 +368,9 @@ test('the runner asks codex exec for the configured model and effort, with the p
   assert.equal(seen.args[seen.args.indexOf('--sandbox') + 1], 'read-only')
   assert.equal(seen.args[seen.args.indexOf('--model') + 1], 'luna')
   assert.equal(seen.args[seen.args.indexOf('-c') + 1], 'model_reasoning_effort="xhigh"')
+  // Without this, non-interactive exec auto-denies destructive MCP tools and
+  // the agent reports the connector "blocking" deletions the owner asked for.
+  assert.ok(seen.args.includes('approval_policy="never"'))
   assert.equal(seen.args[seen.args.length - 1], '-')
 })
 

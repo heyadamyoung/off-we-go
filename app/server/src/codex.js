@@ -71,6 +71,16 @@ export function createCodexRunner({
       outFile,
       ...(model ? ['--model', model] : []),
       ...(reasoningEffort ? ['-c', `model_reasoning_effort="${reasoningEffort}"`] : []),
+      /* Non-interactive exec auto-denies any tool call that asks approval,
+         and MCP tools flagged destructive ask — which silently made
+         delete_stop and its kin dead while every other tool worked, reported
+         by the agent as "the connector blocked it". Approval is never coming
+         from a TTY that does not exist. The real guardrails stay: the
+         read-only shell sandbox, the per-user scoped token, and the prompt's
+         explicit-ask rule for destructive tools — the owner's call
+         (2026-09-03): if the traveller asks for a deletion, it deletes. */
+      '-c',
+      'approval_policy="never"',
       '-',
     ]
     try {
