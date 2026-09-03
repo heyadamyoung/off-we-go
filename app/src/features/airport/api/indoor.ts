@@ -65,28 +65,41 @@ function write(key: string, features: IndoorFeature[]) {
 async function askMirror(base: string, query: string) {
   // The bare query as the body, and no Content-Type: overpass-api.de's front
   // server answers 406 to a form-encoded header, of all things. The deadline
-  // is for a mirror that accepts the connection and then sits on it.
+  // is for a mirror that accepts the connection and then sits on it — and it
+  // must outlive the query's own [timeout:40]: a big terminal spends most of
+  // those seconds honestly (Pearson answers in 24-33).
   const res = await fetch(base, {
     method: 'POST',
     body: query,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(40_000),
   })
   if (!res.ok) throw new Error('Overpass answered ' + res.status)
   return indoorFeatures((await res.json()) as OverpassResponse)
 }
 
-/* Hedged rather than strictly serial: the primary gets a six-second head
-   start, then the next mirror joins the race — a tarpitted primary costs six
-   seconds, not its whole deadline. First answer wins; a failure launches the
-   next mirror at once. */
-function fromMirrors(query: string): Promise<IndoorFeature[]> {
+/* The server's shared cache, as one racer among the mirrors. Guarded by its
+   own clock so a route that hangs cannot hold the race open for ever. */
+async function askServer(stop: Stop): Promise<IndoorFeature[]> {
+  const guard = new Promise<never>((_, refuse) =>
+    setTimeout(() => refuse(new Error('the server is taking too long')), 45_000),
+  )
+  const viaServer = await Promise.race([loadAirportIndoor(stop.lng, stop.lat), guard])
+  if (viaServer) return indoorFeatures(viaServer)
+  throw new Error('no server to ask')
+}
+
+/* Hedged rather than strictly serial: the favourite gets a six-second head
+   start, then the next racer joins — a tarpitted favourite costs six seconds,
+   not its whole deadline. First answer wins; a failure launches the next
+   racer at once. */
+function hedged(asks: Array<() => Promise<IndoorFeature[]>>): Promise<IndoorFeature[]> {
   return new Promise((resolve, reject) => {
     let launched = 0,
       failed = 0,
       settled = false
     const launch = () => {
-      if (settled || launched >= MIRRORS.length) return
-      askMirror(MIRRORS[launched++], query).then(
+      if (settled || launched >= asks.length) return
+      asks[launched++]().then(
         found => {
           if (!settled) {
             settled = true
@@ -95,13 +108,13 @@ function fromMirrors(query: string): Promise<IndoorFeature[]> {
         },
         caught => {
           if (settled) return
-          if (++failed === MIRRORS.length) {
+          if (++failed === asks.length) {
             settled = true
             reject(caught)
           } else launch()
         },
       )
-      if (launched < MIRRORS.length) setTimeout(launch, 6000)
+      if (launched < asks.length) setTimeout(launch, 6000)
     }
     launch()
   })
@@ -133,15 +146,12 @@ export async function indoorForStop(stop: Stop): Promise<IndoorFeature[]> {
   return flight
 }
 
-/* The server's shared cache first — one warm answer instead of a mirror
-   lottery — and OSM directly when there is no backend to ask, it predates the
-   route, or it is briefly unreachable. */
-async function fromAnywhere(stop: Stop): Promise<IndoorFeature[]> {
-  try {
-    const viaServer = await loadAirportIndoor(stop.lng, stop.lat)
-    if (viaServer) return indoorFeatures(viaServer)
-  } catch {
-    /* the mirrors are still there */
-  }
-  return fromMirrors(overpassQueryFor(stop.lng, stop.lat))
+/* The server's shared cache is the favourite — one warm answer, shared by
+   every phone — but it runs IN the race, not in front of it. It used to be a
+   gate: the phone waited out the server's whole slow failure before asking
+   the first mirror, which put the worst case past a minute and made big
+   airports look like they simply never load. */
+function fromAnywhere(stop: Stop): Promise<IndoorFeature[]> {
+  const query = overpassQueryFor(stop.lng, stop.lat)
+  return hedged([() => askServer(stop), ...MIRRORS.map(base => () => askMirror(base, query))])
 }

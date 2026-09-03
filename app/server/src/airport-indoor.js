@@ -38,7 +38,12 @@ export function createIndoorCache({
   ttlMs = 30 * 24 * 3600 * 1000,
   max = 40, // airports remembered before the oldest goes
   hedgeMs = 6000,
-  deadlineMs = 20000,
+  /* Longer than the query's own [timeout:40]: Overpass is allowed forty
+     seconds of honest work, and a big terminal uses them — Pearson answers in
+     24-33. Aborting the fetch at twenty turned every large airport into a
+     permanent 502, from every mirror, which read as "the route is broken"
+     when it was this number. */
+  deadlineMs = 42000,
 } = {}) {
   const done = new Map() // key -> { at, body }
   const pending = new Map() // key -> Promise, so a stampede is one request

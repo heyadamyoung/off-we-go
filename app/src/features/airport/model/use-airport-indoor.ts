@@ -112,7 +112,7 @@ export default function useAirportIndoor({
       .then(found => {
         if (gone) return
         if (!found.length) {
-          toastRef.current('No one has mapped the inside of this airport yet', 'error')
+          toastRef.current('No one has mapped the inside of ' + stop.name + ' yet', 'error')
           setStop(null)
           return
         }
@@ -121,7 +121,10 @@ export default function useAirportIndoor({
       })
       .catch(() => {
         if (gone) return
-        toastRef.current('The terminal map did not load — try again in a moment', 'error')
+        toastRef.current(
+          'The terminal map for ' + stop.name + ' did not load — try again in a moment',
+          'error',
+        )
         setStop(null)
       })
       .finally(() => {
