@@ -29,10 +29,23 @@ export interface SampleState {
 
 let sample: SampleState | null = null
 
+/* The demo is perpetually on its middle day: whatever the real date, the trip
+   "started yesterday and ends tomorrow", so the home page says it is live and
+   the live machinery treats today as day two of three. The printed September
+   dates stay as the fiction's own calendar. */
+const isoDaysFromNow = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
+
 export const sampleTrip = () => {
   if (!sample)
     sample = {
-      trip: { ...TRIP, id: 'sample', slug: 'sample' },
+      trip: {
+        ...TRIP,
+        id: 'sample',
+        slug: 'sample',
+        startsOn: isoDaysFromNow(-1),
+        endsOn: isoDaysFromNow(1),
+      },
       stops: STOPS.map(value => ({ ...value })),
       photos: PHOTOS.map(value => ({ ...value })),
       route: ROUTE.map(value => [...value] as Coordinates),

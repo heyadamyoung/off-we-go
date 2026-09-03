@@ -1,5 +1,6 @@
 import { authClient, isSample, tripPath } from './backend-base'
 import { asDevice, asFix, liveRetryDelay, type DeviceWire } from './live-positions-core'
+import { sampleLiveHistory, sampleLiveNow } from './sample-live-core'
 import { sampleResult } from './sample-trip-core'
 import { createTripStreams } from './trip-stream-core'
 import type { Device, Id, LiveFix } from './shared/model/types'
@@ -71,7 +72,8 @@ export async function loadLive(
   tripId: Id,
   { hours = 24, cursor = null }: { hours?: number; cursor?: number | null } = {},
 ) {
-  if (isSample(tripId)) return { devices: [], fixes: [], cursor: 0 }
+  // The demo walks on its own clock — see sample-live-core.
+  if (isSample(tripId)) return { ...sampleLiveHistory(), cursor: 0 }
   const query = new URLSearchParams({ hours: String(hours) })
   if (cursor !== null && Number.isInteger(cursor) && cursor >= 0)
     query.set('cursor', String(cursor))
@@ -98,7 +100,18 @@ export function subscribeToPositions(
     onState?: (state: 'ready' | 'error', error?: unknown) => void
   } = {},
 ) {
-  if (isSample(tripId)) return () => {}
+  if (isSample(tripId)) {
+    /* Maya keeps walking whether or not anyone re-computes her: a tick every
+       few seconds hands the page her current step, and the 30-second fix grid
+       means repeats merge away for free. */
+    const tick = () => {
+      for (const fix of sampleLiveNow()) onFix(fix)
+    }
+    tick()
+    onState?.('ready')
+    const timer = setInterval(tick, 5_000)
+    return () => clearInterval(timer)
+  }
   return tripStreams.watch(String(tripId), {
     onFix,
     onState,
