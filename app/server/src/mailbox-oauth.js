@@ -39,9 +39,14 @@ export function sameState(a, b) {
    honest moment to ask. */
 export const DEFAULT_SCOPES = ['offline_access', 'openid', 'email', 'User.Read', 'Mail.Read']
 
+/* /consumers, not /common, by the owner's call (2026-09-03): this connector
+   exists for the family's personal Outlook accounts, and /common's Home Realm
+   Discovery kept routing fresh-session personal accounts to the wrong door.
+   /consumers has no router to get it wrong — only Microsoft accounts land
+   there, which is the only kind we connect. */
 export function authorizeUrl({
   clientId,
-  tenant = 'common',
+  tenant = 'consumers',
   redirectUri,
   state,
   challenge,
@@ -66,7 +71,7 @@ export function authorizeUrl({
   return `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize?${query}`
 }
 
-export const tokenUrl = (tenant = 'common') =>
+export const tokenUrl = (tenant = 'consumers') =>
   `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`
 
 export function tokenRequestBody({

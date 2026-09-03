@@ -41,7 +41,7 @@ async function server(accounts) {
     mailer: { async send() {} },
     publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
-    microsoft: { clientId: 'client-abc', clientSecret: 'shhh', tenant: 'common' },
+    microsoft: { clientId: 'client-abc', clientSecret: 'shhh', tenant: 'consumers' },
     mailboxTokenKey: KEY,
     connectorFetch: microsoft.fetch,
   })

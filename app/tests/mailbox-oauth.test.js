@@ -28,7 +28,9 @@ const url = (over = {}) =>
 test('the authorize URL asks Microsoft for exactly what we need', () => {
   const link = url()
   assert.equal(link.origin, 'https://login.microsoftonline.com')
-  assert.equal(link.pathname, '/common/oauth2/v2.0/authorize')
+  // /consumers, never /common: the router there misroutes fresh-session
+  // personal accounts, and personal accounts are all this connector serves.
+  assert.equal(link.pathname, '/consumers/oauth2/v2.0/authorize')
   assert.equal(link.searchParams.get('client_id'), 'client-abc')
   assert.equal(link.searchParams.get('response_type'), 'code')
   assert.equal(link.searchParams.get('code_challenge_method'), 'S256')

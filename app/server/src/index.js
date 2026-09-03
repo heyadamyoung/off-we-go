@@ -72,7 +72,7 @@ const app = await buildServer({
     ? {
         clientId: process.env.MS_CLIENT_ID,
         clientSecret: process.env.MS_CLIENT_SECRET || null,
-        tenant: process.env.MS_TENANT || 'common',
+        tenant: process.env.MS_TENANT || 'consumers',
       }
     : null,
   mailboxTokenKey: process.env.MAILBOX_TOKEN_KEY || null,
