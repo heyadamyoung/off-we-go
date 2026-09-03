@@ -8,6 +8,7 @@ interface CameraInput {
   liveReady: boolean
   stops: Stop[]
   panelOpen: boolean
+  barPeek: boolean
   setMapView: (next: MapView | ((current: MapView) => MapView)) => void
 }
 
@@ -22,6 +23,7 @@ export function useTripCamera({
   liveReady,
   stops,
   panelOpen,
+  barPeek,
   setMapView,
 }: CameraInput) {
   const [following, setFollowing] = useState(true)
@@ -41,7 +43,10 @@ export function useTripCamera({
       window.removeEventListener('orientationchange', measure)
     }
   }, [])
-  const padding = useMemo(() => visibleMapPadding({ width, panelOpen }), [width, panelOpen])
+  const padding = useMemo(
+    () => visibleMapPadding({ width, panelOpen, barPeek }),
+    [width, panelOpen, barPeek],
+  )
 
   useEffect(() => {
     if (!following || !liveReady) return

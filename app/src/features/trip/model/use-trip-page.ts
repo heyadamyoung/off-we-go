@@ -140,13 +140,24 @@ export default function useTripPage({
     latestGpsPosition,
   } = useLiveTrip({ tripId, trip, route, stops: ordered, family, mapOverride })
 
+  /* Phone only: the bottom bar collapsed to its peek. Owned here rather than
+     by the screen so the camera's visible band can shrink and grow with it. */
+  const [barPeek, setBarPeek] = useState(false)
   const {
     following,
     setFollowing,
     toggleFollow,
     fitAll,
     padding: mapPadding,
-  } = useTripCamera({ live, livePoints, liveReady, stops, panelOpen: view !== 'map', setMapView })
+  } = useTripCamera({
+    live,
+    livePoints,
+    liveReady,
+    stops,
+    panelOpen: view !== 'map',
+    barPeek,
+    setMapView,
+  })
   const liveStop = progress.currentStop || progress.destination
   const day = search.day || liveStop?.day || ALL_DAYS
   const liveStops = useMemo(() => applyLiveStopStatuses(ordered, progress), [ordered, progress])
@@ -351,7 +362,7 @@ export default function useTripPage({
     addSight, attractions, attrFilling, attrCount, toggleAttractions,
     addAttraction, showSight, showAttractions,
     items, selectedItem, select, pickStop, onMapClicked,
-    saveTrip, uploads, here, origin, panelOpen, subtitle, waitingEdits,
+    saveTrip, uploads, here, origin, panelOpen, subtitle, waitingEdits, barPeek, setBarPeek,
     offlineAt: data.offlineAt ?? null,
   }
 }

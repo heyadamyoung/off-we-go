@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
@@ -57,8 +57,6 @@ function Trip({
     [navigate],
   )
 
-  // Phone only: the bottom bar collapsed to its peek, the map keeping the room.
-  const [barPeek, setBarPeek] = useState(false)
   const page = useTripPage({ data, busyEditing, search, patch, notify, reload })
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
@@ -73,7 +71,7 @@ function Trip({
     indoor, editing, routeDraft, places, startEditing, pickPlace, onStopMove,
     addSight, attractions, toggleAttractions, showSight, showAttractions,
     items, selectedItem, select, pickStop, onMapClicked,
-    saveTrip, uploads, origin, panelOpen, subtitle, offlineAt, waitingEdits,
+    saveTrip, uploads, origin, panelOpen, subtitle, offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
 
   return (

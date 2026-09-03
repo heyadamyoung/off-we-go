@@ -49,11 +49,14 @@ export interface MapPadding {
 export function visibleMapPadding({
   width,
   panelOpen = false,
+  barPeek = false,
 }: {
   width: number
   panelOpen?: boolean
+  /** the phone's bottom bar collapsed to its peek — the map owns that space */
+  barPeek?: boolean
 }): MapPadding {
-  if (width < 640) return { top: 128, right: 20, bottom: 202, left: 20 }
+  if (width < 640) return { top: 128, right: 20, bottom: barPeek ? 96 : 220, left: 20 }
   /* 104, not 40: the desktop toolbar floats at 24px and runs ~68px tall, and a
      fitted stop at 40 landed its pin and label underneath it. The bottom
      follows the bar height in styles.css (--trip-bar + margin). */

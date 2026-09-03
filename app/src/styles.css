@@ -214,9 +214,34 @@
      bottom of the screen. */
   :root { --trip-bar: calc(208px + env(safe-area-inset-bottom, 0px)) }
   /* The bar collapsed to its peek: the grab handle and the day chips. The
-     class lives on the trip screen root, so every floating control that
-     hangs off --trip-1..4 rides down with it and the map gets the room. */
-  .barpeek { --trip-bar: calc(80px + env(safe-area-inset-bottom, 0px)) }
+     whole derived chain is re-declared here on purpose: a custom property is
+     substituted where it is DEFINED, so :root's --trip-1 had :root's bar
+     height baked in and this override never reached the floating chrome —
+     the bar shrank and every control stayed hanging in the air above it. */
+  .barpeek {
+    --trip-bar: calc(80px + env(safe-area-inset-bottom, 0px));
+    --trip-1: calc(var(--trip-bar) + 16px);
+    --trip-2: calc(var(--trip-1) + 46px);
+    --trip-3: calc(var(--trip-2) + 42px);
+    --trip-4: calc(var(--trip-3) + 42px);
+  }
+
+  /* The chat takes the phone screen while it is open, exactly as the stop
+     editor does and for the same reason: floating above the bar it was
+     competing with the chrome and the keyboard at once, and with a keyboard
+     up it collapsed to a homeless input. Height, not bottom-inset: Android
+     shrinks the viewport itself (interactive-widget=resizes-content) and
+     --keyboard stays zero; iOS keeps the viewport and --keyboard lifts it. */
+  .assist {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    height: calc(100dvh - var(--keyboard, 0px));
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    z-index: 40;
+  }
 }
 
 /* --------------------------------------------------------------- components

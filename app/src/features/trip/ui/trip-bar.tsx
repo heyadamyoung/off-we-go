@@ -76,16 +76,24 @@ const TripBar = memo(function TripBar({
                         pr-10 max-sm:pr-6
                         [mask-image:linear-gradient(to_right,#000_calc(100%-40px),transparent)]
                         [scrollbar-width:none]">
+          {/* Picking a day while collapsed is a request to SEE that day: the
+              bar opens with it, rather than making the handle the only way up. */}
           <button
             className={'chip hitslop' + (day === ALL_DAYS ? ' sel' : '')}
-            onClick={() => onDay(ALL_DAYS)}>
+            onClick={() => {
+              onDay(ALL_DAYS)
+              if (peek) onPeek?.(false)
+            }}>
             All days
           </button>
           {days.map(value => (
             <button
               key={value}
               className={'chip hitslop' + (day === value ? ' sel' : '')}
-              onClick={() => onDay(value)}>
+              onClick={() => {
+                onDay(value)
+                if (peek) onPeek?.(false)
+              }}>
               {/* The live dot stays amber even on the ink-inverted selected
                   chip — it marks the journey's day, and that is amber's job. */}
               {value === liveDay && (
