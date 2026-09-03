@@ -32,7 +32,7 @@ export function readFrames(buffer: string): { frames: SseFrame[]; rest: string }
       else if (field === 'id') frame.id = value
       else if (field === 'event') frame.event = value
     }
-    if (!data.length) continue          // a frame of only comments is not an event
+    if (!data.length) continue // a frame of only comments is not an event
     frame.data = data.join('\n')
     frames.push(frame)
   }
@@ -44,7 +44,7 @@ export function readFrames(buffer: string): { frames: SseFrame[]; rest: string }
 export function frameJson<T>(frame: SseFrame): T | null {
   try {
     const value = JSON.parse(frame.data)
-    return value && typeof value === 'object' ? value as T : null
+    return value && typeof value === 'object' ? (value as T) : null
   } catch {
     return null
   }

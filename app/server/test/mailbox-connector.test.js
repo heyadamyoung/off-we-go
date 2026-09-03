@@ -21,8 +21,10 @@ function fakeMicrosoft(accounts = [{ id: 'ms-1', mail: 'adam@outlook.com', displ
         return {
           ok: true,
           json: async () => ({
-            access_token: 'access-' + next, refresh_token: 'refresh-' + next,
-            expires_in: 3600, scope: 'offline_access Mail.Read User.Read',
+            access_token: 'access-' + next,
+            refresh_token: 'refresh-' + next,
+            expires_in: 3600,
+            scope: 'offline_access Mail.Read User.Read',
           }),
         }
       }
@@ -48,7 +50,9 @@ async function server(accounts) {
 
 async function connect(app) {
   const started = await app.inject({
-    method: 'POST', url: '/api/connectors/outlook/start', headers: { authorization: SESSION.value },
+    method: 'POST',
+    url: '/api/connectors/outlook/start',
+    headers: { authorization: SESSION.value },
   })
   const state = new URL(started.json().authorizeUrl).searchParams.get('state')
   const callback = await app.inject({
@@ -59,9 +63,14 @@ async function connect(app) {
 }
 
 const SESSION = { value: '' }
-const listConnections = (app, session) => app.inject({
-  method: 'GET', url: '/api/connectors', headers: { authorization: session },
-}).then(reply => reply.json())
+const listConnections = (app, session) =>
+  app
+    .inject({
+      method: 'GET',
+      url: '/api/connectors',
+      headers: { authorization: session },
+    })
+    .then(reply => reply.json())
 
 test('connecting a mailbox sends you to Microsoft and brings back a usable connection', async () => {
   const { app, repository } = await server()
@@ -71,8 +80,10 @@ test('connecting a mailbox sends you to Microsoft and brings back a usable conne
   const link = new URL(started.json().authorizeUrl)
 
   assert.equal(link.origin, 'https://login.microsoftonline.com', 'the consent screen is Microsofts')
-  assert.equal(link.searchParams.get('redirect_uri'),
-    'https://offwego.example.com/api/connectors/outlook/callback')
+  assert.equal(
+    link.searchParams.get('redirect_uri'),
+    'https://offwego.example.com/api/connectors/outlook/callback',
+  )
   assert.equal(link.searchParams.get('prompt'), 'select_account')
   assert.ok(link.searchParams.get('code_challenge'), 'PKCE, because the code alone is not enough')
 
@@ -115,8 +126,10 @@ test('a second mailbox is a second connection, not a replacement', async () => {
   await connect(app)
 
   const listed = await listConnections(app, SESSION.value)
-  assert.deepEqual(listed.connections.map(item => item.email),
-    ['adam@outlook.com', 'catherine@outlook.com'])
+  assert.deepEqual(
+    listed.connections.map(item => item.email),
+    ['adam@outlook.com', 'catherine@outlook.com'],
+  )
 })
 
 test('a callback nobody asked for is refused', async () => {
@@ -124,13 +137,15 @@ test('a callback nobody asked for is refused', async () => {
   SESSION.value = await authenticate(repository, 'owner@example.com')
 
   const forged = await app.inject({
-    method: 'GET', url: '/api/connectors/outlook/callback?code=code-1&state=made-up',
+    method: 'GET',
+    url: '/api/connectors/outlook/callback?code=code-1&state=made-up',
   })
   assert.equal(forged.statusCode, 302)
   assert.match(forged.headers.location, /connected=expired$/)
 
   const denied = await app.inject({
-    method: 'GET', url: '/api/connectors/outlook/callback?error=access_denied&state=whatever',
+    method: 'GET',
+    url: '/api/connectors/outlook/callback?error=access_denied&state=whatever',
   })
   assert.match(denied.headers.location, /connected=denied$/)
 })
@@ -143,12 +158,15 @@ test('a mailbox can be disconnected, and not by somebody else', async () => {
 
   const stranger = await authenticate(repository, 'stranger@example.com')
   const refused = await app.inject({
-    method: 'DELETE', url: '/api/connectors/' + connection.id, headers: { authorization: stranger },
+    method: 'DELETE',
+    url: '/api/connectors/' + connection.id,
+    headers: { authorization: stranger },
   })
   assert.equal(refused.statusCode, 404, 'somebody elses mailbox is not theirs to disconnect')
 
   const removed = await app.inject({
-    method: 'DELETE', url: '/api/connectors/' + connection.id,
+    method: 'DELETE',
+    url: '/api/connectors/' + connection.id,
     headers: { authorization: SESSION.value },
   })
   assert.equal(removed.statusCode, 204)
@@ -172,13 +190,18 @@ test('a server with no connector configured says so instead of half-offering one
   assert.deepEqual(listed.providers, [])
 
   const started = await app.inject({
-    method: 'POST', url: '/api/connectors/outlook/start', headers: { authorization: session },
+    method: 'POST',
+    url: '/api/connectors/outlook/start',
+    headers: { authorization: session },
   })
   assert.equal(started.statusCode, 503)
 })
 
 test('connecting a mailbox requires being signed in to us first', async () => {
   const { app } = await server()
-  assert.equal((await app.inject({ method: 'POST', url: '/api/connectors/outlook/start' })).statusCode, 401)
+  assert.equal(
+    (await app.inject({ method: 'POST', url: '/api/connectors/outlook/start' })).statusCode,
+    401,
+  )
   assert.equal((await app.inject({ method: 'GET', url: '/api/connectors' })).statusCode, 401)
 })

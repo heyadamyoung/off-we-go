@@ -8,7 +8,11 @@ test('the SMTP mailer sends a trip invitation without an authentication token', 
   const sent = []
   const mailer = moduleUnderTest.createMailer({
     from: 'Off We Go <offwego@example.com>',
-    transport: { async sendMail(message) { sent.push(message) } },
+    transport: {
+      async sendMail(message) {
+        sent.push(message)
+      },
+    },
   })
   await mailer.send({
     kind: 'trip-invitation',

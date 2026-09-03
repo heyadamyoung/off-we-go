@@ -29,7 +29,8 @@ export default function InvitationsPage() {
     }
   }
 
-  if (error) return <Boot what="Your invitations" error={error} action="accept-invite" onRetry={reload} />
+  if (error)
+    return <Boot what="Your invitations" error={error} action="accept-invite" onRetry={reload} />
 
   return (
     <HomeShell me={profile} wide home={scene.home} places={scene.places}>
@@ -44,8 +45,9 @@ export default function InvitationsPage() {
           </div>
         )}
         {invites.map(invite => (
-          <div key={invite.id}
-               className="grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-2xl bg-raised2 p-4">
+          <div
+            key={invite.id}
+            className="grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-2xl bg-raised2 p-4">
             <span className="avatar size-11 bg-[#C77DFF] text-base">
               {(invite.tripTitle || '?').slice(0, 1).toUpperCase()}
             </span>
@@ -55,12 +57,16 @@ export default function InvitationsPage() {
                 <em className="not-italic text-accent">{invite.tripTitle}</em>
               </b>
               <span className="block text-[12.5px] text-muted">
-                {invite.role === 'editor' ? 'As a traveller — you can add stops and photos'
+                {invite.role === 'editor'
+                  ? 'As a traveller — you can add stops and photos'
                   : 'As a viewer — you see everything, live'}
               </span>
             </div>
             <div className="flex gap-2">
-              <button className="btn btn-accent" disabled={!!busy} onClick={() => accept(invite.id)}>
+              <button
+                className="btn btn-accent"
+                disabled={!!busy}
+                onClick={() => accept(invite.id)}>
                 {busy === invite.id ? 'Joining…' : invite.role === 'editor' ? 'Join' : 'Follow'}
               </button>
             </div>

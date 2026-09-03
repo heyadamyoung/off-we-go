@@ -5,8 +5,11 @@ import type { Id, Person } from '../../../shared/model/types'
 const heartbeatMs = 15_000
 
 const newClientId = () => {
-  try { return crypto.randomUUID() }
-  catch { return `tab-${Date.now()}-${Math.random().toString(36).slice(2)}` }
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
 }
 
 export default function useTripPresence(tripId: Id, family: Person[]) {

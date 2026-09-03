@@ -13,8 +13,10 @@ export interface TripStreamDeps {
   /** Opens the stream. Rejects if it cannot be opened. */
   open: (path: string, signal: AbortSignal) => Promise<{ body: ReadableStream<Uint8Array> | null }>
   /** The fallback, for a connection something in the middle will not hold open. */
-  poll: (tripId: string, options: { hours: number; cursor: number })
-    => Promise<{ fixes: LiveFix[]; cursor: number }>
+  poll: (
+    tripId: string,
+    options: { hours: number; cursor: number },
+  ) => Promise<{ fixes: LiveFix[]; cursor: number }>
   path: (tripId: string) => string
   asFix: (value: unknown) => LiveFix
   retryDelay: (failures: number) => number
@@ -48,7 +50,11 @@ export function createTripStreams(deps: TripStreamDeps) {
 
     const tell = (run: (listener: Listener) => void) => {
       for (const listener of [...listeners]) {
-        try { run(listener) } catch { /* one bad listener is not the others' problem */ }
+        try {
+          run(listener)
+        } catch {
+          /* one bad listener is not the others' problem */
+        }
       }
     }
     const state = (value: 'ready' | 'error') => tell(listener => listener.onState?.(value))
@@ -78,7 +84,10 @@ export function createTripStreams(deps: TripStreamDeps) {
       }, pollEvery)
     }
     const stopPolling = () => {
-      if (polling) { clearTimer(polling); polling = null }
+      if (polling) {
+        clearTimer(polling)
+        polling = null
+      }
     }
 
     const consume = (text: string, carry: string) => {
@@ -105,7 +114,8 @@ export function createTripStreams(deps: TripStreamDeps) {
       abort = new AbortController()
       try {
         const response = await deps.open(
-          `${deps.path(tripId)}/live/stream?hours=${hours}&cursor=${cursor}`, abort.signal,
+          `${deps.path(tripId)}/live/stream?hours=${hours}&cursor=${cursor}`,
+          abort.signal,
         )
         if (!response.body) throw new Error('This browser cannot read a stream')
         stopPolling()
@@ -156,7 +166,9 @@ export function createTripStreams(deps: TripStreamDeps) {
         stopPolling()
         abort?.abort()
       },
-      get listeners() { return listeners.size },
+      get listeners() {
+        return listeners.size
+      },
     }
   }
 
@@ -165,15 +177,23 @@ export function createTripStreams(deps: TripStreamDeps) {
     watch(tripId: string, listener: Listener) {
       const key = String(tripId)
       let stream = streams.get(key)
-      if (!stream) { stream = openStream(key); streams.set(key, stream) }
+      if (!stream) {
+        stream = openStream(key)
+        streams.set(key, stream)
+      }
       stream.add(listener)
       stream.start()
       return () => {
         const left = stream.remove(listener)
-        if (!left) { stream.stop(); streams.delete(key) }
+        if (!left) {
+          stream.stop()
+          streams.delete(key)
+        }
       }
     },
     /** How many connections are open, which should be one per trip on screen. */
-    get open() { return streams.size },
+    get open() {
+      return streams.size
+    },
   }
 }

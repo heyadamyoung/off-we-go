@@ -1,6 +1,16 @@
 const MONTH = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ]
 
 // Midday avoids date-only UTC values landing on the previous local day.
@@ -20,8 +30,10 @@ export function formatRange(startsOn?: string, endsOn?: string) {
   if (sameYear) {
     return `${start.getDate()} ${MONTH[start.getMonth()]} – ${end.getDate()} ${MONTH[end.getMonth()]}`
   }
-  return `${start.getDate()} ${MONTH[start.getMonth()]} ${start.getFullYear()}` +
+  return (
+    `${start.getDate()} ${MONTH[start.getMonth()]} ${start.getFullYear()}` +
     ` – ${end.getDate()} ${MONTH[end.getMonth()]} ${end.getFullYear()}`
+  )
 }
 
 export function daysBetween(startsOn?: string, endsOn?: string) {

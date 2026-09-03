@@ -1,5 +1,12 @@
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
 } from 'react'
 import type { ToastTone } from '../model/types'
 
@@ -43,17 +50,22 @@ export default function Toast({ notice }: { notice: ToastNotice | null }) {
   const error = notice.tone === 'error'
   return (
     <div
-      className={'toast toast-rise fixed left-1/2 top-6 z-[300] flex ' +
-        'max-w-[min(520px,calc(100vw-28px))] ' + (error ? 'error ' : 'success ') +
+      className={
+        'toast toast-rise fixed left-1/2 top-6 z-[300] flex ' +
+        'max-w-[min(520px,calc(100vw-28px))] ' +
+        (error ? 'error ' : 'success ') +
         'items-center gap-2.5 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-panel ' +
-        (error ? 'bg-danger text-white' : 'bg-ink text-canvas')}
+        (error ? 'bg-danger text-white' : 'bg-ink text-canvas')
+      }
       role={error ? 'alert' : 'status'}
       aria-live={error ? 'assertive' : 'polite'}
-      aria-atomic="true"
-    >
-      <span aria-hidden="true"
-            className={'grid size-5 flex-none place-items-center rounded-full text-xs font-black ' +
-              (error ? 'bg-white/25 text-white' : 'bg-accent text-accent-ink')}>
+      aria-atomic="true">
+      <span
+        aria-hidden="true"
+        className={
+          'grid size-5 flex-none place-items-center rounded-full text-xs font-black ' +
+          (error ? 'bg-white/25 text-white' : 'bg-accent text-accent-ink')
+        }>
         {error ? '!' : '✓'}
       </span>
       {notice.message}

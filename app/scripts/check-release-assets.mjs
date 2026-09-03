@@ -11,8 +11,9 @@ const root = resolve(process.argv[2] || 'dist/client')
 const shell = join(root, 'index.html')
 const html = await readFile(shell, 'utf8')
 
-const referenced = [...html.matchAll(/(?:href|src)="(\/[^"]+\.(?:css|js|svg|png|ico|webmanifest))"/g)]
-  .map(match => match[1])
+const referenced = [
+  ...html.matchAll(/(?:href|src)="(\/[^"]+\.(?:css|js|svg|png|ico|webmanifest))"/g),
+].map(match => match[1])
 
 const missing = []
 for (const path of new Set(referenced)) {

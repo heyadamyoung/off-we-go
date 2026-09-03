@@ -1,7 +1,10 @@
 import type { Coordinates, MapView } from './shared/model/types'
 
-const validPoint = (point: Coordinates) => Number.isFinite(point?.[0]) && Number.isFinite(point?.[1])
-  && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90
+const validPoint = (point: Coordinates) =>
+  Number.isFinite(point?.[0]) &&
+  Number.isFinite(point?.[1]) &&
+  Math.abs(point[0]) <= 180 &&
+  Math.abs(point[1]) <= 90
 
 export function liveFollowView(
   current: MapView,
@@ -17,13 +20,18 @@ export function liveFollowView(
 
   const lngs = valid.map(point => point[0])
   const lats = valid.map(point => point[1])
-  const west = Math.min(...lngs), east = Math.max(...lngs)
-  const south = Math.min(...lats), north = Math.max(...lats)
+  const west = Math.min(...lngs),
+    east = Math.max(...lngs)
+  const south = Math.min(...lats),
+    north = Math.max(...lats)
   return {
     center: [(west + east) / 2, (south + north) / 2],
     zoom: current.zoom,
     ms: duration,
-    bounds: [[west, south], [east, north]],
+    bounds: [
+      [west, south],
+      [east, north],
+    ],
   }
 }
 
@@ -31,11 +39,20 @@ export function liveFollowView(
    trip into the container hides whatever lands under the bars — on a phone
    that is a third of the height. Fit into what can actually be seen instead,
    and centre on the middle of that band rather than the middle of the map. */
-export interface MapPadding { top: number; right: number; bottom: number; left: number }
+export interface MapPadding {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
 
-export function visibleMapPadding(
-  { width, panelOpen = false }: { width: number; panelOpen?: boolean },
-): MapPadding {
+export function visibleMapPadding({
+  width,
+  panelOpen = false,
+}: {
+  width: number
+  panelOpen?: boolean
+}): MapPadding {
   if (width < 640) return { top: 128, right: 20, bottom: 202, left: 20 }
   return { top: 40, right: 40, bottom: 228, left: panelOpen ? 500 : 40 }
 }

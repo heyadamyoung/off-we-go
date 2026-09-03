@@ -3,11 +3,10 @@ import test from 'node:test'
 import { liveFollowView, paddingOffset, visibleMapPadding } from '../src/live-map-view-core.ts'
 
 test('the following camera waits for the initial GPS snapshot', () => {
-  const view = liveFollowView(
-    { center: [-32, 24], zoom: 13.9 },
-    [],
-    { ready: false, duration: 900 },
-  )
+  const view = liveFollowView({ center: [-32, 24], zoom: 13.9 }, [], {
+    ready: false,
+    duration: 900,
+  })
 
   assert.equal(view, null)
 })
@@ -15,11 +14,17 @@ test('the following camera waits for the initial GPS snapshot', () => {
 test('the following camera frames every person emitting GPS', () => {
   const view = liveFollowView(
     { center: [-32, 24], zoom: 13.9 },
-    [[-104.617, 50.4548], [-104.601, 50.466]],
+    [
+      [-104.617, 50.4548],
+      [-104.601, 50.466],
+    ],
     { ready: true, duration: 900 },
   )
 
-  assert.deepEqual(view.bounds, [[-104.617, 50.4548], [-104.601, 50.466]])
+  assert.deepEqual(view.bounds, [
+    [-104.617, 50.4548],
+    [-104.601, 50.466],
+  ])
   assert.ok(Math.abs(view.center[0] - -104.609) < 1e-10)
   assert.ok(Math.abs(view.center[1] - 50.4604) < 1e-10)
   assert.equal(view.zoom, 13.9)
@@ -27,11 +32,10 @@ test('the following camera frames every person emitting GPS', () => {
 })
 
 test('the following camera zooms in on one GPS emitter', () => {
-  const view = liveFollowView(
-    { center: [-32, 24], zoom: 11 },
-    [[-104.617, 50.4548]],
-    { ready: true, duration: 560 },
-  )
+  const view = liveFollowView({ center: [-32, 24], zoom: 11 }, [[-104.617, 50.4548]], {
+    ready: true,
+    duration: 560,
+  })
 
   // focus, so the traveller lands in the middle of the map that is visible
   // rather than the middle of a container a third of which is behind chrome.

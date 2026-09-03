@@ -10,10 +10,12 @@ const sourceExtensions = new Set(['.ts', '.tsx'])
 
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
-  const nested = await Promise.all(entries.map(entry => {
-    const target = path.join(directory, entry.name)
-    return entry.isDirectory() ? sourceFiles(target) : [target]
-  }))
+  const nested = await Promise.all(
+    entries.map(entry => {
+      const target = path.join(directory, entry.name)
+      return entry.isDirectory() ? sourceFiles(target) : [target]
+    }),
+  )
 
   return nested.flat().filter(file => sourceExtensions.has(path.extname(file)))
 }
@@ -29,18 +31,13 @@ test('source modules stay below the 400-line review boundary', async () => {
     }
   }
 
-  assert.deepEqual(
-    oversized,
-    [],
-    `Split oversized source files:\n${oversized.join('\n')}`,
-  )
+  assert.deepEqual(oversized, [], `Split oversized source files:\n${oversized.join('\n')}`)
 })
 
 /* The router owns two naming conventions we do not get to choose: route files
    are named after the URL they serve (`trips.$slug.tsx`, `__root.tsx`), and the
    route tree is generated. Everything we write by hand is still kebab-case. */
-const routerOwned = file =>
-  file.split(path.sep).includes('routes') || file.endsWith('.gen.ts')
+const routerOwned = file => file.split(path.sep).includes('routes') || file.endsWith('.gen.ts')
 
 test('TypeScript source filenames use kebab-case', async () => {
   const invalidNames = (await sourceFiles(sourceRoot))
@@ -88,9 +85,7 @@ test('feature internals are imported only from their own slice', async () => {
 
   for (const file of await sourceFiles(sourceRoot)) {
     const relativeSource = path.relative(featureRoot, file)
-    const sourceSlice = relativeSource.startsWith('..')
-      ? null
-      : relativeSource.split(path.sep)[0]
+    const sourceSlice = relativeSource.startsWith('..') ? null : relativeSource.split(path.sep)[0]
     const contents = await readFile(file, 'utf8')
     const imports = contents.matchAll(/from\s+['"]([^'"]+)['"]/g)
 

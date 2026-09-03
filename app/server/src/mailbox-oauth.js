@@ -39,7 +39,15 @@ export function sameState(a, b) {
    honest moment to ask. */
 export const DEFAULT_SCOPES = ['offline_access', 'openid', 'email', 'User.Read', 'Mail.Read']
 
-export function authorizeUrl({ clientId, tenant = 'common', redirectUri, state, challenge, scopes = DEFAULT_SCOPES, prompt }) {
+export function authorizeUrl({
+  clientId,
+  tenant = 'common',
+  redirectUri,
+  state,
+  challenge,
+  scopes = DEFAULT_SCOPES,
+  prompt,
+}) {
   if (!clientId) throw new Error('No Microsoft client id is configured')
   if (!redirectUri) throw new Error('No redirect URI for the mailbox connector')
   const query = new URLSearchParams({
@@ -61,7 +69,14 @@ export function authorizeUrl({ clientId, tenant = 'common', redirectUri, state, 
 export const tokenUrl = (tenant = 'common') =>
   `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`
 
-export function tokenRequestBody({ clientId, clientSecret, code, redirectUri, verifier, refreshToken }) {
+export function tokenRequestBody({
+  clientId,
+  clientSecret,
+  code,
+  redirectUri,
+  verifier,
+  refreshToken,
+}) {
   const body = new URLSearchParams({ client_id: clientId })
   if (clientSecret) body.set('client_secret', clientSecret)
   if (refreshToken) {

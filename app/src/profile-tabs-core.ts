@@ -23,6 +23,6 @@ export const DEFAULT_PROFILE_TAB: ProfileTab = 'profile'
 /** Anything that is not a tab is the first one, rather than an empty page. */
 export function parseProfileSearch(input: Record<string, unknown>): { tab?: ProfileTab } {
   const value = typeof input?.tab === 'string' ? input.tab.toLowerCase() : ''
-  const tab = (PROFILE_TABS as readonly string[]).includes(value) ? value as ProfileTab : null
+  const tab = (PROFILE_TABS as readonly string[]).includes(value) ? (value as ProfileTab) : null
   return tab && tab !== DEFAULT_PROFILE_TAB ? { tab } : {}
 }

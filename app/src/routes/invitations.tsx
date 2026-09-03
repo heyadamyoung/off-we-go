@@ -5,5 +5,9 @@ import { InvitationsPage } from '../features/home'
 export const Route = createFileRoute('/invitations')({ component: InvitationsRoute })
 
 function InvitationsRoute() {
-  return <RequireSession><InvitationsPage /></RequireSession>
+  return (
+    <RequireSession>
+      <InvitationsPage />
+    </RequireSession>
+  )
 }

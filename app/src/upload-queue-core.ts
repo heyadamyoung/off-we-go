@@ -30,8 +30,7 @@ export function enqueue(uploads: Upload[], additions: Array<Omit<Upload, 'state'
 }
 
 /** The next thing to send: one at a time, so a phone on a slow line copes. */
-export const next = (uploads: Upload[]) =>
-  uploads.find(item => item.state === 'waiting') || null
+export const next = (uploads: Upload[]) => uploads.find(item => item.state === 'waiting') || null
 
 export function begin(uploads: Upload[], key: string): Upload[] {
   return uploads.map(item => (item.key === key ? { ...item, state: 'uploading' } : item))
@@ -49,7 +48,8 @@ export function fail(uploads: Upload[], key: string, error: string): Upload[] {
 /** A failure the reader has asked to try again. */
 export function retry(uploads: Upload[], key: string): Upload[] {
   return uploads.map(item =>
-    (item.key === key ? { ...item, state: 'waiting', error: undefined } : item))
+    item.key === key ? { ...item, state: 'waiting', error: undefined } : item,
+  )
 }
 
 export const dismiss = done

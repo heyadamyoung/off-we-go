@@ -29,7 +29,10 @@ export default function useTripData(slug: string, canAdopt: () => boolean): Trip
     loadTripBySlug(slug, session)
       .then(result => {
         if (!alive) return
-        if ('needsAuth' in result) { setNeedsAuth(true); return }
+        if ('needsAuth' in result) {
+          setNeedsAuth(true)
+          return
+        }
         if ('landing' in result) {
           setError(Object.assign(new Error('Trip not found'), { status: 404 }))
           return
@@ -39,7 +42,9 @@ export default function useTripData(slug: string, canAdopt: () => boolean): Trip
       .catch((caught: unknown) => {
         if (alive) setError(caught instanceof Error ? caught : new Error(String(caught)))
       })
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [ready, session, slug, attempt])
 
   const tripId = data?.tripId
@@ -48,9 +53,14 @@ export default function useTripData(slug: string, canAdopt: () => boolean): Trip
     let timer: ReturnType<typeof setTimeout>
     const stop = subscribeToTrip(tripId, () => {
       clearTimeout(timer)
-      timer = setTimeout(() => { if (canAdopt()) reload() }, 400)
+      timer = setTimeout(() => {
+        if (canAdopt()) reload()
+      }, 400)
     })
-    return () => { clearTimeout(timer); stop() }
+    return () => {
+      clearTimeout(timer)
+      stop()
+    }
   }, [tripId, canAdopt, reload])
 
   return { data, needsAuth, error, reload }

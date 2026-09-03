@@ -8,19 +8,29 @@ const root = 'https://offwego.example.com'
 
 async function disclosureContrast(page, foreground, background) {
   const [color, surface] = await Promise.all([
-    page.locator(foreground).first().evaluate(element => getComputedStyle(element).color),
-    page.locator(background).first().evaluate(element => getComputedStyle(element).backgroundColor),
+    page
+      .locator(foreground)
+      .first()
+      .evaluate(element => getComputedStyle(element).color),
+    page
+      .locator(background)
+      .first()
+      .evaluate(element => getComputedStyle(element).backgroundColor),
   ])
-  const channels = value => value.match(/[\d.]+/g).slice(0, 3).map(Number)
+  const channels = value =>
+    value
+      .match(/[\d.]+/g)
+      .slice(0, 3)
+      .map(Number)
   const luminance = value => {
     const linear = channels(value).map(channel => {
       const component = channel / 255
-      return component <= .04045 ? component / 12.92 : ((component + .055) / 1.055) ** 2.4
+      return component <= 0.04045 ? component / 12.92 : ((component + 0.055) / 1.055) ** 2.4
     })
-    return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
   }
   const [lighter, darker] = [luminance(color), luminance(surface)].sort((a, b) => b - a)
-  return (lighter + .05) / (darker + .05)
+  return (lighter + 0.05) / (darker + 0.05)
 }
 
 async function expectReadableDisclosures(page) {
@@ -30,7 +40,8 @@ async function expectReadableDisclosures(page) {
     ['.technical-details summary', '.card'],
     ['.label', '.card'],
     ['.fine', '.card'],
-  ]) expect(await disclosureContrast(page, foreground, background)).toBeGreaterThanOrEqual(4.5)
+  ])
+    expect(await disclosureContrast(page, foreground, background)).toBeGreaterThanOrEqual(4.5)
 }
 
 async function hostConsent() {
@@ -40,8 +51,11 @@ async function hostConsent() {
     publicUrl: root,
     sessionSecret: 'test-secret-that-is-long-enough',
   })
-  app.get('/offwego-icon.png', async (_request, reply) => reply.type('image/png')
-    .send(await readFile(new URL('../public/offwego-icon.png', import.meta.url))))
+  app.get('/offwego-icon.png', async (_request, reply) =>
+    reply
+      .type('image/png')
+      .send(await readFile(new URL('../public/offwego-icon.png', import.meta.url))),
+  )
   const registration = await app.inject({
     method: 'POST',
     url: '/oauth/register',
@@ -74,9 +88,13 @@ test('uses Off We Go styling and keeps permission controls aligned', async ({ pa
     const response = await page.goto(fixture.url)
     expect(response.headers()['content-security-policy']).toContain("img-src 'self'")
 
-    await expect.poll(() => page.locator('.brand img').evaluate(image => image.naturalWidth)).toBeGreaterThan(0)
+    await expect
+      .poll(() => page.locator('.brand img').evaluate(image => image.naturalWidth))
+      .toBeGreaterThan(0)
     await expect(page.locator('.approve')).toHaveCSS('background-color', 'rgb(255, 122, 61)')
-    await expect(page.locator('.connection-route')).toContainText('Returns to Codex Desktop on this device')
+    await expect(page.locator('.connection-route')).toContainText(
+      'Returns to Codex Desktop on this device',
+    )
     await expect(page.locator('.connection-route')).toContainText('http://127.0.0.1:3210')
     await expect(page.locator('.technical-details')).not.toHaveAttribute('open', '')
     await expect(page.locator('.technical-details')).toContainText(fixture.client.client_id)
@@ -90,9 +108,15 @@ test('uses Off We Go styling and keeps permission controls aligned', async ({ pa
         row.locator('input[type=checkbox]').boundingBox(),
       ])
       expect(rowBox && iconBox && glyphBox && controlBox).toBeTruthy()
-      expect(Math.abs(iconBox.x + iconBox.width / 2 - (glyphBox.x + glyphBox.width / 2))).toBeLessThan(1)
-      expect(Math.abs(iconBox.y + iconBox.height / 2 - (glyphBox.y + glyphBox.height / 2))).toBeLessThan(1)
-      expect(Math.abs(rowBox.y + rowBox.height / 2 - (controlBox.y + controlBox.height / 2))).toBeLessThan(1)
+      expect(
+        Math.abs(iconBox.x + iconBox.width / 2 - (glyphBox.x + glyphBox.width / 2)),
+      ).toBeLessThan(1)
+      expect(
+        Math.abs(iconBox.y + iconBox.height / 2 - (glyphBox.y + glyphBox.height / 2)),
+      ).toBeLessThan(1)
+      expect(
+        Math.abs(rowBox.y + rowBox.height / 2 - (controlBox.y + controlBox.height / 2)),
+      ).toBeLessThan(1)
       expect(controlBox.width).toBeGreaterThanOrEqual(24)
       expect(controlBox.height).toBeGreaterThanOrEqual(24)
     }
@@ -106,10 +130,14 @@ test('uses Off We Go styling and keeps permission controls aligned', async ({ pa
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(238, 241, 245)')
     await expectReadableDisclosures(page)
-    await page.locator('.message').evaluate(element => { element.textContent = 'Authorization failed.' })
+    await page.locator('.message').evaluate(element => {
+      element.textContent = 'Authorization failed.'
+    })
     expect(await disclosureContrast(page, '.message', '.card')).toBeGreaterThanOrEqual(4.5)
     await page.locator('.identity').evaluate(element => element.classList.add('good'))
-    expect(await disclosureContrast(page, '.identity.good', '.identity.good')).toBeGreaterThanOrEqual(4.5)
+    expect(
+      await disclosureContrast(page, '.identity.good', '.identity.good'),
+    ).toBeGreaterThanOrEqual(4.5)
     const loginButton = page.getByRole('link', { name: 'Continue to sign in' })
     await expect(loginButton).toHaveAttribute('href', /^\/\?continue=%2Foauth%2Fauthorize/)
     await loginButton.hover()

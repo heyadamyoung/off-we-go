@@ -22,8 +22,10 @@ export function tripProgress(trip: TripSummary, today = todayISO()): TripProgres
   const start = onDay(trip.startsOn)
   const end = onDay(trip.endsOn)
   const now = onDay(today)
-  const days = start && end ? Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY) + 1)
-    : trip.dayCount || 0
+  const days =
+    start && end
+      ? Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY) + 1)
+      : trip.dayCount || 0
   if (!start || !end || !now) return { day: 0, days, state: 'upcoming' }
   if (now < start) return { day: 0, days, state: 'upcoming' }
   if (now > end) return { day: days, days, state: 'past' }
@@ -34,9 +36,11 @@ export function tripProgress(trip: TripSummary, today = todayISO()): TripProgres
 export function pickCurrentTrip(trips: TripSummary[], today = todayISO()): TripSummary | null {
   if (!trips.length) return null
   const scored = trips.map(trip => ({ trip, progress: tripProgress(trip, today) }))
-  return (scored.find(item => item.progress.state === 'live')
-    || scored.find(item => item.progress.state === 'upcoming')
-    || scored[scored.length - 1]).trip
+  return (
+    scored.find(item => item.progress.state === 'live') ||
+    scored.find(item => item.progress.state === 'upcoming') ||
+    scored[scored.length - 1]
+  ).trip
 }
 
 export const isPast = (trip: TripSummary, today = todayISO()) =>
@@ -53,7 +57,9 @@ export function tripPlaces(trip: TripSummary): GlobePlace[] {
   for (const place of trip.places || []) {
     if (!Number.isFinite(place.lng) || !Number.isFinite(place.lat)) continue
     const next: GlobePlace = {
-      name: place.name || '', lng: place.lng, lat: place.lat,
+      name: place.name || '',
+      lng: place.lng,
+      lat: place.lat,
       done: place.status === 'done' || place.status === 'now',
     }
     const previous = places[places.length - 1]
@@ -75,7 +81,8 @@ export function tripPlaces(trip: TripSummary): GlobePlace[] {
 
 /** Where the travellers have got to: the last place already visited. */
 export function livePlace(places: GlobePlace[]): GlobePlace | null {
-  for (let index = places.length - 1; index >= 0; index--) if (places[index].done) return places[index]
+  for (let index = places.length - 1; index >= 0; index--)
+    if (places[index].done) return places[index]
   return null
 }
 
@@ -83,7 +90,8 @@ export function homePlace(profile?: MyProfile | null): GlobePlace | null {
   if (!profile || profile.homeLat == null || profile.homeLng == null) return null
   return {
     name: (profile.homePlace || '').split(',')[0].trim() || 'Home',
-    lng: profile.homeLng, lat: profile.homeLat,
+    lng: profile.homeLng,
+    lat: profile.homeLat,
   }
 }
 
@@ -94,8 +102,8 @@ export function globeScene(trip: TripSummary | null, profile?: MyProfile | null)
   const places = trip ? tripPlaces(trip) : []
   if (!places.length) return { places: home ? [home] : [], home, live: null }
   const leaving = home ? [{ ...home, done: places[0].done, label: false }] : []
-  const returning = home && tripProgress(trip!).state === 'past'
-    ? [{ ...home, done: true, label: false }] : []
+  const returning =
+    home && tripProgress(trip!).state === 'past' ? [{ ...home, done: true, label: false }] : []
   return {
     places: [...leaving, ...places, ...returning],
     home,

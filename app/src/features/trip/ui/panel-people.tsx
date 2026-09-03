@@ -5,8 +5,15 @@ const ROLE: Record<string, string> = { owner: 'Owner', editor: 'Traveller', view
 
 /* Two groups, because the difference matters: people on the road can add to the
    trip, people at home can only watch it. */
-export default function PeopleList({ people, photos, viewers = [] }:
-  { people: Person[]; photos: TripPhoto[]; viewers?: Person[] }) {
+export default function PeopleList({
+  people,
+  photos,
+  viewers = [],
+}: {
+  people: Person[]
+  photos: TripPhoto[]
+  viewers?: Person[]
+}) {
   const viewing = new Set(viewers.map(person => person.id))
   const travelling = people.filter(person => person.memberRole !== 'viewer')
   const following = people.filter(person => person.memberRole === 'viewer')
@@ -17,26 +24,44 @@ export default function PeopleList({ people, photos, viewers = [] }:
     const taken = counts.get(person.name) || 0
     const travelling = person.memberRole !== 'viewer'
     return (
-      <div key={person.id || person.name}
-           className="surface mx-1 mt-1 flex items-center gap-3 rounded-xl p-3">
+      <div
+        key={person.id || person.name}
+        className="surface mx-1 mt-1 flex items-center gap-3 rounded-xl p-3">
         <span className={'avatar size-9 text-sm ' + (travelling ? 'bg-[#5B8DEF]' : 'plain')}>
-          {person.avatar ? <img src={person.avatar} alt="" /> : (person.name || '?')[0].toUpperCase()}
+          {person.avatar ? (
+            <img src={person.avatar} alt="" />
+          ) : (
+            (person.name || '?')[0].toUpperCase()
+          )}
         </span>
         <div className="min-w-0 flex-1">
           <b className="block text-sm">
-            {person.handle
-              ? <Link to="/users/$handle" params={{ handle: person.handle }}>{person.name}</Link>
-              : person.name}
+            {person.handle ? (
+              <Link to="/users/$handle" params={{ handle: person.handle }}>
+                {person.name}
+              </Link>
+            ) : (
+              person.name
+            )}
           </b>
           <span className="text-xs text-muted">
-            {[person.handle ? `@${person.handle}` : null,
+            {[
+              person.handle ? `@${person.handle}` : null,
               travelling ? 'travelling' : 'following from home',
               taken ? `${taken} photo${taken === 1 ? '' : 's'}` : null,
-              viewing.has(person.id) ? 'viewing now' : null].filter(Boolean).join(' · ')}
+              viewing.has(person.id) ? 'viewing now' : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         </div>
-        <span className={'rounded-md border px-2 py-1 text-[11px] font-bold ' + (travelling
-          ? 'border-accent-soft bg-accent-soft text-accent' : 'border-line text-faint')}>
+        <span
+          className={
+            'rounded-md border px-2 py-1 text-[11px] font-bold ' +
+            (travelling
+              ? 'border-accent-soft bg-accent-soft text-accent'
+              : 'border-line text-faint')
+          }>
           {ROLE[person.memberRole || ''] || 'Following'}
         </span>
       </div>

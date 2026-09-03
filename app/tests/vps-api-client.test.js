@@ -17,17 +17,29 @@ test('the VPS client exchanges an OIDC handoff, persists the session and authent
   const client = moduleUnderTest.createApiClient({
     baseUrl: '/api',
     storage: {
-      getItem(key) { return saved.get(key) || null },
-      setItem(key, value) { saved.set(key, value) },
-      removeItem(key) { saved.delete(key) },
+      getItem(key) {
+        return saved.get(key) || null
+      },
+      setItem(key, value) {
+        saved.set(key, value)
+      },
+      removeItem(key) {
+        saved.delete(key)
+      },
     },
     fetch: async (url, options = {}) => {
       calls.push({ url, options })
-      if (url === '/api/auth/exchange') return new Response(JSON.stringify({
-        accessToken: 'session-token', user: { id: 'user-1', email: 'owner@example.com' },
-      }), { status: 200, headers: { 'content-type': 'application/json' } })
+      if (url === '/api/auth/exchange')
+        return new Response(
+          JSON.stringify({
+            accessToken: 'session-token',
+            user: { id: 'user-1', email: 'owner@example.com' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
       return new Response(JSON.stringify({ title: 'Scotland' }), {
-        status: 200, headers: { 'content-type': 'application/json' },
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       })
     },
   })
@@ -43,24 +55,37 @@ test('the VPS client exchanges an OIDC handoff, persists the session and authent
 test('native login becomes authenticated before slow keychain persistence finishes', async () => {
   let releaseKeychain
   let keychainWriteStarted
-  const writeStarted = new Promise(resolve => { keychainWriteStarted = resolve })
-  const keychainReleased = new Promise(resolve => { releaseKeychain = resolve })
+  const writeStarted = new Promise(resolve => {
+    keychainWriteStarted = resolve
+  })
+  const keychainReleased = new Promise(resolve => {
+    releaseKeychain = resolve
+  })
   const client = moduleUnderTest.createApiClient({
     baseUrl: '/api',
     storage: {
-      getItem() { return null },
+      getItem() {
+        return null
+      },
       async setItem() {
         keychainWriteStarted()
         await keychainReleased
       },
       removeItem() {},
     },
-    fetch: async () => new Response(JSON.stringify({
-      accessToken: 'native-session-token', user: { id: 'user-1', email: 'owner@example.com' },
-    }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          accessToken: 'native-session-token',
+          user: { id: 'user-1', email: 'owner@example.com' },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
   })
   let observed = null
-  client.subscribe(session => { observed = session })
+  client.subscribe(session => {
+    observed = session
+  })
 
   const exchange = client.exchangeLoginHandoff('one-time-token')
   await writeStarted
@@ -73,10 +98,18 @@ test('native login becomes authenticated before slow keychain persistence finish
 test('API errors expose their HTTP status so the app can distinguish an empty account', async () => {
   const client = moduleUnderTest.createApiClient({
     baseUrl: '/api',
-    storage: { getItem() { return null }, setItem() {}, removeItem() {} },
-    fetch: async () => new Response(JSON.stringify({ error: 'No trip found' }), {
-      status: 404, headers: { 'content-type': 'application/json' },
-    }),
+    storage: {
+      getItem() {
+        return null
+      },
+      setItem() {},
+      removeItem() {},
+    },
+    fetch: async () =>
+      new Response(JSON.stringify({ error: 'No trip found' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
   })
   await assert.rejects(client.request('/trips/current'), error => {
     assert.equal(error.message, 'No trip found')
@@ -87,26 +120,44 @@ test('API errors expose their HTTP status so the app can distinguish an empty ac
 
 test('OIDC continuation only returns to the same-origin OAuth authorization page', () => {
   assert.equal(
-    moduleUnderTest.safeOAuthContinuation('/oauth/authorize?client_id=abc', 'https://offwego.example.com'),
+    moduleUnderTest.safeOAuthContinuation(
+      '/oauth/authorize?client_id=abc',
+      'https://offwego.example.com',
+    ),
     '/oauth/authorize?client_id=abc',
   )
-  assert.equal(moduleUnderTest.safeOAuthContinuation('https://evil.example/oauth/authorize', 'https://offwego.example.com'), null)
-  assert.equal(moduleUnderTest.safeOAuthContinuation('/account', 'https://offwego.example.com'), null)
+  assert.equal(
+    moduleUnderTest.safeOAuthContinuation(
+      'https://evil.example/oauth/authorize',
+      'https://offwego.example.com',
+    ),
+    null,
+  )
+  assert.equal(
+    moduleUnderTest.safeOAuthContinuation('/account', 'https://offwego.example.com'),
+    null,
+  )
 })
 
 test('the API client restores a session from asynchronous native secure storage', async () => {
-  const stored = JSON.stringify({ accessToken: 'keychain-token', user: { id: 'old', email: 'owner@example.com' } })
+  const stored = JSON.stringify({
+    accessToken: 'keychain-token',
+    user: { id: 'old', email: 'owner@example.com' },
+  })
   const client = moduleUnderTest.createApiClient({
     baseUrl: '/api',
     storage: {
-      async getItem(key) { return key === 'wayfare-session' ? stored : null },
+      async getItem(key) {
+        return key === 'wayfare-session' ? stored : null
+      },
       async setItem() {},
       async removeItem() {},
     },
     fetch: async (_url, options) => {
       assert.equal(options.headers.authorization, 'Bearer keychain-token')
       return new Response(JSON.stringify({ user: { id: 'fresh', email: 'owner@example.com' } }), {
-        status: 200, headers: { 'content-type': 'application/json' },
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       })
     },
   })
@@ -121,21 +172,38 @@ test('live GPS retention is bounded independently for every phone and removes du
   assert.ok(liveModule?.mergeLiveFixes, 'the per-device live GPS buffer has not been implemented')
   const at = value => new Date(`2027-01-01T00:00:0${value}.000Z`)
   const existing = [
-    { deviceId: 'a', at: at(1), lat: 1 }, { deviceId: 'a', at: at(2), lat: 2 },
-    { deviceId: 'b', at: at(1), lat: 3 }, { deviceId: 'c', at: at(1), lat: 4 },
+    { deviceId: 'a', at: at(1), lat: 1 },
+    { deviceId: 'a', at: at(2), lat: 2 },
+    { deviceId: 'b', at: at(1), lat: 3 },
+    { deviceId: 'c', at: at(1), lat: 4 },
   ]
   const incoming = [
-    { deviceId: 'a', at: at(2), lat: 2 }, { deviceId: 'a', at: at(3), lat: 5 },
-    { deviceId: 'b', at: at(2), lat: 6 }, { deviceId: 'b', at: at(3), lat: 7 },
-    { deviceId: 'c', at: at(2), lat: 8 }, { deviceId: 'c', at: at(3), lat: 9 },
+    { deviceId: 'a', at: at(2), lat: 2 },
+    { deviceId: 'a', at: at(3), lat: 5 },
+    { deviceId: 'b', at: at(2), lat: 6 },
+    { deviceId: 'b', at: at(3), lat: 7 },
+    { deviceId: 'c', at: at(2), lat: 8 },
+    { deviceId: 'c', at: at(3), lat: 9 },
   ]
 
   const result = liveModule.mergeLiveFixes(existing, incoming, 2)
 
   assert.equal(result.length, 6)
-  assert.deepEqual(Object.fromEntries(Object.entries(Object.groupBy(result, value => value.deviceId))), {
-    a: [{ deviceId: 'a', at: at(2), lat: 2 }, { deviceId: 'a', at: at(3), lat: 5 }],
-    b: [{ deviceId: 'b', at: at(2), lat: 6 }, { deviceId: 'b', at: at(3), lat: 7 }],
-    c: [{ deviceId: 'c', at: at(2), lat: 8 }, { deviceId: 'c', at: at(3), lat: 9 }],
-  })
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(Object.groupBy(result, value => value.deviceId))),
+    {
+      a: [
+        { deviceId: 'a', at: at(2), lat: 2 },
+        { deviceId: 'a', at: at(3), lat: 5 },
+      ],
+      b: [
+        { deviceId: 'b', at: at(2), lat: 6 },
+        { deviceId: 'b', at: at(3), lat: 7 },
+      ],
+      c: [
+        { deviceId: 'c', at: at(2), lat: 8 },
+        { deviceId: 'c', at: at(3), lat: 9 },
+      ],
+    },
+  )
 })

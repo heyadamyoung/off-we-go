@@ -1,14 +1,29 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  DEFAULT_SCOPES, authorizeUrl, challengeFor, createState, createVerifier, expiresAt,
-  isExpired, sameState, stateHash, tokenRequestBody, tokenUrl,
+  DEFAULT_SCOPES,
+  authorizeUrl,
+  challengeFor,
+  createState,
+  createVerifier,
+  expiresAt,
+  isExpired,
+  sameState,
+  stateHash,
+  tokenRequestBody,
+  tokenUrl,
 } from '../server/src/mailbox-oauth.js'
 
-const url = (over = {}) => new URL(authorizeUrl({
-  clientId: 'client-abc', redirectUri: 'https://offwego.to/api/connectors/outlook/callback',
-  state: 'state-1', challenge: 'challenge-1', ...over,
-}))
+const url = (over = {}) =>
+  new URL(
+    authorizeUrl({
+      clientId: 'client-abc',
+      redirectUri: 'https://offwego.to/api/connectors/outlook/callback',
+      state: 'state-1',
+      challenge: 'challenge-1',
+      ...over,
+    }),
+  )
 
 test('the authorize URL asks Microsoft for exactly what we need', () => {
   const link = url()
@@ -37,15 +52,27 @@ test('a second mailbox is offered the account picker rather than the first one a
 })
 
 test('a tenant of its own is honoured, and escaped', () => {
-  assert.match(authorizeUrl({
-    clientId: 'c', redirectUri: 'https://x/y', state: 's', challenge: 'ch', tenant: 'contoso.onmicrosoft.com',
-  }), /\/contoso\.onmicrosoft\.com\/oauth2/)
-  assert.match(tokenUrl('contoso.onmicrosoft.com'), /\/contoso\.onmicrosoft\.com\/oauth2\/v2\.0\/token$/)
+  assert.match(
+    authorizeUrl({
+      clientId: 'c',
+      redirectUri: 'https://x/y',
+      state: 's',
+      challenge: 'ch',
+      tenant: 'contoso.onmicrosoft.com',
+    }),
+    /\/contoso\.onmicrosoft\.com\/oauth2/,
+  )
+  assert.match(
+    tokenUrl('contoso.onmicrosoft.com'),
+    /\/contoso\.onmicrosoft\.com\/oauth2\/v2\.0\/token$/,
+  )
 })
 
 test('a connector with nothing configured says so rather than sending someone nowhere', () => {
-  assert.throws(() => authorizeUrl({ redirectUri: 'https://x/y', state: 's', challenge: 'c' }),
-    /client id/)
+  assert.throws(
+    () => authorizeUrl({ redirectUri: 'https://x/y', state: 's', challenge: 'c' }),
+    /client id/,
+  )
   assert.throws(() => authorizeUrl({ clientId: 'c', state: 's', challenge: 'c' }), /redirect URI/)
 })
 
@@ -70,8 +97,11 @@ test('the state coming back is compared without leaking how much of it matched',
 
 test('the code exchange and the refresh are the same call with different grants', () => {
   const exchange = tokenRequestBody({
-    clientId: 'c', clientSecret: 's', code: 'code-1',
-    redirectUri: 'https://x/y', verifier: 'verifier-1',
+    clientId: 'c',
+    clientSecret: 's',
+    code: 'code-1',
+    redirectUri: 'https://x/y',
+    verifier: 'verifier-1',
   })
   assert.equal(exchange.get('grant_type'), 'authorization_code')
   assert.equal(exchange.get('code_verifier'), 'verifier-1')
@@ -86,7 +116,11 @@ test('the code exchange and the refresh are the same call with different grants'
 test('a token is treated as expiring a minute before it does', () => {
   const now = new Date('2026-09-02T12:00:00Z')
   assert.equal(expiresAt({ expires_in: 3600 }, now).toISOString(), '2026-09-02T12:59:00.000Z')
-  assert.equal(expiresAt({}, now).toISOString(), '2026-09-02T12:59:00.000Z', 'a missing life is an hour')
+  assert.equal(
+    expiresAt({}, now).toISOString(),
+    '2026-09-02T12:59:00.000Z',
+    'a missing life is an hour',
+  )
   assert.equal(expiresAt({ expires_in: 30 }, now).toISOString(), '2026-09-02T12:00:00.000Z')
 
   assert.equal(isExpired({ expiresAt: '2026-09-02T12:30:00Z' }, now), false)

@@ -31,49 +31,80 @@ export default function useProfile(): ProfileState {
     let alive = true
     setError(null)
     loadMyProfile()
-      .then(value => { if (alive) { setProfile(value); setLoading(false) } })
+      .then(value => {
+        if (alive) {
+          setProfile(value)
+          setLoading(false)
+        }
+      })
       .catch((caught: unknown) => {
         if (!alive) return
         setError(caught instanceof Error ? caught : new Error(String(caught)))
         setLoading(false)
       })
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [attempt])
 
   /* Optimistic, then reconciled with what the server actually stored — a handle
      can come back rejected, and the field should show the one in force. */
-  const save = useCallback(async (changes: Partial<MyProfile>, said = 'Saved') => {
-    const before = profile
-    setSaving(true)
-    setProfile(current => (current ? { ...current, ...changes } : current))
-    try {
-      const saved = await updateMe(changes)
-      setProfile(saved)
-      notify(said)
-    } catch (caught) {
-      setProfile(before)
-      notify(appErrorMessage(caught, 'save-profile'), 'error')
-    } finally { setSaving(false) }
-  }, [profile, notify])
+  const save = useCallback(
+    async (changes: Partial<MyProfile>, said = 'Saved') => {
+      const before = profile
+      setSaving(true)
+      setProfile(current => (current ? { ...current, ...changes } : current))
+      try {
+        const saved = await updateMe(changes)
+        setProfile(saved)
+        notify(said)
+      } catch (caught) {
+        setProfile(before)
+        notify(appErrorMessage(caught, 'save-profile'), 'error')
+      } finally {
+        setSaving(false)
+      }
+    },
+    [profile, notify],
+  )
 
-  const savePreferences = useCallback(async (next: Preferences) => {
-    setProfile(current => (current ? { ...current, preferences: next } : current))
-    try { await updateMe({ preferences: next as unknown as Record<string, unknown> }) }
-    catch (caught) { notify(appErrorMessage(caught, 'save-profile'), 'error') }
-  }, [notify])
+  const savePreferences = useCallback(
+    async (next: Preferences) => {
+      setProfile(current => (current ? { ...current, preferences: next } : current))
+      try {
+        await updateMe({ preferences: next as unknown as Record<string, unknown> })
+      } catch (caught) {
+        notify(appErrorMessage(caught, 'save-profile'), 'error')
+      }
+    },
+    [notify],
+  )
 
-  const saveAvatar = useCallback(async (file: File) => {
-    setSaving(true)
-    try {
-      const avatar = await uploadAvatar(file)
-      setProfile(current => (current ? { ...current, avatar } : current))
-      notify('Picture updated')
-    } catch (caught) { notify(appErrorMessage(caught, 'save-profile'), 'error') }
-    finally { setSaving(false) }
-  }, [notify])
+  const saveAvatar = useCallback(
+    async (file: File) => {
+      setSaving(true)
+      try {
+        const avatar = await uploadAvatar(file)
+        setProfile(current => (current ? { ...current, avatar } : current))
+        notify('Picture updated')
+      } catch (caught) {
+        notify(appErrorMessage(caught, 'save-profile'), 'error')
+      } finally {
+        setSaving(false)
+      }
+    },
+    [notify],
+  )
 
   return {
-    profile, preferences: readPreferences(profile?.preferences), loading, error, saving,
-    reload, save, savePreferences, saveAvatar,
+    profile,
+    preferences: readPreferences(profile?.preferences),
+    loading,
+    error,
+    saving,
+    reload,
+    save,
+    savePreferences,
+    saveAvatar,
   }
 }

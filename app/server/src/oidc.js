@@ -14,16 +14,26 @@ export function readOidcConfig(env) {
 }
 
 export function createOidcIdentityProvider({ issuer, clientId, clientSecret, oidc = defaultOidc }) {
-  if (!issuer || !clientId || !clientSecret) throw new Error('OIDC issuer, client ID, and client secret are required')
+  if (!issuer || !clientId || !clientSecret)
+    throw new Error('OIDC issuer, client ID, and client secret are required')
   let configuration = null
   const getConfiguration = async () => {
     if (!configuration) {
-      configuration = Promise.resolve().then(() => oidc.discovery(
-        new URL(issuer), clientId, { client_secret: clientSecret }, oidc.ClientSecretBasic(clientSecret),
-      ))
+      configuration = Promise.resolve().then(() =>
+        oidc.discovery(
+          new URL(issuer),
+          clientId,
+          { client_secret: clientSecret },
+          oidc.ClientSecretBasic(clientSecret),
+        ),
+      )
     }
-    try { return await configuration }
-    catch (error) { configuration = null; throw error }
+    try {
+      return await configuration
+    } catch (error) {
+      configuration = null
+      throw error
+    }
   }
 
   return {

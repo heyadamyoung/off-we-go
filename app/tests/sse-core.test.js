@@ -16,17 +16,27 @@ test('a frame is what arrives before the blank line', () => {
 test('several frames in one read, and a half one kept for the next', () => {
   const { frames, rest } = readFrames('data: one\n\ndata: two\n\ndata: thr')
 
-  assert.deepEqual(frames.map(f => f.data), ['one', 'two'])
+  assert.deepEqual(
+    frames.map(f => f.data),
+    ['one', 'two'],
+  )
   assert.equal(rest, 'data: thr')
 
   const next = readFrames(rest + 'ee\n\n')
-  assert.deepEqual(next.frames.map(f => f.data), ['three'])
+  assert.deepEqual(
+    next.frames.map(f => f.data),
+    ['three'],
+  )
 })
 
 test('a heartbeat is not an event', () => {
   const { frames } = readFrames(':\n\n:keep-alive\n\ndata: real\n\n')
 
-  assert.deepEqual(frames.map(f => f.data), ['real'], 'comments must not wake the app up')
+  assert.deepEqual(
+    frames.map(f => f.data),
+    ['real'],
+    'comments must not wake the app up',
+  )
 })
 
 test('multi-line data is joined, and the space after the colon is not data', () => {

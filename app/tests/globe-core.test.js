@@ -1,10 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  facing, globeZoom, greatCircle, legFeatures,
+  facing,
+  globeZoom,
+  greatCircle,
+  legFeatures,
 } from '../src/features/home/model/globe-core.ts'
 import {
-  globeScene, isPast, pickCurrentTrip, tripPlaces, tripProgress,
+  globeScene,
+  isPast,
+  pickCurrentTrip,
+  tripPlaces,
+  tripProgress,
 } from '../src/features/home/model/trip-globe.ts'
 
 test('a great circle between two names for the same place does not divide by zero', () => {
@@ -29,7 +36,10 @@ test('a great circle arcs polewards rather than running along the parallel', () 
 test('a leg over the date line keeps counting rather than racing back round', () => {
   const points = greatCircle([170, 10], [-170, 10], 20)
   const steps = points.slice(1).map((point, index) => point[0] - points[index][0])
-  assert.ok(steps.every(step => Math.abs(step) < 180), 'no 360-degree jump mid-line')
+  assert.ok(
+    steps.every(step => Math.abs(step) < 180),
+    'no 360-degree jump mid-line',
+  )
   assert.ok(points[points.length - 1][0] > 180, 'the far end carries on past 180')
 })
 
@@ -69,8 +79,13 @@ test('the globe is zoomed to stand as tall as the space it is given', () => {
 /* ---------------------------------------------------------------- trips */
 
 const trip = (over = {}) => ({
-  id: 't', slug: 't', title: 'Trip', startsOn: '2026-09-03', endsOn: '2026-09-19',
-  places: [], ...over,
+  id: 't',
+  slug: 't',
+  title: 'Trip',
+  startsOn: '2026-09-03',
+  endsOn: '2026-09-19',
+  places: [],
+  ...over,
 })
 
 test('a trip knows whether it is coming up, running or finished', () => {
@@ -101,58 +116,88 @@ test('the trip to lead with is the live one, then the next, then the last', () =
 })
 
 test('stops in the same place become one dot, keeping the fact it was visited', () => {
-  const places = tripPlaces(trip({
-    places: [
-      { name: 'Hotel', lng: 4.9, lat: 52.37, status: 'done' },
-      { name: 'Cafe across the street', lng: 4.9001, lat: 52.3701, status: 'planned' },
-      { name: 'Edinburgh', lng: -3.19, lat: 55.95, status: 'planned' },
-    ],
-  }))
+  const places = tripPlaces(
+    trip({
+      places: [
+        { name: 'Hotel', lng: 4.9, lat: 52.37, status: 'done' },
+        { name: 'Cafe across the street', lng: 4.9001, lat: 52.3701, status: 'planned' },
+        { name: 'Edinburgh', lng: -3.19, lat: 55.95, status: 'planned' },
+      ],
+    }),
+  )
   assert.equal(places.length, 2)
   assert.equal(places[0].done, true)
   assert.equal(places[1].name, 'Edinburgh')
 })
 
 test('a stop with no usable coordinate is left off the globe', () => {
-  const places = tripPlaces(trip({
-    places: [{ name: 'Nowhere', lng: NaN, lat: 52 }, { name: 'Utrecht', lng: 5.11, lat: 52.09 }],
-  }))
-  assert.deepEqual(places.map(place => place.name), ['Utrecht'])
+  const places = tripPlaces(
+    trip({
+      places: [
+        { name: 'Nowhere', lng: NaN, lat: 52 },
+        { name: 'Utrecht', lng: 5.11, lat: 52.09 },
+      ],
+    }),
+  )
+  assert.deepEqual(
+    places.map(place => place.name),
+    ['Utrecht'],
+  )
 })
 
 test('only the ends of the arc are labelled, and a there-and-back trip gets one label', () => {
-  const across = tripPlaces(trip({
-    places: [
-      { name: 'A', lng: 0, lat: 0 }, { name: 'B', lng: 10, lat: 10 }, { name: 'C', lng: 20, lat: 20 },
-    ],
-  }))
-  assert.deepEqual(across.map(place => !!place.label), [true, false, true])
+  const across = tripPlaces(
+    trip({
+      places: [
+        { name: 'A', lng: 0, lat: 0 },
+        { name: 'B', lng: 10, lat: 10 },
+        { name: 'C', lng: 20, lat: 20 },
+      ],
+    }),
+  )
+  assert.deepEqual(
+    across.map(place => !!place.label),
+    [true, false, true],
+  )
 
-  const roundTrip = tripPlaces(trip({
-    places: [
-      { name: 'Home', lng: 0, lat: 0 }, { name: 'Away', lng: 10, lat: 10 },
-      { name: 'Home again', lng: 0, lat: 0 },
-    ],
-  }))
-  assert.deepEqual(roundTrip.map(place => !!place.label), [false, false, true])
+  const roundTrip = tripPlaces(
+    trip({
+      places: [
+        { name: 'Home', lng: 0, lat: 0 },
+        { name: 'Away', lng: 10, lat: 10 },
+        { name: 'Home again', lng: 0, lat: 0 },
+      ],
+    }),
+  )
+  assert.deepEqual(
+    roundTrip.map(place => !!place.label),
+    [false, false, true],
+  )
 })
 
 test('the scene joins home to the trip and only claims a live position while it runs', () => {
   const profile = { homePlace: 'Regina, Saskatchewan', homeLat: 50.45, homeLng: -104.6 }
-  const live = globeScene(trip({
-    places: [
-      { name: 'Amsterdam', lng: 4.9, lat: 52.37, status: 'done' },
-      { name: 'Edinburgh', lng: -3.19, lat: 55.95, status: 'planned' },
-    ],
-  }), profile)
+  const live = globeScene(
+    trip({
+      places: [
+        { name: 'Amsterdam', lng: 4.9, lat: 52.37, status: 'done' },
+        { name: 'Edinburgh', lng: -3.19, lat: 55.95, status: 'planned' },
+      ],
+    }),
+    profile,
+  )
   assert.equal(live.home.name, 'Regina')
   assert.equal(live.places.length, 3, 'home, then both stops')
   assert.equal(live.places[0].label, false, 'home is labelled once, by its own marker')
 
-  const finished = globeScene(trip({
-    endsOn: '2020-01-01', startsOn: '2019-12-01',
-    places: [{ name: 'Amsterdam', lng: 4.9, lat: 52.37, status: 'done' }],
-  }), profile)
+  const finished = globeScene(
+    trip({
+      endsOn: '2020-01-01',
+      startsOn: '2019-12-01',
+      places: [{ name: 'Amsterdam', lng: 4.9, lat: 52.37, status: 'done' }],
+    }),
+    profile,
+  )
   assert.equal(finished.live, null)
   assert.equal(finished.places.length, 3, 'home, the stop, and home again')
 })

@@ -10,5 +10,9 @@ export const Route = createFileRoute('/profile')({
 })
 
 function ProfileRoute() {
-  return <RequireSession><ProfilePage /></RequireSession>
+  return (
+    <RequireSession>
+      <ProfilePage />
+    </RequireSession>
+  )
 }

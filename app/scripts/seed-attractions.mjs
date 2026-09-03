@@ -26,8 +26,14 @@
    be started again.
    =========================================================================== */
 import pg from 'pg'
-import { cellsCovering, attractionsInCell, isHeadline, setApiHeaders,
-         setApiThrottle, extractsFor } from '../src/places.js'
+import {
+  cellsCovering,
+  attractionsInCell,
+  isHeadline,
+  setApiHeaders,
+  setApiThrottle,
+  extractsFor,
+} from '../src/places.js'
 
 // Wikimedia asks scripts to identify themselves, and refuses them otherwise.
 setApiHeaders({ 'User-Agent': 'Off We Go/1.0 (family trip viewer; support@threadway.ai)' })
@@ -48,7 +54,7 @@ Missing credentials.
 
 const REGIONS = {
   netherlands: { name: 'Netherlands', west: 3.3, south: 50.7, east: 7.3, north: 53.6 },
-  scotland:    { name: 'Scotland',    west: -7.7, south: 54.6, east: -0.7, north: 58.7 },
+  scotland: { name: 'Scotland', west: -7.7, south: 54.6, east: -0.7, north: 58.7 },
 }
 
 const args = process.argv.slice(2)
@@ -80,7 +86,7 @@ const db = dryRun ? null : new pg.Client({ connectionString: DATABASE_URL })
 if (db) await db.connect()
 
 const pause = ms => new Promise(r => setTimeout(r, ms))
-const rows = new Map()          // page id -> row, deduplicated across overlapping cells
+const rows = new Map() // page id -> row, deduplicated across overlapping cells
 
 async function flush() {
   if (!rows.size) return 0
@@ -91,16 +97,21 @@ async function flush() {
   await db.query('begin')
   try {
     for (const row of all) {
-      await db.query(`insert into attractions(id,name,descr,category,image_file,lng,lat,headline)
+      await db.query(
+        `insert into attractions(id,name,descr,category,image_file,lng,lat,headline)
         values($1,$2,$3,$4,$5,$6,$7,$8) on conflict(id) do update set
         name=excluded.name,descr=excluded.descr,category=excluded.category,
         image_file=excluded.image_file,lng=excluded.lng,lat=excluded.lat,
         headline=excluded.headline,updated_at=now()`,
-      [row.id, row.name, row.descr, row.category, row.image_file, row.lng, row.lat, row.headline])
+        [row.id, row.name, row.descr, row.category, row.image_file, row.lng, row.lat, row.headline],
+      )
     }
     await db.query('commit')
     written = all.length
-  } catch (error) { await db.query('rollback'); throw error }
+  } catch (error) {
+    await db.query('rollback')
+    throw error
+  }
   return written
 }
 
@@ -111,23 +122,36 @@ for (const region of regions) {
   const cells = cellsCovering(region, { limit: 100000 })
   console.log(`\n${region.name}: ${cells.length} cells of ten kilometres`)
 
-  let done = 0, found = 0
+  let done = 0,
+    found = 0
   // Two at a time. Wikipedia is lending us this for nothing and starts refusing
   // at around ten concurrent, which costs more time than the patience saves.
   for (let i = 0; i < cells.length; i += 2) {
     const batch = cells.slice(i, i + 2)
-    const got = await Promise.all(batch.map(async cell => {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try { return await attractionsInCell(cell) } catch { await pause(1200 * (attempt + 1)) }
-      }
-      console.warn(`  cell ${cell.key} gave up after three tries`)
-      return []
-    }))
+    const got = await Promise.all(
+      batch.map(async cell => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            return await attractionsInCell(cell)
+          } catch {
+            await pause(1200 * (attempt + 1))
+          }
+        }
+        console.warn(`  cell ${cell.key} gave up after three tries`)
+        return []
+      }),
+    )
 
     for (const poi of got.flat()) {
       rows.set(poi.id, {
-        id: poi.id, name: poi.n, descr: poi.d, category: poi.k,
-        image_file: poi.f, lng: poi.x, lat: poi.y, headline: isHeadline(poi.k),
+        id: poi.id,
+        name: poi.n,
+        descr: poi.d,
+        category: poi.k,
+        image_file: poi.f,
+        lng: poi.x,
+        lat: poi.y,
+        headline: isHeadline(poi.k),
       })
     }
     found += got.flat().length
@@ -143,7 +167,6 @@ for (const region of regions) {
   process.stdout.write(`\r  ${done}/${cells.length} cells · ${found} found · ${total} written\n`)
 }
 
-
 /* Second pass: the opening lines of each article.
 
    Kept separate from the cell walk because it is resumable on its own — it asks
@@ -155,19 +178,32 @@ async function fillExtracts() {
   const COLUMNS = 'id,name,descr,category,image_file,lng,lat,headline'
   let filled = 0
   for (;;) {
-    const rows = (await db.query(`select ${COLUMNS} from attractions where extract is null order by id limit 200`)).rows
+    const rows = (
+      await db.query(
+        `select ${COLUMNS} from attractions where extract is null order by id limit 200`,
+      )
+    ).rows
     if (!rows.length) break
 
     // A whole batch failing is a rate limit, not a dead end: wait longer and
     // try again. Giving up here would strand every row behind it.
     let text = null
     for (let attempt = 0; attempt < 4 && !text; attempt++) {
-      try { text = await extractsFor(rows.map(r => r.id)) }
-      catch { await pause(5000 * (attempt + 1)) }
+      try {
+        text = await extractsFor(rows.map(r => r.id))
+      } catch {
+        await pause(5000 * (attempt + 1))
+      }
     }
-    if (!text) { console.log('  Wikipedia is refusing; stopping here, run again to carry on'); break }
-    for (const row of rows) await db.query('update attractions set extract=$2,updated_at=now() where id=$1',
-      [row.id, text.get(row.id) ?? ''])
+    if (!text) {
+      console.log('  Wikipedia is refusing; stopping here, run again to carry on')
+      break
+    }
+    for (const row of rows)
+      await db.query('update attractions set extract=$2,updated_at=now() where id=$1', [
+        row.id,
+        text.get(row.id) ?? '',
+      ])
 
     filled += rows.length
     if (filled % 2000 === 0) console.log(`  ${filled} paragraphs so far`)
@@ -181,7 +217,6 @@ if (!dryRun) {
   console.log('Fetching the opening lines, twenty articles at a time.')
   await fillExtracts()
 }
-
 
 if (dryRun) {
   console.log(`

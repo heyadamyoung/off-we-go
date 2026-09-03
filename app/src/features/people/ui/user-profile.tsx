@@ -17,11 +17,15 @@ export default function UserProfilePage({ handle }: { handle: string }) {
     let alive = true
     setError(null)
     loadUserProfile(handle)
-      .then(value => { if (alive) setProfile(value) })
+      .then(value => {
+        if (alive) setProfile(value)
+      })
       .catch((caught: unknown) => {
         if (alive) setError(caught instanceof Error ? caught : new Error(String(caught)))
       })
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [handle, attempt])
 
   if (error) {
@@ -37,9 +41,13 @@ export default function UserProfilePage({ handle }: { handle: string }) {
             : appErrorMessage(error, 'load-profile')}
         </p>
         {!missing && (
-          <button className="btn btn-ghost" onClick={() => setAttempt(value => value + 1)}>Try again</button>
+          <button className="btn btn-ghost" onClick={() => setAttempt(value => value + 1)}>
+            Try again
+          </button>
         )}
-        <Link className="btn btn-ghost" to="/">Back to your trips</Link>
+        <Link className="btn btn-ghost" to="/">
+          Back to your trips
+        </Link>
       </Screen>
     )
   }
@@ -48,12 +56,18 @@ export default function UserProfilePage({ handle }: { handle: string }) {
   return (
     <Screen>
       <span className="avatar size-20 border-0 bg-[#5B8DEF] text-3xl">
-        {profile.avatar ? <img src={profile.avatar} alt="" /> : (profile.name || '?')[0].toUpperCase()}
+        {profile.avatar ? (
+          <img src={profile.avatar} alt="" />
+        ) : (
+          (profile.name || '?')[0].toUpperCase()
+        )}
       </span>
       <h1 className="break-words text-2xl font-extrabold tracking-tight">{profile.name}</h1>
       <p className="hint">@{profile.handle}</p>
       <p className="hint max-w-[380px]">You can see this profile because you share a trip.</p>
-      <Link className="btn btn-ghost mt-1" to="/">Back to your trips</Link>
+      <Link className="btn btn-ghost mt-1" to="/">
+        Back to your trips
+      </Link>
     </Screen>
   )
 }

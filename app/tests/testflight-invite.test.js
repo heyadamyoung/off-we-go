@@ -16,9 +16,17 @@ test('a named group is found however it was typed', () => {
 test('with nothing named it takes the one external group, and refuses to guess between two', () => {
   assert.equal(findGroup(groups).id, 'ff')
   assert.equal(findGroup([groups[0]]), null, 'internal groups take every build anyway')
-  assert.equal(findGroup([...groups, {
-    id: 'beta', attributes: { name: 'Public beta', isInternalGroup: false },
-  }]), null, 'two external groups is a choice for a person to make')
+  assert.equal(
+    findGroup([
+      ...groups,
+      {
+        id: 'beta',
+        attributes: { name: 'Public beta', isInternalGroup: false },
+      },
+    ]),
+    null,
+    'two external groups is a choice for a person to make',
+  )
 })
 
 test('an address that is not one is refused before Apple is asked', () => {
@@ -37,9 +45,14 @@ test('the invitation names the group, and a name is optional', () => {
   })
 
   const named = testerPayload({
-    email: 'someone@example.com', firstName: 'Some', lastName: 'One', groupId: 'ff',
+    email: 'someone@example.com',
+    firstName: 'Some',
+    lastName: 'One',
+    groupId: 'ff',
   })
   assert.deepEqual(named.data.attributes, {
-    email: 'someone@example.com', firstName: 'Some', lastName: 'One',
+    email: 'someone@example.com',
+    firstName: 'Some',
+    lastName: 'One',
   })
 })

@@ -23,8 +23,12 @@ export function createSecretBox(rawKey, random = randomBytes) {
       const nonce = random(12)
       const cipher = createCipheriv('aes-256-gcm', key, nonce)
       const body = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()])
-      return [VERSION, nonce.toString('base64'), cipher.getAuthTag().toString('base64'),
-              body.toString('base64')].join('.')
+      return [
+        VERSION,
+        nonce.toString('base64'),
+        cipher.getAuthTag().toString('base64'),
+        body.toString('base64'),
+      ].join('.')
     },
 
     open(sealed) {
@@ -35,7 +39,10 @@ export function createSecretBox(rawKey, random = randomBytes) {
       }
       const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(nonce, 'base64'))
       decipher.setAuthTag(Buffer.from(tag, 'base64'))
-      return Buffer.concat([decipher.update(Buffer.from(body, 'base64')), decipher.final()]).toString('utf8')
+      return Buffer.concat([
+        decipher.update(Buffer.from(body, 'base64')),
+        decipher.final(),
+      ]).toString('utf8')
     },
   }
 }

@@ -5,5 +5,9 @@ import { PastTripsPage } from '../features/home'
 export const Route = createFileRoute('/past')({ component: PastTripsRoute })
 
 function PastTripsRoute() {
-  return <RequireSession><PastTripsPage /></RequireSession>
+  return (
+    <RequireSession>
+      <PastTripsPage />
+    </RequireSession>
+  )
 }

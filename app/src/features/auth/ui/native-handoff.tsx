@@ -18,15 +18,24 @@ export default function NativeLoginHandoff() {
   return (
     <Screen>
       <h1 className="text-2xl font-extrabold tracking-tight">
-        {error ? 'Sign-in did not finish' : appUrl ? 'Open Off We Go' : 'That sign-in return is invalid'}
+        {error
+          ? 'Sign-in did not finish'
+          : appUrl
+            ? 'Open Off We Go'
+            : 'That sign-in return is invalid'}
       </h1>
       <p className="hint max-w-[380px]">
-        {error || (appUrl
-          ? 'Your secure sign-in returned in this browser. Tap below to finish in the Off We Go app.'
-          : 'Start a fresh secure sign-in from the Off We Go app and try again.')}
+        {error ||
+          (appUrl
+            ? 'Your secure sign-in returned in this browser. Tap below to finish in the Off We Go app.'
+            : 'Start a fresh secure sign-in from the Off We Go app and try again.')}
       </p>
       <div className="mt-2 flex flex-col items-stretch gap-2 self-stretch">
-        {appUrl && <a className="btn btn-accent justify-center py-3" href={appUrl}>Open Off We Go app</a>}
+        {appUrl && (
+          <a className="btn btn-accent justify-center py-3" href={appUrl}>
+            Open Off We Go app
+          </a>
+        )}
         <a className="btn btn-ghost justify-center py-3" href={webUrl}>
           {appUrl ? 'Sign in on the website instead' : 'Go to Off We Go'}
         </a>

@@ -6,7 +6,10 @@ import sharp from 'sharp'
 import { createMobileTracker } from '../src/mobile-tracking-core.ts'
 import * as mobilePhotos from '../src/mobile-photos-core.ts'
 import {
-  browserLoginHandoffFromUrl, completeNativeLogin, loginHandoffFromUrl, nativeAppUrlFromUrl,
+  browserLoginHandoffFromUrl,
+  completeNativeLogin,
+  loginHandoffFromUrl,
+  nativeAppUrlFromUrl,
 } from '../src/mobile-auth-core.ts'
 
 const { galleryPhotosToFiles } = mobilePhotos
@@ -20,9 +23,15 @@ afterEach(async () => {
 function memoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial))
   return {
-    async get({ key }) { return { value: values.get(key) ?? null } },
-    async set({ key, value }) { values.set(key, value) },
-    async remove({ key }) { values.delete(key) },
+    async get({ key }) {
+      return { value: values.get(key) ?? null }
+    },
+    async set({ key, value }) {
+      values.set(key, value)
+    },
+    async remove({ key }) {
+      values.delete(key)
+    },
   }
 }
 
@@ -43,7 +52,12 @@ test('a permanently rejected fix is discarded so a later fix can be delivered', 
   })
   const driver = locationDriver()
   const tracker = createMobileTracker({ driver, storage: memoryStorage(), fetch })
-  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
 
   await driver.emit({ latitude: 51, longitude: -1, time: 1_788_000_000_000 })
   await driver.emit({ latitude: 52, longitude: -2, time: 1_788_000_030_000 })
@@ -61,7 +75,12 @@ test('a revoked device token stops location services and clears saved fixes', as
   const storage = memoryStorage()
   const driver = locationDriver()
   const tracker = createMobileTracker({ driver, storage, fetch })
-  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
 
   await driver.emit({ latitude: 51, longitude: -1, time: 1_788_000_000_000 })
 
@@ -83,14 +102,21 @@ test('offline fixes older than the server retention window are removed without t
   const now = 1_800_000_000_000
   const staleAt = now - 31 * 24 * 60 * 60 * 1000
   const storage = memoryStorage({
-    'wayfare.mobile-tracking.queue.v1': JSON.stringify([{
-      at: staleAt,
-      payload: { _type: 'location', lat: 51, lon: -1, tst: Math.floor(staleAt / 1000) },
-    }]),
+    'wayfare.mobile-tracking.queue.v1': JSON.stringify([
+      {
+        at: staleAt,
+        payload: { _type: 'location', lat: 51, lon: -1, tst: Math.floor(staleAt / 1000) },
+      },
+    ]),
   })
   const tracker = createMobileTracker({ driver: locationDriver(), storage, fetch, now: () => now })
 
-  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
 
   assert.equal(requests, 0)
   assert.equal(tracker.getState().queued, 0)
@@ -115,7 +141,12 @@ test('Retry-After prevents background fixes from hammering a rate-limited backen
   })
   const driver = locationDriver()
   const tracker = createMobileTracker({ driver, storage: memoryStorage(), fetch, now: () => clock })
-  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
 
   await driver.emit({ latitude: 51, longitude: -1, time: clock })
   clock += 30_000
@@ -139,8 +170,12 @@ function locationDriver() {
       callback = next
       return 'watch-1'
     },
-    async removeWatcher({ id }) { this.removed.push(id) },
-    async emit(location, error) { return callback(location, error) },
+    async removeWatcher({ id }) {
+      this.removed.push(id)
+    },
+    async emit(location, error) {
+      return callback(location, error)
+    },
   }
 }
 
@@ -164,8 +199,10 @@ test('background location tells the user that Off We Go is sharing their positio
   })
 
   assert.equal(driver.options.backgroundTitle, 'Off We Go location sharing')
-  assert.equal(driver.options.backgroundMessage,
-    'Your trip location is being shared with your Off We Go group.')
+  assert.equal(
+    driver.options.backgroundMessage,
+    'Your trip location is being shared with your Off We Go group.',
+  )
   await tracker.stop()
 })
 
@@ -174,14 +211,23 @@ test('a background location is authenticated and transmitted in the backend OwnT
   const url = await endpoint(async (request, response) => {
     let body = ''
     for await (const chunk of request) body += chunk
-    received.push({ method: request.method, authorization: request.headers.authorization, body: JSON.parse(body) })
+    received.push({
+      method: request.method,
+      authorization: request.headers.authorization,
+      body: JSON.parse(body),
+    })
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end('[]')
   })
   const driver = locationDriver()
   const tracker = createMobileTracker({ driver, storage: memoryStorage(), fetch })
 
-  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: "Sample iPhone" })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Sample iPhone',
+  })
   await driver.emit({
     latitude: 52.370216,
     longitude: 4.895168,
@@ -193,20 +239,22 @@ test('a background location is authenticated and transmitted in the backend OwnT
     simulated: false,
   })
 
-  assert.deepEqual(received, [{
-    method: 'POST',
-    authorization: 'Bearer device-token-at-least-sixteen',
-    body: {
-      _type: 'location',
-      lat: 52.370216,
-      lon: 4.895168,
-      tst: 1_788_000_123,
-      acc: 7,
-      alt: 14,
-      vel: 5.4,
-      cog: 123,
+  assert.deepEqual(received, [
+    {
+      method: 'POST',
+      authorization: 'Bearer device-token-at-least-sixteen',
+      body: {
+        _type: 'location',
+        lat: 52.370216,
+        lon: 4.895168,
+        tst: 1_788_000_123,
+        acc: 7,
+        alt: 14,
+        vel: 5.4,
+        cog: 123,
+      },
     },
-  }])
+  ])
   assert.equal(tracker.getState().status, 'tracking')
   assert.equal(tracker.getState().lastSentAt, 1_788_000_123_456)
   assert.equal(driver.options.requestPermissions, true)
@@ -231,7 +279,12 @@ test('an offline fix is queued and delivered before the next live fix', async ()
   const storage = memoryStorage()
   const driver = locationDriver()
   const tracker = createMobileTracker({ driver, storage, fetch })
-  await tracker.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
 
   await driver.emit({ latitude: 51, longitude: -1, accuracy: 9, speed: 0, time: 1_788_000_000_000 })
   assert.equal(tracker.getState().queued, 1)
@@ -240,7 +293,13 @@ test('an offline fix is queued and delivered before the next live fix', async ()
   available = true
   await driver.emit({ latitude: 52, longitude: -2, accuracy: 8, speed: 2, time: 1_788_000_030_000 })
 
-  assert.deepEqual(received.map(fix => [fix.lat, fix.lon]), [[51, -1], [52, -2]])
+  assert.deepEqual(
+    received.map(fix => [fix.lat, fix.lon]),
+    [
+      [51, -1],
+      [52, -2],
+    ],
+  )
   assert.equal(tracker.getState().queued, 0)
   assert.equal(tracker.getState().status, 'tracking')
 })
@@ -253,7 +312,12 @@ test('saved tracking configuration restarts until the user pauses it', async () 
   const storage = memoryStorage()
   const firstDriver = locationDriver()
   const first = createMobileTracker({ driver: firstDriver, storage, fetch })
-  await first.configure({ endpoint: url, token: 'device-token-at-least-sixteen', deviceId: 'phone-1', name: 'Phone' })
+  await first.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
 
   const relaunchedDriver = locationDriver()
   const relaunched = createMobileTracker({ driver: relaunchedDriver, storage, fetch })
@@ -300,10 +364,15 @@ test('Android requests notification access before starting background location',
     },
   }
   const driver = platformCore.createNativeLocationDriver({
-    backgroundGeolocation, localNotifications, platform: 'android',
+    backgroundGeolocation,
+    localNotifications,
+    platform: 'android',
   })
 
-  assert.equal(await driver.addWatcher({ backgroundTitle: 'Off We Go location sharing' }, () => {}), 'watch-1')
+  assert.equal(
+    await driver.addWatcher({ backgroundTitle: 'Off We Go location sharing' }, () => {}),
+    'watch-1',
+  )
   assert.deepEqual(events, ['check-notifications', 'request-notifications', 'location'])
 })
 
@@ -313,12 +382,18 @@ test('Android does not start background location when its tracking notification 
   const driver = createNativeLocationDriver({
     platform: 'android',
     backgroundGeolocation: {
-      async addWatcher() { started = true },
+      async addWatcher() {
+        started = true
+      },
       async removeWatcher() {},
     },
     localNotifications: {
-      async checkPermissions() { return { display: 'denied' } },
-      async requestPermissions() { return { display: 'denied' } },
+      async checkPermissions() {
+        return { display: 'denied' }
+      },
+      async requestPermissions() {
+        return { display: 'denied' }
+      },
     },
   })
 
@@ -340,7 +415,11 @@ test('Android sends background fixes through native HTTP after the WebView is th
     },
   }
   const backgroundFetch = platformCore.createNativeTrackingFetch({
-    nativeHttp, platform: 'android', webFetch: async () => { throw new Error('WebView fetch used') },
+    nativeHttp,
+    platform: 'android',
+    webFetch: async () => {
+      throw new Error('WebView fetch used')
+    },
   })
 
   const response = await backgroundFetch('https://offwego.example.com/api/ingest/track', {
@@ -361,18 +440,28 @@ test('Android sends background fixes through native HTTP after the WebView is th
 })
 
 test('Apple Photos selections become uploadable JPEG files in selection order', async () => {
-  const files = await galleryPhotosToFiles([
-    { webPath: 'data:image/jpeg;base64,AQID', format: 'jpeg', exif: {
-      DateTimeOriginal: '2026:08:30 14:20:00',
-      GPS: { Latitude: 52.370216, LatitudeRef: 'N', Longitude: 4.895168, LongitudeRef: 'E' },
-    } },
-    { webPath: 'data:image/jpeg;base64,BAUG', format: 'jpeg' },
-  ], { fetch, stamp: 1_788_000_000_000 })
+  const files = await galleryPhotosToFiles(
+    [
+      {
+        webPath: 'data:image/jpeg;base64,AQID',
+        format: 'jpeg',
+        exif: {
+          DateTimeOriginal: '2026:08:30 14:20:00',
+          GPS: { Latitude: 52.370216, LatitudeRef: 'N', Longitude: 4.895168, LongitudeRef: 'E' },
+        },
+      },
+      { webPath: 'data:image/jpeg;base64,BAUG', format: 'jpeg' },
+    ],
+    { fetch, stamp: 1_788_000_000_000 },
+  )
 
-  assert.deepEqual(files.map(file => ({ name: file.name, type: file.type, size: file.size })), [
-    { name: 'offwego-1788000000000-1.jpg', type: 'image/jpeg', size: 3 },
-    { name: 'offwego-1788000000000-2.jpg', type: 'image/jpeg', size: 3 },
-  ])
+  assert.deepEqual(
+    files.map(file => ({ name: file.name, type: file.type, size: file.size })),
+    [
+      { name: 'offwego-1788000000000-1.jpg', type: 'image/jpeg', size: 3 },
+      { name: 'offwego-1788000000000-2.jpg', type: 'image/jpeg', size: 3 },
+    ],
+  )
   assert.deepEqual(files[0].offwegoMetadata, {
     lat: 52.370216,
     lng: 4.895168,
@@ -381,74 +470,150 @@ test('Apple Photos selections become uploadable JPEG files in selection order', 
 })
 
 test('an older photo without EXIF coordinates reaches the backend without the current live position', () => {
-  assert.ok(mobilePhotos.photoUploadMetadata, 'photo upload metadata forwarding has not been implemented')
-  assert.deepEqual(mobilePhotos.photoUploadMetadata({
-    caption: 'Old bridge', stopId: null, when: '2026-08-01T12:00:00.000Z', order: 2,
-  }, { by: 'Maya', nextSequence: 10 }), {
-    caption: 'Old bridge', stopId: null, when: '2026-08-01T12:00:00.000Z',
-    by: 'Maya', seq: 12,
-  })
-  assert.deepEqual(mobilePhotos.photoUploadMetadata({
-    caption: 'Harbour', stopId: 'stop-1', lng: 4.9, lat: 52.3,
-    locationSource: 'exif', uploadKey: 'photo-retry-key-1234', when: '2026-08-01T12:01:00.000Z', order: 0,
-  }, { by: 'Maya', nextSequence: 10 }), {
-    caption: 'Harbour', stopId: 'stop-1', lng: 4.9, lat: 52.3,
-    locationSource: 'exif', uploadKey: 'photo-retry-key-1234',
-    when: '2026-08-01T12:01:00.000Z', by: 'Maya', seq: 10,
-  })
-  assert.deepEqual(mobilePhotos.photoUploadMetadata({
-    caption: 'Fallback', fallbackLng: -104.617, fallbackLat: 50.4548,
-    fallbackLocationSource: 'approximate', when: '2026-08-01T12:02:00.000Z',
-  }, { by: 'Maya', nextSequence: 11 }), {
-    caption: 'Fallback', stopId: null, when: '2026-08-01T12:02:00.000Z', by: 'Maya', seq: 11,
-    fallbackLng: -104.617, fallbackLat: 50.4548, fallbackLocationSource: 'approximate',
-  })
+  assert.ok(
+    mobilePhotos.photoUploadMetadata,
+    'photo upload metadata forwarding has not been implemented',
+  )
+  assert.deepEqual(
+    mobilePhotos.photoUploadMetadata(
+      {
+        caption: 'Old bridge',
+        stopId: null,
+        when: '2026-08-01T12:00:00.000Z',
+        order: 2,
+      },
+      { by: 'Maya', nextSequence: 10 },
+    ),
+    {
+      caption: 'Old bridge',
+      stopId: null,
+      when: '2026-08-01T12:00:00.000Z',
+      by: 'Maya',
+      seq: 12,
+    },
+  )
+  assert.deepEqual(
+    mobilePhotos.photoUploadMetadata(
+      {
+        caption: 'Harbour',
+        stopId: 'stop-1',
+        lng: 4.9,
+        lat: 52.3,
+        locationSource: 'exif',
+        uploadKey: 'photo-retry-key-1234',
+        when: '2026-08-01T12:01:00.000Z',
+        order: 0,
+      },
+      { by: 'Maya', nextSequence: 10 },
+    ),
+    {
+      caption: 'Harbour',
+      stopId: 'stop-1',
+      lng: 4.9,
+      lat: 52.3,
+      locationSource: 'exif',
+      uploadKey: 'photo-retry-key-1234',
+      when: '2026-08-01T12:01:00.000Z',
+      by: 'Maya',
+      seq: 10,
+    },
+  )
+  assert.deepEqual(
+    mobilePhotos.photoUploadMetadata(
+      {
+        caption: 'Fallback',
+        fallbackLng: -104.617,
+        fallbackLat: 50.4548,
+        fallbackLocationSource: 'approximate',
+        when: '2026-08-01T12:02:00.000Z',
+      },
+      { by: 'Maya', nextSequence: 11 },
+    ),
+    {
+      caption: 'Fallback',
+      stopId: null,
+      when: '2026-08-01T12:02:00.000Z',
+      by: 'Maya',
+      seq: 11,
+      fallbackLng: -104.617,
+      fallbackLat: 50.4548,
+      fallbackLocationSource: 'approximate',
+    },
+  )
 })
 
 test('photo metadata accepts Android rational GPS and browser file EXIF', async () => {
-  const android = await galleryPhotosToFiles([{
-    webPath: 'data:image/jpeg;base64,AQID', format: 'jpeg', exif: {
-      GPSLatitude: '52/1,22/1,127778/10000', GPSLatitudeRef: 'N',
-      GPSLongitude: '4/1,53/1,42605/10000', GPSLongitudeRef: 'E',
-      DateTimeOriginal: '2026:08:30 14:20:00',
-    },
-  }], { fetch, stamp: 1_788_000_000_000 })
+  const android = await galleryPhotosToFiles(
+    [
+      {
+        webPath: 'data:image/jpeg;base64,AQID',
+        format: 'jpeg',
+        exif: {
+          GPSLatitude: '52/1,22/1,127778/10000',
+          GPSLatitudeRef: 'N',
+          GPSLongitude: '4/1,53/1,42605/10000',
+          GPSLongitudeRef: 'E',
+          DateTimeOriginal: '2026:08:30 14:20:00',
+        },
+      },
+    ],
+    { fetch, stamp: 1_788_000_000_000 },
+  )
   assert.equal(Number(android[0].offwegoMetadata.lat.toFixed(6)), 52.370216)
   assert.equal(Number(android[0].offwegoMetadata.lng.toFixed(6)), 4.884517)
 
-  assert.ok(mobilePhotos.readPhotoFilesMetadata, 'browser photo EXIF reading has not been implemented')
+  assert.ok(
+    mobilePhotos.readPhotoFilesMetadata,
+    'browser photo EXIF reading has not been implemented',
+  )
   const browserFile = new File([new Uint8Array([1, 2, 3])], 'iphone.heic', { type: 'image/heic' })
   await mobilePhotos.readPhotoFilesMetadata([browserFile], {
     parseExif: async file => {
       assert.equal(file, browserFile)
       return {
-        latitude: -33.8568, longitude: 151.2153,
+        latitude: -33.8568,
+        longitude: 151.2153,
         DateTimeOriginal: new Date('2026-08-30T04:20:00.000Z'),
       }
     },
   })
   assert.deepEqual(browserFile.offwegoMetadata, {
-    lat: -33.8568, lng: 151.2153, takenAt: '2026-08-30T04:20:00.000Z',
+    lat: -33.8568,
+    lng: 151.2153,
+    takenAt: '2026-08-30T04:20:00.000Z',
   })
 
-  assert.ok(mobilePhotos.preparePhotoFilesForUpload, 'browser HEIC conversion has not been implemented')
+  assert.ok(
+    mobilePhotos.preparePhotoFilesForUpload,
+    'browser HEIC conversion has not been implemented',
+  )
   const converted = await mobilePhotos.preparePhotoFilesForUpload([browserFile], {
     parseExif: async () => ({ latitude: -33.8568, longitude: 151.2153 }),
     isHeic: async () => true,
-    convertHeic: async () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }),
+    convertHeic: async () =>
+      new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }),
   })
   assert.equal(converted[0].name, 'iphone.jpg')
   assert.equal(converted[0].type, 'image/jpeg')
   assert.deepEqual(converted[0].offwegoMetadata, {
-    lat: -33.8568, lng: 151.2153, takenAt: '2026-08-30T04:20:00.000Z',
+    lat: -33.8568,
+    lng: 151.2153,
+    takenAt: '2026-08-30T04:20:00.000Z',
   })
 
   const jpeg = await sharp({
     create: { width: 2, height: 2, channels: 3, background: '#336699' },
-  }).jpeg().withExif({ IFD3: {
-    GPSLatitudeRef: 'S', GPSLatitude: '33/1 51/1 2448/100',
-    GPSLongitudeRef: 'E', GPSLongitude: '151/1 12/1 5508/100',
-  } }).toBuffer()
+  })
+    .jpeg()
+    .withExif({
+      IFD3: {
+        GPSLatitudeRef: 'S',
+        GPSLatitude: '33/1 51/1 2448/100',
+        GPSLongitudeRef: 'E',
+        GPSLongitude: '151/1 12/1 5508/100',
+      },
+    })
+    .toBuffer()
   const actualExif = new Uint8Array(jpeg)
   await mobilePhotos.readPhotoFilesMetadata([actualExif])
   assert.equal(actualExif.offwegoMetadata.lat, -33.8568)
@@ -457,35 +622,72 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
 
 test('photo placement distinguishes embedded GPS from a displayed fallback position', () => {
   assert.ok(mobilePhotos.photoPlacement, 'photo placement inspection has not been implemented')
-  const stops = [{ id: 'edinburgh', name: 'Edinburgh', lng: -3.1880, lat: 55.9530 }]
+  const stops = [{ id: 'edinburgh', name: 'Edinburgh', lng: -3.188, lat: 55.953 }]
 
-  assert.deepEqual(mobilePhotos.photoPlacement({ offwegoMetadata: {
-    lng: -3.1883, lat: 55.9533, takenAt: '2026-08-31T12:00:00.000Z',
-  } }, { live: [4.8686, 52.3664], stops }), {
-    point: [-3.1883, 55.9533], fallbackPoint: null, previewPoint: [-3.1883, 55.9533],
-    stopId: 'edinburgh', stopName: 'Edinburgh', source: 'exif', hasEmbeddedGps: true,
-  })
+  assert.deepEqual(
+    mobilePhotos.photoPlacement(
+      {
+        offwegoMetadata: {
+          lng: -3.1883,
+          lat: 55.9533,
+          takenAt: '2026-08-31T12:00:00.000Z',
+        },
+      },
+      { live: [4.8686, 52.3664], stops },
+    ),
+    {
+      point: [-3.1883, 55.9533],
+      fallbackPoint: null,
+      previewPoint: [-3.1883, 55.9533],
+      stopId: 'edinburgh',
+      stopName: 'Edinburgh',
+      source: 'exif',
+      hasEmbeddedGps: true,
+    },
+  )
 
-  assert.deepEqual(mobilePhotos.photoPlacement({ offwegoMetadata: {
-    takenAt: '2026-08-31T12:00:00.000Z',
-  } }, { live: [4.8686, 52.3664], stops, fallbackSource: 'approximate' }), {
-    point: null, fallbackPoint: [4.8686, 52.3664], previewPoint: [4.8686, 52.3664],
-    stopId: null, stopName: null, source: 'history', fallbackSource: 'approximate', hasEmbeddedGps: false,
-  })
+  assert.deepEqual(
+    mobilePhotos.photoPlacement(
+      {
+        offwegoMetadata: {
+          takenAt: '2026-08-31T12:00:00.000Z',
+        },
+      },
+      { live: [4.8686, 52.3664], stops, fallbackSource: 'approximate' },
+    ),
+    {
+      point: null,
+      fallbackPoint: [4.8686, 52.3664],
+      previewPoint: [4.8686, 52.3664],
+      stopId: null,
+      stopName: null,
+      source: 'history',
+      fallbackSource: 'approximate',
+      hasEmbeddedGps: false,
+    },
+  )
 })
 
 test('photo placement never substitutes an itinerary coordinate for missing GPS', () => {
   const stops = [{ id: 'planned', name: 'Planned stop', lng: 4.9, lat: 52.4 }]
 
   assert.deepEqual(mobilePhotos.photoPlacement({}, { live: null, stops }), {
-    point: null, fallbackPoint: null, previewPoint: null,
-    stopId: null, stopName: null, source: 'live', hasEmbeddedGps: false,
+    point: null,
+    fallbackPoint: null,
+    previewPoint: null,
+    stopId: null,
+    stopName: null,
+    source: 'live',
+    hasEmbeddedGps: false,
   })
 })
 
 test('an Off We Go OIDC callback exposes the one-time login handoff', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
-  assert.equal(loginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), token)
+  assert.equal(
+    loginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`),
+    token,
+  )
   assert.equal(loginHandoffFromUrl(`https://offwego.example.com/auth/native?token=${token}`), token)
   assert.equal(loginHandoffFromUrl(`wayfare://auth?token=${token}`), token)
   assert.equal(loginHandoffFromUrl('https://example.com/not-a-login'), null)
@@ -494,8 +696,14 @@ test('an Off We Go OIDC callback exposes the one-time login handoff', () => {
 
 test('the website exchanges only its callback and leaves a native handoff token untouched', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
-  assert.equal(browserLoginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), token)
-  assert.equal(browserLoginHandoffFromUrl(`https://offwego.example.com/auth/native?token=${token}`), null)
+  assert.equal(
+    browserLoginHandoffFromUrl(`https://offwego.example.com/auth/callback?token=${token}`),
+    token,
+  )
+  assert.equal(
+    browserLoginHandoffFromUrl(`https://offwego.example.com/auth/native?token=${token}`),
+    null,
+  )
   assert.equal(browserLoginHandoffFromUrl(`wayfare://auth?token=${token}`), null)
 })
 
@@ -505,14 +713,21 @@ test('an Outlook browser handoff produces an explicit Off We Go app URL', () => 
     nativeAppUrlFromUrl(`https://offwego.example.com/auth/native?token=${token}`),
     `wayfare://auth?token=${token}`,
   )
-  assert.equal(nativeAppUrlFromUrl(`https://offwego.example.com/auth/callback?token=${token}`), null)
+  assert.equal(
+    nativeAppUrlFromUrl(`https://offwego.example.com/auth/callback?token=${token}`),
+    null,
+  )
 })
 
 test('native OIDC handoff reports progress and contains exchange failures', async () => {
   const states = []
   const handled = await completeNativeLogin(
     'https://offwego.example.com/auth/callback?token=one-time-login-token-at-least-thirty-two-characters',
-    { async exchangeLoginHandoff() { throw new Error('The sign-in handoff expired') } },
+    {
+      async exchangeLoginHandoff() {
+        throw new Error('The sign-in handoff expired')
+      },
+    },
     state => states.push(state),
   )
 
@@ -532,7 +747,11 @@ test('native OIDC cancellation returns an error without attempting token exchang
   assert.equal(nativeAppUrlFromUrl(url), expectedAppUrl.href)
   const handled = await completeNativeLogin(
     url,
-    { async exchangeLoginHandoff() { throw new Error('must not exchange') } },
+    {
+      async exchangeLoginHandoff() {
+        throw new Error('must not exchange')
+      },
+    },
     state => states.push(state),
   )
   assert.equal(handled, true)

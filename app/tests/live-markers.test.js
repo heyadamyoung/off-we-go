@@ -16,7 +16,11 @@ test('a phone that has stopped reporting keeps its dot where it was last seen', 
   const markers = livePhoneMarkers({ fixes, fresh: [], phones, family })
 
   assert.equal(markers.length, 1, 'the traveller must not disappear off the map')
-  assert.deepEqual([markers[0].lng, markers[0].lat], [4.87, 52.36], 'the newest fix is the last known')
+  assert.deepEqual(
+    [markers[0].lng, markers[0].lat],
+    [4.87, 52.36],
+    'the newest fix is the last known',
+  )
   assert.equal(markers[0].stale, true)
   assert.match(markers[0].title, /^Maya · last seen /)
 })
@@ -34,14 +38,17 @@ test('a phone still reporting is live, and says how long ago plainly', () => {
 test('one dot per phone, and a phone nobody claims still gets a name', () => {
   const fixes = [
     { deviceId: 'phone-maya', lng: 4.87, lat: 52.36, at: at(5) },
-    { deviceId: 'phone-maya', lng: 4.80, lat: 52.30, at: at(40) },
+    { deviceId: 'phone-maya', lng: 4.8, lat: 52.3, at: at(40) },
     { deviceId: 'phone-unknown', lng: 4.88, lat: 52.37, at: at(9) },
   ]
 
   const markers = livePhoneMarkers({ fixes, fresh: [fixes[0]], phones, family })
 
   assert.equal(markers.length, 2)
-  assert.deepEqual(markers.map(m => m.stale), [false, true])
+  assert.deepEqual(
+    markers.map(m => m.stale),
+    [false, true],
+  )
   assert.equal(markers[1].name, 'Phone')
 })
 

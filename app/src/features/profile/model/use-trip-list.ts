@@ -13,9 +13,13 @@ export function useTripList() {
     if (!ready) return
     let alive = true
     loadLanding(session)
-      .then(landing => { if (alive) setTrips(landing.trips || []) })
+      .then(landing => {
+        if (alive) setTrips(landing.trips || [])
+      })
       .catch(() => {})
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [ready, session])
 
   return { trips }

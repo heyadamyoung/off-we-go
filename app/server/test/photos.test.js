@@ -12,7 +12,11 @@ const filesModule = await import('../src/files.js').catch(() => null)
 
 async function post(url, body, token) {
   return fetch(url, {
-    method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   })
 }
@@ -27,7 +31,11 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   const app = await buildServer({
     repository,
     fileStore: filesModule.createDiskFileStore({ directory }),
-    mailer: { async send(message) { sent.push(message) } },
+    mailer: {
+      async send(message) {
+        sent.push(message)
+      },
+    },
     publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
   })
@@ -41,7 +49,9 @@ test('a photo upload stores resized derivatives and returns an expiring private 
 
   const source = await sharp({
     create: { width: 3200, height: 2400, channels: 3, background: '#c87842' },
-  }).jpeg({ quality: 95 }).toBuffer()
+  })
+    .jpeg({ quality: 95 })
+    .toBuffer()
   const form = new FormData()
   form.set('file', new Blob([source], { type: 'image/jpeg' }), 'IMG_0001.jpg')
   form.set('caption', 'On the ridge')
@@ -52,7 +62,9 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   form.set('uploadKey', '01J8PHOTOUPLOADKEY000000000001')
 
   const uploaded = await fetch(`${origin}/api/trips/${trip.id}/photos`, {
-    method: 'POST', headers: { authorization: `Bearer ${accessToken}` }, body: form,
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}` },
+    body: form,
   })
   assert.equal(uploaded.status, 201)
   const photo = await uploaded.json()
@@ -80,7 +92,9 @@ test('a photo upload stores resized derivatives and returns an expiring private 
   retryForm.set('caption', 'On the ridge')
   retryForm.set('uploadKey', '01J8PHOTOUPLOADKEY000000000001')
   const retried = await fetch(`${origin}/api/trips/${trip.id}/photos`, {
-    method: 'POST', headers: { authorization: `Bearer ${accessToken}` }, body: retryForm,
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}` },
+    body: retryForm,
   })
   assert.equal(retried.status, 200)
   assert.equal((await retried.json()).id, photo.id)

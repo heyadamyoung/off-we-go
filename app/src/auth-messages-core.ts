@@ -9,8 +9,10 @@ const messagesByCode: Record<string, string> = {
   'auth.account_exists': 'An account already exists for this email. Sign in instead.',
   'user.invalid_email': 'Enter a valid email address.',
   'session.email_blocklist.invalid_email': 'Enter a valid email address.',
-  'session.email_blocklist.email_not_allowed': 'This email address cannot be used. Try a different email.',
-  'session.email_blocklist.disposable_email_validation_failed': 'Use a permanent email address to create your account.',
+  'session.email_blocklist.email_not_allowed':
+    'This email address cannot be used. Try a different email.',
+  'session.email_blocklist.disposable_email_validation_failed':
+    'Use a permanent email address to create your account.',
   'session.invalid_credentials': 'That email or password is incorrect.',
   'auth.invalid_credentials': 'That email or password is incorrect.',
   'user.email_not_exist': 'That email or password is incorrect.',
@@ -29,19 +31,26 @@ const messagesByCode: Record<string, string> = {
   'verification_code.exceed_max_try': 'Too many incorrect codes. Request a new code.',
   'auth.code_attempts_exceeded': 'Too many incorrect codes. Request a new code.',
   'session.interaction_not_found': 'Your sign-in attempt expired. Start again.',
-  'session.verification_session_not_found': 'Your verification attempt expired. Request a new code.',
+  'session.verification_session_not_found':
+    'Your verification attempt expired. Request a new code.',
   'session.verification_expired': 'Your verification attempt expired. Request a new code.',
   'auth.attempt_expired': 'Your sign-in attempt expired. Start again.',
-  'session.verification_blocked_too_many_attempts': 'Too many attempts. Wait a moment, then try again.',
+  'session.verification_blocked_too_many_attempts':
+    'Too many attempts. Wait a moment, then try again.',
   'connector.rate_limit_exceeded': 'Too many attempts. Wait a moment, then try again.',
   'auth.rate_limited': 'Too many attempts. Wait a moment, then try again.',
   'connector.not_found': 'Email verification is temporarily unavailable. Please try again later.',
   'connector.not_enabled': 'Email verification is temporarily unavailable. Please try again later.',
-  'connector.invalid_config': 'Email verification is temporarily unavailable. Please try again later.',
-  'connector.template_not_found': 'Email verification is temporarily unavailable. Please try again later.',
-  'auth.email_delivery_unavailable': 'Email verification is temporarily unavailable. Please try again later.',
-  'user.sign_up_method_not_enabled': 'Account creation is temporarily unavailable. Please try again later.',
-  'auth.profile_incomplete': 'Your account details are incomplete. Check your handle and try again.',
+  'connector.invalid_config':
+    'Email verification is temporarily unavailable. Please try again later.',
+  'connector.template_not_found':
+    'Email verification is temporarily unavailable. Please try again later.',
+  'auth.email_delivery_unavailable':
+    'Email verification is temporarily unavailable. Please try again later.',
+  'user.sign_up_method_not_enabled':
+    'Account creation is temporarily unavailable. Please try again later.',
+  'auth.profile_incomplete':
+    'Your account details are incomplete. Check your handle and try again.',
 }
 
 const fallbacks: Record<AuthAction, { invalid: string; unavailable: string }> = {
@@ -64,7 +73,8 @@ export function authErrorMessage(caught: unknown, action: AuthAction) {
   const code = String(error?.code || '')
   if (messagesByCode[code]) return messagesByCode[code]
   if (error?.status === 429) return 'Too many attempts. Wait a moment, then try again.'
-  if (error?.status === 0 || caught instanceof TypeError) return 'Check your internet connection and try again.'
+  if (error?.status === 0 || caught instanceof TypeError)
+    return 'Check your internet connection and try again.'
   if (Number(error?.status) >= 500) return fallbacks[action].unavailable
   return fallbacks[action].invalid
 }
@@ -83,7 +93,9 @@ export function authCallbackMessage(value: unknown) {
   if (message === 'The identity provider could not verify this sign-in') {
     return 'We could not verify your sign-in. Please try again.'
   }
-  if (message === 'A verified email address is required to sign in') return 'Use an account with a verified email address.'
-  if (message === 'That sign-in attempt is invalid or has expired') return 'Your sign-in attempt expired. Start again.'
+  if (message === 'A verified email address is required to sign in')
+    return 'Use an account with a verified email address.'
+  if (message === 'That sign-in attempt is invalid or has expired')
+    return 'Your sign-in attempt expired. Start again.'
   return 'Sign-in did not finish. Please try again.'
 }

@@ -5,10 +5,12 @@ import { test, expect } from '@playwright/test'
 
 test.describe.configure({ mode: 'parallel' })
 test.beforeEach(async ({ page }) => {
-  await page.route('https://en.wikipedia.org/**', route => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
-  }))
+  await page.route('https://en.wikipedia.org/**', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
+    }),
+  )
 })
 
 const MAP_READY = 9000
@@ -69,7 +71,9 @@ test('the account menu reaches every screen that is not a trip', async ({ page }
   await expect(page).toHaveURL('/')
 })
 
-test('the settings page keeps its notification and privacy choices in the URL-free store', async ({ page }) => {
+test('the settings page keeps its notification and privacy choices in the URL-free store', async ({
+  page,
+}) => {
   // These live under Alerts since the profile was broken into tabs; the choices
   // themselves are still nowhere near the address bar.
   await page.goto('/profile?tab=alerts')
@@ -83,8 +87,9 @@ test('the settings page keeps its notification and privacy choices in the URL-fr
   await expect(toggle).toBeChecked()
 
   // Privacy defaults to the middle option rather than the most open one.
-  await expect(page.locator('label', { hasText: "People I've travelled or followed with" })
-    .locator('input')).toBeChecked({ timeout: 5000 })
+  await expect(
+    page.locator('label', { hasText: "People I've travelled or followed with" }).locator('input'),
+  ).toBeChecked({ timeout: 5000 })
 })
 
 test('the new trip wizard walks three steps and can be left at any of them', async ({ page }) => {
@@ -119,10 +124,16 @@ test('invitations and past trips are their own pages, reachable from home', asyn
   await expect(page.getByRole('heading', { name: 'Past trips' })).toBeVisible()
 })
 
-test('publishes the Off We Go mark for browser and installed web app icons', async ({ page, request }) => {
+test('publishes the Off We Go mark for browser and installed web app icons', async ({
+  page,
+  request,
+}) => {
   await page.goto('/')
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.ico')
-  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', '/apple-touch-icon.png')
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+    'href',
+    '/apple-touch-icon.png',
+  )
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/site.webmanifest')
 
   for (const path of ['/favicon.ico', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png']) {
@@ -140,20 +151,28 @@ test('the dashboard keeps its brandmark compact beside the wordmark', async ({ p
   expect(bounds?.height).toBeLessThanOrEqual(48)
 })
 
-test('the viewport allows pinch zoom, covers the notch, and yields to the keyboard', async ({ page }) => {
+test('the viewport allows pinch zoom, covers the notch, and yields to the keyboard', async ({
+  page,
+}) => {
   await page.goto('/')
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
     'content',
-    'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content')
+    'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content',
+  )
 })
 
 test('an OIDC browser return can hand sign-in back to the installed app', async ({ page }) => {
   await page.goto('/auth/native?token=handoff-token-value-long-enough-to-be-real')
   await expect(page.getByRole('heading', { name: 'Open Off We Go' })).toBeVisible()
   const open = page.getByRole('link', { name: 'Open Off We Go app' })
-  await expect(open).toHaveAttribute('href', /^wayfare:\/\/auth\?token=handoff-token-value-long-enough-to-be-real$/)
-  await expect(page.getByRole('link', { name: 'Sign in on the website instead' }))
-    .toHaveAttribute('href', '/auth/callback?token=handoff-token-value-long-enough-to-be-real')
+  await expect(open).toHaveAttribute(
+    'href',
+    /^wayfare:\/\/auth\?token=handoff-token-value-long-enough-to-be-real$/,
+  )
+  await expect(page.getByRole('link', { name: 'Sign in on the website instead' })).toHaveAttribute(
+    'href',
+    '/auth/callback?token=handoff-token-value-long-enough-to-be-real',
+  )
 })
 
 test('a failed sign-in return explains itself rather than looping', async ({ page }) => {
@@ -184,10 +203,14 @@ test('the profile is broken into tabs, and a tab can be linked to', async ({ pag
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/profile?tab=data')
 
-  await expect(page.getByRole('button', { name: 'Delete my account…' }),
-    'a linked tab should open on that section').toBeVisible()
-  await expect(page.getByText('Home base marks where each trip leaves'),
-    'the other sections should not also be on the page').toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Delete my account…' }),
+    'a linked tab should open on that section',
+  ).toBeVisible()
+  await expect(
+    page.getByText('Home base marks where each trip leaves'),
+    'the other sections should not also be on the page',
+  ).toHaveCount(0)
 
   const tabs = page.locator('main').getByRole('button', { name: 'Profile', exact: true })
   await tabs.click()
@@ -226,7 +249,10 @@ test('the dashboard chrome is positioned below the notch, not under it', async (
     return [bar.className, column.className]
   })
 
-  for (const [what, className] of [['top bar', positioned[0]], ['content', positioned[1]]]) {
+  for (const [what, className] of [
+    ['top bar', positioned[0]],
+    ['content', positioned[1]],
+  ]) {
     expect(className, `the dashboard ${what} ignores the safe area`).toMatch(/safe-area-inset-top/)
   }
 })
@@ -304,8 +330,9 @@ test('no screen creates a wider layout than the phone it is on', async ({ page }
   for (const path of ['/', '/profile', '/new', '/past', '/invitations']) {
     await page.goto(path)
     await page.waitForTimeout(300)
-    const overflow = await page.evaluate(() =>
-      document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    )
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(1)
   }
 })

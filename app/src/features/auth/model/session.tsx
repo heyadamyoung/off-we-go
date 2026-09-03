@@ -25,9 +25,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSession(authClient.getSession())
         setReady(true)
       })
-      .catch(() => { if (alive) setReady(true) })
+      .catch(() => {
+        if (alive) setReady(true)
+      })
     const unsubscribe = authClient.subscribe(setSession)
-    return () => { alive = false; unsubscribe() }
+    return () => {
+      alive = false
+      unsubscribe()
+    }
   }, [])
 
   const value = useMemo(() => ({ session, ready }), [session, ready])

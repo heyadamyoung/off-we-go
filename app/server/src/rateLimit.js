@@ -25,6 +25,8 @@ export function createWindowRateLimiter({ clock = Date.now, maxEntries = 10_000 
       value.count++
       return value.count > max ? Math.max(1, Math.ceil((value.expiresAt - now) / 1000)) : 0
     },
-    size() { return windows.size },
+    size() {
+      return windows.size
+    },
   }
 }

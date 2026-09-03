@@ -24,25 +24,34 @@ export interface Preferences {
 
 export const NOTIFICATIONS = [
   {
-    key: 'photos', label: 'New photos on trips I follow',
-    detail: 'Batched, at most once an hour', channels: ['push', 'email'] as Channel[],
+    key: 'photos',
+    label: 'New photos on trips I follow',
+    detail: 'Batched, at most once an hour',
+    channels: ['push', 'email'] as Channel[],
   },
   {
-    key: 'arrivals', label: 'Travellers arrive somewhere new',
-    detail: 'Landed, checked in, crossed a border', channels: ['push'] as Channel[],
+    key: 'arrivals',
+    label: 'Travellers arrive somewhere new',
+    detail: 'Landed, checked in, crossed a border',
+    channels: ['push'] as Channel[],
   },
   {
-    key: 'social', label: 'Comments and likes on my photos',
-    detail: '', channels: ['push', 'email'] as Channel[],
+    key: 'social',
+    label: 'Comments and likes on my photos',
+    detail: '',
+    channels: ['push', 'email'] as Channel[],
   },
   {
-    key: 'digest', label: 'Daily digest while a trip is live',
+    key: 'digest',
+    label: 'Daily digest while a trip is live',
     detail: "Yesterday's route, photos and today's plan, every morning",
     channels: ['email'] as Channel[],
   },
   {
-    key: 'product', label: 'Product news from Off We Go',
-    detail: '', channels: ['email'] as Channel[],
+    key: 'product',
+    label: 'Product news from Off We Go',
+    detail: '',
+    channels: ['email'] as Channel[],
   },
 ] as const
 
@@ -76,18 +85,23 @@ const KNOWN_CHANNELS = new Set<Channel>(['push', 'email'])
    falls back to the default rather than to false. */
 export function readPreferences(stored: unknown): Preferences {
   const source = (stored && typeof stored === 'object' ? stored : {}) as Record<string, unknown>
-  const notifySource = (source.notify && typeof source.notify === 'object'
-    ? source.notify : {}) as Record<string, { on?: unknown; channels?: unknown }>
-  const privacySource = (source.privacy && typeof source.privacy === 'object'
-    ? source.privacy : {}) as Record<string, unknown>
+  const notifySource = (
+    source.notify && typeof source.notify === 'object' ? source.notify : {}
+  ) as Record<string, { on?: unknown; channels?: unknown }>
+  const privacySource = (
+    source.privacy && typeof source.privacy === 'object' ? source.privacy : {}
+  ) as Record<string, unknown>
 
   const notify = {} as Record<NotificationKey, NotificationChoice>
   for (const item of NOTIFICATIONS) {
     const fallback = DEFAULT_PREFERENCES.notify[item.key]
     const saved = notifySource[item.key]
     const channels = Array.isArray(saved?.channels)
-      ? (saved.channels as unknown[]).filter((value): value is Channel =>
-          KNOWN_CHANNELS.has(value as Channel) && (item.channels as readonly Channel[]).includes(value as Channel))
+      ? (saved.channels as unknown[]).filter(
+          (value): value is Channel =>
+            KNOWN_CHANNELS.has(value as Channel) &&
+            (item.channels as readonly Channel[]).includes(value as Channel),
+        )
       : fallback.channels
     notify[item.key] = {
       on: typeof saved?.on === 'boolean' ? saved.on : fallback.on,

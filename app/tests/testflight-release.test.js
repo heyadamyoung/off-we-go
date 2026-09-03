@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
 import test from 'node:test'
-import { buildToken, chooseGroups, findBuild, isReady, shouldNotify } from '../scripts/testflightRelease.mjs'
+import {
+  buildToken,
+  chooseGroups,
+  findBuild,
+  isReady,
+  shouldNotify,
+} from '../scripts/testflightRelease.mjs'
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
 
@@ -16,12 +22,19 @@ test('the token is one App Store Connect will accept, and expires', () => {
   const claims = decode(payload)
   assert.equal(claims.iss, 'issuer-uuid')
   assert.equal(claims.aud, 'appstoreconnect-v1')
-  assert.equal(claims.exp - claims.iat, 1200, 'a token that never expires is a key left lying about')
+  assert.equal(
+    claims.exp - claims.iat,
+    1200,
+    'a token that never expires is a key left lying about',
+  )
 
   const verifier = createVerify('sha256')
   verifier.update(`${header}.${payload}`)
   assert.equal(
-    verifier.verify({ key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(signature, 'base64url')),
+    verifier.verify(
+      { key: publicKey, dsaEncoding: 'ieee-p1363' },
+      Buffer.from(signature, 'base64url'),
+    ),
     true,
   )
 })
@@ -42,12 +55,22 @@ const groups = [
    every processed build without being asked, and only external groups need
    the build attaching to them. */
 test('internal groups are left alone, because Apple hands them the build itself', () => {
-  assert.deepEqual(chooseGroups(groups).map(group => group.name), ['Early access'])
-  assert.deepEqual(chooseGroups(groups, ['Team', 'Family']), [], 'naming an internal group changes nothing')
+  assert.deepEqual(
+    chooseGroups(groups).map(group => group.name),
+    ['Early access'],
+  )
+  assert.deepEqual(
+    chooseGroups(groups, ['Team', 'Family']),
+    [],
+    'naming an internal group changes nothing',
+  )
 })
 
 test('naming an external group picks it, whatever its case', () => {
-  assert.deepEqual(chooseGroups(groups, ['early access']).map(group => group.id), ['2'])
+  assert.deepEqual(
+    chooseGroups(groups, ['early access']).map(group => group.id),
+    ['2'],
+  )
   assert.deepEqual(chooseGroups(groups, ['Nobody']), [])
   assert.deepEqual(chooseGroups([], []), [])
 })

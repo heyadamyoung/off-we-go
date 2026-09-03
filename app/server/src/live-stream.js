@@ -28,7 +28,11 @@ export function createLiveStream() {
       const group = watchers.get(String(tripId))
       if (!group) return 0
       for (const notify of [...group]) {
-        try { notify(kind) } catch { group.delete(notify) }
+        try {
+          notify(kind)
+        } catch {
+          group.delete(notify)
+        }
       }
       return group.size
     },

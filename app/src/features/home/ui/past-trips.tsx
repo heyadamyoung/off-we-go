@@ -30,7 +30,9 @@ export default function PastTripsPage() {
           Nothing here yet. Your trips land here the day after you come home.
         </div>
       )}
-      {past.map(trip => <PastCard key={trip.id} trip={trip} />)}
+      {past.map(trip => (
+        <PastCard key={trip.id} trip={trip} />
+      ))}
     </HomeShell>
   )
 }
@@ -56,7 +58,9 @@ function PastCard({ trip }: { trip: TripSummary }) {
       link.click()
       URL.revokeObjectURL(url)
       notify('Archive downloaded.')
-    } catch { notify('The archive could not be built just now.', 'error') }
+    } catch {
+      notify('The archive could not be built just now.', 'error')
+    }
   }
 
   return (
@@ -68,17 +72,29 @@ function PastCard({ trip }: { trip: TripSummary }) {
       <div className="flex flex-col gap-1">
         <b className="text-[17px] font-extrabold tracking-[-.01em]">{trip.title}</b>
         <span className="text-[12.5px] text-muted">
-          {[trip.dates || formatRange(trip.startsOn, trip.endsOn), trip.crew].filter(Boolean).join(' · ')}
+          {[trip.dates || formatRange(trip.startsOn, trip.endsOn), trip.crew]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
         <div className="mt-1 flex gap-4 text-xs text-muted">
           {stats.map(([value, label]) => (
-            <span key={label}><b className="tnum mr-1 text-sm text-ink">{value}</b>{label}</span>
+            <span key={label}>
+              <b className="tnum mr-1 text-sm text-ink">{value}</b>
+              {label}
+            </span>
           ))}
         </div>
         <div className="mt-auto flex items-center gap-2 pt-2">
-          <Link className="btn btn-ghost px-3.5 py-2" to="/trips/$slug"
-                params={{ slug: trip.slug }} search={{}}>Open</Link>
-          <button className="mini" onClick={download}>Download</button>
+          <Link
+            className="btn btn-ghost px-3.5 py-2"
+            to="/trips/$slug"
+            params={{ slug: trip.slug }}
+            search={{}}>
+            Open
+          </Link>
+          <button className="mini" onClick={download}>
+            Download
+          </button>
         </div>
       </div>
     </article>

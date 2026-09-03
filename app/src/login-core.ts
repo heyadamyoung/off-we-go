@@ -12,8 +12,11 @@ interface LoginStorage {
 
 export const NATIVE_OIDC_VERIFIER_KEY = 'wayfare-oidc-verifier'
 
-const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes))
-  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const base64url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
 
 async function nativeBinding() {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
@@ -22,7 +25,13 @@ async function nativeBinding() {
   return { verifier, challenge: base64url(new Uint8Array(digest)) }
 }
 
-export async function beginOidcLogin({ apiBaseUrl, native, location, browser, storage }: {
+export async function beginOidcLogin({
+  apiBaseUrl,
+  native,
+  location,
+  browser,
+  storage,
+}: {
   apiBaseUrl: string
   native: boolean
   location: LoginLocation
@@ -42,7 +51,12 @@ export async function beginOidcLogin({ apiBaseUrl, native, location, browser, st
   location.assign(url)
 }
 
-export function beginOidcLogout({ apiBaseUrl, native, location, browser }: {
+export function beginOidcLogout({
+  apiBaseUrl,
+  native,
+  location,
+  browser,
+}: {
   apiBaseUrl: string
   native: boolean
   location: LoginLocation

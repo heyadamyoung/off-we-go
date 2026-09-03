@@ -5,11 +5,14 @@ import { createMemoryRepository } from './memory-repository.js'
 
 test('the iOS WKWebView origin can preflight authenticated VPS requests but arbitrary sites cannot', async () => {
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
-    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    repository: createMemoryRepository({ allowedEmails: [] }),
+    mailer: { async send() {} },
+    publicUrl: 'https://offwego.example.com',
+    sessionSecret: 'test-secret-that-is-long-enough',
   })
   const allowed = await app.inject({
-    method: 'OPTIONS', url: '/api/trips/current',
+    method: 'OPTIONS',
+    url: '/api/trips/current',
     headers: {
       origin: 'capacitor://localhost',
       'access-control-request-method': 'GET',
@@ -21,7 +24,8 @@ test('the iOS WKWebView origin can preflight authenticated VPS requests but arbi
   assert.match(allowed.headers['access-control-allow-headers'], /authorization/i)
 
   const rejected = await app.inject({
-    method: 'OPTIONS', url: '/api/trips/current',
+    method: 'OPTIONS',
+    url: '/api/trips/current',
     headers: { origin: 'https://attacker.example', 'access-control-request-method': 'GET' },
   })
   assert.equal(rejected.headers['access-control-allow-origin'], undefined)
@@ -30,11 +34,14 @@ test('the iOS WKWebView origin can preflight authenticated VPS requests but arbi
 
 test('the Android WebView origin can preflight authenticated VPS requests', async () => {
   const app = await buildServer({
-    repository: createMemoryRepository({ allowedEmails: [] }), mailer: { async send() {} },
-    publicUrl: 'https://offwego.example.com', sessionSecret: 'test-secret-that-is-long-enough',
+    repository: createMemoryRepository({ allowedEmails: [] }),
+    mailer: { async send() {} },
+    publicUrl: 'https://offwego.example.com',
+    sessionSecret: 'test-secret-that-is-long-enough',
   })
   const response = await app.inject({
-    method: 'OPTIONS', url: '/api/trips',
+    method: 'OPTIONS',
+    url: '/api/trips',
     headers: {
       origin: 'https://localhost',
       'access-control-request-method': 'GET',

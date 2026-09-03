@@ -69,11 +69,16 @@ export function greatCircle(from: LngLat, to: LngLat, steps = 48): LngLat[] {
   return points
 }
 
-const collect = (features: LineFeature[]): LineCollection =>
-  ({ type: 'FeatureCollection', features })
+const collect = (features: LineFeature[]): LineCollection => ({
+  type: 'FeatureCollection',
+  features,
+})
 
-const leg = (coordinates: LngLat[]): LineFeature =>
-  ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } })
+const leg = (coordinates: LngLat[]): LineFeature => ({
+  type: 'Feature',
+  properties: {},
+  geometry: { type: 'LineString', coordinates },
+})
 
 /** The trip as two sets of lines: the part already travelled, and the rest. */
 export function legFeatures(places: GlobePlace[]) {

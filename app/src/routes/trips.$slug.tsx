@@ -10,5 +10,9 @@ export const Route = createFileRoute('/trips/$slug')({
 
 function TripRoute() {
   const { slug } = Route.useParams()
-  return <RequireSession><TripPage slug={slug} /></RequireSession>
+  return (
+    <RequireSession>
+      <TripPage slug={slug} />
+    </RequireSession>
+  )
 }

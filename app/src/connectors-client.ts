@@ -29,7 +29,8 @@ export async function loadConnectors(): Promise<ConnectorState> {
     in this flow that is not ours. */
 export async function startOutlookConnection(redirectTo?: string): Promise<string> {
   const result = await authClient.request<{ authorizeUrl: string }>('/connectors/outlook/start', {
-    method: 'POST', body: { redirectTo },
+    method: 'POST',
+    body: { redirectTo },
   })
   return result.authorizeUrl
 }
@@ -37,4 +38,3 @@ export async function startOutlookConnection(redirectTo?: string): Promise<strin
 export async function disconnectMailbox(id: Id): Promise<void> {
   await authClient.request(`/connectors/${id}`, { method: 'DELETE' })
 }
-

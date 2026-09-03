@@ -33,7 +33,9 @@ test('a browser that leaves stops being told', () => {
 test('a listener that throws is dropped rather than raised', () => {
   const stream = createLiveStream()
   const seen = []
-  stream.watch('trip-a', () => { throw new Error('socket closed') })
+  stream.watch('trip-a', () => {
+    throw new Error('socket closed')
+  })
   stream.watch('trip-a', () => seen.push('still delivered'))
 
   assert.doesNotThrow(() => stream.announce('trip-a'))

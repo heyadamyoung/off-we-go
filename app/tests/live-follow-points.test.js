@@ -7,8 +7,10 @@ const regina = { deviceId: 'a', lng: -104.617, lat: 50.4548, at: at(900) }
 const amsterdam = { deviceId: 'b', lng: 4.876, lat: 52.367, at: at(30) }
 
 test('everyone reporting is framed together', () => {
-  assert.deepEqual(followPoints([regina, amsterdam], [regina, amsterdam]),
-    [[-104.617, 50.4548], [4.876, 52.367]])
+  assert.deepEqual(followPoints([regina, amsterdam], [regina, amsterdam]), [
+    [-104.617, 50.4548],
+    [4.876, 52.367],
+  ])
 })
 
 /* Two phones last heard from on different continents have a midpoint in the
