@@ -9,6 +9,7 @@ import type { FeatureCollection } from 'geojson'
 import { ACCENT } from './map-style'
 import { nearestTap } from './tap-target'
 import { EMPTY_FC } from './use-attractions'
+import { whenStyleReady } from './use-map-layers'
 
 /** A gate somebody tapped: where it is, what it is called, which levels it is on. */
 export interface IndoorGate {
@@ -282,8 +283,11 @@ export default function useIndoorLayers(
         paint: { 'text-color': ink.text, 'text-halo-color': ink.haloText, 'text-halo-width': 1.2 },
       })
     }
-    if (map.isStyleLoaded()) add()
-    map.on('style.load', add)
+    /* The same three-way race whenStyleReady narrates for the outdoor layers:
+       `style.load` can be gone before this effect commits, and isStyleLoaded()
+       stays false long after — the night the gates were fetched, 200'd, and
+       never drawn, this was the gap they fell through. */
+    const styleReady = whenStyleReady(map, add)
 
     /* A gate is somewhere to go: tapping one asks the page for the walk.
        Padded like the attraction dots — a gate is five pixels wide — and
@@ -313,7 +317,7 @@ export default function useIndoorLayers(
     map.on('mouseenter', 'indoor-gate', enter)
     map.on('mouseleave', 'indoor-gate', leave)
     return () => {
-      map.off('style.load', add)
+      styleReady()
       map.off('click', pick)
       map.off('mouseenter', 'indoor-gate', enter)
       map.off('mouseleave', 'indoor-gate', leave)

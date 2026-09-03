@@ -928,6 +928,25 @@ test('the status capsule takes its own taps — the AI button must not blanket t
   await expect(page.getByText('Ask about this trip')).toBeHidden()
 })
 
+test('flying to an airport draws its gates', async ({ page }) => {
+  await open(page)
+  // Schiphol is a sample stop and richly mapped in OSM. The layer is GPU-drawn,
+  // so ask the source what it holds — the night the gates were fetched and
+  // never drawn, the source itself was missing.
+  await page.evaluate(() => {
+    window.__offwegoMap?.jumpTo({ center: [4.7639, 52.3105], zoom: 14.6 })
+  })
+  const gates = () =>
+    page.evaluate(
+      () =>
+        window.__offwegoMap
+          ?.getSource('indoor')
+          ?.serialize?.()
+          .data?.features?.filter(f => f.properties?.kind === 'gate').length ?? 0,
+    )
+  await expect.poll(gates, { timeout: 30000 }).toBeGreaterThan(0)
+})
+
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Travel', exact: true }).click()

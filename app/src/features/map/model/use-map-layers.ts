@@ -35,7 +35,7 @@ interface MapLayerOptions {
    this waits for; `load` closes the last gap by firing once the first frame is
    up, whichever way round the rest happened. Every add is guarded by its own
    getSource check, so arriving twice costs nothing. */
-function whenStyleReady(map: MapGL, add: () => void) {
+export function whenStyleReady(map: MapGL, add: () => void) {
   const parsed = () => {
     try {
       return Boolean(map.getStyle()?.layers?.length)
