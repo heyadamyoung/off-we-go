@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadLive, subscribeToPositions } from '../../../backend'
 import { buildTrail } from '../../../trail-core'
+import { LIVE_FIX_MAX_AGE_MS } from '../../../live-freshness-core'
 import { liveRetryDelay, mergeLiveFixes } from '../../../live-positions-core'
-import { followPoints, livePhoneMarkers } from '../../../live-markers-core'
+import { aliveFixes, followPoints, livePhoneMarkers } from '../../../live-markers-core'
+import { track as trackEvent } from '../../../shared/lib/telemetry'
 import {
   deriveLiveStopProgress,
   describeLiveStopProgress,
@@ -136,16 +138,33 @@ export default function useLiveTrip({
     [mapTheme, daylight],
   )
 
-  // Only trustworthy live fixes get a marker. A planned route never impersonates a traveller.
+  // Only trustworthy live fixes steer the arrival math and the camera. The
+  // LIVE chip is a different question — "is this phone talking?" — answered
+  // by recency alone: a car's cradle-grade fixes glide the dot and must
+  // light the chip, however wide their accuracy circle.
   const fresh = progress.freshFixes
+  const alive = useMemo(() => aliveFixes(fixes, now, LIVE_FIX_MAX_AGE_MS), [fixes, now])
 
   /* A phone that has gone quiet keeps its dot where it was last heard from,
      and framing follows whoever is reporting — or, with nobody reporting, the
      last place anyone was, which is the only answer there is. */
   const markers = useMemo(
-    () => livePhoneMarkers({ fixes, fresh, phones, family }),
-    [fixes, fresh, phones, family],
+    () => livePhoneMarkers({ fixes, fresh: alive, phones, family }),
+    [fixes, alive, phones, family],
   )
+  /* The verdict itself is telemetry: when a phone's liveness flips, say so —
+     "dot glides, chip dark" was undiagnosable from the wire alone. */
+  const liveness = useRef(new Map<string, boolean>())
+  useEffect(() => {
+    for (const marker of markers) {
+      const wasLive = liveness.current.get(marker.key)
+      const isLive = !marker.stale
+      if (wasLive !== undefined && wasLive !== isLive) {
+        trackEvent('flip phone liveness', { phone: marker.name, live: String(isLive) })
+      }
+      liveness.current.set(marker.key, isLive)
+    }
+  }, [markers])
   /* Stable by CONTENT, not by derivation: progress recomputes on a 30-second
      clock and hands back fresh arrays every time, and a new identity here
      re-armed the follow ease — the camera nudged itself half a chrome-offset

@@ -13,6 +13,15 @@ export interface PhoneMarker {
 
 const keyOf = (fix: LiveFix) => String(fix.deviceId || 'phone')
 
+/* Which fixes count as "this phone is talking right now": recency ALONE.
+   The accuracy gate belongs to the arrival math (a 300-metre fix must not
+   trigger "arrived" inside a 125-metre radius) and was once reused here —
+   which turned a phone driving with cradle-grade accuracy into a gliding
+   dot whose LIVE chip never lit. A moving car is alive at any accuracy. */
+export function aliveFixes(fixes: LiveFix[], now: number, maxAgeMs: number): LiveFix[] {
+  return (fixes || []).filter(fix => fix.at instanceof Date && now - fix.at.getTime() <= maxAgeMs)
+}
+
 /* Where each phone was last heard from, however long ago that was. A phone
    that stops reporting has not stopped existing — it has run out of signal, or
    battery, or someone has turned sharing off — so its dot stays where it was

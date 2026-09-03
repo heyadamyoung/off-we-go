@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { lastKnownFixes, livePhoneMarkers } from '../src/live-markers-core.ts'
+import { aliveFixes, lastKnownFixes, livePhoneMarkers } from '../src/live-markers-core.ts'
 
 const at = minutesAgo => new Date(Date.now() - minutesAgo * 60_000)
 
@@ -63,4 +63,30 @@ test('a fix without a usable position is not a place anyone was', () => {
 
   assert.equal(kept.length, 1)
   assert.equal(kept[0].lng, 4.87)
+})
+
+/* The regression that shipped as "her dot glides but the chip never lights":
+   the arrival math's accuracy gate was reused as the liveness test, and a
+   phone driving with cradle-grade accuracy could never be LIVE. Liveness is
+   recency alone. */
+test('a recent fix at any accuracy keeps its phone alive; only age kills it', () => {
+  const now = Date.parse('2026-09-03T22:30:00Z')
+  const fix = (minutesAgo, accuracy) => ({
+    deviceId: 'phone-c',
+    lng: -104.6,
+    lat: 50.45,
+    at: new Date(now - minutesAgo * 60_000),
+    accuracy,
+  })
+  const wide = aliveFixes([fix(3, 420)], now, 15 * 60_000)
+  assert.equal(wide.length, 1, 'a 420-metre fix from a moving car is alive')
+  assert.equal(aliveFixes([fix(40, 5)], now, 15 * 60_000).length, 0, 'a pin-sharp old fix is not')
+
+  const markers = livePhoneMarkers({
+    fixes: [fix(3, 420)],
+    fresh: wide,
+    phones: [],
+    family: [],
+  })
+  assert.equal(markers[0].stale, false, 'the chip lights')
 })
