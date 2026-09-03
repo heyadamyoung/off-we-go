@@ -376,6 +376,11 @@
   /* Touch and sight are different budgets: the visual box stays compact while
      the touchable box reaches the 44pt floor. Generous above and below, and
      just short of the neighbour's slop to the sides. */
+  /* The ::after anchors to the nearest positioned ancestor, so a hitslop
+     element must itself stay positioned. A later `static` utility on the same
+     element re-anchors the plate to the surrounding container and the button
+     swallows taps meant for its neighbours — which is exactly how the AI
+     button once owned the whole bottom chrome row on phones. */
   .hitslop { position: relative }
   .hitslop::after { content: ''; position: absolute; inset: -8px -2px }
 

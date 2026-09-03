@@ -913,6 +913,21 @@ test('attractions are drawn across the map and open into a card', async ({ page 
   await expect.poll(drawn, { timeout: 30000 }).toBeGreaterThan(0)
 })
 
+test('the status capsule takes its own taps — the AI button must not blanket the row', async ({
+  page,
+}) => {
+  // Phone-width chrome is where the AI button once cast an invisible row-wide
+  // tap plate (a static hitslop anchors its ::after to the whole row): any tap
+  // on the capsule opened the assistant. Playwright's actionability check is
+  // the assertion — a covered capsule refuses the click.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  const capsule = page.locator('button:has(b[aria-live=polite])')
+  await expect(capsule).toBeVisible()
+  await capsule.click()
+  await expect(page.getByText('Ask about this trip')).toBeHidden()
+})
+
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
