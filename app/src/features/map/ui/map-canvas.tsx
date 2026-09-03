@@ -84,6 +84,7 @@ const MapCanvas = memo(function MapCanvas({
   useEffect(() => {
     if (!holder.current) return
     const v = viewRef.current
+    performance.mark('mk:beforemap')
     const m = new MapGL({
       container: holder.current,
       style: STYLE[themeRef.current === 'light' ? 'light' : 'dark'],
@@ -92,19 +93,15 @@ const MapCanvas = memo(function MapCanvas({
       minZoom: 3,
       maxZoom: 18,
       interactive,
-      /* The credit CARTO and OpenStreetMap require, in the provider's own words:
-         the control renders whatever the tile source declares, so it stays
-         correct if the basemap ever changes hands. */
-      // Added by hand below so it sits bottom-left, clear of the map controls.
+      // The credit is our own control, added below — bottom-left, clear of
+      // the map controls, resting at the one line the licences insist on.
       attributionControl: false,
       dragRotate: false,
       pitchWithRotate: false,
     })
-    /* The credit CARTO and OpenStreetMap both require, in the provider's own
-       words: the control renders whatever the tile source declares, so it
-       stays correct if the basemap ever changes hands. Compacts itself on a
-       narrow map. */
-    m.addControl(creditControl(), 'bottom-left')
+    /* "© OpenStreetMap" always readable, everything else on /credits.html
+       behind More tools — the split each licence actually asks for. */
+    m.addControl(creditControl(), 'bottom-right')
     m.touchZoomRotate?.disableRotation?.()
     setMap(m)
     // A handle for the test suite: the attraction layer is drawn by the GPU,

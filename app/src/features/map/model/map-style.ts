@@ -1,4 +1,4 @@
-import { AttributionControl } from 'maplibre-gl'
+import type { IControl } from 'maplibre-gl'
 import type { FeatureCollection, LineString } from 'geojson'
 import type { Coordinates } from '../../../shared/model/types'
 
@@ -19,14 +19,28 @@ const STYLE = {
   light: '/map-light.json',
 }
 
-/* The credit both the data and the design require. The tile source names
-   OpenFreeMap, OpenMapTiles and OpenStreetMap itself; CARTO is named here
-   because the cartography is theirs, reused under CC-BY 4.0 — the paint, not
-   the data. Compacts itself on a narrow map. */
-const creditControl = () =>
-  new AttributionControl({
-    customAttribution: '<a href="https://carto.com/" target="_blank">CARTO</a>',
-  })
+/* The map's credit, cut to the one thing a licence puts on the map itself:
+   the ODbL (per the OSMF attribution guidelines) wants "© OpenStreetMap"
+   readable with no interaction. So that is all this is — inert text, nothing
+   to tap, no link to mis-hit. The CC-BY credits (CARTO's cartography, the
+   OpenMapTiles schema) allow "any reasonable manner", which /credits.html
+   behind the More-tools menu is. Hand-rolled rather than MapLibre's
+   AttributionControl so it stays this small, and so it still renders offline,
+   where the TileJSON that would declare it never loads. */
+const creditControl = (): IControl => {
+  let el: HTMLDivElement
+  return {
+    onAdd() {
+      el = document.createElement('div')
+      el.className = 'maplibregl-ctrl map-credit'
+      el.textContent = '© OpenStreetMap'
+      return el
+    },
+    onRemove() {
+      el.remove()
+    },
+  }
+}
 
 const linesOf = (lines: Coordinates[][]): FeatureCollection<LineString> => ({
   type: 'FeatureCollection',

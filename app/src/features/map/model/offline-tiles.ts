@@ -17,9 +17,10 @@ export default function registerOfflineTiles() {
   registered = true
   addProtocol(SCHEME, async (params, abortController) => {
     const url = upstreamUrl(params.url)
-    const store = await tileStore()
+    // The promise, not the opened cache: fetchTile resolves it beside the
+    // request instead of in front of it.
     const response = await fetchTile(
-      store,
+      tileStore(),
       globalThis.fetch.bind(globalThis),
       url,
       abortController?.signal,

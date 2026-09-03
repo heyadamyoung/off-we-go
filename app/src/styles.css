@@ -272,6 +272,14 @@
   @media (max-width: 639px) {
     .tb[data-tip]::after { content: none }
   }
+  /* A cluster action wears its word like the view tabs do, so the whole bar
+     reads one way. Same footprint and type as .tbv; the amber "on" fill and
+     the tooltip come from .tb. */
+  .tb.lbl {
+    width: auto; min-width: 52px; height: 46px; padding: 0 9px;
+    flex-direction: column; gap: 3px;
+    font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  }
 
   /* A named view tab: the icon keeps its word, so nothing has to be guessed.
      The active one is amber with a small underline — state, not decoration. */
@@ -330,12 +338,9 @@
    MapLibre paints the basemap; markers are DOM on top of it. */
 .mapcanvas { position: absolute; inset: 0 }
 .mapcanvas canvas { outline: none }
-/* The tiles are OpenStreetMap's data on CARTO's servers, and both ask to be
-   named. Same treatment as the globe's credit line. */
-/* The basemap credit CARTO and OpenStreetMap both require. MapLibre renders
-   whatever the tile source declares, so it stays correct in the provider's own
-   words if the basemap ever changes hands. Themed to the app's greys, because
-   the stock control is a white pill on a near-black map. */
+/* MapLibre's stock attribution control still dresses the globe's NASA credit:
+   themed to the app's greys, because the stock control is a white pill on a
+   near-black map. */
 .maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib.maplibregl-compact {
   background: var(--c-panel-strong); border-radius: 999px;
   font-size: 10.5px; padding: 2px 8px; backdrop-filter: blur(10px);
@@ -346,10 +351,27 @@
 /* The stock disclosure icon is drawn dark, which only reads on a pale map. */
 :root:not([data-theme="light"]) .maplibregl-ctrl-attrib-button { filter: invert(1) opacity(.7) }
 
-/* On the trip screen the bottom of the map is the itinerary bar, so the credit
-   is lifted clear of it and of the map controls. An attribution nobody can see
-   is not an attribution. */
-.tripscreen .maplibregl-ctrl-bottom-left { bottom: var(--trip-2); left: 4px; z-index: 4 }
+/* The trip map's credit: the one line the ODbL wants readable without a
+   click, and nothing more — the CC-BY design credits live on /credits.html,
+   behind More tools. Inert on purpose, so no tap meant for the map or the
+   zoom column can ever land on it, and as quiet as the licence allows: dim,
+   but never illegible, because an attribution nobody can read satisfies no
+   licence. */
+.map-credit {
+  margin: 0; pointer-events: none; user-select: none;
+  font-size: 10px; line-height: 1; white-space: nowrap;
+  color: var(--c-muted); opacity: .55;
+  text-shadow: 0 0 4px var(--c-bg);
+}
+/* Away from the left edge's chip stack: the empty stretch of baseline to the
+   left of the zoom column, where nothing else lives. On a phone the column is
+   not there, so the credit takes the corner itself. */
+.tripscreen .maplibregl-ctrl-bottom-right {
+  bottom: var(--trip-1); right: calc(1rem + 40px + 12px); z-index: 3;
+}
+@media (max-width: 639px) {
+  .tripscreen .maplibregl-ctrl-bottom-right { right: 1rem }
+}
 .maplibregl-marker { will-change: transform }
 
 /* Markers are placed with translate rather than left/top: position changes stay

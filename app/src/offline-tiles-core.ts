@@ -43,30 +43,49 @@ export function rewriteTileJson(document: unknown): unknown {
    whatever was here last time. The copy is what is left when the network is
    not there. */
 export async function fetchTile(
-  store: TileStore | null,
+  store: TileStore | Promise<TileStore | null> | null,
   fetchImpl: typeof fetch,
   url: string,
   signal?: AbortSignal,
 ): Promise<Response | null> {
   try {
+    /* The request goes out first and the store is resolved alongside it:
+       opening a cache is not free, and awaiting it here put that cost in
+       front of the very first tile rather than beside it. */
     const response = await fetchImpl(url, signal ? { signal } : {})
     if (!response.ok) throw new Error(`Basemap answered ${response.status}`)
-    if (store) {
-      // put() consumes a body, so the caller keeps the original.
-      await store.put(url, response.clone()).catch(() => {})
-      /* Listing a cache is a scan of the whole thing, and this runs once per
-         tile — so it sweeps on a count rather than on every write. */
-      if (++sinceSweep >= SWEEP_EVERY) {
-        sinceSweep = 0
-        await prune(store)
-      }
-    }
+    // put() consumes a body, so the caller keeps the original.
+    const copy = response.clone()
+    /* Kept in the background. Awaiting the write here meant every tile the map
+       drew waited on a Cache Storage round trip it had no reason to wait for. */
+    void keep(store, url, copy)
     return response
   } catch (caught) {
     // A cancelled request is the map moving on, not a map that failed.
     if (signal?.aborted) throw caught
-    const held = store ? await store.match(url).catch(() => undefined) : undefined
-    return held ?? null
+    const held = await Promise.resolve(store).catch(() => null)
+    const hit = held ? await held.match(url).catch(() => undefined) : undefined
+    return hit ?? null
+  }
+}
+
+async function keep(
+  store: TileStore | Promise<TileStore | null> | null,
+  url: string,
+  copy: Response,
+) {
+  try {
+    const held = await Promise.resolve(store)
+    if (!held) return
+    await held.put(url, copy)
+    /* Listing a cache is a scan of the whole thing, and this runs once per
+       tile — so it sweeps on a count rather than on every write. */
+    if (++sinceSweep >= SWEEP_EVERY) {
+      sinceSweep = 0
+      await prune(held)
+    }
+  } catch {
+    /* No copy kept; the map still drew. */
   }
 }
 
