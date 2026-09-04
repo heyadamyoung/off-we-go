@@ -8,19 +8,26 @@ import type { TripSummary } from '../../../shared/model/types'
 export function useTripList() {
   const { session, ready } = useSession()
   const [trips, setTrips] = useState<TripSummary[]>([])
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!ready) return
     let alive = true
     loadLanding(session)
       .then(landing => {
-        if (alive) setTrips(landing.trips || [])
+        if (alive) {
+          setTrips(landing.trips || [])
+          setFailed(false)
+        }
       })
-      .catch(() => {})
+      // An empty list and a failed load are different truths; the section says which.
+      .catch(() => {
+        if (alive) setFailed(true)
+      })
     return () => {
       alive = false
     }
   }, [ready, session])
 
-  return { trips }
+  return { trips, failed }
 }

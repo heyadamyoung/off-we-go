@@ -33,6 +33,7 @@ interface PanelProps {
   /** the getting-there chain: the Travel view is its home */
   transport?: {
     segments: Segment[]
+    loadFailed?: boolean
     now: number
     canEdit: boolean
     onEdit: (segment: Segment) => void
@@ -150,9 +151,11 @@ function Travel({ transport }: PanelProps) {
   if (!transport?.segments.length)
     return (
       <p className="hint p-4">
-        {transport?.canEdit
-          ? 'No legs yet. Add the flight or train that starts the trip.'
-          : 'No travel legs on this trip yet.'}
+        {transport?.loadFailed
+          ? 'The travel legs could not be loaded — they will retry on their own.'
+          : transport?.canEdit
+            ? 'No legs yet. Add the flight or train that starts the trip.'
+            : 'No travel legs on this trip yet.'}
       </p>
     )
   return (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createSegment,
   deleteSegment,
@@ -11,6 +11,7 @@ import {
 } from '../../../backend'
 import type { Segment } from '../../../segments-core'
 import { track } from '../../../shared/lib/telemetry'
+import { appErrorMessage } from '../../../user-messages-core'
 import type { Id } from '../../../shared/model/types'
 import { scheduleSegmentNotifications } from './notify'
 
@@ -19,22 +20,38 @@ import { scheduleSegmentNotifications } from './notify'
    another phone, the assistant amending a gate off an airline email. */
 export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') => void) {
   const [segments, setSegments] = useState<Segment[]>([])
+  const [loadFailed, setLoadFailed] = useState(false)
+  const warned = useRef(false)
 
   const refetch = useCallback(() => {
     loadSegments(tripId)
       .then(found => {
         setSegments(found)
+        setLoadFailed(false)
+        warned.current = false
         // The phone in a pocket is the real UI on travel day.
         scheduleSegmentNotifications(found)
       })
-      .catch(() => {})
-  }, [tripId])
+      .catch(error => {
+        /* An empty Travel tab must never be a silent lie: the failure is
+           said once (stream retries would nag), and the panel is told so
+           its empty state reads "could not load", not "no legs". */
+        setLoadFailed(true)
+        if (!warned.current) {
+          warned.current = true
+          toast(appErrorMessage(error, 'load-segments'), 'error')
+        }
+      })
+  }, [tripId, toast])
 
   useEffect(() => {
     refetch()
     return subscribeToTrip(tripId, refetch)
   }, [tripId, refetch])
 
+  /* Every mutation speaks: the mapped, human copy on failure — never the
+     server's raw line — and a word of confirmation where the result is not
+     already on screen by itself. */
   const saveSegment = useCallback(
     async (draft: Partial<Segment> & { id?: string }) => {
       try {
@@ -44,9 +61,10 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
           track('add segment', { mode: String(draft.mode || '') })
         }
         refetch()
+        toast(draft.id ? 'Leg saved' : 'Leg added')
         return true
       } catch (error) {
-        toast((error as Error).message || 'The leg could not be saved', 'error')
+        toast(appErrorMessage(error, 'save-leg'), 'error')
         return false
       }
     },
@@ -58,8 +76,9 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
       try {
         await deleteSegment(tripId, segmentId)
         refetch()
+        toast('Leg removed')
       } catch (error) {
-        toast((error as Error).message || 'The leg could not be removed', 'error')
+        toast(appErrorMessage(error, 'delete-leg'), 'error')
       }
     },
     [tripId, refetch, toast],
@@ -71,8 +90,9 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
         await uploadSegmentDocument(tripId, segmentId, file, fields)
         track('attach document', { kind: file.type === 'application/pdf' ? 'pdf' : 'image' })
         refetch()
+        toast('Document added')
       } catch (error) {
-        toast((error as Error).message || 'The document could not be attached', 'error')
+        toast(appErrorMessage(error, 'attach-document'), 'error')
       }
     },
     [tripId, refetch, toast],
@@ -83,8 +103,9 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
       try {
         await deleteSegmentDocument(tripId, documentId)
         refetch()
+        toast('Document removed')
       } catch (error) {
-        toast((error as Error).message || 'The document could not be removed', 'error')
+        toast(appErrorMessage(error, 'remove-document'), 'error')
       }
     },
     [tripId, refetch, toast],
@@ -96,11 +117,19 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
         await updateSegmentDocument(tripId, documentId, changes)
         refetch()
       } catch (error) {
-        toast((error as Error).message || 'The document could not be updated', 'error')
+        toast(appErrorMessage(error, 'update-document'), 'error')
       }
     },
     [tripId, refetch, toast],
   )
 
-  return { segments, saveSegment, removeSegment, attachDocument, editDocument, removeDocument }
+  return {
+    segments,
+    loadFailed,
+    saveSegment,
+    removeSegment,
+    attachDocument,
+    editDocument,
+    removeDocument,
+  }
 }

@@ -33,6 +33,7 @@ const TIME_ZONES = [
 interface SectionProps {
   profile: MyProfile
   trips: TripSummary[]
+  tripsFailed?: boolean
   preferences: Preferences
   savePreferences: (next: Preferences) => void
   field: (key: string, fallback?: string) => string
@@ -227,7 +228,7 @@ export function AlertsSection({ preferences, savePreferences }: SectionProps) {
   )
 }
 
-export function TripsSection({ trips }: SectionProps) {
+export function TripsSection({ trips, tripsFailed }: SectionProps) {
   return (
     <Card title="Your trips" aside={<Link to="/">All trips</Link>}>
       {trips.length ? (
@@ -260,7 +261,11 @@ export function TripsSection({ trips }: SectionProps) {
           />
         ))
       ) : (
-        <p className="hint">When someone invites you along, their trip shows up here.</p>
+        <p className="hint">
+          {tripsFailed
+            ? 'Your trips could not be loaded just now — an empty list here is the connection, not your trips.'
+            : 'When someone invites you along, their trip shows up here.'}
+        </p>
       )}
     </Card>
   )

@@ -9,6 +9,7 @@ interface AssistantChatProps {
   /** editors' questions can also change the trip; viewers' never do */
   canEdit: boolean
   onAsk: (text: string) => void
+  onRetry?: () => void
   onClose: () => void
 }
 
@@ -21,6 +22,7 @@ export default function AssistantChat({
   error,
   canEdit,
   onAsk,
+  onRetry,
   onClose,
 }: AssistantChatProps) {
   const [text, setText] = useState('')
@@ -91,7 +93,22 @@ export default function AssistantChat({
             Thinking…
           </div>
         )}
-        {error && !busy && <div className="self-start px-1 text-xs text-muted">{error}</div>}
+        {error && !busy && (
+          <div
+            role="alert"
+            className="flex flex-col gap-1.5 self-start rounded-2xl rounded-bl-md border
+                       border-danger/35 bg-raised2 px-3.5 py-2 text-xs leading-relaxed">
+            {error}
+            {onRetry && (
+              <button
+                className="self-start rounded-lg border border-line bg-canvas px-2.5 py-1
+                           font-bold text-accent hover:bg-raised2"
+                onClick={onRetry}>
+                Try again
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-none items-end gap-2 border-t border-line p-3">

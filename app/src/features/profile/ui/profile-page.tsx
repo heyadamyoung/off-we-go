@@ -32,7 +32,7 @@ export default function ProfilePage() {
     savePreferences,
     saveAvatar,
   } = useProfile()
-  const { trips } = useTripList()
+  const { trips, failed: tripsFailed } = useTripList()
   const picker = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<Record<string, string> | null>(null)
   const navigate = useNavigate({ from: '/profile' })
@@ -91,6 +91,7 @@ export default function ProfilePage() {
   const sections = {
     profile,
     trips,
+    tripsFailed,
     preferences,
     savePreferences,
     field,

@@ -21,13 +21,24 @@ export default function AdoptPhones({
     Array<{ id: string; name: string; tripTitle: string }>
   >([])
   const [busy, setBusy] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     listAdoptableDevices(tripId)
-      .then(setElsewhere)
-      .catch(() => {})
+      .then(found => {
+        setElsewhere(found)
+        setFailed(false)
+      })
+      // Invisible-on-failure made "where is my other phone?" unanswerable.
+      .catch(() => setFailed(true))
   }, [tripId])
 
+  if (failed)
+    return (
+      <p className="hint mt-3">
+        Your phones on other trips could not be checked just now — reopen this tab to try again.
+      </p>
+    )
   if (!elsewhere.length) return null
   return (
     <div className="mt-3 rounded-xl border border-line bg-raised2 p-3">

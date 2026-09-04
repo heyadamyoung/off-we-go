@@ -73,18 +73,17 @@ function Trip({
   const page = useTripPage({ data, busyEditing, search, patch, notify, reload })
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
-    theme, setTheme, trip, stops, family, me, viewers,
-    placing, setPlacing, photoBy, setPhotoBy, setMapOverride, setAttractionCard,
-    asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
+    theme, setTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
+    setMapOverride, setAttractionCard, asking, setAsking, assistant, view, setView, selected,
+    query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
     progressCopy, latestGpsPosition, liveStop, liveDay, liveStops,
     transport, segmentEditing, setSegmentEditing, clock, showGate,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, removePhoto, removeComment,
-    indoor, editing, routeDraft, places, startEditing, pickPlace, onStopMove,
-    addSight, attractions, toggleAttractions, showSight, showAttractions,
-    items, selectedItem, select, pickStop, onMapClicked,
+    addComment, toggleLike, changePhoto, removePhoto, removeComment, indoor, editing, routeDraft,
+    places, startEditing, pickPlace, onStopMove, addSight, attractions, toggleAttractions,
+    showSight, showAttractions, items, selectedItem, select, pickStop, onMapClicked,
     saveTrip, uploads, origin, panelOpen, subtitle, offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
   const chat = useTripChat({ tripId, toast })
@@ -201,6 +200,7 @@ function Trip({
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
             segments: transport.segments,
+            loadFailed: transport.loadFailed,
             now: clock,
             canEdit,
             onEdit: segment => setSegmentEditing(segment.id),
@@ -280,6 +280,7 @@ function Trip({
           error={assistant.error}
           canEdit={canEdit}
           onAsk={assistant.ask}
+          onRetry={assistant.retry}
           onClose={() => setAsking(false)}
         />
       )}

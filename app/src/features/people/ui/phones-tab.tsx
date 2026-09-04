@@ -44,6 +44,8 @@ export default function PhonesTab({
   const [busy, setBusy] = useState(false)
   const [card, setCard] = useState<Device | null>(null)
   const tracking = useTrackerState()
+  const sayShareFailed = (error: unknown) =>
+    toast(appErrorMessage(error, 'share-location'), 'error')
   const suggested = `${me?.name || 'My'}'s phone`
 
   const enableTracking = async (phone: Device) => {
@@ -70,7 +72,8 @@ export default function PhonesTab({
       setCard(made)
       setName('')
       onChange(await listDevices(tripId))
-      if (isNativeApp) await enableTracking(made).catch(() => {})
+      // A phone that exists but is not talking gets its own sentence now.
+      if (isNativeApp) await enableTracking(made).catch(sayShareFailed)
       toast('Phone added')
     } catch (error) {
       toast(appErrorMessage(error, 'add-phone'), 'error')
@@ -266,6 +269,8 @@ function SetupCard({
   onEnable: (phone: Device) => Promise<void>
   onClose: () => void
 }) {
+  const sayShareFailed = (error: unknown) =>
+    toast(appErrorMessage(error, 'share-location'), 'error')
   const copy = (label: string, value: string) =>
     navigator.clipboard
       ?.writeText(value)
@@ -340,7 +345,7 @@ function SetupCard({
             <button
               className="btn btn-accent"
               disabled={tracking?.status === 'starting'}
-              onClick={() => onEnable(card).catch(() => {})}>
+              onClick={() => onEnable(card).catch(sayShareFailed)}>
               {tracking?.deviceId === card.id && tracking.status === 'tracking'
                 ? 'Tracking is on'
                 : 'Enable location sharing'}

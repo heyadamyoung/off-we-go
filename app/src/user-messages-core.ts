@@ -1,6 +1,14 @@
 export type AppAction =
   | 'load-trip'
   | 'load-profile'
+  | 'load-trips'
+  | 'load-invites'
+  | 'load-segments'
+  | 'save-leg'
+  | 'delete-leg'
+  | 'attach-document'
+  | 'update-document'
+  | 'remove-document'
   | 'create-trip'
   | 'accept-invite'
   | 'delete-account'
@@ -58,6 +66,14 @@ const failures: Record<AppAction, string> = {
   'save-route': 'We could not save the route. Please try again.',
   'move-stop': 'We could not move that stop. Please try again.',
   'reorder-stops': 'We could not reorder the stops. Please try again.',
+  'load-trips': 'Your trips could not be loaded just now. Pull to refresh, or try again shortly.',
+  'load-invites': 'The pending invitations could not be loaded. Reopen this tab to try again.',
+  'load-segments': 'The travel legs could not be loaded. They will retry on their own.',
+  'save-leg': 'That leg could not be saved. Check the details and try again.',
+  'delete-leg': 'That leg could not be removed. Please try again.',
+  'attach-document': 'The document could not be attached. Check it is an image or PDF and retry.',
+  'update-document': 'That change to the document did not save. Please try again.',
+  'remove-document': 'The document could not be removed. Please try again.',
   'save-stop': 'We could not save that stop. Check the details and try again.',
   'delete-stop': 'We could not delete that stop. Please try again.',
   'add-place': 'We could not add that place to the trip. Please try again.',

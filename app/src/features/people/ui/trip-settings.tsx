@@ -174,8 +174,9 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
     if (!canManage) return
     listInvites(tripId)
       .then(setInvites)
-      .catch(() => {})
-  }, [tripId, canManage])
+      // "No pending invitations" must never be a failed request wearing a calm face.
+      .catch(error => toast(appErrorMessage(error, 'load-invites'), 'error'))
+  }, [tripId, canManage, toast])
 
   const pending = invites.filter(invite => !invite.claimedAt && !invite.claimed_at)
 
