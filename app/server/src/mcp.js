@@ -870,22 +870,37 @@ function buildMcpServer({
       'attach_mail_document',
       {
         description:
-          'Pull an attachment off a mailbox message (see search_mailbox, then list its attachments via this tool’s error hints or read_mailbox_message) and file it on a travel leg as a document — a boarding pass, rail PDF, receipt. Bytes are stored exactly as sent; a recompressed QR does not scan.',
-        inputSchema: z.object({
-          tripId: entityId,
-          segmentId: entityId,
-          messageId: z.string().min(1).max(512),
-          attachmentId: z.string().min(1).max(512).optional(),
-          mailboxId: entityId.optional(),
-          personId: z.string().max(80).nullable().optional(),
-          name: z.string().trim().max(160).optional(),
-          kind: z.enum(['pass', 'ticket', 'receipt', 'visa', 'other']).optional(),
-        }),
+          'Pull an attachment off a mailbox message (see search_mailbox and list_mail_attachments) and file it as a document on a travel leg (segmentId) OR an itinerary stop (stopId) — a boarding pass on the flight, the museum ticket on the museum, the booking on the hotel. Pass exactly one of segmentId or stopId. Bytes are stored exactly as sent; a recompressed QR does not scan.',
+        inputSchema: z
+          .object({
+            tripId: entityId,
+            segmentId: entityId.optional(),
+            stopId: entityId.optional(),
+            messageId: z.string().min(1).max(512),
+            attachmentId: z.string().min(1).max(512).optional(),
+            mailboxId: entityId.optional(),
+            personId: z.string().max(80).nullable().optional(),
+            name: z.string().trim().max(160).optional(),
+            kind: z.enum(['pass', 'ticket', 'receipt', 'visa', 'other']).optional(),
+          })
+          .refine(value => !!value.segmentId !== !!value.stopId, {
+            message: 'Pass exactly one of segmentId or stopId',
+          }),
         annotations: { destructiveHint: false, openWorldHint: true },
       },
       write(
         'segments',
-        async ({ tripId, segmentId, messageId, attachmentId, mailboxId, personId, name, kind }) => {
+        async ({
+          tripId,
+          segmentId,
+          stopId,
+          messageId,
+          attachmentId,
+          mailboxId,
+          personId,
+          name,
+          kind,
+        }) => {
           try {
             let chosen = attachmentId
             if (!chosen) {
@@ -912,17 +927,23 @@ function buildMcpServer({
                 ? 'pdf'
                 : (file.mime.split('/')[1] || 'bin').slice(0, 8)
             const stored = await fileStore.storeDocument({ tripId, bytes: file.bytes, extension })
-            const doc = await repository.addSegmentDocument(user, tripId, segmentId, {
+            const fields = {
               personId: personId || null,
               name: (name || file.name).slice(0, 160),
               kind: kind || 'ticket',
               mime: file.mime,
               storagePath: stored.storagePath,
               bytes: stored.bytes,
-            })
+            }
+            const doc = segmentId
+              ? await repository.addSegmentDocument(user, tripId, segmentId, fields)
+              : await repository.addStopDocument(user, tripId, stopId, fields)
             if (!doc) {
               await fileStore.remove(stored.storagePath).catch(() => {})
-              return toolFailure('The segment was not found or is not editable by this user.')
+              return toolFailure(
+                (segmentId ? 'The segment' : 'The stop') +
+                  ' was not found or is not editable by this user.',
+              )
             }
             const { storagePath: _hidden, ...safe } = doc
             return result(safe)
@@ -1073,12 +1094,14 @@ function buildMcpServer({
     'remove_document',
     {
       description:
-        'Remove a document from a travel leg — a superseded boarding pass, a wrong attachment. The file is deleted from storage.',
+        'Remove a document from a travel leg or an itinerary stop — a superseded boarding pass, a wrong attachment. The file is deleted from storage.',
       inputSchema: z.object({ tripId: entityId, documentId: entityId }),
       annotations: { destructiveHint: true, openWorldHint: false },
     },
     write('segments', async ({ tripId, documentId }) => {
-      const removed = await repository.deleteSegmentDocument(user, tripId, documentId)
+      const removed =
+        (await repository.deleteSegmentDocument(user, tripId, documentId)) ||
+        (await repository.deleteStopDocument?.(user, tripId, documentId))
       if (!removed)
         return toolFailure('The document was not found or is not editable by this user.')
       if (fileStore) {

@@ -15,6 +15,15 @@ export interface MapView {
   focus?: boolean
 }
 
+export interface StopDocument {
+  id: Id
+  name: string
+  kind: string
+  mime: string
+  src: string
+  personId?: string | null
+}
+
 export interface Stop {
   id: Id
   name: string
@@ -31,6 +40,8 @@ export interface Stop {
   seq?: number
   kw?: string
   lock?: number
+  /** paperwork filed on this stop — tickets, bookings, passes */
+  documents?: StopDocument[]
 }
 
 export interface TripPhoto {

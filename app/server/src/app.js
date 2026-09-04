@@ -891,7 +891,13 @@ export async function buildServer({
         startsOn: row.startsOn,
         endsOn: row.endsOn,
       },
-      stops: row.stops,
+      stops: row.stops.map(stop => ({
+        ...stop,
+        documents: (stop.documents || []).map(({ storagePath, ...doc }) => ({
+          ...doc,
+          src: mediaUrl(storagePath),
+        })),
+      })),
       photos: row.photos.map(photo => ({
         ...photo,
         src: mediaUrl(photo.storagePath),
@@ -2059,6 +2065,78 @@ export async function buildServer({
       return { ...safe, src: mediaUrl(storagePath) }
     },
   )
+  /* A stop's paperwork: the museum ticket on the museum, the booking on the
+     hotel. Same rules as a leg's — images and PDFs, byte-for-byte. */
+  app.post(
+    '/api/trips/:tripId/stops/:stopId/documents',
+    { bodyLimit: 16 * 1024 * 1024 },
+    async (request, reply) => {
+      const user = await authenticated(request, reply)
+      if (!user) return
+      if (!fileStore) return reply.code(503).send({ error: 'Document storage is not configured' })
+      let bytes = null
+      let mime = ''
+      const fields = {}
+      for await (const part of request.parts()) {
+        if (part.type === 'file') {
+          mime = String(part.mimetype || '')
+          if (!mime.startsWith('image/') && mime !== 'application/pdf') {
+            return reply.code(415).send({ error: 'Documents are images or PDFs' })
+          }
+          bytes = await part.toBuffer()
+        } else fields[part.fieldname] = part.value
+      }
+      if (!bytes?.length) return reply.code(400).send({ error: 'Choose a document to attach' })
+      const name = String(fields.name || '').trim() || 'Document'
+      const extension =
+        mime === 'application/pdf' ? 'pdf' : (mime.split('/')[1] || 'bin').slice(0, 8)
+      const stored = await fileStore.storeDocument({
+        tripId: request.params.tripId,
+        bytes,
+        extension,
+      })
+      const doc = await repository.addStopDocument(
+        user,
+        request.params.tripId,
+        request.params.stopId,
+        {
+          personId: String(fields.personId || '').trim() || null,
+          name: name.slice(0, 160),
+          kind: String(fields.kind || 'ticket').slice(0, 40),
+          mime,
+          storagePath: stored.storagePath,
+          bytes: stored.bytes,
+        },
+      )
+      if (!doc) {
+        await fileStore.remove(stored.storagePath).catch(() => {})
+        return reply.code(404).send({ error: 'That stop was not found' })
+      }
+      const { storagePath, ...safe } = doc
+      return { ...safe, src: mediaUrl(storagePath) }
+    },
+  )
+  app.delete('/api/trips/:tripId/stops/documents/:documentId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const removed = await repository.deleteStopDocument(
+      user,
+      request.params.tripId,
+      request.params.documentId,
+    )
+    if (!removed) return reply.code(404).send({ error: 'That document was not found' })
+    if (fileStore) {
+      try {
+        await fileStore.remove(removed.storagePath)
+        await repository.completeFileDeletion?.(removed.storagePath)
+      } catch (error) {
+        recordFailure(error)
+        event('file delete deferred', { cause: String(error.message || error).slice(0, 120) })
+        await repository.failFileDeletion?.(removed.storagePath, error.message, clock())
+      }
+    }
+    return reply.code(204).send()
+  })
   app.delete('/api/trips/:tripId/segments/documents/:documentId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

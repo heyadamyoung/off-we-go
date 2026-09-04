@@ -21,6 +21,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const walkways = new Map()
   const segments = new Map()
   const segmentDocuments = new Map()
+  const stopDocuments = new Map()
   const fakeUuid = (namespace, value) =>
     `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
   const allowed = new Set(allowedEmails.map(email => email.toLowerCase()))
@@ -338,6 +339,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!trip) return null
       return {
         ...trip,
+        stops: (trip.stops || []).map(stop => ({
+          ...stop,
+          documents: [...stopDocuments.values()].filter(d => d.stopId === stop.id),
+        })),
         members: trip.members.map(member => {
           const profile = profiles.get(member.profileId)
           return {
@@ -1042,6 +1047,25 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (d.segmentId === segmentId) segmentDocuments.delete(key)
       segments.delete(segmentId)
       return { deleted: true, paths }
+    },
+    async addStopDocument(user, tripId, stopId, doc) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const trip = trips.get(tripId)
+      const stop = (trip?.stops || []).find(value => value.id === stopId)
+      if (!stop) return null
+      const id = 'stop-document-' + (stopDocuments.size + 1)
+      const row = { id, stopId, ...doc }
+      stopDocuments.set(id, row)
+      return { ...row }
+    },
+    async deleteStopDocument(user, tripId, documentId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const row = stopDocuments.get(documentId)
+      if (!row) return null
+      const trip = trips.get(tripId)
+      if (!(trip?.stops || []).some(value => value.id === row.stopId)) return null
+      stopDocuments.delete(documentId)
+      return { storagePath: row.storagePath }
     },
     async addSegmentDocument(user, tripId, segmentId, doc) {
       if (!(await this.canEditTrip(user.id, tripId))) return null

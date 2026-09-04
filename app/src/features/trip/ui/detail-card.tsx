@@ -69,6 +69,21 @@ export default function DetailCard(props: DetailCardProps) {
         {stop?.note && <p className="m-0 text-xs leading-relaxed text-muted">{stop.note}</p>}
         {stop?.kind && <div className="text-xs text-muted">{stop.kind}</div>}
 
+        {(stop?.documents?.length || 0) > 0 && (
+          <div className="flex flex-wrap gap-1.5 text-[11px]">
+            {stop?.documents?.map(doc => (
+              <a
+                key={doc.id}
+                className="rounded-md border border-line bg-canvas px-2 py-0.5 text-ink no-underline"
+                href={doc.src}
+                target="_blank"
+                rel="noreferrer">
+                📎 {doc.name}
+              </a>
+            ))}
+          </div>
+        )}
+
         <div className="mt-1 flex items-center gap-2">
           <button
             className="mini"

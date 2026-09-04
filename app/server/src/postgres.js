@@ -838,7 +838,19 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           where m.trip_id=$1 order by m.joined_at`,
           [trip.id],
         ),
-        pool.query('select * from stops where trip_id=$1 order by seq,created_at', [trip.id]),
+        pool.query(
+          `select s.*, coalesce(d.documents, '[]'::json) as documents
+          from stops s
+          left join lateral (
+            select json_agg(json_build_object(
+              'id', sd.id, 'personId', sd.person_id, 'name', sd.name, 'kind', sd.kind,
+              'mime', sd.mime, 'storagePath', sd.storage_path
+            ) order by sd.created_at) as documents
+            from stop_documents sd where sd.stop_id = s.id
+          ) d on true
+          where s.trip_id=$1 order by s.seq, s.created_at`,
+          [trip.id],
+        ),
         pool.query('select * from photos where trip_id=$1 order by seq,created_at', [trip.id]),
         pool.query('select lng,lat from route_points where trip_id=$1 order by seq', [trip.id]),
         pool.query(
@@ -890,6 +902,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           seq: value.seq,
           src: value.image_url,
           sourceUrl: value.source_url,
+          documents: value.documents || [],
         })),
         photos: rows(photos).map(value => ({
           id: value.id,
@@ -1216,6 +1229,30 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       ])
       if (!result.rowCount) return null
       return { deleted: true, paths: docs.rows.map(d => d.storage_path) }
+    },
+    async addStopDocument(user, tripId, stopId, doc) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const owner = await pool.query('select 1 from stops where id=$1 and trip_id=$2', [
+        stopId,
+        tripId,
+      ])
+      if (!owner.rowCount) return null
+      const result = await pool.query(
+        `insert into stop_documents(stop_id,person_id,name,kind,mime,storage_path,bytes)
+        values($1,$2,$3,$4,$5,$6,$7) returning *`,
+        [stopId, doc.personId ?? null, doc.name, doc.kind, doc.mime, doc.storagePath, doc.bytes],
+      )
+      return documentRow(result.rows[0])
+    },
+    async deleteStopDocument(user, tripId, documentId) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `delete from stop_documents sd using stops s
+        where sd.id=$1 and sd.stop_id=s.id and s.trip_id=$2
+        returning sd.storage_path`,
+        [documentId, tripId],
+      )
+      return result.rows[0] ? { storagePath: result.rows[0].storage_path } : null
     },
     async addSegmentDocument(user, tripId, segmentId, doc) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
