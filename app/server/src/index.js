@@ -42,7 +42,11 @@ if (process.env.CODEX_AUTH_JSON_B64) {
         home,
         model: process.env.WAYFARE_AI_MODEL || 'gpt-5.6-luna',
         reasoningEffort: process.env.WAYFARE_AI_REASONING || 'xhigh',
-        timeoutMs: Number(process.env.WAYFARE_AI_TIMEOUT_MS) || 300_000,
+        /* Ten minutes: a real "read my mail and fill in the legs" run crawls
+           dozens of messages and writes a whole trip's segments. The wire no
+           longer has to survive it — the phone polls the job — so the budget
+           can be what the work actually needs. */
+        timeoutMs: Number(process.env.WAYFARE_AI_TIMEOUT_MS) || 600_000,
       }),
     }
   } catch (error) {

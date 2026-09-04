@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { askAssistant } from '../../../backend'
 import { askedQuestion, sendableTranscript } from '../../../assistant-core'
+import { track } from '../../../shared/lib/telemetry'
 import { appErrorMessage } from '../../../user-messages-core'
 import type { AssistantMessage, Id } from '../../../shared/model/types'
 
@@ -29,7 +30,17 @@ export default function useAssistant({ tripId, slug }: { tripId: Id; slug: strin
         const reply = await askAssistant(tripId, slug, sendableTranscript(sent))
         setMessages(current => [...current, { role: 'assistant', text: reply }])
       } catch (caught) {
-        setError(appErrorMessage(caught, 'ask-assistant'))
+        /* A job's own verdict arrives as crafted, user-ready words; anything
+           else goes through the shared mapping. Either way the failure is an
+           event — "the assistant failed at the airport" must be one query. */
+        const final = caught as { final?: boolean; message?: string; status?: number }
+        track('fail ask assistant', {
+          trip: slug,
+          reason: String(final.message || caught).slice(0, 160),
+        })
+        setError(
+          final.final && final.message ? final.message : appErrorMessage(caught, 'ask-assistant'),
+        )
       } finally {
         asking.current = false
         setBusy(false)

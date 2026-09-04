@@ -3,7 +3,7 @@ import { safeOAuthContinuation } from './api-client-core'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
 import { authClient, hasBackend, isSample, tripPath } from './backend-base'
-import { track, trackError } from './shared/lib/telemetry'
+import { trackError } from './shared/lib/telemetry'
 import { deviceStorage, mobileTracker } from './mobile'
 import { localId } from './offline-edits-core'
 import { withOfflineEdit } from './offline-edits'
@@ -16,13 +16,13 @@ import {
 } from './offline-trip-core'
 
 export { authClient, functionsUrl, hasBackend } from './backend-base'
+export * from './backend-assistant'
 export * from './backend-segments'
 export * from './backend-social'
 export * from './backend-live'
 import type {
   AccountArchive,
   ApiError,
-  AssistantMessage,
   AttractionPoi,
   AuthSession,
   Coordinates,
@@ -311,25 +311,6 @@ export async function deleteAccount() {
 
 /* The AI chat on the map. Addressed by slug like /trips/current, and the
    whole transcript travels with the ask — the server keeps no chat state. */
-export async function askAssistant(
-  tripId: Id,
-  slug: string,
-  messages: AssistantMessage[],
-): Promise<string> {
-  if (isSample(tripId)) {
-    return (
-      'The AI assistant lives on the family server, so the sample trip cannot reach it. ' +
-      'On a real trip, ask me anything about the plan, the places, or where everyone is.'
-    )
-  }
-  track('ask assistant', { trip: slug, turns: String(messages.length) })
-  const result = await authClient.request<{ reply?: string }>('/assistant', {
-    method: 'POST',
-    body: { trip: slug, messages },
-  })
-  return String(result.reply || '')
-}
-
 /* Road truth is an optional garnish: no engine, no session, sample mode, or a
    mid-build engine all degrade to "no legs" here — the server keeps the
    evidence, the itinerary just renders without the labels. */

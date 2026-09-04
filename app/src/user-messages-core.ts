@@ -62,7 +62,9 @@ const failures: Record<AppAction, string> = {
   'delete-stop': 'We could not delete that stop. Please try again.',
   'add-place': 'We could not add that place to the trip. Please try again.',
   copy: 'We could not copy that. Select it and copy it manually.',
-  'ask-assistant': 'The assistant could not answer that. Please try again.',
+  'ask-assistant':
+    'The assistant could not finish that answer. Anything it already changed is saved — ' +
+    'check before asking again, so it is not done twice.',
 }
 
 const unavailable: Partial<Record<AppAction, string>> = {
@@ -72,7 +74,9 @@ const unavailable: Partial<Record<AppAction, string>> = {
   'open-photos': 'Your photo library is temporarily unavailable. Please try again later.',
   'share-location': 'Location sharing is temporarily unavailable. Please try again later.',
   'send-invite': 'Invitations are temporarily unavailable. Please try again later.',
-  'ask-assistant': 'The AI assistant is not available on this server right now.',
+  'ask-assistant':
+    'The assistant hit a problem finishing that answer. Anything it already changed is ' +
+    'saved — check before asking again, so it is not done twice.',
 }
 
 const forbidden: Partial<Record<AppAction, string>> = {

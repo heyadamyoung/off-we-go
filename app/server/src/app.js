@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { registerMcpRoutes } from './mcp.js'
 import { clientAddress, createWindowRateLimiter } from './rateLimit.js'
 import { createLiveStream } from './live-stream.js'
@@ -917,6 +917,43 @@ export async function buildServer({
      write tools are never registered for it. A stranger's slug gets the same
      404 as a trip that does not exist. The model runs on a personal account,
      so the limiter is per person, not per trip. */
+  /* An answer can take the agent minutes — a real mail crawl runs past every
+     socket on the path: the CDN cuts a silent response at ~100 seconds, and a
+     phone on airport LTE loses a held connection long before that, both while
+     the run is still finishing (and applying its edits) server-side. So the
+     ask is a job: the POST answers with an id at once, the phone polls it on
+     connections that never live longer than a second, and a run that was paid
+     for is never lost to the wire. Clients from older bundles omit `wait` and
+     keep the held-open answer they were built for. */
+  const assistantJobs = new Map()
+  const ASSISTANT_JOB_TTL_MS = 20 * 60_000
+  const startAssistantRun = ({ user, trip, canEdit, mailboxes, messages }) =>
+    span(
+      'answer question',
+      {
+        'trip.slug': trip.slug,
+        'assistant.can_edit': canEdit,
+        'mailbox.count': mailboxes.length,
+      },
+      async active => {
+        const scopes = canEdit ? ['trips:read', 'trips:write'] : ['trips:read']
+        const said = await assistant.run(
+          assistantPrompt({
+            user,
+            trip,
+            canEdit,
+            mailboxes: mailboxes.length,
+            travelTimes: !!routing,
+            now: clock(),
+            messages,
+          }),
+          { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
+        )
+        active.setAttributes({ 'answer.length': said.length, 'turn.count': messages.length })
+        return said
+      },
+    )
+
   app.post('/api/assistant', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -937,39 +974,59 @@ export async function buildServer({
     const trip = slug ? trips.find(value => value.slug === slug) : trips[0]
     if (!trip) return reply.code(404).send({ error: 'No trip found' })
     const canEdit = ['owner', 'editor'].includes(trip.role)
-    const scopes = canEdit ? ['trips:read', 'trips:write'] : ['trips:read']
     // Told about the mailbox tools only when there is a mailbox behind them.
     const mailboxes = mailboxReader ? await repository.listMailboxConnections(user.id) : []
+
+    const run = startAssistantRun({ user, trip, canEdit, mailboxes, messages })
+    if (request.body?.wait === false) {
+      const now = clock().getTime()
+      for (const [id, job] of assistantJobs) {
+        if (now - job.at > ASSISTANT_JOB_TTL_MS) assistantJobs.delete(id)
+      }
+      const id = randomUUID()
+      const job = { userId: user.id, state: 'running', at: now, reply: null }
+      assistantJobs.set(id, job)
+      stamp({ 'assistant.job': id })
+      run
+        .then(answer => {
+          job.state = 'done'
+          job.reply = answer
+        })
+        .catch(error => {
+          app.log.error({ err: error, job: id }, 'assistant request failed')
+          job.state = 'failed'
+          /* The cause travels, the internals do not: codex's stderr tail
+             names tools and hosts, so the phone gets the class of failure
+             and Loki keeps the evidence under this job id. */
+          job.error = /did not answer within/.test(String(error?.message))
+            ? 'The assistant ran out of time on that question. Try asking for less at once.'
+            : 'The assistant hit an error answering that.'
+        })
+      return reply.code(202).send({ job: id })
+    }
     try {
-      const answer = await span(
-        'answer question',
-        {
-          'trip.slug': trip.slug,
-          'assistant.can_edit': canEdit,
-          'mailbox.count': mailboxes.length,
-        },
-        async active => {
-          const said = await assistant.run(
-            assistantPrompt({
-              user,
-              trip,
-              canEdit,
-              mailboxes: mailboxes.length,
-              travelTimes: !!routing,
-              now: clock(),
-              messages,
-            }),
-            { env: { OFFWEGO_MCP_TOKEN: signAgentToken(user, oauthSecret, clock(), scopes) } },
-          )
-          active.setAttributes({ 'answer.length': said.length, 'turn.count': messages.length })
-          return said
-        },
-      )
-      return { reply: answer }
+      return { reply: await run }
     } catch (error) {
       app.log.error({ err: error }, 'assistant request failed')
       return reply.code(502).send({ error: 'The assistant could not answer' })
     }
+  })
+
+  app.get('/api/assistant/jobs/:id', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const job = assistantJobs.get(request.params.id)
+    if (!job || job.userId !== user.id) {
+      // Unknown also means "the server restarted mid-run": the poller treats
+      // this as final rather than waiting out a job nobody is running.
+      return reply.code(404).send({ error: 'That question is no longer running' })
+    }
+    stamp({ 'assistant.job': request.params.id, 'assistant.job_state': job.state })
+    if (job.state === 'done') return { state: 'done', reply: job.reply }
+    if (job.state === 'failed') {
+      return { state: 'failed', error: job.error || 'The assistant could not finish that answer' }
+    }
+    return { state: 'running' }
   })
 
   /* ---- session replay -------------------------------------------------

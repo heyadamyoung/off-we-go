@@ -24,6 +24,91 @@ async function assistantServer({ assistant, allowedEmails = ['owner@example.com'
   return { repository, app }
 }
 
+test('an ask is a job: started at once, polled to its answer, private to its asker', async () => {
+  // The wire must never have to outlive the run: the phone that asked from
+  // airport LTE lost every held response while the agent kept editing.
+  let finish
+  const assistant = {
+    run: () => new Promise(resolve => (finish = resolve)),
+  }
+  const { repository, app } = await assistantServer({
+    assistant,
+    allowedEmails: ['owner@example.com', 'other@example.com'],
+  })
+  const owner = await authenticate(repository, 'owner@example.com')
+  const other = await authenticate(repository, 'other@example.com')
+  await app.inject({
+    method: 'POST',
+    url: '/api/trips',
+    headers: { authorization: owner },
+    payload: { title: 'Getting home' },
+  })
+
+  const started = await app.inject({
+    method: 'POST',
+    url: '/api/assistant',
+    headers: { authorization: owner },
+    payload: { wait: false, messages: [{ role: 'user', text: 'Fill in the legs' }] },
+  })
+  assert.equal(started.statusCode, 202)
+  const job = started.json().job
+  assert.ok(job)
+
+  const running = await app.inject({
+    method: 'GET',
+    url: `/api/assistant/jobs/${job}`,
+    headers: { authorization: owner },
+  })
+  assert.equal(running.json().state, 'running')
+
+  // Someone else's poll of the same id learns nothing, not even that it exists.
+  const foreign = await app.inject({
+    method: 'GET',
+    url: `/api/assistant/jobs/${job}`,
+    headers: { authorization: other },
+  })
+  assert.equal(foreign.statusCode, 404)
+
+  finish('All three legs are in.')
+  await new Promise(step => setImmediate(step))
+  const done = await app.inject({
+    method: 'GET',
+    url: `/api/assistant/jobs/${job}`,
+    headers: { authorization: owner },
+  })
+  assert.equal(done.json().state, 'done')
+  assert.equal(done.json().reply, 'All three legs are in.')
+})
+
+test('a failed run polls out as words for a person, not a stack for a screen', async () => {
+  const assistant = {
+    run: () => Promise.reject(new Error('codex exec did not answer within 600000ms: mcp: tool')),
+  }
+  const { repository, app } = await assistantServer({ assistant })
+  const owner = await authenticate(repository, 'owner@example.com')
+  await app.inject({
+    method: 'POST',
+    url: '/api/trips',
+    headers: { authorization: owner },
+    payload: { title: 'Getting home' },
+  })
+  const started = await app.inject({
+    method: 'POST',
+    url: '/api/assistant',
+    headers: { authorization: owner },
+    payload: { wait: false, messages: [{ role: 'user', text: 'Fill in the legs' }] },
+  })
+  await new Promise(step => setImmediate(step))
+  const failed = await app.inject({
+    method: 'GET',
+    url: `/api/assistant/jobs/${started.json().job}`,
+    headers: { authorization: owner },
+  })
+  assert.equal(failed.json().state, 'failed')
+  assert.match(failed.json().error, /ran out of time/)
+  assert.doesNotMatch(failed.json().error, /codex|mcp|exec/i)
+})
+
 test('the assistant gets the conversation and a scoped token, never a data dump', async () => {
   const asks = []
   const assistant = {
