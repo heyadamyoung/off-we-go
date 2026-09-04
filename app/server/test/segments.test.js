@@ -69,6 +69,31 @@ test('segments belong to editors: created, gate history kept, gone on delete', a
   const segment = created.json()
   assert.equal(segment.deadlines.boardingAt, '2026-09-19T15:30:00.000Z', 'deadlines derive')
 
+  /* The night the connection died mid-answer, a retried question created
+     every leg twice. The same flight asked for again is the same flight. */
+  const again = await app.inject({
+    method: 'POST',
+    url: `/api/trips/${trip.id}/segments`,
+    headers: { authorization: owner },
+    body: {
+      mode: 'flight',
+      carrier: 'Air Canada',
+      number: 'AC 1140',
+      fromName: 'Toronto Pearson',
+      toName: 'Regina',
+      departsAt: '2026-09-19T16:10:00.000Z',
+      gate: 'B31',
+    },
+  })
+  assert.equal(again.statusCode, 200)
+  assert.equal(again.json().id, segment.id, 'a re-asked leg updates instead of doubling')
+  const afterRetry = await app.inject({
+    method: 'GET',
+    url: `/api/trips/${trip.id}/segments`,
+    headers: { authorization: owner },
+  })
+  assert.equal(afterRetry.json().segments.length, 1)
+
   const refused = await app.inject({
     method: 'POST',
     url: `/api/trips/${trip.id}/segments`,

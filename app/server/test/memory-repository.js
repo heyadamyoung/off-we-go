@@ -933,6 +933,16 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async createSegment(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
+      /* Same identity rule as Postgres: a re-asked leg updates, never doubles. */
+      const twin = [...segments.values()].find(
+        s =>
+          s.tripId === tripId &&
+          s.mode === input.mode &&
+          (s.carrier ?? '') === (input.carrier ?? '') &&
+          (s.number ?? '') === (input.number ?? '') &&
+          new Date(s.departsAt).getTime() === new Date(input.departsAt).getTime(),
+      )
+      if (twin) return this.updateSegment(user, tripId, twin.id, input)
       const id = 'segment-' + (segments.size + 1)
       const row = {
         id,

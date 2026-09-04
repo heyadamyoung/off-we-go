@@ -1048,6 +1048,22 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async createSegment(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
+      /* A leg's identity is trip + mode + carrier + number + departure. The
+         same leg asked for twice — an agent retried, a user double-tapped —
+         must land as one: the second ask becomes an update of the first,
+         which is what the asker meant by it. */
+      const existing = await pool.query(
+        `select id from segments
+        where trip_id = $1 and mode = $2
+          and coalesce(carrier, '') = coalesce($3, '')
+          and coalesce(number, '') = coalesce($4, '')
+          and departs_at = $5
+        limit 1`,
+        [tripId, input.mode, input.carrier ?? null, input.number ?? null, input.departsAt],
+      )
+      if (existing.rows.length) {
+        return this.updateSegment(user, tripId, existing.rows[0].id, input)
+      }
       const result = await pool.query(
         `insert into segments
         (trip_id,mode,carrier,number,ref,from_name,from_code,from_lng,from_lat,
