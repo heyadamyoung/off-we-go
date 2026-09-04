@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   DEADLINE_LABELS,
   localTime,
@@ -7,6 +8,8 @@ import {
   type Segment,
   type SegmentDeadlines,
 } from '../../../segments-core'
+import { parseSeat } from '../../../seatmap-core'
+import SeatMap from './seat-map'
 
 /* One leg, wearing the face the clock chooses. future: a quiet line.
    eve: packing truth. day: the countdown, gate in amber. past: a line in
@@ -38,6 +41,8 @@ export default function SegmentCard({
   const glyph = MODE_GLYPH[segment.mode]
   const title = [segment.carrier, segment.number].filter(Boolean).join(' ') || segment.mode
   const upcoming = nextDeadline(segment, now)
+  const [seats, setSeats] = useState(false)
+  const hasSeatMap = segment.mode === 'flight' && segment.passengers.some(p => parseSeat(p.seat))
 
   if (face === 'future' || face === 'past') {
     return (
@@ -100,6 +105,7 @@ export default function SegmentCard({
         </div>
       </div>
 
+      {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
       <div className="flex flex-wrap gap-1.5 px-3 pt-2 text-[11px]">
         {segment.gate && (
           <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
@@ -123,6 +129,14 @@ export default function SegmentCard({
             {person.seat && <b className="ml-1">{person.seat}</b>}
           </span>
         ))}
+        {hasSeatMap && (
+          <button
+            className="rounded-md border border-accent/40 bg-canvas px-2 py-0.5 font-bold
+                       text-accent hover:bg-accent-soft"
+            onClick={() => setSeats(true)}>
+            Where we sit
+          </button>
+        )}
         {face === 'eve' && segment.bags?.checked && (
           <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
             Checked <b>{segment.bags.checked}</b>

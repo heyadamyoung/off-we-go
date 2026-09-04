@@ -971,6 +971,18 @@ test('flying to an airport draws its gates', async ({ page }) => {
   await expect.poll(gates, { timeout: 30000 }).toBeGreaterThan(0)
 })
 
+test('a flight with seats shows where everyone sits, on a drawn cabin', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Travel', exact: true }).click()
+  await page.getByRole('button', { name: 'Where we sit' }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet).toBeVisible()
+  // The demo family holds 31A and 31B on the flight home; the cabin is drawn.
+  await expect(sheet.getByText('Maya · 31A')).toBeVisible()
+  await expect(sheet.getByText('Alex · 31B')).toBeVisible()
+  await expect(sheet.getByRole('img', { name: 'Cabin seat map' })).toBeVisible()
+})
+
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Travel', exact: true }).click()
