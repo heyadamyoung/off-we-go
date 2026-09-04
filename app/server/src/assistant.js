@@ -62,6 +62,8 @@ export function assistantPrompt({
     '- list_trips — their other trips, if a question reaches beyond this one.',
     '- list_segments — the travel legs: flights, trains, ferries with seats,',
     '  gates or platforms, check-in and boarding deadlines, and documents.',
+    '- get_messages — the trip’s chat, for questions about what the family',
+    '  said or decided.',
     ...(travelTimes
       ? [
           '- get_travel_times — real road travel time and distance between each',

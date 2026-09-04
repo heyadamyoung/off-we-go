@@ -15,7 +15,10 @@ const tripStreams = createTripStreams({
   retryDelay: liveRetryDelay,
 })
 
-export function subscribeToTrip(tripId: Id, onChange: () => void) {
+/* The kind rides through so a listener can be choosy: the chat refetches its
+   own slice on 'chat' and the trip loader deliberately ignores it — a busy
+   evening of messages must not re-download the whole trip per bubble. */
+export function subscribeToTrip(tripId: Id, onChange: (kind: string) => void) {
   if (isSample(tripId)) return () => {}
   return tripStreams.watch(String(tripId), { onChange })
 }

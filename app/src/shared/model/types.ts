@@ -202,6 +202,25 @@ export interface TripLeg {
   meters: number
 }
 
+/** One emoji on one chat message, aggregated: how many, and whether me. */
+export interface ChatReaction {
+  emoji: string
+  count: number
+  mine: boolean
+}
+
+/** One message in the trip's chat. */
+export interface ChatMessage {
+  id: Id
+  userId?: Id
+  by?: string
+  handle?: string
+  body: string
+  at: string
+  reactions: ChatReaction[]
+  pending?: boolean
+}
+
 /** One turn of the AI chat; the transcript lives in the browser. */
 export interface AssistantMessage {
   role: 'user' | 'assistant'

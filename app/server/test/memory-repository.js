@@ -646,6 +646,73 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (removedDevices.includes(fix.deviceId)) positions.delete(key)
       return 'removed'
     },
+    async listMessages(user, tripId, { limit = 100, before = null } = {}) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const trip = trips.get(tripId)
+      trip.messages ||= []
+      let list = trip.messages
+      if (before) {
+        const index = list.findIndex(message => message.id === before)
+        if (index >= 0) list = list.slice(0, index)
+      }
+      return list.slice(-Math.min(Math.max(limit, 1), 200)).map(message => ({
+        id: message.id,
+        userId: message.userId,
+        by: profiles.get(message.userId)?.displayName,
+        handle: profiles.get(message.userId)?.handle,
+        body: message.body,
+        at: message.at,
+        reactions: [...message.reactions.entries()].map(([emoji, userIds]) => ({
+          emoji,
+          count: userIds.size,
+          mine: userIds.has(user.id),
+        })),
+      }))
+    },
+    async createMessage(user, tripId, body) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const trip = trips.get(tripId)
+      trip.messages ||= []
+      const message = {
+        id: fakeUuid(6, ++nextComment),
+        userId: user.id,
+        body,
+        at: new Date().toISOString(),
+        reactions: new Map(),
+      }
+      trip.messages.push(message)
+      return {
+        id: message.id,
+        userId: user.id,
+        by: profiles.get(user.id)?.displayName,
+        handle: profiles.get(user.id)?.handle,
+        body,
+        at: message.at,
+        reactions: [],
+      }
+    },
+    async deleteMessage(user, tripId, messageId) {
+      const trip = trips.get(tripId)
+      if (!trip?.messages) return false
+      const message = trip.messages.find(value => value.id === messageId)
+      const owner = trip.members.some(
+        member => member.profileId === user.id && member.role === 'owner',
+      )
+      if (!message || (message.userId !== user.id && !owner)) return false
+      trip.messages = trip.messages.filter(value => value.id !== messageId)
+      return true
+    },
+    async setMessageReaction(user, tripId, messageId, emoji, on) {
+      if (!(await this.canReadTrip(user.id, tripId))) return false
+      const message = trips.get(tripId)?.messages?.find(value => value.id === messageId)
+      if (!message) return false
+      const users = message.reactions.get(emoji) || new Set()
+      if (on) users.add(user.id)
+      else users.delete(user.id)
+      if (users.size) message.reactions.set(emoji, users)
+      else message.reactions.delete(emoji)
+      return true
+    },
     async addComment(user, tripId, photoId, body) {
       if (!(await this.canReadTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)

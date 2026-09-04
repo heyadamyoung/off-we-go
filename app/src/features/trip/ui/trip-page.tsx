@@ -12,6 +12,7 @@ import { PhotoViewer, UploadModal, UploadTray } from '../../photos'
 import { TripSettingsSheet } from '../../people'
 import useTripData from '../model/use-trip-data'
 import useTripLegs from '../model/use-trip-legs'
+import useTripChat from '../model/use-trip-chat'
 import { withFace } from '../model/faces'
 import useTripPage from '../model/use-trip-page'
 import {
@@ -84,6 +85,7 @@ function Trip({
     items, selectedItem, select, pickStop, onMapClicked,
     saveTrip, uploads, origin, panelOpen, subtitle, offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
+  const chat = useTripChat({ tripId, toast })
 
   return (
     <div
@@ -193,6 +195,7 @@ function Trip({
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           legs={legs}
+          chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
             segments: transport.segments,

@@ -1601,6 +1601,96 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         client.release()
       }
     },
+    /* The trip's chat. Reactions ride along aggregated — {emoji, count, mine}
+       — because every reader wants exactly that shape and nobody wants the
+       raw rows crossing the wire. */
+    async listMessages(user, tripId, { limit = 100, before = null } = {}) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const values = [tripId]
+      let where = 'm.trip_id=$1'
+      if (before) {
+        values.push(before)
+        where += ` and m.created_at < (select created_at from trip_messages where id=$${values.length})`
+      }
+      values.push(Math.min(Math.max(limit, 1), 200))
+      const result = await pool.query(
+        `select m.*, p.display_name author, p.handle from trip_messages m
+         join profiles p on p.id=m.user_id
+         where ${where} order by m.created_at desc limit $${values.length}`,
+        values,
+      )
+      const rows = result.rows.reverse()
+      const reactions = rows.length
+        ? await pool.query(
+            `select message_id, emoji, count(*)::int count,
+               bool_or(user_id=$2) mine
+             from trip_message_reactions where message_id = any($1)
+             group by message_id, emoji order by min(created_at)`,
+            [rows.map(row => row.id), user.id],
+          )
+        : { rows: [] }
+      const byMessage = new Map()
+      for (const row of reactions.rows) {
+        if (!byMessage.has(row.message_id)) byMessage.set(row.message_id, [])
+        byMessage.get(row.message_id).push({ emoji: row.emoji, count: row.count, mine: row.mine })
+      }
+      return rows.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        by: row.author,
+        handle: row.handle,
+        body: row.body,
+        at: new Date(row.created_at).toISOString(),
+        reactions: byMessage.get(row.id) || [],
+      }))
+    },
+    async createMessage(user, tripId, body) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        'insert into trip_messages(trip_id,user_id,body) values($1,$2,$3) returning *',
+        [tripId, user.id, body],
+      )
+      const value = result.rows[0]
+      const member = await pool.query('select display_name, handle from profiles where id=$1', [
+        user.id,
+      ])
+      return {
+        id: value.id,
+        userId: value.user_id,
+        by: member.rows[0]?.display_name,
+        handle: member.rows[0]?.handle,
+        body: value.body,
+        at: new Date(value.created_at).toISOString(),
+        reactions: [],
+      }
+    },
+    async deleteMessage(user, tripId, messageId) {
+      const result = await pool.query(
+        `delete from trip_messages m where m.id=$1 and m.trip_id=$2
+         and (m.user_id=$3 or exists(select 1 from trip_members tm
+           where tm.trip_id=$2 and tm.profile_id=$3 and tm.role='owner'))`,
+        [messageId, tripId, user.id],
+      )
+      return result.rowCount > 0
+    },
+    async setMessageReaction(user, tripId, messageId, emoji, on) {
+      if (!(await this.canReadTrip(user.id, tripId))) return false
+      if (on) {
+        const result = await pool.query(
+          `insert into trip_message_reactions(message_id,user_id,emoji)
+           select m.id,$2,$3 from trip_messages m where m.id=$1 and m.trip_id=$4
+           on conflict do nothing`,
+          [messageId, user.id, emoji, tripId],
+        )
+        return result.rowCount > 0
+      }
+      const result = await pool.query(
+        `delete from trip_message_reactions r using trip_messages m
+         where r.message_id=m.id and m.id=$1 and m.trip_id=$4 and r.user_id=$2 and r.emoji=$3`,
+        [messageId, user.id, emoji, tripId],
+      )
+      return result.rowCount > 0
+    },
     async addComment(user, tripId, photoId, body) {
       if (!(await this.canReadTrip(user.id, tripId))) return null
       const result = await pool.query(

@@ -51,7 +51,9 @@ export default function useTripData(slug: string, canAdopt: () => boolean): Trip
   useEffect(() => {
     if (!tripId) return
     let timer: ReturnType<typeof setTimeout>
-    const stop = subscribeToTrip(tripId, () => {
+    const stop = subscribeToTrip(tripId, kind => {
+      // Chat has its own watcher; a message must not re-download the trip.
+      if (kind === 'chat') return
       clearTimeout(timer)
       timer = setTimeout(() => {
         if (canAdopt()) reload()

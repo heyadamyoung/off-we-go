@@ -2255,6 +2255,80 @@ export async function buildServer({
     return reply.code(204).send()
   })
 
+  /* The trip's chat: any member speaks — viewers included, a family chat has
+     no spectators — and reactions are emoji, toggled per person. Changes
+     announce as 'chat', so watchers refetch messages, never the whole trip. */
+  app.get('/api/trips/:tripId/messages', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const before = typeof request.query?.before === 'string' ? request.query.before : null
+    const messages = await repository.listMessages(user, request.params.tripId, { before })
+    if (!messages) return reply.code(403).send({ error: 'You cannot view this trip' })
+    stamp({ 'trip.id': request.params.tripId, 'chat.count': messages.length })
+    return { messages }
+  })
+
+  app.post('/api/trips/:tripId/messages', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const body = String(request.body?.body || '').trim()
+    if (!body || body.length > 2000) {
+      return reply.code(400).send({ error: 'A message needs 1 to 2000 characters' })
+    }
+    const message = await repository.createMessage(user, request.params.tripId, body)
+    if (!message) return reply.code(403).send({ error: 'You cannot view this trip' })
+    stamp({ 'trip.id': request.params.tripId, 'chat.message': message.id })
+    return reply.code(201).send(message)
+  })
+
+  app.delete('/api/trips/:tripId/messages/:messageId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const removed = await repository.deleteMessage(
+      user,
+      request.params.tripId,
+      request.params.messageId,
+    )
+    if (!removed) return reply.code(404).send({ error: 'Message not found' })
+    stamp({ 'trip.id': request.params.tripId, 'chat.deleted': request.params.messageId })
+    return reply.code(204).send()
+  })
+
+  const readEmoji = value => {
+    const emoji = String(value || '').trim()
+    return emoji && emoji.length <= 16 && !/[\p{L}\p{N}]/u.test(emoji) ? emoji : null
+  }
+  app.put('/api/trips/:tripId/messages/:messageId/reactions', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const emoji = readEmoji(request.body?.emoji)
+    if (!emoji) return reply.code(400).send({ error: 'A reaction is a short emoji' })
+    await repository.setMessageReaction(
+      user,
+      request.params.tripId,
+      request.params.messageId,
+      emoji,
+      true,
+    )
+    stamp({ 'trip.id': request.params.tripId, 'chat.reaction': emoji })
+    return reply.code(204).send()
+  })
+  app.delete('/api/trips/:tripId/messages/:messageId/reactions', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const emoji = readEmoji(request.body?.emoji)
+    if (!emoji) return reply.code(400).send({ error: 'A reaction is a short emoji' })
+    await repository.setMessageReaction(
+      user,
+      request.params.tripId,
+      request.params.messageId,
+      emoji,
+      false,
+    )
+    stamp({ 'trip.id': request.params.tripId, 'chat.reaction': emoji })
+    return reply.code(204).send()
+  })
+
   app.post('/api/trips/:tripId/photos/:photoId/comments', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

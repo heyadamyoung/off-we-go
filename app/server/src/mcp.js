@@ -409,6 +409,19 @@ function buildMcpServer({
       },
     )
   }
+  register(
+    'get_messages',
+    {
+      description:
+        'The trip’s chat: recent messages from the travellers and followers, oldest first, each with its emoji reactions. The trip id comes from get_trip or list_trips.',
+      inputSchema: z.object({ tripId: entityId }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ tripId }) => {
+      const messages = await repository.listMessages(user, tripId, { limit: 100 })
+      return messages ? result({ messages }) : toolFailure('No accessible trip was found.')
+    },
+  )
   /* Mailbox tools ride ONLY the in-app assistant's agent token — never an
      external MCP client's grant. The consent screen those clients passed
      asked about trips; mail must not arrive on a trips scope, however

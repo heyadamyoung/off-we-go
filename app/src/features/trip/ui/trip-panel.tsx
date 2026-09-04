@@ -5,6 +5,7 @@ import { SightsList, type SightsListProps } from '../../sights'
 import { SegmentChain } from '../../transport'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
+import ChatPanel, { type ChatProps } from './panel-chat'
 import type { Segment } from '../../../segments-core'
 import { legLabel } from '../../../legs-core'
 import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
@@ -27,6 +28,8 @@ interface PanelProps {
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>
+  /** the family's room — see panel-chat */
+  chat?: ChatProps
   /** the getting-there chain: the Travel view is its home */
   transport?: {
     segments: Segment[]
@@ -45,6 +48,7 @@ const HEADINGS: Record<string, [string, string]> = {
     'Getting there',
     'Every leg of the journey — deadlines, seats and documents in one chain.',
   ],
+  chat: ['Chat', 'The whole crew, one room — travellers and followers alike.'],
   photos: ['Photos', 'Everything anyone has taken on this trip, newest first.'],
   sights: ['Sights nearby', 'Places worth a detour, from where the map is looking.'],
   people: ['People', 'Who is travelling, and who is following from home.'],
@@ -95,6 +99,7 @@ export default function TripPanel(props: PanelProps) {
                       max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
         {props.view === 'timeline' && <Timeline {...props} />}
         {props.view === 'travel' && <Travel {...props} />}
+        {props.view === 'chat' && props.chat && <ChatPanel {...props.chat} />}
         {props.view === 'photos' && <Photos {...props} />}
         {props.view === 'sights' && <SightsList {...props.sights} />}
         {props.view === 'people' && (

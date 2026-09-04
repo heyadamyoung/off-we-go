@@ -20,6 +20,7 @@ export * from './backend-assistant'
 export * from './backend-segments'
 export * from './backend-social'
 export * from './backend-live'
+export * from './backend-chat'
 import type {
   AccountArchive,
   ApiError,
