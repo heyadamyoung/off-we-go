@@ -405,6 +405,38 @@ test('the codex home points the agent at the loopback MCP server', async () => {
   assert.match(config, /bearer_token_env_var = "OFFWEGO_MCP_TOKEN"/)
 })
 
+test('two questions take turns — codex never runs beside itself', async () => {
+  /* Refresh tokens are single-use: two codex processes sharing one home race
+     the rotation, and the losing race revokes the whole login. The runner
+     queues; a second ask spawns only after the first has fully closed. */
+  const home = await mkdtemp(path.join(tmpdir(), 'codex-home-'))
+  let alive = 0
+  let overlapped = false
+  const run = createCodexRunner({
+    home,
+    spawn: (binary, args) => {
+      alive += 1
+      if (alive > 1) overlapped = true
+      const child = new EventEmitter()
+      child.stderr = new EventEmitter()
+      child.kill = () => {}
+      child.stdin = new EventEmitter()
+      child.stdin.end = () => {
+        const outFile = args[args.indexOf('--output-last-message') + 1]
+        setTimeout(async () => {
+          await writeFile(outFile, 'done')
+          alive -= 1
+          child.emit('close', 0)
+        }, 20)
+      }
+      return child
+    },
+  })
+  const answers = await Promise.all([run('first'), run('second')])
+  assert.deepEqual(answers, ['done', 'done'])
+  assert.equal(overlapped, false, 'the second spawn waited for the first to close')
+})
+
 function fakeCodex({ exitCode = 0, reply = 'An answer', onSpawn }) {
   return (binary, args, options) => {
     const child = new EventEmitter()

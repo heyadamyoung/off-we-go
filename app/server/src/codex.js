@@ -55,7 +55,20 @@ export function createCodexRunner({
   timeoutMs = 300_000,
   spawn = nodeSpawn,
 }) {
-  return async function run(prompt, { env: extraEnv = {} } = {}) {
+  /* One codex at a time, enforced here and not by callers: OpenAI's refresh
+     tokens are single-use, and two processes sharing this home race the
+     rotation — the loser presents an already-spent token and the WHOLE login
+     is revoked, which is exactly how a night of retried questions killed the
+     agent in production. Queued questions simply take their turn; the job
+     poller upstairs makes the wait invisible. */
+  let turn = Promise.resolve()
+  return function run(prompt, options = {}) {
+    const mine = turn.then(() => runAlone(prompt, options))
+    turn = mine.catch(() => {})
+    return mine
+  }
+
+  async function runAlone(prompt, { env: extraEnv = {} } = {}) {
     const outFile = path.join(
       home,
       `reply-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
