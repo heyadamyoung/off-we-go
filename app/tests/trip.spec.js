@@ -112,9 +112,13 @@ async function centreOnStop(page, name) {
       )
       if (!p) return null
       const q = p.querySelector('.pin').getBoundingClientRect()
+      /* Geometry and settledness only — never elementFromPoint. On a travel
+         day Maya's LIVE avatar dwells exactly on the museum steps, covering
+         the pin's centre for minutes of every lap, and a hit-test proxy for
+         "the pin has landed" failed every deploy that crossed her dwell. */
       const c = { x: q.x + q.width / 2, y: q.y + q.height / 2 }
       return {
-        point: p.contains(document.elementFromPoint(c.x, c.y)) ? c : null,
+        point: q.width > 0 ? c : null,
         moving: window.__offwegoMap?.isMoving() ?? true,
       }
     }, name)
@@ -132,7 +136,11 @@ async function centreOnStop(page, name) {
         previous = current?.point
         return !!stable
       },
-      { intervals: [50, 100, 200] },
+      /* Three times the default room: on a cold CI box the ease to the stop
+         waits on tiles and glyphs, and this predicate needs two consecutive
+         quiet reads. Its only two failures ever were paired retries on one
+         box — time, not logic. */
+      { intervals: [50, 100, 200], timeout: 45000 },
     )
     .toBe(true)
   return (await pinCentre()).point
