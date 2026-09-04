@@ -2116,6 +2116,40 @@ export async function buildServer({
       return { ...safe, src: mediaUrl(storagePath) }
     },
   )
+  /* Managing paperwork: rename it, note where the QR hides, refile its kind.
+     One shape for both homes. */
+  const documentPatch = body => ({
+    name: body?.name != null ? String(body.name).trim().slice(0, 160) || undefined : undefined,
+    note: body?.note !== undefined ? String(body.note ?? '').slice(0, 500) : undefined,
+    kind: body?.kind != null ? String(body.kind).slice(0, 40) : undefined,
+    personId: body?.personId !== undefined ? body.personId : undefined,
+  })
+  app.patch('/api/trips/:tripId/stops/documents/:documentId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const doc = await repository.updateStopDocument(
+      user,
+      request.params.tripId,
+      request.params.documentId,
+      documentPatch(request.body),
+    )
+    if (!doc) return reply.code(404).send({ error: 'That document was not found' })
+    const { storagePath, ...safe } = doc
+    return { ...safe, src: mediaUrl(storagePath) }
+  })
+  app.patch('/api/trips/:tripId/segments/documents/:documentId', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const doc = await repository.updateSegmentDocument(
+      user,
+      request.params.tripId,
+      request.params.documentId,
+      documentPatch(request.body),
+    )
+    if (!doc) return reply.code(404).send({ error: 'That document was not found' })
+    const { storagePath, ...safe } = doc
+    return { ...safe, src: mediaUrl(storagePath) }
+  })
   app.delete('/api/trips/:tripId/stops/documents/:documentId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

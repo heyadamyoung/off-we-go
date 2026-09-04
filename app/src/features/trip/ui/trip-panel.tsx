@@ -39,6 +39,8 @@ interface PanelProps {
     onAdd: () => void
     onShowGate: (segment: Segment) => void
     onAttach: (segment: Segment, file: File) => void
+    onEditDoc?: (documentId: string, changes: { name?: string; note?: string }) => void
+    onRemoveDoc?: (documentId: string) => void
   }
 }
 

@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import { connectionGap, type Segment } from '../../../segments-core'
 import SegmentCard from './segment-card'
 
@@ -13,6 +12,8 @@ export default function SegmentChain({
   onEdit,
   onShowGate,
   onAttach,
+  onEditDoc,
+  onRemoveDoc,
 }: {
   segments: Segment[]
   now: number
@@ -22,9 +23,9 @@ export default function SegmentChain({
   onAdd: () => void
   onShowGate: (segment: Segment) => void
   onAttach: (segment: Segment, file: File) => void
+  onEditDoc?: (documentId: string, changes: { name?: string; note?: string }) => void
+  onRemoveDoc?: (documentId: string) => void
 }) {
-  const picking = useRef<Segment | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
   if (!segments.length) return null
 
   const verdictWord = { roomy: 'roomy', tight: 'tight', short: 'too short' } as const
@@ -52,26 +53,14 @@ export default function SegmentChain({
                 canEdit={canEdit}
                 onEdit={onEdit}
                 onShowGate={onShowGate}
-                onAttach={target => {
-                  picking.current = target
-                  fileInput.current?.click()
-                }}
+                onAttach={onAttach}
+                onEditDoc={onEditDoc}
+                onRemoveDoc={onRemoveDoc}
               />
             </div>
           )
         })}
       </div>
-      <input
-        ref={fileInput}
-        type="file"
-        accept="image/*,application/pdf"
-        hidden
-        onChange={event => {
-          const file = event.target.files?.[0]
-          if (file && picking.current) onAttach(picking.current, file)
-          event.target.value = ''
-        }}
-      />
     </section>
   )
 }

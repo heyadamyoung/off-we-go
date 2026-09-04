@@ -1,5 +1,8 @@
+import { useState } from 'react'
+import DocumentsSheet from '../../../shared/ui/documents-sheet'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
+import type { StopDocTools } from '../model/use-stop-docs'
 import type { TripItem } from '../model/trip-items'
 
 interface DetailCardProps {
@@ -7,6 +10,7 @@ interface DetailCardProps {
   shifted: boolean
   canEdit: boolean
   photoCount: number
+  docs?: StopDocTools
   onClose: () => void
   onOpenPhotos: () => void
   onAddPhotos: () => void
@@ -22,6 +26,8 @@ interface DetailCardProps {
 export default function DetailCard(props: DetailCardProps) {
   const { item } = props
   const stop = item.stop
+  const [papers, setPapers] = useState(false)
+  const paperCount = stop?.documents?.length || 0
   const status =
     item.status === 'done' ? 'Done' : item.status === 'now' ? 'Happening now' : 'Planned'
 
@@ -69,19 +75,16 @@ export default function DetailCard(props: DetailCardProps) {
         {stop?.note && <p className="m-0 text-xs leading-relaxed text-muted">{stop.note}</p>}
         {stop?.kind && <div className="text-xs text-muted">{stop.kind}</div>}
 
-        {(stop?.documents?.length || 0) > 0 && (
-          <div className="flex flex-wrap gap-1.5 text-[11px]">
-            {stop?.documents?.map(doc => (
-              <a
-                key={doc.id}
-                className="rounded-md border border-line bg-canvas px-2 py-0.5 text-ink no-underline"
-                href={doc.src}
-                target="_blank"
-                rel="noreferrer">
-                📎 {doc.name}
-              </a>
-            ))}
-          </div>
+        {papers && stop && (
+          <DocumentsSheet
+            title={`Papers — ${stop.name}`}
+            documents={stop.documents || []}
+            canEdit={props.canEdit && !!props.docs}
+            onClose={() => setPapers(false)}
+            onAdd={props.docs ? file => props.docs?.attach(stop.id, file) : undefined}
+            onEdit={props.docs?.edit}
+            onRemove={props.docs?.remove}
+          />
         )}
 
         <div className="mt-1 flex items-center gap-2">
@@ -97,6 +100,11 @@ export default function DetailCard(props: DetailCardProps) {
             <button className="mini" onClick={props.onIndoor}>
               <Icon n="plane" s={13} className="mr-1 inline -mt-0.5" />
               Terminal map
+            </button>
+          )}
+          {stop && (paperCount > 0 || (props.canEdit && props.docs)) && (
+            <button className="mini" onClick={() => setPapers(true)}>
+              📎 Papers{paperCount ? ` · ${paperCount}` : ''}
             </button>
           )}
           {props.canEdit && (

@@ -101,6 +101,7 @@ const documentRow = row =>
         kind: row.kind,
         mime: row.mime,
         bytes: row.bytes,
+        note: row.note ?? null,
         storagePath: row.storage_path,
       }
     : null
@@ -844,7 +845,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           left join lateral (
             select json_agg(json_build_object(
               'id', sd.id, 'personId', sd.person_id, 'name', sd.name, 'kind', sd.kind,
-              'mime', sd.mime, 'storagePath', sd.storage_path
+              'mime', sd.mime, 'note', sd.note, 'storagePath', sd.storage_path
             ) order by sd.created_at) as documents
             from stop_documents sd where sd.stop_id = s.id
           ) d on true
@@ -1050,7 +1051,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           select json_agg(json_build_object(
             'id', sd.id, 'personId', sd.person_id, 'name', sd.name,
             'kind', sd.kind, 'mime', sd.mime, 'bytes', sd.bytes,
-            'storagePath', sd.storage_path
+            'note', sd.note, 'storagePath', sd.storage_path
           ) order by sd.created_at) as documents
           from segment_documents sd where sd.segment_id = s.id
         ) d on true
@@ -1244,6 +1245,28 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       )
       return documentRow(result.rows[0])
     },
+    async updateStopDocument(user, tripId, documentId, changes) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `update stop_documents sd
+        set name = coalesce($3, sd.name),
+            note = case when $4::text is null then sd.note else nullif($4, '') end,
+            kind = coalesce($5, sd.kind),
+            person_id = case when $6::text is null then sd.person_id else nullif($6, '')::uuid end
+        from stops s
+        where sd.id=$1 and sd.stop_id=s.id and s.trip_id=$2
+        returning sd.*`,
+        [
+          documentId,
+          tripId,
+          changes.name ?? null,
+          changes.note === undefined ? null : String(changes.note),
+          changes.kind ?? null,
+          changes.personId === undefined ? null : String(changes.personId ?? ''),
+        ],
+      )
+      return result.rows[0] ? documentRow(result.rows[0]) : null
+    },
     async deleteStopDocument(user, tripId, documentId) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const result = await pool.query(
@@ -1267,6 +1290,28 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         [segmentId, doc.personId ?? null, doc.name, doc.kind, doc.mime, doc.storagePath, doc.bytes],
       )
       return documentRow(result.rows[0])
+    },
+    async updateSegmentDocument(user, tripId, documentId, changes) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `update segment_documents sd
+        set name = coalesce($3, sd.name),
+            note = case when $4::text is null then sd.note else nullif($4, '') end,
+            kind = coalesce($5, sd.kind),
+            person_id = case when $6::text is null then sd.person_id else nullif($6, '')::uuid end
+        from segments s
+        where sd.id=$1 and sd.segment_id=s.id and s.trip_id=$2
+        returning sd.*`,
+        [
+          documentId,
+          tripId,
+          changes.name ?? null,
+          changes.note === undefined ? null : String(changes.note),
+          changes.kind ?? null,
+          changes.personId === undefined ? null : String(changes.personId ?? ''),
+        ],
+      )
+      return result.rows[0] ? documentRow(result.rows[0]) : null
     },
     async findSegmentDocument(user, tripId, documentId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null

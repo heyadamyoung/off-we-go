@@ -20,6 +20,7 @@ export interface SegmentDocument {
   kind: string
   mime: string
   bytes?: number | null
+  note?: string | null
   src?: string
 }
 

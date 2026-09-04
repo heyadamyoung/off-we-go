@@ -83,6 +83,25 @@ test('a stop takes a document, shows it on the trip, and gives it up on delete',
   assert.equal(shown.documents[0].name, 'Entry tickets')
   assert.match(shown.documents[0].src, /docs\//)
 
+  const renamed = await app.inject({
+    method: 'PATCH',
+    url: `/api/trips/${trip.id}/stops/documents/${doc.id}`,
+    headers: { authorization: owner },
+    payload: { name: 'Rijksmuseum tickets', note: 'QR is on the last page' },
+  })
+  assert.equal(renamed.statusCode, 200)
+  assert.equal(renamed.json().name, 'Rijksmuseum tickets')
+  assert.equal(renamed.json().note, 'QR is on the last page')
+
+  const cleared = await app.inject({
+    method: 'PATCH',
+    url: `/api/trips/${trip.id}/stops/documents/${doc.id}`,
+    headers: { authorization: owner },
+    payload: { note: '' },
+  })
+  assert.equal(cleared.json().note, null, 'an empty note clears; an omitted one keeps')
+  assert.equal(cleared.json().name, 'Rijksmuseum tickets')
+
   const removed = await app.inject({
     method: 'DELETE',
     url: `/api/trips/${trip.id}/stops/documents/${doc.id}`,

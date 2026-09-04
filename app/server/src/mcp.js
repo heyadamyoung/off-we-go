@@ -1091,6 +1091,30 @@ function buildMcpServer({
     ),
   )
   register(
+    'update_document',
+    {
+      description:
+        'Rename a document on a travel leg or itinerary stop, set or clear its note ("QR is on the last page"), refile its kind, or reassign whose it is. Pass only the fields to change; note: "" clears the note.',
+      inputSchema: z.object({
+        tripId: entityId,
+        documentId: entityId,
+        name: z.string().trim().min(1).max(160).optional(),
+        note: z.string().max(500).optional(),
+        kind: z.enum(['pass', 'ticket', 'receipt', 'visa', 'other']).optional(),
+        personId: z.string().max(80).nullable().optional(),
+      }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    write('segments', async ({ tripId, documentId, ...changes }) => {
+      const doc =
+        (await repository.updateSegmentDocument(user, tripId, documentId, changes)) ||
+        (await repository.updateStopDocument?.(user, tripId, documentId, changes))
+      if (!doc) return toolFailure('The document was not found or is not editable by this user.')
+      const { storagePath: _hidden, ...safe } = doc
+      return result(safe)
+    }),
+  )
+  register(
     'remove_document',
     {
       description:

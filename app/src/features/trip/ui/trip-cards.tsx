@@ -5,16 +5,19 @@ import DetailCard from './detail-card'
 import { EditHint, PlaceHint } from './trip-chrome'
 import type useTripPage from '../model/use-trip-page'
 
+import type { StopDocTools } from '../model/use-stop-docs'
+
 interface TripCardsProps {
   page: ReturnType<typeof useTripPage>
   canEdit: boolean
   patch: (changes: Record<string, unknown>) => void
+  stopDocs: StopDocTools
 }
 
 /* The floating layer over the map: the stop card, the stop editor, the
    placement and route hints, and the attraction card. The page decides what
    exists; this layer decides how it hovers. */
-export default function TripCards({ page, canEdit, patch }: TripCardsProps) {
+export default function TripCards({ page, canEdit, patch, stopDocs }: TripCardsProps) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     draft, selectedItem, panelOpen, here, openViewer, startEditing, setDraft,
@@ -46,6 +49,7 @@ export default function TripCards({ page, canEdit, patch }: TripCardsProps) {
               ? () => indoor.open(selectedItem.stop!)
               : undefined
           }
+          docs={stopDocs}
         />
       )}
 

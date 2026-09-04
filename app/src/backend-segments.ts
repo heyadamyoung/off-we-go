@@ -1,7 +1,7 @@
 import { authClient, isSample, tripPath } from './backend-base'
 import { uid } from './sample-trip-core'
 import { deriveDeadlines, type Segment, type SegmentDocument } from './segments-core'
-import type { Id } from './shared/model/types'
+import type { Id, StopDocument } from './shared/model/types'
 
 /* ---- travel segments: the getting-there layer ------------------------- */
 
@@ -133,5 +133,64 @@ export async function deleteSegmentDocument(tripId: Id, documentId: string): Pro
   await authClient.request(
     `${tripPath(tripId)}/segments/documents/${encodeURIComponent(documentId)}`,
     { method: 'DELETE' },
+  )
+}
+
+export interface DocumentChanges {
+  name?: string
+  note?: string
+  kind?: string
+  personId?: string | null
+}
+
+export async function updateSegmentDocument(
+  tripId: Id,
+  documentId: string,
+  changes: DocumentChanges,
+): Promise<SegmentDocument> {
+  if (isSample(tripId)) throw new Error('The sample trip keeps no documents')
+  return authClient.request<SegmentDocument>(
+    `${tripPath(tripId)}/segments/documents/${encodeURIComponent(documentId)}`,
+    { method: 'PATCH', body: changes },
+  )
+}
+
+/* A stop's paperwork: same rules, same shapes, the other home. */
+export async function uploadStopDocument(
+  tripId: Id,
+  stopId: string,
+  file: File,
+  fields: { name?: string; kind?: string } = {},
+): Promise<StopDocument> {
+  if (isSample(tripId)) throw new Error('The sample trip keeps no documents')
+  const form = new FormData()
+  form.append('file', file)
+  if (fields.name) form.append('name', fields.name)
+  if (fields.kind) form.append('kind', fields.kind)
+  return authClient.request<StopDocument>(
+    `${tripPath(tripId)}/stops/${encodeURIComponent(stopId)}/documents`,
+    { method: 'POST', body: form },
+  )
+}
+
+export async function updateStopDocument(
+  tripId: Id,
+  documentId: string,
+  changes: DocumentChanges,
+): Promise<StopDocument> {
+  if (isSample(tripId)) throw new Error('The sample trip keeps no documents')
+  return authClient.request<StopDocument>(
+    `${tripPath(tripId)}/stops/documents/${encodeURIComponent(documentId)}`,
+    { method: 'PATCH', body: changes },
+  )
+}
+
+export async function deleteStopDocument(tripId: Id, documentId: string): Promise<void> {
+  if (isSample(tripId)) return
+  await authClient.request(
+    `${tripPath(tripId)}/stops/documents/${encodeURIComponent(documentId)}`,
+    {
+      method: 'DELETE',
+    },
   )
 }

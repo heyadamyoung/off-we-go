@@ -21,6 +21,7 @@ export interface StopDocument {
   kind: string
   mime: string
   src: string
+  note?: string | null
   personId?: string | null
 }
 

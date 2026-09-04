@@ -4,6 +4,7 @@ import {
   deleteSegment,
   deleteSegmentDocument,
   loadSegments,
+  updateSegmentDocument,
   subscribeToTrip,
   updateSegment,
   uploadSegmentDocument,
@@ -89,5 +90,17 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
     [tripId, refetch, toast],
   )
 
-  return { segments, saveSegment, removeSegment, attachDocument, removeDocument }
+  const editDocument = useCallback(
+    async (documentId: string, changes: { name?: string; note?: string }) => {
+      try {
+        await updateSegmentDocument(tripId, documentId, changes)
+        refetch()
+      } catch (error) {
+        toast((error as Error).message || 'The document could not be updated', 'error')
+      }
+    },
+    [tripId, refetch, toast],
+  )
+
+  return { segments, saveSegment, removeSegment, attachDocument, editDocument, removeDocument }
 }

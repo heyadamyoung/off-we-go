@@ -1058,6 +1058,17 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       stopDocuments.set(id, row)
       return { ...row }
     },
+    async updateStopDocument(user, tripId, documentId, changes) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const row = stopDocuments.get(documentId)
+      const trip = trips.get(tripId)
+      if (!row || !(trip?.stops || []).some(value => value.id === row.stopId)) return null
+      if (changes.name != null) row.name = changes.name
+      if (changes.note !== undefined) row.note = changes.note || null
+      if (changes.kind != null) row.kind = changes.kind
+      if (changes.personId !== undefined) row.personId = changes.personId || null
+      return { ...row }
+    },
     async deleteStopDocument(user, tripId, documentId) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const row = stopDocuments.get(documentId)
@@ -1074,6 +1085,17 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const id = 'document-' + (segmentDocuments.size + 1)
       const row = { id, segmentId, ...doc }
       segmentDocuments.set(id, row)
+      return { ...row }
+    },
+    async updateSegmentDocument(user, tripId, documentId, changes) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const row = segmentDocuments.get(documentId)
+      const segment = row && segments.get(row.segmentId)
+      if (!segment || segment.tripId !== tripId) return null
+      if (changes.name != null) row.name = changes.name
+      if (changes.note !== undefined) row.note = changes.note || null
+      if (changes.kind != null) row.kind = changes.kind
+      if (changes.personId !== undefined) row.personId = changes.personId || null
       return { ...row }
     },
     async findSegmentDocument(user, tripId, documentId) {

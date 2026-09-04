@@ -9,6 +9,7 @@ import {
   type SegmentDeadlines,
 } from '../../../segments-core'
 import { parseSeat } from '../../../seatmap-core'
+import DocumentsSheet from '../../../shared/ui/documents-sheet'
 import SeatMap from './seat-map'
 
 /* One leg, wearing the face the clock chooses. future: a quiet line.
@@ -29,20 +30,26 @@ export default function SegmentCard({
   onEdit,
   onShowGate,
   onAttach,
+  onEditDoc,
+  onRemoveDoc,
 }: {
   segment: Segment
   now: number
   canEdit: boolean
   onEdit?: (segment: Segment) => void
   onShowGate?: (segment: Segment) => void
-  onAttach?: (segment: Segment) => void
+  onAttach?: (segment: Segment, file: File) => void
+  onEditDoc?: (documentId: string, changes: { name?: string; note?: string }) => void
+  onRemoveDoc?: (documentId: string) => void
 }) {
   const face = segmentFace(segment, now)
   const glyph = MODE_GLYPH[segment.mode]
   const title = [segment.carrier, segment.number].filter(Boolean).join(' ') || segment.mode
   const upcoming = nextDeadline(segment, now)
   const [seats, setSeats] = useState(false)
+  const [papers, setPapers] = useState(false)
   const hasSeatMap = segment.mode === 'flight' && segment.passengers.some(p => parseSeat(p.seat))
+  const paperCount = segment.documents?.length || 0
 
   if (face === 'future' || face === 'past') {
     return (
@@ -106,6 +113,17 @@ export default function SegmentCard({
       </div>
 
       {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
+      {papers && (
+        <DocumentsSheet
+          title={`Papers — ${title}`}
+          documents={segment.documents || []}
+          canEdit={canEdit}
+          onClose={() => setPapers(false)}
+          onAdd={onAttach ? file => onAttach(segment, file) : undefined}
+          onEdit={onEditDoc}
+          onRemove={onRemoveDoc}
+        />
+      )}
       <div className="flex flex-wrap gap-1.5 px-3 pt-2 text-[11px]">
         {segment.gate && (
           <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
@@ -200,11 +218,11 @@ export default function SegmentCard({
             Show gate on the map
           </button>
         )}
-        {canEdit && onAttach && (
+        {(canEdit || paperCount > 0) && (
           <button
             className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
-            onClick={() => onAttach(segment)}>
-            Attach document
+            onClick={() => setPapers(true)}>
+            Papers{paperCount ? ` · ${paperCount}` : ''}
           </button>
         )}
         {canEdit && onEdit && (

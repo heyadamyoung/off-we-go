@@ -14,6 +14,7 @@ import useTripData from '../model/use-trip-data'
 import useTripLegs from '../model/use-trip-legs'
 import useTripChat from '../model/use-trip-chat'
 import { withFace } from '../model/faces'
+import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
 import {
   Advisories,
@@ -60,6 +61,7 @@ function Trip({
   const notify = useToast()
   const { tripId, canEdit } = data
   const legs = useTripLegs({ tripId, stops: data.stops })
+  const stopDocs = useStopDocs(tripId, reload, notify)
 
   const patch = useCallback(
     (changes: Record<string, unknown>) => {
@@ -205,6 +207,8 @@ function Trip({
             onAdd: () => setSegmentEditing('new'),
             onShowGate: showGate,
             onAttach: (segment, file) => transport.attachDocument(segment.id, file, {}),
+            onEditDoc: transport.editDocument,
+            onRemoveDoc: transport.removeDocument,
           }}
         />
       )}
@@ -219,7 +223,7 @@ function Trip({
         />
       )}
 
-      <TripCards page={page} canEdit={canEdit} patch={patch} />
+      <TripCards page={page} canEdit={canEdit} patch={patch} stopDocs={stopDocs} />
 
       {!panelOpen && (
         <Advisories
