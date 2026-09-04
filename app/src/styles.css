@@ -692,9 +692,29 @@
 .vedit input { width: 100%; border-radius: 8px; background: var(--c-raised); border: 1px solid var(--c-line); padding: 8px 11px; font-size: 13px; outline: none }
 .cdel { color: var(--c-faint) }
 .cdel:hover { color: var(--c-danger) }
+/* Below a desktop the viewer stacks: the photo keeps the top, the talk gets
+   the bottom. Hiding .vside here — the old answer — hid every comment and the
+   box for writing one from every phone, which read as "commenting is broken
+   on mobile". Fractional rows, never vh: Samsung Internet leaves viewport
+   units stale across the keyboard's resize, and a vh-capped panel is how the
+   chat once held its input under the keyboard. */
 @media (max-width: 1080px) {
-  .viewer { grid-template-columns: 1fr }
-  .vside { display: none }
+  .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr) }
+  .vside { display: flex; border-left: 0; border-top: 1px solid var(--c-line) }
+  /* The second map and the roll-call are desktop garnish; on a phone they
+     crowd out the one thing this panel is for. */
+  .vminimap, .vinfo, .vcontrib { display: none }
+  /* Lifted by the keyboard where the viewport will not move (iOS), and clear
+     of the home bar everywhere else. */
+  .vinput {
+    padding-bottom: calc(16px + max(var(--keyboard, 0px), env(safe-area-inset-bottom, 0px)));
+  }
+}
+@media (max-width: 640px) {
+  /* The arrows still turn pages; the filmstrip's row of thumbnails is the
+     comments' height given back. */
+  .vfilm { display: none }
+  .vcap { padding-bottom: 16px }
 }
 
 /* The stop editor, which takes the place the detail card would occupy. */

@@ -218,6 +218,22 @@ test('loads the trip with map, markers and the day strip', async ({ page }) => {
   await expect(page.getByText(/travelling/)).toBeVisible()
 })
 
+test('a photo’s notes are readable and writable on a phone', async ({ page }) => {
+  // The sidebar was simply display:none below 1080px — every comment and the
+  // box for writing one, gone from every phone, reading as broken.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await page.locator('.pgrid-photo').first().click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+  await expect(page.locator('.vcomments')).toBeVisible()
+  const input = page.locator('.vinput input')
+  await expect(input).toBeVisible()
+  // Writable means actually reachable by a tap, not merely rendered.
+  await input.click()
+  await expect(input).toBeFocused()
+})
+
 test('the strip interleaves a day’s stops with the photographs taken at them', async ({ page }) => {
   await open(page)
   const titles = await cardTitles(page)
