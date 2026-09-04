@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { MapCanvas } from '../../map'
 import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
-import { coordinateLabel, validLngLat } from '../../../shared/lib/geo'
+import { validLngLat } from '../../../shared/lib/geo'
 import type { MapTint } from '../../map'
 import type {
   Coordinates,
@@ -158,23 +158,14 @@ function PhotoViewer({
           )}
         </div>
 
+        {/* One quiet line under the photo: the caption if it has one, and the
+            count. Who, when and where already live in the top bar — repeating
+            them here (with raw coordinates, of all things) was chrome eating
+            the photograph. */}
         <div className="vcap">
-          <div>
-            <h2>
-              {photo.caption ||
-                [photo.when, stop?.name].filter(Boolean).join(' · ') ||
-                'From the trip'}
-            </h2>
-            <p className="loc">
-              <Icon n="pin" s={14} c="rgba(255,255,255,.5)" />
-              {stop ? stop.name : ''}
-              {validLngLat(photo.lng, photo.lat)
-                ? `${stop ? ' · ' : ''}${coordinateLabel([photo.lng!, photo.lat!])}`
-                : ''}
-            </p>
-          </div>
+          <h2>{photo.caption || ''}</h2>
           <div className="ct">
-            {index + 1} of {list.length} · uploaded from the trip
+            {index + 1} of {list.length}
           </div>
         </div>
 
@@ -257,9 +248,7 @@ function PhotoViewer({
                   </option>
                 ))}
               </select>
-              <button className="del" title="Delete photo" onClick={() => onPhotoDelete(photo.id)}>
-                <Icon n="x" s={14} w={2} />
-              </button>
+              <HoldToDelete onDelete={() => onPhotoDelete(photo.id)} />
             </div>
           </div>
         )}
@@ -301,6 +290,53 @@ function PhotoViewer({
         </form>
       </div>
     </div>
+  )
+}
+
+/* Deleting a photograph is the one act in this viewer with no undo, so it
+   asks for commitment: press and hold while the red fills, let go early and
+   nothing happens. A plain tap — the gesture that does everything else on
+   this screen — can never take a picture away. */
+function HoldToDelete({ onDelete }: { onDelete: () => void }) {
+  const [holding, setHolding] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const start = () => {
+    if (timer.current) return
+    setHolding(true)
+    timer.current = setTimeout(() => {
+      timer.current = null
+      setHolding(false)
+      onDelete()
+    }, 650)
+  }
+  const cancel = () => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    setHolding(false)
+  }
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    [],
+  )
+  return (
+    <button
+      type="button"
+      className={'vdel' + (holding ? ' holding' : '')}
+      title="Press and hold to delete this photo"
+      aria-label="Press and hold to delete this photo"
+      onPointerDown={start}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onPointerCancel={cancel}
+      onKeyDown={e => {
+        if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) start()
+      }}
+      onKeyUp={cancel}
+      onContextMenu={e => e.preventDefault()}>
+      <span>Delete</span>
+    </button>
   )
 }
 

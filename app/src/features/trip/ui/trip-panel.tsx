@@ -145,7 +145,7 @@ function Row({
 /* The Travel view: the chain is the whole page. The header carries the name
    and the add action, so the chain itself is bare legs and gaps. */
 function Travel({ transport }: PanelProps) {
-  if (!transport || !transport.segments.length)
+  if (!transport?.segments.length)
     return (
       <p className="hint p-4">
         {transport?.canEdit

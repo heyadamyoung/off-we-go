@@ -645,10 +645,11 @@
 .vnav:hover { background: rgb(255 255 255 / .24) }
 .vnav.p { left: 20px }
 .vnav.n { right: 20px }
-.vcap { flex: none; padding: 16px 20px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; color: #f2f4f8 }
-.vcap h2 { margin: 0 0 6px; font-size: 19px; font-weight: 700; letter-spacing: -.02em }
-.vcap .loc { margin: 0; font-size: 13px; color: rgb(255 255 255 / .5); display: flex; align-items: center; gap: 7px }
-.vcap .ct { font-size: 13px; color: rgb(255 255 255 / .38); white-space: nowrap; font-variant-numeric: tabular-nums }
+/* Slimmed to one baseline: caption left, count right. The photograph is the
+   page; this line must never compete with it. */
+.vcap { flex: none; padding: 10px 20px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 22px; color: #f2f4f8 }
+.vcap h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 700; letter-spacing: -.02em }
+.vcap .ct { font-size: 12px; color: rgb(255 255 255 / .38); white-space: nowrap; font-variant-numeric: tabular-nums }
 .vfilm { flex: none; display: flex; gap: 8px; padding: 0 20px 20px; overflow-x: auto }
 .vfilm button { width: 106px; height: 68px; border-radius: 8px; overflow: hidden; opacity: .4; border: 2px solid transparent; flex: none }
 /* Selection grammar: ink, not amber — same as every selected state. */
@@ -690,6 +691,21 @@
 .vinput button { width: 37px; height: 37px; border-radius: 8px; background: var(--c-accent); color: var(--c-accent-ink); display: grid; place-items: center }
 .vinput button:disabled { opacity: .4 }
 .vedit input { width: 100%; border-radius: 8px; background: var(--c-raised); border: 1px solid var(--c-line); padding: 8px 11px; font-size: 13px; outline: none }
+/* Deleting asks for a held press: the red fills for the whole hold, and
+   letting go early cancels. A tap can never do it. */
+.vdel {
+  position: relative; overflow: hidden; flex: none; height: 34px; padding: 0 14px;
+  border-radius: 8px; border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
+  color: var(--c-danger); font-size: 12px; font-weight: 800; letter-spacing: .02em;
+  -webkit-user-select: none; user-select: none; touch-action: none;
+}
+.vdel::before {
+  content: ''; position: absolute; inset: 0; background: var(--c-danger);
+  transform: scaleX(0); transform-origin: left;
+}
+.vdel.holding::before { transform: scaleX(1); transition: transform .65s linear }
+.vdel span { position: relative }
+.vdel.holding span { color: #fff }
 .cdel { color: var(--c-faint) }
 .cdel:hover { color: var(--c-danger) }
 /* Below a desktop the viewer stacks: the photo keeps the top, the talk gets
@@ -699,7 +715,8 @@
    units stale across the keyboard's resize, and a vh-capped panel is how the
    chat once held its input under the keyboard. */
 @media (max-width: 1080px) {
-  .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr) }
+  /* The picture takes three fifths of the phone; the talk keeps the rest. */
+  .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr) }
   .vside { display: flex; border-left: 0; border-top: 1px solid var(--c-line) }
   /* The second map and the roll-call are desktop garnish; on a phone they
      crowd out the one thing this panel is for. */

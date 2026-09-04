@@ -234,6 +234,29 @@ test('a photo’s notes are readable and writable on a phone', async ({ page }) 
   await expect(input).toBeFocused()
 })
 
+test('deleting a photo takes a held press — a tap does nothing', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await page.locator('.pgrid-photo').first().click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+  const count = () => page.locator('.vcap .ct').textContent()
+  const before = await count()
+
+  const del = page.locator('.vdel')
+  await del.scrollIntoViewIfNeeded()
+  // A tap — pointer down and up in a beat — must never take a picture away.
+  await del.click()
+  await expect.poll(count).toBe(before)
+
+  // Held past the fill, it deletes: the count of photos drops by one.
+  await del.hover()
+  await page.mouse.down()
+  await page.waitForTimeout(850)
+  await page.mouse.up()
+  const total = Number((before || '').split(' of ')[1])
+  await expect(page.locator('.vcap .ct')).toContainText(`of ${total - 1}`)
+})
+
 test('the strip interleaves a day’s stops with the photographs taken at them', async ({ page }) => {
   await open(page)
   const titles = await cardTitles(page)
