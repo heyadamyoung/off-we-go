@@ -338,7 +338,12 @@ function buildMcpServer({
     },
     async ({ slug }) => {
       const trip = await repository.loadCurrentTrip(user, slug || null)
-      return trip ? result(tripForMcp(trip)) : toolFailure('No accessible trip was found.')
+      if (!trip) return toolFailure('No accessible trip was found.')
+      /* Travel legs ride along: the agent's very first call is this one, and a
+         filing tool that wants a segmentId must not depend on the agent
+         thinking to ask a second question first — it demonstrably does not. */
+      const segments = (await repository.listSegments(user, trip.id)) || []
+      return result({ ...tripForMcp(trip), segments })
     },
   )
   register(
@@ -870,12 +875,14 @@ function buildMcpServer({
       'attach_mail_document',
       {
         description:
-          'Pull an attachment off a mailbox message (see search_mailbox and list_mail_attachments) and file it as a document on a travel leg (segmentId) OR an itinerary stop (stopId) — a boarding pass on the flight, the museum ticket on the museum, the booking on the hotel. Pass exactly one of segmentId or stopId. Bytes are stored exactly as sent; a recompressed QR does not scan.',
+          'Pull an attachment off a mailbox message (see search_mailbox and list_mail_attachments) and file it as a document on a travel leg (segmentId) OR an itinerary stop (stopId) — a boarding pass on the flight, the museum ticket on the museum, the booking on the hotel. Pass exactly one of segmentId or stopId, as the exact UUID from get_trip: segments carry segment ids, stops carry stop ids. Bytes are stored exactly as sent; a recompressed QR does not scan.',
         inputSchema: z
           .object({
             tripId: entityId,
-            segmentId: entityId.optional(),
-            stopId: entityId.optional(),
+            segmentId: entityId
+              .describe('UUID of the travel leg, from get_trip segments or list_segments')
+              .optional(),
+            stopId: entityId.describe('UUID of the itinerary stop, from get_trip stops').optional(),
             messageId: z.string().min(1).max(512),
             attachmentId: z.string().min(1).max(512).optional(),
             mailboxId: entityId.optional(),
@@ -1596,6 +1603,30 @@ export async function registerMcpRoutes(
         user: grant.user,
       }
       reply.hijack()
+      /* The SDK validates tool arguments BEFORE any handler runs, so a call
+         with a malformed id used to die without a trace — the agent told the
+         traveller "Off We Go refused" and Tempo had nothing to say. This
+         envelope span exists for exactly that autopsy: every tools/call gets
+         a span with the tool's name and its argument KEYS (never values —
+         arguments carry personal mail), and a validation death is the
+         envelope with no 'call tool' child inside it. */
+      const rpc = request.body
+      if (rpc?.method === 'tools/call') {
+        const toolName = String(rpc.params?.name || 'unnamed')
+        await span(
+          'call tool envelope',
+          { 'tool.name': toolName, 'user.id': grant.user.id },
+          async active => {
+            const args = rpc.params?.arguments
+            if (args && typeof args === 'object') {
+              active.setAttribute('tool.arg_keys', Object.keys(args).sort().join(','))
+              if (args.tripId) active.setAttribute('trip.id', String(args.tripId))
+            }
+            await nodeHandler(request.raw, reply.raw, request.body)
+          },
+        )
+        return
+      }
       await nodeHandler(request.raw, reply.raw, request.body)
     },
   })

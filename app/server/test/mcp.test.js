@@ -637,3 +637,59 @@ test('the in-house agent token reads as its user, cannot write, and works only f
   assert.equal(expired.statusCode, 401)
   await app.close()
 })
+
+test('get_trip hands over travel legs, and a malformed filing call fails in words', async () => {
+  // The night the agent could not file a train ticket: get_trip named no
+  // segments, so the agent never had a leg id to file onto, and its guessed
+  // call died in schema validation with nothing anyone could act on. The
+  // trip's first answer now carries the legs.
+  const { app, authorization } = await fixture()
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/trips',
+    headers: { authorization },
+    payload: { title: 'Utrecht Day', dayCount: 3 },
+  })
+  const tripId = created.json().id
+  const client = await registerClient(app)
+  const grant = await authorize(app, authorization, client.client_id)
+  const tokens = await exchangeCode(app, client.client_id, grant.code, grant.verifier)
+  const mcpHeaders = {
+    authorization: `Bearer ${tokens.access_token}`,
+    accept: 'application/json, text/event-stream',
+    'mcp-protocol-version': '2025-06-18',
+  }
+  const call = (id, name, args) =>
+    app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: mcpHeaders,
+      payload: { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } },
+    })
+
+  const leg = await call(1, 'add_segment', {
+    tripId,
+    mode: 'train',
+    fromName: 'Amsterdam Centraal',
+    toName: 'Utrecht Centraal',
+    departsAt: '2027-06-02T09:10:00.000Z',
+  })
+  assert.equal(leg.statusCode, 200)
+  const legId = JSON.parse(JSON.parse(leg.body.match(/"text": "(.+)"\n/s)?.[1] ?? '""') || '{}').id
+
+  const tripView = await call(2, 'get_trip', {})
+  assert.equal(tripView.statusCode, 200)
+  assert.match(tripView.body, /\\"segments\\"/, 'get_trip carries the travel legs')
+  assert.match(tripView.body, /Utrecht Centraal/)
+  if (legId) assert.match(tripView.body, new RegExp(legId))
+
+  // A bad id must come back as words the agent can act on, not a mute refusal.
+  const malformed = await call(3, 'update_segment', {
+    tripId,
+    segmentId: 'the-train-tomorrow',
+    number: 'IC 123',
+  })
+  assert.equal(malformed.statusCode, 200)
+  assert.match(malformed.body, /invalid|expected|uuid/i, 'validation failures speak')
+  await app.close()
+})
