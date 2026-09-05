@@ -693,3 +693,56 @@ test('get_trip hands over travel legs, and a malformed filing call fails in word
   assert.match(malformed.body, /invalid|expected|uuid/i, 'validation failures speak')
   await app.close()
 })
+
+test('the assistant build strips the caution hints Codex refuses to approve', async () => {
+  // Codex's exec mode has no TTY to grant an approval, so a hinted tool is
+  // refused client-side — the call never reaches this server. Our own agent's
+  // guardrails are the scoped token and the prompt; strangers keep the hints.
+  const { app, authorization } = await fixture()
+  const client = await registerClient(app)
+  const grant = await authorize(app, authorization, client.client_id)
+  const tokens = await exchangeCode(app, client.client_id, grant.code, grant.verifier)
+  const oauthList = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: {
+      authorization: `Bearer ${tokens.access_token}`,
+      accept: 'application/json, text/event-stream',
+      'mcp-protocol-version': '2025-06-18',
+    },
+    payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+  })
+  assert.equal(oauthList.statusCode, 200)
+  assert.match(oauthList.body, /"destructiveHint":\s*true/, 'strangers see honest hints')
+
+  const { signAgentToken } = await import('../src/agent-token.js')
+  const agent = signAgentToken(
+    { id: 'agent-user' },
+    'test-secret-that-is-long-enough',
+    new Date(),
+    ['trips:read', 'trips:write'],
+  )
+  const assistantList = await app.inject({
+    method: 'POST',
+    url: '/mcp',
+    headers: {
+      authorization: `Bearer ${agent}`,
+      accept: 'application/json, text/event-stream',
+      'mcp-protocol-version': '2025-06-18',
+    },
+    payload: { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+  })
+  assert.equal(assistantList.statusCode, 200)
+  assert.match(assistantList.body, /"tools"/)
+  assert.doesNotMatch(
+    assistantList.body,
+    /"destructiveHint":\s*true/,
+    'the assistant is shown no tool it would refuse to call',
+  )
+  assert.doesNotMatch(
+    assistantList.body,
+    /"openWorldHint":\s*true/,
+    'open-world is the hint that blocked filing a mail attachment',
+  )
+  await app.close()
+})
