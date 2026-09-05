@@ -3,7 +3,12 @@ import { loadLive, subscribeToPositions } from '../../../backend'
 import { buildTrail } from '../../../trail-core'
 import { LIVE_FIX_MAX_AGE_MS } from '../../../live-freshness-core'
 import { liveRetryDelay, mergeLiveFixes } from '../../../live-positions-core'
-import { aliveFixes, followPoints, livePhoneMarkers } from '../../../live-markers-core'
+import {
+  aliveFixes,
+  followPoints,
+  lastKnownFixes,
+  livePhoneMarkers,
+} from '../../../live-markers-core'
 import { track as trackEvent, trackError } from '../../../shared/lib/telemetry'
 import {
   deriveLiveStopProgress,
@@ -198,6 +203,13 @@ export default function useLiveTrip({
     () => buildTrail(fixes.filter(fix => now - fix.at.getTime() > TRAIL_RECENT_MS)),
     [fixes, now],
   )
+  /* Where the phone last was, however long ago: the measuring line's origin
+     when every phone has gone quiet. A fresh fix is better; a stale one is
+     still the traveller's own spot, and beats silently measuring nothing. */
+  const lastSeenPosition = useMemo<Coordinates | null>(() => {
+    const [newest] = lastKnownFixes(fixes).sort((a, b) => b.at.getTime() - a.at.getTime())
+    return newest ? [newest.lng, newest.lat] : null
+  }, [fixes])
   return {
     phones,
     setPhones,
@@ -214,6 +226,7 @@ export default function useLiveTrip({
     progress,
     progressCopy,
     latestGpsPosition,
+    lastSeenPosition,
   }
 }
 

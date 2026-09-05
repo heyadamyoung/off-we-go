@@ -79,7 +79,7 @@ function Trip({
     setMapOverride, asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, sun, mapTheme, markers, progressCopy,
-    latestGpsPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
+    latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, removePhoto, removeComment, editing, startEditing,
@@ -92,7 +92,7 @@ function Trip({
   const toStop = useRouteToStop({
     tripId,
     sample: data.source === 'sample',
-    from: latestGpsPosition,
+    from: latestGpsPosition ?? lastSeenPosition,
     stop: selectedItem?.stop || null,
     point: probe,
   })

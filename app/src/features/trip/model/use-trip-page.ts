@@ -140,6 +140,7 @@ export default function useTripPage({
     progress,
     progressCopy,
     latestGpsPosition,
+    lastSeenPosition,
   } = useLiveTrip({ tripId, trip, route, stops: ordered, family, mapOverride })
 
   /* Phone only: the bottom bar collapsed to its peek. Owned here rather than
@@ -383,13 +384,13 @@ export default function useTripPage({
     view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
-    progressCopy, latestGpsPosition, liveStop, liveDay, liveStops,
+    progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
     transport, segmentEditing, setSegmentEditing, clock, showGate,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, removePhoto, removeComment,
-    indoor, editing, draft, setDraft, saving, routeDraft, setRouteDraft,
-    places, setPlaces, startEditing, searchPlaces, pickPlace, lookUpDraft,
-    saveRoute, onStopMove, onDraftField, moveStop, saveDraft, removeDraft,
+    addComment, toggleLike, changePhoto, removePhoto, removeComment, indoor, editing,
+    draft, setDraft, saving, routeDraft, setRouteDraft,
+    places, setPlaces, startEditing, searchPlaces, pickPlace, lookUpDraft, saveRoute,
+    onStopMove, onDraftField, moveStop, saveDraft, removeDraft,
     addSight, attractions, attrFilling, attrCount, toggleAttractions,
     addAttraction, showSight, showAttractions,
     items, selectedItem, select, pickStop, onMapClicked, addStopAt: onMapClick,
