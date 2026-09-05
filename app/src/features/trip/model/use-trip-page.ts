@@ -143,8 +143,7 @@ export default function useTripPage({
     lastSeenPosition,
   } = useLiveTrip({ tripId, trip, route, stops: ordered, family, mapOverride })
 
-  /* Phone only: the bottom bar collapsed to its peek. Owned here rather than
-     by the screen so the camera's visible band can shrink and grow with it. */
+  // Phone only: the bar's peek, owned here so the camera's band tracks it.
   const [barPeek, setBarPeek] = useState(false)
   const {
     following,
