@@ -163,4 +163,10 @@ jobs:
           | ssh -i ~/.ssh/id_ed25519 \
               -o BatchMode=yes \
               -o IdentitiesOnly=yes \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=6 \
               root@"$VPS_HOST" "deploy $GITHUB_SHA"
+          # The keepalives are the deploy's heartbeat: the web image's pnpm
+          # install can sit minutes without a byte in either direction, and a
+          # silent SSH channel through NAT died at that exact spot — the build
+          # finished on nobody's screen and the release never switched over.
