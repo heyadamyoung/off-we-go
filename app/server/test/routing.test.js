@@ -28,6 +28,59 @@ const answer = (time, length) => ({
   json: async () => ({ trip: { summary: { time, length } } }),
 })
 
+test('a route between two points carries its decoded shape for the map', async () => {
+  // Valhalla's polyline6: encode a known pair the way the engine does, and
+  // the decoder must hand back the coordinates a map can draw.
+  const encode = points => {
+    let out = ''
+    let lat = 0
+    let lng = 0
+    for (const [x, y] of points) {
+      for (const [next, prev] of [
+        [Math.round(y * 1e6), lat],
+        [Math.round(x * 1e6), lng],
+      ]) {
+        let delta = (next - prev) << 1
+        if (delta < 0) delta = ~delta
+        while (delta >= 0x20) {
+          out += String.fromCharCode((0x20 | (delta & 0x1f)) + 63)
+          delta >>= 5
+        }
+        out += String.fromCharCode(delta + 63)
+      }
+      lat = Math.round(y * 1e6)
+      lng = Math.round(x * 1e6)
+    }
+    return out
+  }
+  const way = [
+    [4.8852, 52.36],
+    [4.8836, 52.3607],
+    [4.8811, 52.3618],
+  ]
+  const routing = createValhallaRouting({
+    url: 'http://127.0.0.1:8002',
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({
+        trip: { summary: { time: 312.4, length: 1.42 }, legs: [{ shape: encode(way) }] },
+      }),
+    }),
+  })
+  const found = await routing.routeBetween(
+    { lng: 4.8852, lat: 52.36 },
+    { lng: 4.8811, lat: 52.3618 },
+    'pedestrian',
+  )
+  assert.equal(found.seconds, 312)
+  assert.equal(found.meters, 1420)
+  assert.equal(found.shape.length, 3)
+  for (const [index, [x, y]] of way.entries()) {
+    assert.ok(Math.abs(found.shape[index][0] - x) < 1e-5)
+    assert.ok(Math.abs(found.shape[index][1] - y) < 1e-5)
+  }
+})
+
 test('the valhalla client answers, caches answers, and never caches refusals', async () => {
   const calls = []
   let reply = answer(840.4, 5.2)

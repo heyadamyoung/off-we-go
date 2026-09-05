@@ -6,7 +6,7 @@ import { ALL_DAYS, type SettingsTab } from '../../../trip-search-core'
 import Boot from '../../../shared/ui/boot'
 import AccountMenu from '../../../shared/ui/account-menu'
 import { useToast } from '../../../shared/ui/toast'
-import { MapCanvas } from '../../map'
+import TripMap from './trip-map'
 import { AssistantButton, AssistantChat } from '../../assistant'
 import { PhotoViewer, UploadModal, UploadTray } from '../../photos'
 import { TripSettingsSheet } from '../../people'
@@ -14,6 +14,7 @@ import useTripData from '../model/use-trip-data'
 import useTripLegs from '../model/use-trip-legs'
 import useTripChat from '../model/use-trip-chat'
 import { withFace } from '../model/faces'
+import useRouteToStop from '../model/use-route-to-stop'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
 import {
@@ -74,19 +75,25 @@ function Trip({
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     theme, setTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
-    setMapOverride, setAttractionCard, asking, setAsking, assistant, view, setView, selected,
+    setMapOverride, asking, setAsking, assistant, view, setView, selected,
     query, day, days, toast,
-    mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
-    phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
-    progressCopy, latestGpsPosition, liveStop, liveDay, liveStops,
-    transport, segmentEditing, setSegmentEditing, clock, showGate,
-    photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, removePhoto, removeComment, indoor, editing, routeDraft,
-    places, startEditing, pickPlace, onStopMove, addSight, attractions, toggleAttractions,
-    showSight, showAttractions, items, selectedItem, select, pickStop, onMapClicked,
+    mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
+    phones, setPhones, sun, mapTheme, markers, progressCopy,
+    latestGpsPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
+    setSegmentEditing, clock, showGate,
+    photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
+    addComment, toggleLike, changePhoto, removePhoto, removeComment, editing,
+    startEditing, addSight, toggleAttractions,
+    showSight, showAttractions, items, selectedItem, select,
     saveTrip, uploads, origin, panelOpen, subtitle, offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
   const chat = useTripChat({ tripId, toast })
+  const toStop = useRouteToStop({
+    tripId,
+    sample: data.source === 'sample',
+    from: latestGpsPosition,
+    stop: selectedItem?.stop || null,
+  })
 
   return (
     <div
@@ -101,34 +108,7 @@ function Trip({
           screen.scrollLeft = 0
         }
       }}>
-      <MapCanvas
-        theme={mapTheme}
-        tint={sun}
-        view={mapView}
-        onView={onMapView}
-        padding={mapPadding}
-        route={routeDraft || track}
-        stops={liveStops}
-        photos={photos}
-        markers={markers}
-        trail={trail}
-        trailFaded={trailFaded}
-        selectedStop={selected}
-        labels={mapView.zoom > 13}
-        onStop={pickStop}
-        onPhoto={openViewer}
-        onLive={() => liveStop && patch({ sel: liveStop.id })}
-        editing={editing}
-        placing={!!placing}
-        onMapClick={onMapClicked}
-        onStopMove={onStopMove}
-        places={editing && !routeDraft ? places : []}
-        onPickPlace={pickPlace}
-        attractions={attractions}
-        onPickAttraction={setAttractionCard}
-        indoor={indoor.mapData}
-        onPickGate={indoor.toGate}
-      />
+      <TripMap page={page} measure={toStop.measure} patch={patch} />
 
       {/* The map runs behind everything; these two washes keep the chrome legible
           without a panel behind each piece of it. */}
@@ -223,7 +203,13 @@ function Trip({
         />
       )}
 
-      <TripCards page={page} canEdit={canEdit} patch={patch} stopDocs={stopDocs} />
+      <TripCards
+        page={page}
+        canEdit={canEdit}
+        patch={patch}
+        stopDocs={stopDocs}
+        fromYou={toStop.summary}
+      />
 
       {!panelOpen && (
         <Advisories

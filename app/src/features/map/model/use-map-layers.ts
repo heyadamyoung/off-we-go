@@ -19,6 +19,7 @@ interface MapLayerOptions {
   route: NonNullable<MapCanvasProps['route']>
   trail: NonNullable<MapCanvasProps['trail']>
   trailFaded: NonNullable<MapCanvasProps['trailFaded']>
+  measure: MapCanvasProps['measure']
   sweepIn: (map: MapGL) => void
   onPickAttraction: MapCanvasProps['onPickAttraction']
 }
@@ -66,9 +67,12 @@ export default function useMapLayers({
   route,
   trail,
   trailFaded,
+  measure,
   sweepIn,
   onPickAttraction,
 }: MapLayerOptions) {
+  const measureRef = useRef(measure)
+  measureRef.current = measure
   /* ---- the route, re-added whenever a style loads ------------------------
    setStyle replaces the whole style document, so anything we added goes with
    it. Re-adding on every style.load covers both first load and theme swaps. */
@@ -153,6 +157,29 @@ export default function useMapLayers({
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ACCENT, 'line-width': 3 },
       })
+      /* The measured way: from the phone in your hand to the stop you asked
+         about. Brighter and tighter-dashed than the plan so it reads as an
+         answer, cleared the moment the question closes. */
+      map.addSource('measure', { type: 'geojson', data: lineOf(measureRef.current || []) })
+      map.addLayer({
+        id: 'measure-halo',
+        type: 'line',
+        source: 'measure',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ACCENT_BRIGHT, 'line-width': 6, 'line-opacity': 0.25 },
+      })
+      map.addLayer({
+        id: 'measure-line',
+        type: 'line',
+        source: 'measure',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ACCENT_BRIGHT,
+          'line-width': 2.5,
+          'line-opacity': 0.9,
+          'line-dasharray': [0.5, 2],
+        },
+      })
       sweepIn(map)
     }
     return whenStyleReady(map, addRoute)
@@ -163,6 +190,12 @@ export default function useMapLayers({
     const src = map.getSource<GeoJSONSource>('route')
     if (src) src.setData(lineOf(route))
   }, [map, route])
+
+  useEffect(() => {
+    if (!map) return
+    const src = map.getSource<GeoJSONSource>('measure')
+    if (src) src.setData(lineOf(measure || []))
+  }, [map, measure])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the sweep replays when the trail changes, not when the sweep function is rebuilt
   useEffect(() => {

@@ -1635,6 +1635,35 @@ export async function buildServer({
      deployed. A leg the engine cannot answer is absent rather than an error:
      the itinerary must render regardless, and the reason is on the span and
      in the engine's own logged words. */
+  /* From here to there, for the person holding the phone: the shortest road
+     the engine knows, with its shape to draw. The phone falls back to the
+     crow when this answers 503 or the engine cannot say. */
+  app.get('/api/trips/:tripId/route', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    if (!routing) {
+      return reply.code(503).send({ error: 'No routing engine is configured on this server' })
+    }
+    const mode = String(request.query?.mode || 'pedestrian')
+    if (!LEG_MODES.has(mode)) {
+      return reply.code(400).send({ error: 'mode must be auto, pedestrian or bicycle' })
+    }
+    const stops = await repository.listStops(user, request.params.tripId)
+    if (!stops) return reply.code(403).send({ error: 'You cannot view this trip' })
+    const numbers = ['fromLng', 'fromLat', 'toLng', 'toLat'].map(k => Number(request.query?.[k]))
+    if (!numbers.every(Number.isFinite)) {
+      return reply.code(400).send({ error: 'fromLng, fromLat, toLng and toLat are required' })
+    }
+    const [fromLng, fromLat, toLng, toLat] = numbers
+    const found = await routing.routeBetween(
+      { lng: fromLng, lat: fromLat },
+      { lng: toLng, lat: toLat },
+      mode,
+    )
+    stamp({ 'trip.id': request.params.tripId, 'route.mode': mode, 'route.found': !!found })
+    if (!found) return reply.code(502).send({ error: 'The engine could not route that' })
+    return found
+  })
   app.get('/api/trips/:tripId/legs', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return

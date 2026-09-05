@@ -32,6 +32,32 @@ export function consecutiveDayLegs(stops) {
 
 export const LEG_MODES = new Set(['auto', 'pedestrian', 'bicycle'])
 
+/* Valhalla's encoded polyline, precision 1e-6, decoded to [lng,lat] pairs —
+   the shape a phone draws between "you are here" and the museum steps. */
+export function decodeShape(encoded) {
+  const points = []
+  let index = 0
+  let lat = 0
+  let lng = 0
+  while (index < encoded.length) {
+    for (const which of [0, 1]) {
+      let result = 0
+      let shift = 0
+      let byte
+      do {
+        byte = encoded.charCodeAt(index++) - 63
+        result |= (byte & 0x1f) << shift
+        shift += 5
+      } while (byte >= 0x20)
+      const delta = result & 1 ? ~(result >> 1) : result >> 1
+      if (which === 0) lat += delta
+      else lng += delta
+    }
+    points.push([lng / 1e6, lat / 1e6])
+  }
+  return points
+}
+
 export function createValhallaRouting({
   url,
   fetch = globalThis.fetch,
@@ -96,6 +122,61 @@ export function createValhallaRouting({
   }
 
   return {
+    /** One question a phone asks on the spot: from here to that stop, by this
+        mode — time, distance, and the shape to draw. Null when the engine
+        cannot say; the phone falls back to the crow. */
+    async routeBetween(from, to, mode = 'pedestrian') {
+      const key = `shape:${mode}:${round(from.lng)},${round(from.lat)}>${round(to.lng)},${round(to.lat)}`
+      if (cache.has(key)) return cache.get(key)
+      const started = clock().getTime()
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      timer.unref?.()
+      try {
+        const response = await fetch(`${root}/route`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            locations: [
+              { lat: Number(from.lat), lon: Number(from.lng) },
+              { lat: Number(to.lat), lon: Number(to.lng) },
+            ],
+            costing: mode,
+            directions_type: 'none',
+            units: 'kilometers',
+          }),
+        })
+        const ms = clock().getTime() - started
+        if (!response.ok) {
+          const body = (await response.text().catch(() => '')).slice(0, 300)
+          logger?.warn({ status: response.status, body, key, ms }, 'valhalla refused a route')
+          return null
+        }
+        const trip = (await response.json())?.trip
+        const summary = trip?.summary
+        if (!summary || !Number.isFinite(summary.time)) {
+          logger?.warn({ key, ms }, 'valhalla answered without a usable summary')
+          return null
+        }
+        const shape = (trip.legs || []).flatMap(part =>
+          typeof part.shape === 'string' ? decodeShape(part.shape) : [],
+        )
+        const value = {
+          seconds: Math.round(summary.time),
+          meters: Math.round(summary.length * 1000),
+          shape,
+        }
+        logger?.debug({ key, ms, seconds: value.seconds, meters: value.meters }, 'valhalla route')
+        remember(key, value)
+        return value
+      } catch (error) {
+        logger?.warn({ err: error, key, ms: clock().getTime() - started }, 'valhalla unreachable')
+        return null
+      } finally {
+        clearTimeout(timer)
+      }
+    },
     /** Ordered stops in, labelled legs out; a leg the engine cannot answer is simply absent. */
     async legsFor(stops, mode = 'auto') {
       const legs = []

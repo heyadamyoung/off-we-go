@@ -312,6 +312,25 @@ export async function deleteAccount() {
 
 /* The AI chat on the map. Addressed by slug like /trips/current, and the
    whole transcript travels with the ask — the server keeps no chat state. */
+/* From the person to a stop: the engine's shortest way, with the shape to
+   draw. Null on any refusal — the caller falls back to the crow. */
+export async function routeToStop(
+  tripId: Id,
+  from: Coordinates,
+  to: Coordinates,
+  mode: 'pedestrian' | 'auto' | 'bicycle',
+): Promise<{ seconds: number; meters: number; shape: Coordinates[] } | null> {
+  if (isSample(tripId)) return null
+  try {
+    return await authClient.request(
+      `${tripPath(tripId)}/route?fromLng=${from[0]}&fromLat=${from[1]}` +
+        `&toLng=${to[0]}&toLat=${to[1]}&mode=${mode}`,
+    )
+  } catch {
+    return null
+  }
+}
+
 /* Road truth is an optional garnish: no engine, no session, sample mode, or a
    mid-build engine all degrade to "no legs" here — the server keeps the
    evidence, the itinerary just renders without the labels. */

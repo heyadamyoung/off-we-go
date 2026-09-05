@@ -43,6 +43,7 @@ const MapCanvas = memo(function MapCanvas({
   tint,
   interactive = true,
   route = [],
+  measure = null,
   stops = [],
   photos = [],
   markers = [],
@@ -133,6 +134,7 @@ const MapCanvas = memo(function MapCanvas({
     route,
     trail,
     trailFaded,
+    measure,
     sweepIn,
     // Placing or moving a stop, a tap means "here" — never "tell me about this".
     onPickAttraction: editing || placing ? undefined : onPickAttraction,

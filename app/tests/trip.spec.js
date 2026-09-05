@@ -994,6 +994,25 @@ test('the status capsule takes its own taps — the AI button must not blanket t
   await expect(page.getByText('Ask about this trip')).toBeHidden()
 })
 
+test('a selected stop answers how far from you, and draws the way', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  await page
+    .getByRole('button', { name: /Rijksmuseum/ })
+    .first()
+    .click()
+  // The demo has no engine, so the crow answers: a distance and a straight
+  // dashed line from Maya's live dot to the museum.
+  await expect(page.locator('.detailcard')).toContainText('km direct from you')
+  const drawn = () =>
+    page.evaluate(
+      () =>
+        window.__offwegoMap?.getSource('measure')?.serialize?.().data?.geometry?.coordinates
+          ?.length ?? 0,
+    )
+  await expect.poll(drawn, { timeout: 15000 }).toBeGreaterThan(1)
+})
+
 test('flying to an airport draws its gates', async ({ page }) => {
   await open(page)
   // Schiphol is a sample stop and richly mapped in OSM. The layer is GPU-drawn,

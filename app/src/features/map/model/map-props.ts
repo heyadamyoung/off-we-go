@@ -28,6 +28,8 @@ export interface MapCanvasProps {
   tint?: MapTint | null
   interactive?: boolean
   route?: Coordinates[]
+  /** the measured way from the person to the stop they asked about */
+  measure?: Coordinates[] | null
   stops?: Stop[]
   photos?: TripPhoto[]
   markers?: PhoneMarker[]

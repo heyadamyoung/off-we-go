@@ -14,6 +14,19 @@ import type {
   TripPhoto,
 } from '../../../shared/model/types'
 
+/* One heart, drawn filled: rose in the chrome when liked, white in the burst
+   over the photograph — the modern like, never an orange block. */
+const HEART_PATH =
+  'M12 21c-.4 0-.8-.15-1.1-.44C6.6 16.8 2.5 13.2 2.5 9.1 2.5 6.3 4.7 4 7.4 4c1.8 0 3.4 1 4.6 2.6C13.2 5 14.8 4 16.6 4c2.7 0 4.9 2.3 4.9 5.1 0 4.1-4.1 7.7-8.4 11.46-.3.29-.7.44-1.1.44Z'
+
+function FilledHeart({ size, color }: { size: number; color: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" role="presentation">
+      <path fill={color} d={HEART_PATH} />
+    </svg>
+  )
+}
+
 interface PhotoViewerProps {
   list: TripPhoto[]
   index: number
@@ -138,13 +151,13 @@ function PhotoViewer({
         // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; the card's Done is the keyboard way
         // biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the whole viewer by design
         <div
-          className="absolute inset-0 z-20 grid place-items-center bg-black/60 p-5
+          className="absolute inset-0 z-20 grid place-items-center overflow-y-auto bg-black/60 p-5
                      pb-[calc(1.25rem+var(--keyboard,0px))]"
           onClick={() => setDetails(false)}>
           {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim */}
           <div
-            className="flex w-full max-w-[420px] flex-col gap-3 rounded-2xl border border-line
-                       bg-solid p-4 shadow-panel"
+            className="flex w-full max-w-[min(420px,calc(100vw-2.5rem))] flex-col gap-3
+                       rounded-2xl border border-line bg-solid p-4 shadow-panel"
             role="dialog"
             aria-label="Photo details"
             onClick={event => event.stopPropagation()}>
@@ -211,9 +224,16 @@ function PhotoViewer({
             )}
             <button
               className={liked ? 'liked' : ''}
-              onClick={() => toggleLike(photo.id)}
-              title="Like">
-              <Icon n="heart" s={17} c={liked ? '#fff' : '#f2f4f8'} />
+              onClick={() => {
+                if (!liked) setBurst(value => value + 1)
+                toggleLike(photo.id)
+              }}
+              title={liked ? 'Unlike' : 'Like'}>
+              {liked ? (
+                <FilledHeart size={18} color="#ff4d6d" />
+              ) : (
+                <Icon n="heart" s={17} c="#f2f4f8" />
+              )}
             </button>
             <button title="Download">
               <Icon n="download" s={17} c="#f2f4f8" />
@@ -252,17 +272,7 @@ function PhotoViewer({
               className="vheart"
               aria-hidden="true"
               onAnimationEnd={() => setBurst(0)}>
-              <svg
-                viewBox="0 0 24 24"
-                width="96"
-                height="96"
-                aria-hidden="true"
-                role="presentation">
-                <path
-                  fill="#fff"
-                  d="M12 21c-.4 0-.8-.15-1.1-.44C6.6 16.8 2.5 13.2 2.5 9.1 2.5 6.3 4.7 4 7.4 4c1.8 0 3.4 1 4.6 2.6C13.2 5 14.8 4 16.6 4c2.7 0 4.9 2.3 4.9 5.1 0 4.1-4.1 7.7-8.4 11.46-.3.29-.7.44-1.1.44Z"
-                />
-              </svg>
+              <FilledHeart size={96} color="#ff4d6d" />
             </span>
           )}
           {list.length > 1 && (

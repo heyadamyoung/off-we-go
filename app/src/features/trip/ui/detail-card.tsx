@@ -11,6 +11,8 @@ interface DetailCardProps {
   canEdit: boolean
   photoCount: number
   docs?: StopDocTools
+  /** distance and time from the person's live position, drawn on the map too */
+  fromYou?: string | null
   onClose: () => void
   onOpenPhotos: () => void
   onAddPhotos: () => void
@@ -72,6 +74,11 @@ export default function DetailCard(props: DetailCardProps) {
           </span>
         </div>
         <h3 className="m-0 text-xl font-extrabold leading-tight tracking-[-.02em]">{item.title}</h3>
+        {props.fromYou && (
+          <div className="text-xs font-bold text-accent">
+            {props.fromYou} from you — the way is drawn on the map
+          </div>
+        )}
         {stop?.note && <p className="m-0 text-xs leading-relaxed text-muted">{stop.note}</p>}
         {stop?.kind && <div className="text-xs text-muted">{stop.kind}</div>}
 
