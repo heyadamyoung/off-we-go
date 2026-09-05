@@ -21,10 +21,8 @@ import type { MapCanvasProps } from '../model/map-props'
 import type { Id, TripPhoto } from '../../../shared/model/types'
 
 setWorkerUrl(maplibreWorkerUrl)
-/* Start the worker pool as soon as this module loads rather than when the map
-   is constructed. The chunk lands around 30ms and the map is not built until
-   ~100ms, so the worker can be up and waiting in time it would otherwise spend
-   starting on the critical path. */
+/* Worker pool up at module load: the chunk lands ~30ms, the map builds ~100ms,
+   so the workers are waiting instead of starting on the critical path. */
 prewarm()
 // Before any map exists: a style that has already asked for a tile will not
 // ask again, so the handler has to be in place first.
@@ -44,6 +42,7 @@ const MapCanvas = memo(function MapCanvas({
   interactive = true,
   route = [],
   measure = null,
+  onContextMenu,
   stops = [],
   photos = [],
   markers = [],
@@ -135,6 +134,7 @@ const MapCanvas = memo(function MapCanvas({
     trail,
     trailFaded,
     measure,
+    onContextMenu,
     sweepIn,
     // Placing or moving a stop, a tap means "here" — never "tell me about this".
     onPickAttraction: editing || placing ? undefined : onPickAttraction,

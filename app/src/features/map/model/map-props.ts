@@ -30,6 +30,8 @@ export interface MapCanvasProps {
   route?: Coordinates[]
   /** the measured way from the person to the stop they asked about */
   measure?: Coordinates[] | null
+  /** right-click or long-press: ask about a place rather than a feature */
+  onContextMenu?: (point: Coordinates) => void
   stops?: Stop[]
   photos?: TripPhoto[]
   markers?: PhoneMarker[]

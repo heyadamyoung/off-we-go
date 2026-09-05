@@ -22,6 +22,7 @@ interface MapLayerOptions {
   measure: MapCanvasProps['measure']
   sweepIn: (map: MapGL) => void
   onPickAttraction: MapCanvasProps['onPickAttraction']
+  onContextMenu?: (point: [number, number]) => void
 }
 
 /* Adding to a style is a three-way race and only one of the three is obvious.
@@ -70,9 +71,61 @@ export default function useMapLayers({
   measure,
   sweepIn,
   onPickAttraction,
+  onContextMenu,
 }: MapLayerOptions) {
   const measureRef = useRef(measure)
   measureRef.current = measure
+  const menuRef = useRef(onContextMenu)
+  menuRef.current = onContextMenu
+
+  /* Ask the map about a place, not a feature: right-click on a desktop,
+     long-press on a phone. Chrome and Samsung raise contextmenu for a
+     long-press on the canvas; iOS never does, so a touch timer stands in —
+     550ms still, within a thumb's wobble. */
+  useEffect(() => {
+    if (!map) return
+    const open = (e: { lngLat: { lng: number; lat: number }; preventDefault?: () => void }) => {
+      e.preventDefault?.()
+      menuRef.current?.([e.lngLat.lng, e.lngLat.lat])
+    }
+    map.on('contextmenu', open)
+    const canvas = map.getCanvas()
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let start: Touch | null = null
+    const clear = () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+      start = null
+    }
+    const down = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return clear()
+      start = e.touches[0]
+      timer = setTimeout(() => {
+        if (!start) return
+        const rect = canvas.getBoundingClientRect()
+        const at = map.unproject([start.clientX - rect.left, start.clientY - rect.top])
+        menuRef.current?.([at.lng, at.lat])
+        clear()
+      }, 550)
+    }
+    const move = (e: TouchEvent) => {
+      const t = e.touches[0]
+      if (!start || !t) return
+      if (Math.hypot(t.clientX - start.clientX, t.clientY - start.clientY) > 10) clear()
+    }
+    canvas.addEventListener('touchstart', down, { passive: true })
+    canvas.addEventListener('touchmove', move, { passive: true })
+    canvas.addEventListener('touchend', clear)
+    canvas.addEventListener('touchcancel', clear)
+    return () => {
+      map.off('contextmenu', open)
+      canvas.removeEventListener('touchstart', down)
+      canvas.removeEventListener('touchmove', move)
+      canvas.removeEventListener('touchend', clear)
+      canvas.removeEventListener('touchcancel', clear)
+      clear()
+    }
+  }, [map])
   /* ---- the route, re-added whenever a style loads ------------------------
    setStyle replaces the whole style document, so anything we added goes with
    it. Re-adding on every style.load covers both first load and theme swaps. */

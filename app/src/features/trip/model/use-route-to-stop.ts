@@ -19,22 +19,27 @@ export default function useRouteToStop({
   sample,
   from,
   stop,
+  point,
 }: {
   tripId: Id
   sample: boolean
   from: Coordinates | null
   stop: Stop | null
+  /** a loose place from the map's ask-about menu; a selected stop outranks it */
+  point?: Coordinates | null
 }): RouteToStop {
   const [state, setState] = useState<RouteToStop>({ measure: null, summary: null })
   const fromKey = from ? `${from[0].toFixed(4)},${from[1].toFixed(4)}` : ''
+  const target: Coordinates | null = stop ? [stop.lng, stop.lat] : (point ?? null)
+  const targetKey = target ? `${target[0]},${target[1]}` : ''
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: fromKey carries `from`'s content; a metre of GPS wobble must not refetch the road
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the keys carry the contents; a metre of GPS wobble must not refetch the road
   useEffect(() => {
-    if (!from || !stop) {
+    if (!from || !target) {
       setState({ measure: null, summary: null })
       return
     }
-    const to: Coordinates = [stop.lng, stop.lat]
+    const to: Coordinates = target
     const direct = metres(from, to)
     const crow = `${(direct / 1000).toFixed(1)} km direct`
     setState({ measure: [from, to], summary: crow })
@@ -54,7 +59,7 @@ export default function useRouteToStop({
     return () => {
       alive = false
     }
-  }, [tripId, sample, stop?.id, stop?.lng, stop?.lat, fromKey])
+  }, [tripId, sample, targetKey, fromKey])
 
   return state
 }

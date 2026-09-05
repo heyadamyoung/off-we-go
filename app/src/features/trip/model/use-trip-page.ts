@@ -392,7 +392,7 @@ export default function useTripPage({
     saveRoute, onStopMove, onDraftField, moveStop, saveDraft, removeDraft,
     addSight, attractions, attrFilling, attrCount, toggleAttractions,
     addAttraction, showSight, showAttractions,
-    items, selectedItem, select, pickStop, onMapClicked,
+    items, selectedItem, select, pickStop, onMapClicked, addStopAt: onMapClick,
     saveTrip, uploads, here, origin, panelOpen, subtitle, waitingEdits, barPeek, setBarPeek,
     offlineAt: data.offlineAt ?? null,
   }

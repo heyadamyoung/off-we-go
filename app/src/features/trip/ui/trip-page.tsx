@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
@@ -6,6 +6,7 @@ import { ALL_DAYS, type SettingsTab } from '../../../trip-search-core'
 import Boot from '../../../shared/ui/boot'
 import AccountMenu from '../../../shared/ui/account-menu'
 import { useToast } from '../../../shared/ui/toast'
+import { MapMenu, MeasurePill } from './map-menu'
 import TripMap from './trip-map'
 import { AssistantButton, AssistantChat } from '../../assistant'
 import { PhotoViewer, UploadModal, UploadTray } from '../../photos'
@@ -75,24 +76,25 @@ function Trip({
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     theme, setTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
-    setMapOverride, asking, setAsking, assistant, view, setView, selected,
-    query, day, days, toast,
+    setMapOverride, asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, sun, mapTheme, markers, progressCopy,
     latestGpsPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
-    setSegmentEditing, clock, showGate,
+    setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, removePhoto, removeComment, editing,
-    startEditing, addSight, toggleAttractions,
-    showSight, showAttractions, items, selectedItem, select,
-    saveTrip, uploads, origin, panelOpen, subtitle, offlineAt, waitingEdits, barPeek, setBarPeek,
+    addComment, toggleLike, changePhoto, removePhoto, removeComment, editing, startEditing,
+    addSight, toggleAttractions, showSight, showAttractions, items, selectedItem, select, addStopAt,
+    offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
   const chat = useTripChat({ tripId, toast })
+  const [menuAt, setMenuAt] = useState<Coordinates | null>(null)
+  const [probe, setProbe] = useState<Coordinates | null>(null)
   const toStop = useRouteToStop({
     tripId,
     sample: data.source === 'sample',
     from: latestGpsPosition,
     stop: selectedItem?.stop || null,
+    point: probe,
   })
 
   return (
@@ -108,7 +110,20 @@ function Trip({
           screen.scrollLeft = 0
         }
       }}>
-      <TripMap page={page} measure={toStop.measure} patch={patch} />
+      <TripMap page={page} measure={toStop.measure} patch={patch} onContextMenu={setMenuAt} />
+      {menuAt && (
+        <MapMenu
+          at={menuAt}
+          canEdit={canEdit}
+          canMeasure={!!latestGpsPosition}
+          onAddStop={addStopAt}
+          onMeasure={setProbe}
+          onClose={() => setMenuAt(null)}
+        />
+      )}
+      {probe && !selectedItem?.stop && toStop.summary && (
+        <MeasurePill summary={toStop.summary} onClose={() => setProbe(null)} />
+      )}
 
       {/* The map runs behind everything; these two washes keep the chrome legible
           without a panel behind each piece of it. */}
@@ -229,9 +244,8 @@ function Trip({
           onHere={() => patch({ day: liveDay || days[0], sel: undefined })}
           onWhole={() => patch({ day: ALL_DAYS, sel: undefined })}
         />
-        {/* A demo has no phone to wait for: the sample trip never shows the
-            GPS nudge, which read as something broken in the one trip everyone
-            sees first. */}
+        {/* A demo has no phone to wait for: the sample never shows the GPS
+            nudge, which read as broken in the one trip everyone sees first. */}
         {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
           <NowCapsule
             text={progressCopy.text}

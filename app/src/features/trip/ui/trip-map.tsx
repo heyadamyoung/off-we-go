@@ -8,10 +8,12 @@ export default function TripMap({
   page,
   measure,
   patch,
+  onContextMenu,
 }: {
   page: ReturnType<typeof useTripPage>
   measure: Coordinates[] | null
   patch: (changes: Record<string, unknown>) => void
+  onContextMenu: (point: Coordinates) => void
 }) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
@@ -33,6 +35,7 @@ export default function TripMap({
       trail={trail}
       trailFaded={trailFaded}
       measure={measure}
+      onContextMenu={onContextMenu}
       selectedStop={selected}
       labels={mapView.zoom > 13}
       onStop={pickStop}
