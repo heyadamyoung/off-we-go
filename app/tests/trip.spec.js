@@ -234,6 +234,22 @@ test('a photo’s notes are readable and writable on a phone', async ({ page }) 
   await expect(input).toBeFocused()
 })
 
+test('tapping the photograph hearts it, and never un-hearts it', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await page.locator('.pgrid-photo').first().click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+
+  await page.locator('.vmaintap').click()
+  await expect(page.locator('.vheart')).toBeVisible()
+  await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
+
+  // A second tap pops the heart again but the like survives — un-liking is
+  // the chrome heart's deliberate job.
+  await page.locator('.vmaintap').click()
+  await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
+})
+
 test('deleting a photo takes a held press — a tap does nothing', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Photos', exact: true }).click()

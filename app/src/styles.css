@@ -637,6 +637,41 @@
 .vtop .acts button.liked { background: var(--c-accent); color: var(--c-accent-ink) }
 .vbody { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 0 20px; min-height: 0 }
 .vbody img.main { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; box-shadow: 0 30px 80px rgb(0 0 0 / .6) }
+/* The photo is tappable without ever looking like a widget: the button is an
+   invisible frame that lets the image keep its own size. */
+.vmaintap {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 0; min-height: 0; max-width: 100%; max-height: 100%;
+}
+/* The Instagram beat: the heart pops in over the picture, holds, and lets go.
+   White with a soft shadow so it reads over any photograph. */
+.vheart {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  pointer-events: none; z-index: 3;
+}
+.vheart svg {
+  filter: drop-shadow(0 6px 24px rgb(0 0 0 / .45));
+  animation: heartburst .8s ease forwards;
+}
+@keyframes heartburst {
+  0% { transform: scale(.4); opacity: 0 }
+  12% { transform: scale(1.12); opacity: 1 }
+  24% { transform: scale(1) }
+  65% { transform: scale(1); opacity: 1 }
+  100% { transform: scale(1.2); opacity: 0 }
+}
+/* And the little heart in the chrome pops as it fills. */
+.vtop .acts button.liked svg { animation: heartfill .35s ease }
+@keyframes heartfill {
+  0% { transform: scale(1) }
+  40% { transform: scale(1.35) }
+  100% { transform: scale(1) }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vheart svg { animation-duration: .25s }
+  .vtop .acts button.liked svg { animation: none }
+}
+
 .vnav {
   position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px;
   border-radius: 50%; background: rgb(255 255 255 / .12); backdrop-filter: blur(8px);

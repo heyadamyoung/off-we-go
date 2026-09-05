@@ -57,6 +57,7 @@ function PhotoViewer({
   const stop = stops.find(s => s.id === photo?.stopId)
   const [draft, setDraft] = useState('')
   const [details, setDetails] = useState(false)
+  const [burst, setBurst] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -231,7 +232,34 @@ function PhotoViewer({
               <Icon n="chevl" s={20} c="#fff" w={2} />
             </button>
           )}
-          <Img className="main" item={photo} w={1200} h={900} alt={photo.caption} eager />
+          {/* The photograph is the like button: a tap hearts it and answers
+              with the big heart, the way every thumb already expects. A tap
+              never UN-likes — losing a heart to a stray touch would sting;
+              the chrome's heart stays the deliberate way back. */}
+          <button
+            type="button"
+            className="vmaintap"
+            aria-label={liked ? 'Liked' : 'Like this photo'}
+            onClick={() => {
+              if (!liked) toggleLike(photo.id)
+              setBurst(value => value + 1)
+            }}>
+            <Img className="main" item={photo} w={1200} h={900} alt={photo.caption} eager />
+          </button>
+          {burst > 0 && (
+            <span
+              key={burst}
+              className="vheart"
+              aria-hidden="true"
+              onAnimationEnd={() => setBurst(0)}>
+              <svg viewBox="0 0 24 24" width="96" height="96" aria-hidden="true" role="presentation">
+                <path
+                  fill="#fff"
+                  d="M12 21c-.4 0-.8-.15-1.1-.44C6.6 16.8 2.5 13.2 2.5 9.1 2.5 6.3 4.7 4 7.4 4c1.8 0 3.4 1 4.6 2.6C13.2 5 14.8 4 16.6 4c2.7 0 4.9 2.3 4.9 5.1 0 4.1-4.1 7.7-8.4 11.46-.3.29-.7.44-1.1.44Z"
+                />
+              </svg>
+            </span>
+          )}
           {list.length > 1 && (
             <button className="vnav n" onClick={() => setIndex((index + 1) % list.length)}>
               <Icon n="chev" s={20} c="#fff" w={2} />
