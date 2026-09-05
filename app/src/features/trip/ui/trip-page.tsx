@@ -87,12 +87,12 @@ function Trip({
     offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
   const chat = useTripChat({ tripId, toast })
-  const askOrigin = latestGpsPosition ?? lastSeenPosition
   const ask = useMapAsk({
     tripId,
     sample: data.source === 'sample',
-    from: askOrigin,
+    from: latestGpsPosition ?? lastSeenPosition,
     stop: selectedItem?.stop || null,
+    toast,
   })
 
   return (
@@ -112,7 +112,6 @@ function Trip({
       <MapAskOverlays
         ask={ask}
         canEdit={canEdit}
-        canMeasure={!!askOrigin}
         onAddStop={addStopAt}
         onDeselect={() => patch({ sel: undefined })}
       />

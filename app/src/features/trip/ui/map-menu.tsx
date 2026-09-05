@@ -9,15 +9,12 @@ import type { Coordinates } from '../../../shared/model/types'
 export function MapMenu({
   at,
   canEdit,
-  canMeasure,
   onAddStop,
   onMeasure,
   onClose,
 }: {
   at: Coordinates
   canEdit: boolean
-  /** false when there is no live position to measure from */
-  canMeasure: boolean
   onAddStop: (at: Coordinates) => void
   /** callers stand down any selected stop first — the newest question wins,
       or the selection silently outranks the probe and nothing appears */
@@ -54,10 +51,8 @@ export function MapMenu({
           </button>
         )}
         <button
-          className={item + (canMeasure ? '' : ' opacity-45')}
+          className={item}
           role="menuitem"
-          disabled={!canMeasure}
-          title={canMeasure ? undefined : 'Needs a live position to measure from'}
           onClick={() => {
             onClose()
             onMeasure(at)
@@ -80,7 +75,6 @@ export function MapMenu({
 export function MapAskOverlays({
   ask,
   canEdit,
-  canMeasure,
   onAddStop,
   onDeselect,
 }: {
@@ -88,10 +82,10 @@ export function MapAskOverlays({
     menuAt: Coordinates | null
     setMenuAt: (at: Coordinates | null) => void
     setProbe: (at: Coordinates | null) => void
+    measureFrom: (at: Coordinates) => void
     pill: string | null
   }
   canEdit: boolean
-  canMeasure: boolean
   onAddStop: (at: Coordinates) => void
   /** stands the stop card down first — the newest question wins */
   onDeselect: () => void
@@ -102,11 +96,10 @@ export function MapAskOverlays({
         <MapMenu
           at={ask.menuAt}
           canEdit={canEdit}
-          canMeasure={canMeasure}
           onAddStop={onAddStop}
           onMeasure={at => {
             onDeselect()
-            ask.setProbe(at)
+            ask.measureFrom(at)
           }}
           onClose={() => ask.setMenuAt(null)}
         />
