@@ -55,7 +55,10 @@ merge_extracts() {
     return 0
   }
   echo "valhalla supervisor: merging $count extracts into one"
-  if osmium merge /custom_files/*.osm.pbf -O -o /custom_files/merged.pbf.tmp; then
+  # -f pbf: osmium reads format from the extension, and ".tmp" is no format —
+  # without the flag the merge refuses instantly ("Could not detect file
+  # format"), reproduced and proven against the real image.
+  if osmium merge /custom_files/*.osm.pbf -O -f pbf -o /custom_files/merged.pbf.tmp; then
     rm -f /custom_files/*.osm.pbf
     mv /custom_files/merged.pbf.tmp /custom_files/trip-regions.osm.pbf
   else

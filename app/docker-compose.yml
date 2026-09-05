@@ -194,7 +194,7 @@ services:
       # found still running the ORIGINAL stock-entrypoint container days
       # after the supervisor shipped — nothing listening on 8002, every
       # route falling back to the crow, and zero log lines to say so.
-      SUPERVISOR_REV: '4'
+      SUPERVISOR_REV: '5'
     volumes:
       - ./deploy/valhalla-supervise.sh:/supervise.sh:ro
       - valhalla_tiles:/custom_files
