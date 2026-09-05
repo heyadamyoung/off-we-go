@@ -14,12 +14,20 @@ interface TripCardsProps {
   stopDocs: StopDocTools
   /** "1.4 km · 17 min walk" from the person's live position to the open stop */
   fromYou: string | null
+  fromYouPending: boolean
 }
 
 /* The floating layer over the map: the stop card, the stop editor, the
    placement and route hints, and the attraction card. The page decides what
    exists; this layer decides how it hovers. */
-export default function TripCards({ page, canEdit, patch, stopDocs, fromYou }: TripCardsProps) {
+export default function TripCards({
+  page,
+  canEdit,
+  patch,
+  stopDocs,
+  fromYou,
+  fromYouPending,
+}: TripCardsProps) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     draft, selectedItem, panelOpen, here, openViewer, startEditing, setDraft,
@@ -57,6 +65,7 @@ export default function TripCards({ page, canEdit, patch, stopDocs, fromYou }: T
           }
           docs={stopDocs}
           fromYou={fromYou}
+          fromYouPending={fromYouPending}
         />
       )}
 

@@ -60,7 +60,8 @@ export default function useMapAsk({
     measureFrom,
     measure: route.measure,
     summary: route.summary,
-    /** the floating pill's text: only when a loose point holds the floor */
-    pill: probe && !stop ? route.summary : null,
+    pending: route.pending,
+    /** the floating pill: text, or a measuring beat, when a loose point holds the floor */
+    pill: probe && !stop ? { summary: route.summary, pending: route.pending } : null,
   }
 }

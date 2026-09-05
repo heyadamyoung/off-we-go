@@ -8,12 +8,16 @@ export interface RouteToStop {
   measure: Coordinates[] | null
   /** "1.4 km · 17 min walk", or "2.3 km direct" when only the crow can say */
   summary: string | null
+  /** true while the engine is thinking — show a quiet measuring state, no line */
+  pending: boolean
 }
 
-/* "How far, and which way?" — answered the moment a stop is selected. The
-   crow answers instantly (a straight dashed line and its distance); the
-   routing engine then upgrades both to the shortest road, walking pace under
-   2.5 km and driving beyond. Everything clears when the question closes. */
+/* "How far, and which way?" — asked the moment a stop is selected. The road
+   is the answer, so the road is what appears: a quiet measuring beat while
+   the engine thinks, then the shortest way — walking pace under 2.5 km,
+   driving beyond. The crow's straight line is only ever the honest fallback
+   (engine down, or the engineless demo), never a wrong answer flashed first
+   and corrected. Everything clears when the question closes. */
 export default function useRouteToStop({
   tripId,
   sample,
@@ -28,7 +32,7 @@ export default function useRouteToStop({
   /** a loose place from the map's ask-about menu; a selected stop outranks it */
   point?: Coordinates | null
 }): RouteToStop {
-  const [state, setState] = useState<RouteToStop>({ measure: null, summary: null })
+  const [state, setState] = useState<RouteToStop>({ measure: null, summary: null, pending: false })
   const fromKey = from ? `${from[0].toFixed(4)},${from[1].toFixed(4)}` : ''
   const target: Coordinates | null = stop ? [stop.lng, stop.lat] : (point ?? null)
   const targetKey = target ? `${target[0]},${target[1]}` : ''
@@ -36,19 +40,31 @@ export default function useRouteToStop({
   // biome-ignore lint/correctness/useExhaustiveDependencies: the keys carry the contents; a metre of GPS wobble must not refetch the road
   useEffect(() => {
     if (!from || !target) {
-      setState({ measure: null, summary: null })
+      setState({ measure: null, summary: null, pending: false })
       return
     }
     const to: Coordinates = target
     const direct = metres(from, to)
-    const crow = `${(direct / 1000).toFixed(1)} km direct`
-    setState({ measure: [from, to], summary: crow })
-    if (sample) return
+    const crow = {
+      measure: [from, to] as Coordinates[],
+      summary: `${(direct / 1000).toFixed(1)} km direct`,
+      pending: false,
+    }
+    if (sample) {
+      setState(crow)
+      return
+    }
+    setState({ measure: null, summary: null, pending: true })
     let alive = true
     const mode = direct <= 2500 ? 'pedestrian' : 'auto'
     routeToStop(tripId, from, to, mode).then(found => {
-      if (!alive || !found) return
+      if (!alive) return
+      if (!found) {
+        setState(crow)
+        return
+      }
       setState({
+        pending: false,
         measure: found.shape.length > 1 ? found.shape : [from, to],
         summary:
           `${(found.meters / 1000).toFixed(1)} km · ` +

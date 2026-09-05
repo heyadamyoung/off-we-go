@@ -83,7 +83,7 @@ export function MapAskOverlays({
     setMenuAt: (at: Coordinates | null) => void
     setProbe: (at: Coordinates | null) => void
     measureFrom: (at: Coordinates) => void
-    pill: string | null
+    pill: { summary: string | null; pending: boolean } | null
   }
   canEdit: boolean
   onAddStop: (at: Coordinates) => void
@@ -104,21 +104,40 @@ export function MapAskOverlays({
           onClose={() => ask.setMenuAt(null)}
         />
       )}
-      {ask.pill && <MeasurePill summary={ask.pill} onClose={() => ask.setProbe(null)} />}
+      {ask.pill && (ask.pill.summary || ask.pill.pending) && (
+        <MeasurePill
+          summary={ask.pill.summary}
+          pending={ask.pill.pending}
+          onClose={() => ask.setProbe(null)}
+        />
+      )}
     </>
   )
 }
 
 /* The answer to "how far": a floating pill over the map, dismissed by its ✕
-   or by asking something else. */
-export function MeasurePill({ summary, onClose }: { summary: string; onClose: () => void }) {
+   or by asking something else. While the engine thinks it pulses quietly —
+   the road is the answer, so no straight line is flashed and corrected. */
+export function MeasurePill({
+  summary,
+  pending,
+  onClose,
+}: {
+  summary: string | null
+  pending?: boolean
+  onClose: () => void
+}) {
   return (
     <div
       role="status"
       className="glass absolute left-1/2 top-[calc(var(--trip-top)+12px)] z-[5] flex
                  -translate-x-1/2 items-center gap-2 rounded-full py-1.5 pl-3.5 pr-1.5
                  text-xs font-bold">
-      {summary} from you
+      {pending ? (
+        <span className="animate-pulse text-muted">Measuring the way…</span>
+      ) : (
+        `${summary} from you`
+      )}
       <button
         className="grid size-6 place-items-center rounded-full text-muted hover:bg-raised2
                    hover:text-ink"
