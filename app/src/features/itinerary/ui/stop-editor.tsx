@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { dayLabelOf, isoOfDayLabel, outsideRange } from '../../../day-label-core'
+import { formatRange } from '../../../shared/lib/trip-dates'
 import Icon from '../../../shared/ui/icon'
 import type { StopDraft } from '../../../shared/model/types'
 
@@ -11,7 +14,8 @@ const STOP_STATES = [
 
 function StopEditor({
   draft,
-  days,
+  startsOn,
+  endsOn,
   onField,
   onSave,
   onDelete,
@@ -21,7 +25,9 @@ function StopEditor({
   busy,
 }: {
   draft: StopDraft
-  days: string[]
+  /** the trip's declared range; the calendar is fenced to it */
+  startsOn?: string | null
+  endsOn?: string | null
   onField: (key: keyof StopDraft, value: StopDraft[keyof StopDraft]) => void
   onSave: () => void
   onDelete: () => void
@@ -30,6 +36,22 @@ function StopEditor({
   onClose: () => void
   busy: boolean
 }) {
+  /* A refused pick stays visible as words, never as silently mangled data. */
+  const [dayError, setDayError] = useState('')
+  const dayIso = isoOfDayLabel(draft.day, startsOn, endsOn)
+  const pickDay = (iso: string) => {
+    if (!iso) {
+      onField('day', '')
+      setDayError('')
+      return
+    }
+    if (outsideRange(iso, startsOn, endsOn)) {
+      setDayError(`Outside the trip: ${formatRange(startsOn || undefined, endsOn || undefined)}`)
+      return
+    }
+    onField('day', dayLabelOf(iso))
+    setDayError('')
+  }
   const isNew = !draft.id
   return (
     <div className="editor">
@@ -74,16 +96,20 @@ function StopEditor({
           <label className="f">
             <span>Day</span>
             <input
-              list="wf-days"
-              value={draft.day || ''}
-              placeholder="Sat 5 Sep"
-              onChange={e => onField('day', e.target.value)}
+              type="date"
+              value={dayIso || ''}
+              min={startsOn || undefined}
+              max={endsOn || undefined}
+              onChange={e => pickDay(e.target.value)}
             />
-            <datalist id="wf-days">
-              {days.map(d => (
-                <option key={d} value={d} />
-              ))}
-            </datalist>
+            {dayError ? (
+              <em className="dayfence" role="alert">
+                {dayError}
+              </em>
+            ) : (
+              draft.day &&
+              !dayIso && <em className="dayfence quiet">Keeps “{draft.day}” until you pick</em>
+            )}
           </label>
           <label className="f">
             <span>Time</span>

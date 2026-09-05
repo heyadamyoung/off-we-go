@@ -828,6 +828,10 @@
 .editor .f { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1 }
 .editor .f > span { font-size: 11px; font-weight: 700; color: var(--c-faint) }
 .editor .frow { display: flex; gap: 10px }
+/* The calendar's fence, in words: a pick outside the trip is refused and says
+   so; a legacy label the range cannot place is kept, quietly, until a pick. */
+.editor .dayfence { font-size: 11px; font-style: normal; color: var(--c-danger) }
+.editor .dayfence.quiet { color: var(--c-faint) }
 .editor input[type=text], .editor input:not([type]), .editor textarea {
   border-radius: 8px; background: var(--c-raised); border: 1px solid var(--c-line);
   padding: 9px 11px; font-size: 13px; outline: none; width: 100%; resize: vertical;

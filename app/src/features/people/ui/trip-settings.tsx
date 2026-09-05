@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from '@tanstack/react-router'
 import { invitePerson, listInvites, removeMember, revokeInvite } from '../../../backend'
-import { daysBetween, formatRange } from '../../../shared/lib/trip-dates'
 import { appErrorMessage } from '../../../user-messages-core'
+import useTripFields, { type TripFields } from '../model/use-trip-fields'
 import Icon from '../../../shared/ui/icon'
 import Sheet, { SheetTab } from '../../../shared/ui/sheet'
 import PhonesTab from './phones-tab'
@@ -88,31 +88,6 @@ export default function TripSettingsSheet(props: SettingsProps) {
 
 /* The form's state lives out here because the button that commits it lives in
    the sheet's footer, beside the one that closes the sheet. */
-function useTripFields({ trip, onSaveTrip }: SettingsProps) {
-  const [fields, setFields] = useState({
-    title: trip.title || '',
-    crew: trip.crew || '',
-    startsOn: trip.startsOn || '',
-    endsOn: trip.endsOn || '',
-  })
-  const [dirty, setDirty] = useState(false)
-  const set = (key: string, value: string) => {
-    setFields(current => ({ ...current, [key]: value }))
-    setDirty(true)
-  }
-  const save = () => {
-    onSaveTrip({
-      ...fields,
-      dates: formatRange(fields.startsOn, fields.endsOn),
-      dayCount: daysBetween(fields.startsOn, fields.endsOn) || 1,
-    })
-    setDirty(false)
-  }
-  return { fields, set, dirty, save }
-}
-
-type TripFields = ReturnType<typeof useTripFields>
-
 function TripTab({ canEdit, form }: SettingsProps & { form: TripFields }) {
   const { fields, set } = form
 
@@ -142,6 +117,7 @@ function TripTab({ canEdit, form }: SettingsProps & { form: TripFields }) {
           <input
             type="date"
             value={fields.startsOn}
+            max={fields.endsOn || undefined}
             onChange={event => set('startsOn', event.target.value)}
           />
         </label>

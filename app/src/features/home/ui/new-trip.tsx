@@ -133,6 +133,7 @@ export default function NewTripPage({ step }: { step: number }) {
                 <input
                   type="date"
                   value={fields.startsOn}
+                  max={fields.endsOn || undefined}
                   onChange={event => set('startsOn', event.target.value)}
                 />
               </label>

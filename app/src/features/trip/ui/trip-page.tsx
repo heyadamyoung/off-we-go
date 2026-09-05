@@ -203,6 +203,8 @@ function Trip({
         <SegmentEditor
           segment={transport.segments.find(s => s.id === segmentEditing) || null}
           people={family}
+          startsOn={trip.startsOn}
+          endsOn={trip.endsOn}
           onSave={transport.saveSegment}
           onDelete={transport.removeSegment}
           onClose={() => setSegmentEditing(null)}

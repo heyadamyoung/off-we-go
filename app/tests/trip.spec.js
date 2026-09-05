@@ -396,6 +396,17 @@ test('a long note cannot push the detail card off the top of a phone', async ({ 
   })
   expect(tappable, `nothing reaches the close button — ${where}`).toBe(true)
 
+  // The actions are chrome, not prose: however long the note, the row of
+  // buttons stands on screen without any scrolling — only the note scrolls.
+  const remove = card.getByTitle('Remove this stop')
+  await expect(remove).toBeVisible()
+  const reachable = await remove.evaluate(el => {
+    const r = el.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return r.bottom <= window.innerHeight && !!hit && (hit === el || el.contains(hit))
+  })
+  expect(reachable, 'the action row scrolled away with the note').toBe(true)
+
   await close.click()
   await expect(card).toHaveCount(0)
 })
@@ -1096,4 +1107,28 @@ test('the compass button raises a facing beam at the browser fix', async ({ page
   // Off means off: the dot leaves with the beam.
   await page.getByTitle("Show which way you're facing").click()
   await expect(page.locator('.youb')).toHaveCount(0)
+})
+
+test('the itinerary day is a calendar fenced to the trip range', async ({ page }) => {
+  // Free-form days are gone: the editor's Day is a date input whose min and
+  // max are the trip's own range, and a pick outside it is refused in words
+  // while the draft keeps its last good day.
+  const iso = shift => new Date(Date.now() + shift * 86_400_000).toISOString().slice(0, 10)
+  await open(page)
+  await page.getByRole('button', { name: 'Edit the itinerary' }).click()
+  const spot = await emptyMapPoint(page)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(page.locator('.editor')).toBeVisible()
+
+  const day = page.locator('.editor input[type="date"]')
+  await expect(day).toHaveAttribute('min', iso(-1))
+  await expect(day).toHaveAttribute('max', iso(1))
+
+  await day.fill(iso(0))
+  await expect(page.locator('.editor .dayfence')).toHaveCount(0)
+
+  await day.fill('1999-01-01')
+  await expect(page.locator('.editor .dayfence')).toBeVisible()
+  await expect(page.locator('.editor .dayfence')).toContainText('Outside the trip')
+  await expect(day).toHaveValue(iso(0))
 })

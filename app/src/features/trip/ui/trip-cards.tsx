@@ -31,7 +31,7 @@ export default function TripCards({
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     draft, selectedItem, panelOpen, here, openViewer, startEditing, setDraft,
-    setPlacing, removeDraft, indoor, days, onDraftField, saveDraft, moveStop,
+    setPlacing, removeDraft, indoor, trip, onDraftField, saveDraft, moveStop,
     lookUpDraft, saving, placing, editing, routeDraft, setRouteDraft, saveRoute,
     searchPlaces, places, setPlaces, route, attraction, stops, addAttraction,
     setAttractionCard, showAttractions, attrFilling, attrCount,
@@ -74,7 +74,8 @@ export default function TripCards({
       {draft && (
         <StopEditor
           draft={draft}
-          days={days}
+          startsOn={trip.startsOn}
+          endsOn={trip.endsOn}
           onField={onDraftField}
           onSave={saveDraft}
           onDelete={removeDraft}

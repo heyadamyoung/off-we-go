@@ -30,12 +30,19 @@ const toLocal = (iso?: string | null) => {
 export default function SegmentEditor({
   segment,
   people,
+  startsOn,
+  endsOn,
   onSave,
   onDelete,
   onClose,
 }: {
   segment: Segment | null
   people: Person[]
+  /* The trip's declared range fences the pickers — travel belongs to the
+     days the trip owns. Typed edge cases (a red-eye landing past midnight)
+     still save: the fence guides the calendar, it does not jail the keyboard. */
+  startsOn?: string | null
+  endsOn?: string | null
   onSave: (draft: Partial<Segment> & { id?: string }) => Promise<boolean>
   onDelete?: (segmentId: string) => void
   onClose: () => void
@@ -116,6 +123,8 @@ export default function SegmentEditor({
             <input
               className={input}
               type="datetime-local"
+              min={startsOn ? `${startsOn}T00:00` : undefined}
+              max={endsOn ? `${endsOn}T23:59` : undefined}
               value={toLocal(draft.departsAt)}
               onChange={e => field('departsAt')(e.target.value)}
             />
@@ -125,6 +134,8 @@ export default function SegmentEditor({
             <input
               className={input}
               type="datetime-local"
+              min={startsOn ? `${startsOn}T00:00` : undefined}
+              max={endsOn ? `${endsOn}T23:59` : undefined}
               value={toLocal(draft.arrivesAt)}
               onChange={e => field('arrivesAt')(e.target.value)}
             />
