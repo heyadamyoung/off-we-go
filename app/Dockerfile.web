@@ -6,6 +6,8 @@ RUN pnpm install --frozen-lockfile
 COPY vite.config.ts tsconfig.json ./
 COPY public ./public
 COPY src ./src
+# The build's first act copies the routing engine's wasm out of node_modules.
+COPY scripts/copyValhallaWasm.mjs ./scripts/
 # Start prerenders the SPA shell by booting a server on "localhost" and
 # fetching it back. In this image "localhost" resolves to ::1 first, while
 # node's fetch dials 127.0.0.1 — so the prerender connects to nothing and the
