@@ -2236,15 +2236,15 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         pool.query(
           `with sampled as (
           select distinct on (device_id, floor(extract(epoch from recorded_at) / 30))
-            id,device_id,lng,lat,accuracy,speed,recorded_at
+            id,device_id,lng,lat,accuracy,speed,heading,recorded_at
           from positions where trip_id=$1 and recorded_at >= $2 and id>$3
           order by device_id, floor(extract(epoch from recorded_at) / 30),
             accuracy nulls last, recorded_at desc, id desc
         ), ranked as (
-          select id,device_id,lng,lat,accuracy,speed,recorded_at,
+          select id,device_id,lng,lat,accuracy,speed,heading,recorded_at,
             row_number() over(partition by device_id order by id desc) as device_rank
           from sampled
-        ) select id,device_id,lng,lat,accuracy,speed,recorded_at from ranked
+        ) select id,device_id,lng,lat,accuracy,speed,heading,recorded_at from ranked
           where device_rank <= $4 order by id`,
           [tripId, since, afterId, maxPerDevice],
         ),
@@ -2276,6 +2276,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         lat: value.lat,
         accuracy: value.accuracy,
         speed: value.speed,
+        heading: value.heading,
         at: value.recorded_at,
       }))
       return {

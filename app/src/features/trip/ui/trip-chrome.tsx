@@ -174,11 +174,15 @@ export const ScopeToggle = memo(function ScopeToggle({
 export const MapControls = memo(function MapControls({
   following,
   onFollow,
+  compassOn,
+  onCompass,
   onZoom,
   onFit,
 }: {
   following: boolean
   onFollow: () => void
+  compassOn: boolean
+  onCompass: () => void
   onZoom: (by: number) => void
   onFit: () => void
 }) {
@@ -197,6 +201,12 @@ export const MapControls = memo(function MapControls({
         title="Follow the travellers"
         onClick={onFollow}>
         <Icon n="locate" s={17} />
+      </button>
+      <button
+        className={button + (compassOn ? ' on bg-accent text-accent-ink' : '')}
+        title="Show which way you're facing"
+        onClick={onCompass}>
+        <Icon n="compass" s={17} />
       </button>
       <button className={button + ' max-sm:hidden'} title="Zoom in" onClick={() => onZoom(1)}>
         <Icon n="plus" s={17} />

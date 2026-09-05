@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Marker, type Map as MapLibreMap } from 'maplibre-gl'
+import { turnTowards } from '../../../compass-core'
+import type { PhoneMarker } from '../../../live-markers-core'
 import { clamp } from '../../../shared/lib/numbers'
 import type { Coordinates } from '../../../shared/model/types'
 
@@ -79,14 +81,21 @@ function useGliding(target: Coordinates, ms = 800): Coordinates {
   return pt || target
 }
 
+/* A rendered needle must turn the short way round: the rotation it is handed
+   is cumulative, each new heading adding only its signed short turn, so the
+   CSS transition never pirouettes through 340° to move 20°. */
+function useTurned(heading: number | null): number | null {
+  const cumulative = useRef<number | null>(null)
+  if (heading == null) cumulative.current = null
+  else cumulative.current = turnTowards(cumulative.current, heading)
+  return cumulative.current
+}
+
 interface LiveMarkerProps {
   map: MapLibreMap
-  lng: number
-  lat: number
-  avatar: string | null
-  name: string
-  title: string
-  stale: boolean
+  m: PhoneMarker
+  /** compass facing for the traveller's own phone; overrides the GPS course */
+  facing?: number | null
   onClick?: () => void
   /** true while a map drag is in flight — a drag must not count as a click */
   movedRef: MutableRefObject<boolean>
@@ -96,41 +105,60 @@ interface LiveMarkerProps {
 // position. Eased between fixes so it walks rather than teleports. A phone that
 // has gone quiet keeps its dot at the last place it was heard from, dimmed and
 // without the pulse: out of signal is not the same as gone.
-function LiveMarker({
-  map,
-  lng,
-  lat,
-  avatar,
-  name,
-  title,
-  stale,
-  onClick,
-  movedRef,
-}: LiveMarkerProps) {
-  const target = useMemo<Coordinates>(() => [lng, lat], [lng, lat])
+function LiveMarker({ map, m, facing, onClick, movedRef }: LiveMarkerProps) {
+  const target = useMemo<Coordinates>(() => [m.lng, m.lat], [m.lng, m.lat])
   const pt = useGliding(target, 800)
+  const beam = useTurned(facing ?? m.course)
   return (
     <MapMarker map={map} lng={pt[0]} lat={pt[1]}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: a map pin is the pointer route; the people rail is the keyboard route */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: a map pin is the pointer route; the people rail is the keyboard route */}
       <div
-        className={'mme' + (stale ? ' quiet' : '')}
-        title={title}
+        className={'mme' + (m.stale ? ' quiet' : '')}
+        title={m.title}
         onClick={e => {
           e.stopPropagation()
           if (!movedRef.current) onClick?.()
         }}>
-        {!stale && <span className="halo" />}
-        {avatar ? (
-          <img src={avatar} alt="" draggable={false} />
+        {beam != null && (
+          <span className="beam" style={{ transform: `rotate(${beam}deg)` }} aria-hidden="true" />
+        )}
+        {!m.stale && <span className="halo" />}
+        {m.avatar ? (
+          <img src={m.avatar} alt="" draggable={false} />
         ) : (
-          <span className="ini">{(name || '?')[0]}</span>
+          <span className="ini">{(m.name || '?')[0]}</span>
         )}
         <span className="dot" />
-        {!stale && <span className="tag">LIVE</span>}
+        {!m.stale && <span className="tag">LIVE</span>}
       </div>
     </MapMarker>
   )
 }
 
-export { LiveMarker, MapMarker }
+/* The web tab is nobody's registered phone, so when its owner arms the compass
+   there is no avatar to wear the beam — a small plain dot at the browser's own
+   position wears it instead. */
+function YouBeam({
+  map,
+  at,
+  facing,
+}: {
+  map: MapLibreMap
+  at: Coordinates
+  facing: number | null
+}) {
+  const beam = useTurned(facing)
+  return (
+    <MapMarker map={map} lng={at[0]} lat={at[1]}>
+      <div className="youb" title="You">
+        {beam != null && (
+          <span className="beam" style={{ transform: `rotate(${beam}deg)` }} aria-hidden="true" />
+        )}
+        <span className="core" />
+      </div>
+    </MapMarker>
+  )
+}
+
+export { LiveMarker, MapMarker, YouBeam }

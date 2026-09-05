@@ -8,6 +8,7 @@ export {
 } from './api/attractions'
 export { useDaylight } from './model/daylight'
 export { default as useAttractions } from './model/use-attractions'
+export { default as useCompass } from './model/use-compass'
 export { default as MapCanvas } from './ui/map-canvas'
 export { MapMarker } from './ui/map-marker'
 export { default as OfflineMapCard } from './ui/offline-map-card'

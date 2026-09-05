@@ -16,7 +16,7 @@ import makeTrailSweep from '../model/trail-sweep'
 import useMapLayers from '../model/use-map-layers'
 import { creditControl, STYLE } from '../model/map-style'
 import registerOfflineTiles from '../model/offline-tiles'
-import { LiveMarker, MapMarker } from './map-marker'
+import { LiveMarker, MapMarker, YouBeam } from './map-marker'
 import type { MapCanvasProps } from '../model/map-props'
 import type { Id, TripPhoto } from '../../../shared/model/types'
 
@@ -46,6 +46,9 @@ const MapCanvas = memo(function MapCanvas({
   stops = [],
   photos = [],
   markers = [],
+  facing = null,
+  facingKey = null,
+  you = null,
   trail = [],
   trailFaded = [],
   selectedStop,
@@ -380,16 +383,13 @@ const MapCanvas = memo(function MapCanvas({
           <LiveMarker
             key={m.key}
             map={map}
-            lng={m.lng}
-            lat={m.lat}
-            avatar={m.avatar}
-            name={m.name}
-            title={m.title}
-            stale={m.stale}
+            m={m}
+            facing={m.key === facingKey ? facing : null}
             onClick={onLive}
             movedRef={moved}
           />
         ))}
+      {map && you && <YouBeam map={map} at={you} facing={facing} />}
 
       {children}
     </div>

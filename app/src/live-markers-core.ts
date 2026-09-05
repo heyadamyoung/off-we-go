@@ -9,9 +9,24 @@ export interface PhoneMarker {
   name: string
   stale: boolean
   title: string
+  /** Degrees clockwise from north while plainly walking; null standing still. */
+  course: number | null
 }
 
 const keyOf = (fix: LiveFix) => String(fix.deviceId || 'phone')
+
+/* GPS course is only meaningful in motion: a phone lying on a café table
+   reports a heading that swings with every reflection. Below walking pace the
+   marker shows no direction at all — an honest nothing beats a spinning lie. */
+export const COURSE_MIN_SPEED_MS = 0.5
+
+export function courseOf(fix: LiveFix, stale: boolean): number | null {
+  if (stale) return null
+  const heading = fix.heading
+  if (typeof heading !== 'number' || !Number.isFinite(heading)) return null
+  if (!((fix.speed ?? 0) >= COURSE_MIN_SPEED_MS)) return null
+  return ((heading % 360) + 360) % 360
+}
 
 /* Which fixes count as "this phone is talking right now": recency ALONE.
    The accuracy gate belongs to the arrival math (a 300-metre fix must not
@@ -70,6 +85,7 @@ export function livePhoneMarkers({
       avatar: who?.avatar || null,
       name,
       stale,
+      course: courseOf(fix, stale),
       title: `${name} · ${
         paused
           ? `paused sharing · last seen ${agoLabel(fix.at)}`

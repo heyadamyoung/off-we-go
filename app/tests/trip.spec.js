@@ -1070,3 +1070,30 @@ test('the getting-there chain renders the travel legs with their countdowns', as
   await expect(page.getByText('R7QWXZ')).toBeVisible()
   await expect(page.getByText(/to change —/)).toBeVisible()
 })
+
+test('the compass button raises a facing beam at the browser fix', async ({ page }) => {
+  // A web tab is nobody's reporting phone, so arming the compass draws the
+  // plain "you" dot at the browser's own position and turns its beam with the
+  // orientation stream — synthesized here, since a test rig has no shoulders.
+  await page.context().grantPermissions(['geolocation'])
+  await page.context().setGeolocation({ longitude: 4.8952, latitude: 52.3702 })
+  await open(page)
+  await page.getByTitle("Show which way you're facing").click()
+  await expect(page.locator('.youb')).toBeVisible({ timeout: MAP_READY })
+
+  const face = alpha =>
+    page.evaluate(a => {
+      window.dispatchEvent(
+        new DeviceOrientationEvent('deviceorientationabsolute', { alpha: a, absolute: true }),
+      )
+    }, alpha)
+  await face(270) // alpha is counterclockwise: 270 means facing east
+  await expect(page.locator('.youb .beam')).toHaveCSS('transform', /matrix/)
+  await face(180)
+  const turned = await page.locator('.youb .beam').evaluate(el => el.style.transform)
+  expect(turned).toBe('rotate(180deg)')
+
+  // Off means off: the dot leaves with the beam.
+  await page.getByTitle("Show which way you're facing").click()
+  await expect(page.locator('.youb')).toHaveCount(0)
+})

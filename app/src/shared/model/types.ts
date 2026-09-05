@@ -107,6 +107,8 @@ export interface LiveFix {
   at: Date
   accuracy?: number | null
   speed?: number | null
+  /** GPS course over ground, degrees clockwise from north */
+  heading?: number | null
   [key: string]: unknown
 }
 

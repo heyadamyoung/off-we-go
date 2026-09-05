@@ -43,6 +43,7 @@ const PATHS: Record<string, string> = {
     'M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H7l-3.5 3v-3H4a1.5 1.5 0 0 1-1.5-1.5v-6Z',
   send: 'M14 2 7 9M14 2l-4.5 12L7 9 2 6.5 14 2Z',
   locate: 'M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15|o8 8 4.5|c8 8 1.2',
+  compass: 'o8 8 6.5|M10.6 5.4 9.2 9.2 5.4 10.6 6.8 6.8Z|c8 8 .7',
   chevron: 'm6 3 5 5-5 5',
   chevronLeft: 'm10 3-5 5 5 5',
   chevronDown: 'm3 6 5 5 5-5',

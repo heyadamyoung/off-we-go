@@ -108,7 +108,7 @@ function Trip({
           screen.scrollLeft = 0
         }
       }}>
-      <TripMap page={page} measure={ask.measure} patch={patch} onContextMenu={ask.setMenuAt} />
+      <TripMap page={page} ask={ask} patch={patch} onContextMenu={ask.setMenuAt} />
       <MapAskOverlays
         ask={ask}
         canEdit={canEdit}
@@ -253,6 +253,8 @@ function Trip({
         <MapControls
           following={following}
           onFollow={toggleFollow}
+          compassOn={ask.compass.on}
+          onCompass={ask.compass.toggle}
           onFit={fitAll}
           onZoom={by => {
             setFollowing(false)

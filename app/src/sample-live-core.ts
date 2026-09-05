@@ -1,3 +1,4 @@
+import { bearingBetween } from './compass-core'
 import { metres } from './shared/lib/geo'
 import type { Coordinates, Device, LiveFix } from './shared/model/types'
 
@@ -129,7 +130,7 @@ const friday = schedule(FRIDAY, false)
 function positionOn(
   { legs, totalS }: { legs: Leg[]; totalS: number },
   second: number,
-): { at: Coordinates; speedMS: number } {
+): { at: Coordinates; speedMS: number; heading: number | null } {
   const t = ((second % totalS) + totalS) % totalS
   for (const leg of legs) {
     if (t > leg.endS) continue
@@ -141,9 +142,10 @@ function positionOn(
         leg.from[1] + (leg.to[1] - leg.from[1]) * share,
       ],
       speedMS: leg.speedMS,
+      heading: leg.speedMS > 0 ? bearingBetween(leg.from, leg.to) : null,
     }
   }
-  return { at: legs[0].from, speedMS: 0 }
+  return { at: legs[0].from, speedMS: 0, heading: null }
 }
 
 /* A little believable wobble — GPS never draws a ruler line. Deterministic
@@ -165,6 +167,7 @@ function mayaFixAt(epochMs: number): LiveFix {
     at: new Date(epochMs),
     accuracy: spot.speedMS > 0 ? 18 : 32,
     speed: spot.speedMS,
+    heading: spot.heading,
   }
 }
 
@@ -224,6 +227,7 @@ export function sampleLiveHistory(now = new Date()): { devices: Device[]; fixes:
         at: new Date(t),
         accuracy: spot.speedMS > 0 ? 20 : 40,
         speed: spot.speedMS,
+        heading: spot.heading,
       })
     }
   }

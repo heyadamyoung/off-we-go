@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { useCompass } from '../../map'
 import type { Coordinates, Id, Stop, Toast } from '../../../shared/model/types'
 import useRouteToStop from './use-route-to-stop'
 
@@ -27,6 +28,9 @@ export default function useMapAsk({
   const [deviceAt, setDeviceAt] = useState<Coordinates | null>(null)
   const origin = deviceAt ?? from
   const route = useRouteToStop({ tripId, sample, from: origin, stop, point: probe })
+  /* The compass rides with the other by-hand map questions: which way this
+     very device is facing, for the beam on the traveller's own dot. */
+  const compass = useCompass({ notify: toast })
 
   const measureFrom = useCallback(
     (at: Coordinates) => {
@@ -58,6 +62,7 @@ export default function useMapAsk({
     probe,
     setProbe,
     measureFrom,
+    compass,
     measure: route.measure,
     summary: route.summary,
     pending: route.pending,

@@ -1,4 +1,5 @@
 import { MapCanvas } from '../../map'
+import type useMapAsk from '../model/use-map-ask'
 import type useTripPage from '../model/use-trip-page'
 import type { Coordinates } from '../../../shared/model/types'
 
@@ -6,12 +7,12 @@ import type { Coordinates } from '../../../shared/model/types'
    props meet the canvas, so the page itself stays about composition. */
 export default function TripMap({
   page,
-  measure,
+  ask,
   patch,
   onContextMenu,
 }: {
   page: ReturnType<typeof useTripPage>
-  measure: Coordinates[] | null
+  ask: ReturnType<typeof useMapAsk>
   patch: (changes: Record<string, unknown>) => void
   onContextMenu: (point: Coordinates) => void
 }) {
@@ -21,6 +22,10 @@ export default function TripMap({
     markers, trail, trailFaded, selected, pickStop, openViewer, liveStop, editing, placing,
     onMapClicked, onStopMove, places, pickPlace, attractions, setAttractionCard, indoor,
   } = page
+  /* The beam rides this device's own reporting phone when it has one on the
+     map still talking; otherwise a plain compass dot at the browser's fix. */
+  const compass = ask.compass
+  const selfLive = markers.some(m => !m.stale && m.key === compass.selfKey)
   return (
     <MapCanvas
       theme={mapTheme}
@@ -32,9 +37,12 @@ export default function TripMap({
       stops={liveStops}
       photos={photos}
       markers={markers}
+      facing={compass.on ? compass.facing : null}
+      facingKey={compass.on && selfLive ? compass.selfKey : null}
+      you={compass.on && !selfLive ? compass.at : null}
       trail={trail}
       trailFaded={trailFaded}
-      measure={measure}
+      measure={ask.measure}
       onContextMenu={onContextMenu}
       selectedStop={selected}
       labels={mapView.zoom > 13}

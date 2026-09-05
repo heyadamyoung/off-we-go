@@ -533,6 +533,32 @@
    half strength and in grey — nobody should mistake last-seen for live. */
 .mme.quiet img, .mme.quiet .ini { opacity: .5; filter: grayscale(.9) }
 .mme.quiet .dot { background: var(--c-faint) }
+/* Which way they are going: a soft wedge of light out of the dot, GPS course
+   for a walker, the device's own compass for the person holding this screen.
+   Drawn first in the marker so everything else paints over its near edge, and
+   turned by transform so one transition eases every reading — the rotation it
+   is handed is cumulative and never crosses 0° the long way round. */
+.mme .beam, .youb .beam {
+  position: absolute; left: 50%; top: 50%; width: 96px; height: 96px; margin: -48px 0 0 -48px;
+  border-radius: 50%; pointer-events: none; opacity: .55;
+  background: conic-gradient(from -26deg, var(--c-accent) 0 52deg, transparent 52.5deg);
+  -webkit-mask: radial-gradient(circle, transparent 27%, #000 34%, rgb(0 0 0 / .25) 62%, transparent 74%);
+  mask: radial-gradient(circle, transparent 27%, #000 34%, rgb(0 0 0 / .25) 62%, transparent 74%);
+  transition: transform .35s ease; will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) { .mme .beam, .youb .beam { transition: none } }
+
+/* This device itself, when it is not one of the trip's reporting phones: a
+   plain dot for "you are here", existing only while the compass is switched
+   on. No name, no pulse — it is not a member, it is the screen's own feet. */
+.youb { position: absolute; left: 0; top: 0; width: 44px; height: 44px; transform: translate(-50%, -50%); z-index: 7; pointer-events: none }
+.youb .core {
+  position: absolute; left: 50%; top: 50%; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px;
+  border-radius: 50%; background: var(--c-accent); border: 2.5px solid var(--c-bg);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / .25), 0 4px 12px rgb(0 0 0 / .4);
+}
+.youb .beam { width: 84px; height: 84px; margin: -42px 0 0 -42px }
+
 /* Hover work is pure noise mid-gesture, and effects recomputed from the pixels
    behind them cost a frame every frame while those pixels move. */
 .mapcanvas.drag .mstop, .mapcanvas.drag .mstack, .mapcanvas.drag .mme { pointer-events: none }

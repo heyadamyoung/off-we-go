@@ -90,3 +90,32 @@ test('a recent fix at any accuracy keeps its phone alive; only age kills it', ()
   })
   assert.equal(markers[0].stale, false, 'the chip lights')
 })
+
+test('a walking phone shows its course; a parked or silent one shows none', () => {
+  const walking = {
+    deviceId: 'phone-maya',
+    lng: 4.9,
+    lat: 52.37,
+    at: at(1),
+    speed: 1.4,
+    heading: 45,
+  }
+  const [walker] = livePhoneMarkers({ fixes: [walking], fresh: [walking], phones, family })
+  assert.equal(walker.course, 45, 'moving at walking pace, the course shows')
+
+  const table = { ...walking, speed: 0.2, heading: 310 }
+  const [sitter] = livePhoneMarkers({ fixes: [table], fresh: [table], phones, family })
+  assert.equal(sitter.course, null, 'below walking pace the swinging needle is hidden')
+
+  const quiet = { ...walking, at: at(90) }
+  const [ghost] = livePhoneMarkers({ fixes: [quiet], fresh: [], phones, family })
+  assert.equal(ghost.course, null, 'a stale dot claims no direction')
+
+  const noHeading = { ...walking, heading: null }
+  const [plain] = livePhoneMarkers({ fixes: [noHeading], fresh: [noHeading], phones, family })
+  assert.equal(plain.course, null, 'no heading reported, none invented')
+
+  const wrapped = { ...walking, heading: 372.5 }
+  const [wrap] = livePhoneMarkers({ fixes: [wrapped], fresh: [wrapped], phones, family })
+  assert.equal(wrap.course, 12.5, 'headings normalize onto the compass rose')
+})
