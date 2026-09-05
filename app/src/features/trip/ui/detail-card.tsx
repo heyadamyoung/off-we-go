@@ -66,7 +66,11 @@ export default function DetailCard(props: DetailCardProps) {
           <Icon n="x" s={14} />
         </button>
       </div>
-      <div className="flex flex-col gap-2 overflow-y-auto px-[18px] pb-4 pt-3.5">
+      {/* Chrome stays put; prose scrolls. The status, the title, the distance
+          and the action row are the card's controls — only the note (the
+          description or the Wikipedia extract) lives in the scrolling middle,
+          so the buttons never have to be hunted for under a long text. */}
+      <div className="flex min-h-0 flex-col gap-2 px-[18px] pb-4 pt-3.5">
         <div
           className="flex items-center justify-between text-[11px] font-extrabold uppercase
                         tracking-[.12em] text-accent">
@@ -85,8 +89,12 @@ export default function DetailCard(props: DetailCardProps) {
             </div>
           )
         )}
-        {stop?.note && <p className="m-0 text-xs leading-relaxed text-muted">{stop.note}</p>}
-        {stop?.kind && <div className="text-xs text-muted">{stop.kind}</div>}
+        {(stop?.note || stop?.kind) && (
+          <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
+            {stop?.note && <p className="m-0 text-xs leading-relaxed text-muted">{stop.note}</p>}
+            {stop?.kind && <div className="text-xs text-muted">{stop.kind}</div>}
+          </div>
+        )}
 
         {papers && stop && (
           <DocumentsSheet
@@ -100,7 +108,7 @@ export default function DetailCard(props: DetailCardProps) {
           />
         )}
 
-        <div className="mt-1 flex items-center gap-2">
+        <div className="mt-1 flex flex-none flex-wrap items-center gap-2">
           <button
             className="mini"
             onClick={props.photoCount ? props.onOpenPhotos : props.onAddPhotos}>
