@@ -32,12 +32,51 @@ if [ "$REV" != "$(cat /custom_files/.rev 2>/dev/null)" ]; then
   printf %s "$REV" >/custom_files/.rev
 fi
 
+# A build that died mid-stage leaves half-written tiles, and a resume over
+# them fails thousands of tiles with range_check errors. The flag lives for
+# the whole build and is cleared only once the service actually answers.
+if [ -f /custom_files/.building ]; then
+  echo "valhalla supervisor: previous build died mid-stage - clearing tiles for a clean rebuild"
+  rm -rf /custom_files/valhalla_tiles /custom_files/valhalla_tiles.tar "$BUILT"
+fi
+
+# One graph wants ONE extract: the image itself warns that multi-pbf builds
+# are the discouraged path (valhalla#3925), and ours died of exactly its
+# wounds. osmium is not in the image; apt is.
+merge_extracts() {
+  count="$(ls /custom_files/*.osm.pbf 2>/dev/null | wc -l)"
+  [ "$count" -gt 1 ] || return 0
+  command -v osmium >/dev/null 2>&1 || {
+    echo "valhalla supervisor: installing osmium-tool"
+    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq osmium-tool >/dev/null 2>&1
+  }
+  command -v osmium >/dev/null 2>&1 || {
+    echo "valhalla supervisor: osmium unavailable, building unmerged (known-bad path)"
+    return 0
+  }
+  echo "valhalla supervisor: merging $count extracts into one"
+  if osmium merge /custom_files/*.osm.pbf -O -o /custom_files/merged.pbf.tmp; then
+    rm -f /custom_files/*.osm.pbf
+    mv /custom_files/merged.pbf.tmp /custom_files/trip-regions.osm.pbf
+  else
+    echo "valhalla supervisor: merge FAILED, building unmerged (known-bad path)"
+    rm -f /custom_files/merged.pbf.tmp
+  fi
+}
+
 SERVICE_PID=""
 launch() { # $1: force_rebuild for the image's entrypoint
   if [ -n "$SERVICE_PID" ]; then
     kill "$(pidof valhalla_service)" "$SERVICE_PID" 2>/dev/null
     wait "$SERVICE_PID" 2>/dev/null
   fi
+  merge_extracts
+  touch /custom_files/.building
+  (
+    until curl -sf http://127.0.0.1:8002/status >/dev/null 2>&1; do sleep 15; done
+    rm -f /custom_files/.building
+    echo "valhalla supervisor: engine is answering"
+  ) &
   # use_tiles_ignore_pbf=False is trap (2) from the verification notes: the
   # image's True default serves whatever tiles exist and ignores new pbfs.
   tile_urls="$(tr '\n' ' ' <"$WANTED")" serve_tiles=True force_rebuild="$1" \
@@ -52,6 +91,9 @@ while true; do
     echo "valhalla supervisor: coverage changed, building: $(tr '\n' ' ' <"$WANTED")"
     while IFS= read -r url; do
       fp="/custom_files/$(basename "$url")"
+      # Coverage grew: the merged graph no longer covers the set, so every
+      # region downloads fresh and the merge runs again.
+      [ -s /custom_files/trip-regions.osm.pbf ] && rm -f /custom_files/trip-regions.osm.pbf
       if [ ! -s "$fp" ]; then
         echo "valhalla supervisor: downloading $url"
         # A failed download says so and leaves nothing behind: a truncated pbf
