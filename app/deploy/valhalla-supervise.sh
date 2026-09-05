@@ -21,13 +21,27 @@ BUILT=/custom_files/.built_tile_urls
 mkdir -p /custom_files
 chmod 777 /custom_files
 
+# The clean-slate lever, pulled from compose: bump SUPERVISOR_REV and the next
+# start throws away every extract and marker for a from-scratch download and
+# build. The volume once held truncated pbfs from an era of silent downloads,
+# and the build died in two seconds saying almost nothing.
+REV="${SUPERVISOR_REV:-0}"
+if [ "$REV" != "$(cat /custom_files/.rev 2>/dev/null)" ]; then
+  echo "valhalla supervisor: rev $REV - clearing extracts and tiles for a clean rebuild"
+  rm -rf /custom_files/*.osm.pbf /custom_files/valhalla_tiles /custom_files/valhalla_tiles.tar "$BUILT"
+  printf %s "$REV" >/custom_files/.rev
+fi
+
 SERVICE_PID=""
 launch() { # $1: force_rebuild for the image's entrypoint
   if [ -n "$SERVICE_PID" ]; then
     kill "$(pidof valhalla_service)" "$SERVICE_PID" 2>/dev/null
     wait "$SERVICE_PID" 2>/dev/null
   fi
+  # use_tiles_ignore_pbf=False is trap (2) from the verification notes: the
+  # image's True default serves whatever tiles exist and ignores new pbfs.
   tile_urls="$(tr '\n' ' ' <"$WANTED")" serve_tiles=True force_rebuild="$1" \
+    use_tiles_ignore_pbf=False \
     /valhalla/scripts/docker-entrypoint.sh build_tiles &
   SERVICE_PID=$!
 }
@@ -38,7 +52,15 @@ while true; do
     echo "valhalla supervisor: coverage changed, building: $(tr '\n' ' ' <"$WANTED")"
     while IFS= read -r url; do
       fp="/custom_files/$(basename "$url")"
-      [ -s "$fp" ] || curl --location --fail -o "$fp" "$url" || rm -f "$fp"
+      if [ ! -s "$fp" ]; then
+        echo "valhalla supervisor: downloading $url"
+        # A failed download says so and leaves nothing behind: a truncated pbf
+        # passes -s forever and poisons every build after it, silently.
+        curl --location --fail -o "$fp" "$url" || {
+          echo "valhalla supervisor: download FAILED for $url"
+          rm -f "$fp"
+        }
+      fi
     done <"$WANTED"
     cp "$WANTED" "$BUILT"
     launch True
