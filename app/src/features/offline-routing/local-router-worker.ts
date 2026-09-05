@@ -7,7 +7,7 @@
 import { createOpfsTarTileSourceFactory } from 'valhalla-wasm'
 import { createLocalRoutingEngine, type LocalRoutingRequest } from './model/routing-core'
 
-;(self as any).global = self
+;(self as unknown as { global: unknown }).global = self
 
 importScripts('/valhalla.js')
 declare const ValhallaModule: (opts?: object) => Promise<unknown>

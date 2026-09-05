@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: this file speaks to Emscripten's untyped FS/device surface — the types genuinely do not exist */
 /* Vendored from valhalla-wasm@0.1.0 (MIT, © Tucker Willenborg) with two
    local amendments: the caller chooses the costing (walking is half this
    app's questions; upstream hardcodes 'auto'), and distances come back in
