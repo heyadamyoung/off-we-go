@@ -30,7 +30,11 @@ export default function TripCards({ page, canEdit, patch, stopDocs, fromYou }: T
   } = page
   return (
     <>
-      {!draft && selectedItem && selectedItem.kind !== 'photo' && (
+      {/* One card at a time: stacked over the stop card, the attraction's X
+          sat exactly where the stop card's X would be next — one perceived
+          close became two real ones, and "the walking line vanished". The
+          stop card waits underneath and returns, line intact. */}
+      {!draft && !attraction && selectedItem && selectedItem.kind !== 'photo' && (
         <DetailCard
           item={selectedItem}
           shifted={panelOpen}

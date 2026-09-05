@@ -189,6 +189,12 @@ services:
     image: ghcr.io/valhalla/valhalla-scripted:latest
     restart: unless-stopped
     entrypoint: ['sh', '/supervise.sh']
+    environment:
+      # Bumping this forces compose to recreate the container: the box was
+      # found still running the ORIGINAL stock-entrypoint container days
+      # after the supervisor shipped — nothing listening on 8002, every
+      # route falling back to the crow, and zero log lines to say so.
+      SUPERVISOR_REV: '2'
     volumes:
       - ./deploy/valhalla-supervise.sh:/supervise.sh:ro
       - valhalla_tiles:/custom_files

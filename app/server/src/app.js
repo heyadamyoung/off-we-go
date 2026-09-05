@@ -190,6 +190,23 @@ export async function buildServer({
     ? createValhallaRouting({ url: valhallaUrl, fetch: routingFetch, logger: app.log, clock })
     : null
   if (routing) app.log.info({ url: valhallaUrl }, 'routing engine configured')
+  /* Health's routing flag once meant "a URL is set" — which stayed true for
+     a day while nothing listened at the other end and every route fell back
+     to the crow. It means "the engine answered recently" now: one cheap
+     /status a minute, so the flag flips false the minute the engine dies. */
+  let routingSeenAt = 0
+  const routingAlive = async () => {
+    if (!routing) return false
+    const at = clock().getTime()
+    if (at - routingSeenAt < 60_000) return true
+    const ok = await routingFetch(`${String(valhallaUrl).replace(/\/$/, '')}/status`, {
+      signal: AbortSignal.timeout(1500),
+    })
+      .then(response => response.ok)
+      .catch(() => false)
+    if (ok) routingSeenAt = at
+    return ok
+  }
 
   const ingestLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
   const indoorLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
@@ -322,7 +339,7 @@ export async function buildServer({
         connectors: {
           outlook: connectorReady,
           assistant: !!assistant,
-          routing: !!routing,
+          routing: await routingAlive(),
           replay: !!replayStore,
         },
       }
