@@ -994,6 +994,21 @@ test('the status capsule takes its own taps — the AI button must not blanket t
   await expect(page.getByText('Ask about this trip')).toBeHidden()
 })
 
+test('the map answers how far to anywhere — right-click, ask, read the pill', async ({ page }) => {
+  await open(page)
+  const spot = await emptyMapPoint(page)
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  await page.getByRole('menuitem', { name: 'How far from me' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'from you' })).toBeVisible()
+  const drawn = () =>
+    page.evaluate(
+      () =>
+        window.__offwegoMap?.getSource('measure')?.serialize?.().data?.geometry?.coordinates
+          ?.length ?? 0,
+    )
+  await expect.poll(drawn).toBeGreaterThan(1)
+})
+
 test('a selected stop answers how far from you, and draws the way', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
@@ -6,7 +6,7 @@ import { ALL_DAYS, type SettingsTab } from '../../../trip-search-core'
 import Boot from '../../../shared/ui/boot'
 import AccountMenu from '../../../shared/ui/account-menu'
 import { useToast } from '../../../shared/ui/toast'
-import { MapMenu, MeasurePill } from './map-menu'
+import { MapAskOverlays } from './map-menu'
 import TripMap from './trip-map'
 import { AssistantButton, AssistantChat } from '../../assistant'
 import { PhotoViewer, UploadModal, UploadTray } from '../../photos'
@@ -15,7 +15,7 @@ import useTripData from '../model/use-trip-data'
 import useTripLegs from '../model/use-trip-legs'
 import useTripChat from '../model/use-trip-chat'
 import { withFace } from '../model/faces'
-import useRouteToStop from '../model/use-route-to-stop'
+import useMapAsk from '../model/use-map-ask'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
 import {
@@ -87,14 +87,12 @@ function Trip({
     offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
   const chat = useTripChat({ tripId, toast })
-  const [menuAt, setMenuAt] = useState<Coordinates | null>(null)
-  const [probe, setProbe] = useState<Coordinates | null>(null)
-  const toStop = useRouteToStop({
+  const askOrigin = latestGpsPosition ?? lastSeenPosition
+  const ask = useMapAsk({
     tripId,
     sample: data.source === 'sample',
-    from: latestGpsPosition ?? lastSeenPosition,
+    from: askOrigin,
     stop: selectedItem?.stop || null,
-    point: probe,
   })
 
   return (
@@ -110,20 +108,14 @@ function Trip({
           screen.scrollLeft = 0
         }
       }}>
-      <TripMap page={page} measure={toStop.measure} patch={patch} onContextMenu={setMenuAt} />
-      {menuAt && (
-        <MapMenu
-          at={menuAt}
-          canEdit={canEdit}
-          canMeasure={!!latestGpsPosition}
-          onAddStop={addStopAt}
-          onMeasure={setProbe}
-          onClose={() => setMenuAt(null)}
-        />
-      )}
-      {probe && !selectedItem?.stop && toStop.summary && (
-        <MeasurePill summary={toStop.summary} onClose={() => setProbe(null)} />
-      )}
+      <TripMap page={page} measure={ask.measure} patch={patch} onContextMenu={ask.setMenuAt} />
+      <MapAskOverlays
+        ask={ask}
+        canEdit={canEdit}
+        canMeasure={!!askOrigin}
+        onAddStop={addStopAt}
+        onDeselect={() => patch({ sel: undefined })}
+      />
 
       {/* The map runs behind everything; these two washes keep the chrome legible
           without a panel behind each piece of it. */}
@@ -223,7 +215,7 @@ function Trip({
         canEdit={canEdit}
         patch={patch}
         stopDocs={stopDocs}
-        fromYou={toStop.summary}
+        fromYou={ask.summary}
       />
 
       {!panelOpen && (

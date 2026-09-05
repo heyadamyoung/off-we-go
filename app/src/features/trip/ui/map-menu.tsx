@@ -19,6 +19,8 @@ export function MapMenu({
   /** false when there is no live position to measure from */
   canMeasure: boolean
   onAddStop: (at: Coordinates) => void
+  /** callers stand down any selected stop first — the newest question wins,
+      or the selection silently outranks the probe and nothing appears */
   onMeasure: (at: Coordinates) => void
   onClose: () => void
 }) {
@@ -30,7 +32,6 @@ export function MapMenu({
     // biome-ignore lint/a11y/useKeyWithClickEvents: as above
     <div className="fixed inset-0 z-[60]" onClick={onClose}>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: as above */}
       <div
         role="menu"
         aria-label="Map actions"
@@ -70,6 +71,48 @@ export function MapMenu({
         </button>
       </div>
     </div>
+  )
+}
+
+/* The whole ask-the-map layer in one mount: the menu when it is open, the
+   pill when a loose point is being measured. The page hands over the ask bag
+   and two callbacks; everything else lives here. */
+export function MapAskOverlays({
+  ask,
+  canEdit,
+  canMeasure,
+  onAddStop,
+  onDeselect,
+}: {
+  ask: {
+    menuAt: Coordinates | null
+    setMenuAt: (at: Coordinates | null) => void
+    setProbe: (at: Coordinates | null) => void
+    pill: string | null
+  }
+  canEdit: boolean
+  canMeasure: boolean
+  onAddStop: (at: Coordinates) => void
+  /** stands the stop card down first — the newest question wins */
+  onDeselect: () => void
+}) {
+  return (
+    <>
+      {ask.menuAt && (
+        <MapMenu
+          at={ask.menuAt}
+          canEdit={canEdit}
+          canMeasure={canMeasure}
+          onAddStop={onAddStop}
+          onMeasure={at => {
+            onDeselect()
+            ask.setProbe(at)
+          }}
+          onClose={() => ask.setMenuAt(null)}
+        />
+      )}
+      {ask.pill && <MeasurePill summary={ask.pill} onClose={() => ask.setProbe(null)} />}
+    </>
   )
 }
 
