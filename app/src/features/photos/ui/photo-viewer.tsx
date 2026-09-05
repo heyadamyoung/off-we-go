@@ -252,7 +252,12 @@ function PhotoViewer({
               className="vheart"
               aria-hidden="true"
               onAnimationEnd={() => setBurst(0)}>
-              <svg viewBox="0 0 24 24" width="96" height="96" aria-hidden="true" role="presentation">
+              <svg
+                viewBox="0 0 24 24"
+                width="96"
+                height="96"
+                aria-hidden="true"
+                role="presentation">
                 <path
                   fill="#fff"
                   d="M12 21c-.4 0-.8-.15-1.1-.44C6.6 16.8 2.5 13.2 2.5 9.1 2.5 6.3 4.7 4 7.4 4c1.8 0 3.4 1 4.6 2.6C13.2 5 14.8 4 16.6 4c2.7 0 4.9 2.3 4.9 5.1 0 4.1-4.1 7.7-8.4 11.46-.3.29-.7.44-1.1.44Z"
