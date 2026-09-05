@@ -1132,3 +1132,21 @@ test('the itinerary day is a calendar fenced to the trip range', async ({ page }
   await expect(page.locator('.editor .dayfence')).toContainText('Outside the trip')
   await expect(day).toHaveValue(iso(0))
 })
+
+test('the way to a stop survives closing its card', async ({ page }) => {
+  // On a phone the card covers the map, so the only chance to SEE the drawn
+  // route is after closing it. The route now outlives the card: the floating
+  // pill holds it, and only its ✕ clears the line.
+  await open(page)
+  await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
+  await expect(page.locator('.detailcard')).toBeVisible()
+  await expect(page.locator('.detailcard')).toContainText('from you')
+
+  await page.locator('.detailcard').getByRole('button', { name: 'Close' }).click()
+  await expect(page.locator('.detailcard')).toHaveCount(0)
+
+  const pill = page.getByRole('status').filter({ hasText: 'from you' })
+  await expect(pill).toBeVisible()
+  await pill.getByRole('button', { name: 'Stop measuring' }).click()
+  await expect(pill).toHaveCount(0)
+})

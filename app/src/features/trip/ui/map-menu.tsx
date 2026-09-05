@@ -81,7 +81,8 @@ export function MapAskOverlays({
   ask: {
     menuAt: Coordinates | null
     setMenuAt: (at: Coordinates | null) => void
-    setProbe: (at: Coordinates | null) => void
+    /** stands down whatever route is drawn — the probe's or a held stop's */
+    dismiss: () => void
     measureFrom: (at: Coordinates) => void
     pill: { summary: string | null; pending: boolean } | null
   }
@@ -105,11 +106,7 @@ export function MapAskOverlays({
         />
       )}
       {ask.pill && (ask.pill.summary || ask.pill.pending) && (
-        <MeasurePill
-          summary={ask.pill.summary}
-          pending={ask.pill.pending}
-          onClose={() => ask.setProbe(null)}
-        />
+        <MeasurePill summary={ask.pill.summary} pending={ask.pill.pending} onClose={ask.dismiss} />
       )}
     </>
   )

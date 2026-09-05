@@ -26,8 +26,26 @@ export default function useMapAsk({
   const [menuAt, setMenuAt] = useState<Coordinates | null>(null)
   const [probe, setProbe] = useState<Coordinates | null>(null)
   const [deviceAt, setDeviceAt] = useState<Coordinates | null>(null)
+  /* The route must survive its card. Selecting a stop draws the way there —
+     and on a phone the card covers the map, so the only chance to actually
+     LOOK at that way is after the card closes. The last routed stop is held
+     past its deselection; the floating pill then owns the route, and its ✕
+     is the explicit goodbye. A new question (another stop, a probe) replaces
+     the held one. */
+  const [held, setHeld] = useState<Stop | null>(null)
+  if (stop && !probe && stop !== held) setHeld(stop)
   const origin = deviceAt ?? from
-  const route = useRouteToStop({ tripId, sample, from: origin, stop, point: probe })
+  const route = useRouteToStop({
+    tripId,
+    sample,
+    from: origin,
+    stop: stop ?? (probe ? null : held),
+    point: probe,
+  })
+  const dismiss = useCallback(() => {
+    setProbe(null)
+    setHeld(null)
+  }, [])
   /* The compass rides with the other by-hand map questions: which way this
      very device is facing, for the beam on the traveller's own dot. */
   const compass = useCompass({ notify: toast })
@@ -35,6 +53,7 @@ export default function useMapAsk({
   const measureFrom = useCallback(
     (at: Coordinates) => {
       setProbe(at)
+      setHeld(null)
       if (origin) return
       if (!navigator.geolocation) {
         toast('This browser cannot report a location, and no phone has shared one.', 'error')
@@ -60,13 +79,14 @@ export default function useMapAsk({
     menuAt,
     setMenuAt,
     probe,
-    setProbe,
+    dismiss,
     measureFrom,
     compass,
     measure: route.measure,
     summary: route.summary,
     pending: route.pending,
-    /** the floating pill: text, or a measuring beat, when a loose point holds the floor */
-    pill: probe && !stop ? { summary: route.summary, pending: route.pending } : null,
+    /** the floating pill: the route's own voice whenever no card speaks for it —
+        a loose probe, or the way to a stop whose card has been closed */
+    pill: !stop && (probe || held) ? { summary: route.summary, pending: route.pending } : null,
   }
 }
