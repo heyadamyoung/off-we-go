@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import { forgetOfflineTiles, offlineTileCount } from '../../../offline-tiles-core'
+import { isSample } from '../../../backend'
+import { forgetRoutingPack, hasRoutingPack, saveRoutingPack } from '../../offline-routing'
 import { saveTripMap } from '../model/save-region'
-import type { Coordinates, Toast } from '../../../shared/model/types'
+import type { Coordinates, Id, Toast } from '../../../shared/model/types'
 
 const REFUSALS: Record<string, string> = {
   'nothing-to-save': 'Add a stop first — there is no map to save yet.',
@@ -11,6 +13,7 @@ const REFUSALS: Record<string, string> = {
 }
 
 interface OfflineMapCardProps {
+  tripId: Id
   points: Coordinates[]
   toast: Toast
 }
@@ -18,16 +21,21 @@ interface OfflineMapCardProps {
 /* The map, before the aeroplane. The rest of the trip already keeps itself on
    the device as you read it; this is the part you cannot read in advance,
    because nobody pans across their whole itinerary before they fly. */
-export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
+export default function OfflineMapCard({ tripId, points, toast }: OfflineMapCardProps) {
   const [held, setHeld] = useState<number | null>(null)
+  const [roadsHeld, setRoadsHeld] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [roads, setRoads] = useState<{ done: number; total: number } | null>(null)
   const stop = useRef<AbortController | null>(null)
 
   const count = useCallback(() => {
     offlineTileCount()
       .then(setHeld)
       .catch(() => setHeld(0))
-  }, [])
+    hasRoutingPack(tripId)
+      .then(setRoadsHeld)
+      .catch(() => setRoadsHeld(false))
+  }, [tripId])
   useEffect(() => {
     count()
     return () => stop.current?.abort()
@@ -43,23 +51,52 @@ export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
         signal: controller.signal,
         onProgress: setProgress,
       })
-      if (!result.ok) toast(REFUSALS[result.reason] || 'The map could not be saved.', 'error')
-      else if (!controller.signal.aborted) toast('This trip’s map is on your device')
+      if (!result.ok) {
+        toast(REFUSALS[result.reason] || 'The map could not be saved.', 'error')
+        return
+      }
+      if (controller.signal.aborted) return
+      /* The roads ride along with the map: the trip's routing tiles, so
+         "how far, which way" answers in aeroplane mode too. The demo has no
+         server pack, and a map without roads is still a map — the tiles
+         stand even when this half fails. */
+      if (!isSample(tripId)) {
+        setProgress(null)
+        setRoads({ done: 0, total: 0 })
+        try {
+          await saveRoutingPack(
+            tripId,
+            (done, total) => setRoads({ done, total }),
+            controller.signal,
+          )
+          if (!controller.signal.aborted) toast('Map and roads are on your device')
+          return
+        } catch {
+          if (!controller.signal.aborted)
+            toast('The map is saved; the roads could not be — try again later.', 'error')
+          return
+        }
+      }
+      toast('This trip’s map is on your device')
     } finally {
       stop.current = null
       setProgress(null)
+      setRoads(null)
       count()
     }
   }
 
   const remove = async () => {
     await forgetOfflineTiles()
+    await forgetRoutingPack(tripId)
     count()
     toast('Saved map removed')
   }
 
-  const busy = progress !== null
-  const pct = busy && progress.total ? Math.round((progress.done / progress.total) * 100) : 0
+  const phase = roads ?? progress
+  const busy = phase !== null
+  const pct = busy && phase.total ? Math.round((phase.done / phase.total) * 100) : 0
+  const phaseWord = roads ? 'Saving the roads…' : 'Working out the area…'
 
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-line bg-raised p-3">
@@ -80,7 +117,7 @@ export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
             />
           </div>
           <span className="text-[11px] tabular-nums text-muted">
-            {progress.total ? `${pct}%` : 'Working out the area…'}
+            {phase.total ? `${roads ? 'Roads ' : ''}${pct}%` : phaseWord}
           </span>
           <button
             className="text-xs font-semibold text-muted hover:text-ink"
@@ -99,7 +136,7 @@ export default function OfflineMapCard({ points, toast }: OfflineMapCardProps) {
             <button
               className="h-9 rounded-lg border border-line px-3 text-xs font-semibold text-muted hover:text-ink"
               onClick={remove}>
-              Remove ({held} tiles)
+              Remove ({held} tiles{roadsHeld ? ' + roads' : ''})
             </button>
           )}
         </div>

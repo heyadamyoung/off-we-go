@@ -3,6 +3,9 @@ import multipart from '@fastify/multipart'
 import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import fsp from 'node:fs/promises'
+import { bboxOf, indexTar, packSlices } from './routing-pack.js'
 import { registerMcpRoutes } from './mcp.js'
 import { clientAddress, createWindowRateLimiter } from './rateLimit.js'
 import { createLiveStream } from './live-stream.js'
@@ -1652,6 +1655,68 @@ export async function buildServer({
      deployed. A leg the engine cannot answer is absent rather than an error:
      the itinerary must render regardless, and the reason is on the span and
      in the engine's own logged words. */
+  /* The trip's roads, packed to carry: the phone downloads this once with
+     the offline map and then routes on the device — same engine, same tiles,
+     the computation just moves into the pocket. Local tiles near the stops,
+     the coarse highway hierarchy across the whole span. */
+  const tilesTarPath = process.env.VALHALLA_TILES_TAR || '/valhalla-tiles/valhalla_tiles.tar'
+  let packIndex = null // { mtimeMs, entries } — reindexed when the engine rebuilds
+  app.get('/api/trips/:tripId/routing-pack', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const stops = await repository.listStops(user, request.params.tripId)
+    if (!stops) return reply.code(403).send({ error: 'You cannot view this trip' })
+    const segments = repository.listSegments
+      ? (await repository.listSegments(user, request.params.tripId)) || []
+      : []
+    const points = [
+      ...stops.map(stop => [stop.lng, stop.lat]),
+      ...segments.flatMap(s => [
+        [s.fromLng, s.fromLat],
+        [s.toLng, s.toLat],
+      ]),
+    ]
+    const bbox = bboxOf(points)
+    if (!bbox)
+      return reply.code(400).send({ error: 'Add a stop first — there are no roads to pack' })
+    let stat
+    try {
+      stat = await fsp.stat(tilesTarPath)
+    } catch {
+      return reply.code(503).send({ error: 'The routing engine has not built its tiles yet' })
+    }
+    if (!packIndex || packIndex.mtimeMs !== stat.mtimeMs) {
+      packIndex = { mtimeMs: stat.mtimeMs, entries: await indexTar(fsp, tilesTarPath) }
+    }
+    const pack = packSlices(packIndex.entries, bbox)
+    if (!pack.kept.length) {
+      return reply.code(503).send({ error: 'The engine has no tiles for this trip yet' })
+    }
+    stamp({
+      'trip.id': request.params.tripId,
+      'pack.tiles': pack.kept.length,
+      'pack.bytes': pack.bytes,
+    })
+    reply.header('content-type', 'application/x-tar')
+    reply.header('content-length', String(pack.bytes))
+    const out = reply.raw
+    reply.hijack()
+    try {
+      for (const slice of pack.kept) {
+        await new Promise((resolve, rejectStream) => {
+          const piece = createReadStream(tilesTarPath, { start: slice.start, end: slice.end })
+          piece.on('error', rejectStream)
+          piece.on('end', resolve)
+          piece.pipe(out, { end: false })
+        })
+      }
+      out.end(Buffer.alloc(1024))
+    } catch (error) {
+      recordFailure(error)
+      out.destroy()
+    }
+  })
+
   /* From here to there, for the person holding the phone: the shortest road
      the engine knows, with its shape to draw. The phone falls back to the
      crow when this answers 503 or the engine cannot say. */

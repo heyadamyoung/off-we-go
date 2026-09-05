@@ -67,7 +67,7 @@ export default function TripSettingsSheet(props: SettingsProps) {
           {/* Below the trip's own details, and offered to everyone on the trip:
               somebody following along abroad needs the map as much as the
               person who wrote the itinerary. */}
-          <OfflineMapCard points={props.mapPoints} toast={props.toast} />
+          <OfflineMapCard tripId={props.tripId} points={props.mapPoints} toast={props.toast} />
         </>
       )}
       {props.tab === 'people' && <PeopleTab {...props} />}

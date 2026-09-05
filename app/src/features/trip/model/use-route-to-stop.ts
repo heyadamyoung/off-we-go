@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { routeToStop } from '../../../backend'
+import { localRoute } from '../../offline-routing'
 import { metres } from '../../../shared/lib/geo'
 import type { Coordinates, Id, Stop } from '../../../shared/model/types'
 
@@ -57,7 +58,15 @@ export default function useRouteToStop({
     setState({ measure: null, summary: null, pending: true })
     let alive = true
     const mode = direct <= 2500 ? 'pedestrian' : 'auto'
-    routeToStop(tripId, from, to, mode).then(found => {
+    /* The road, from whoever can answer: the server when it can, the phone's
+       own engine over the trip's saved tiles when it cannot — aeroplane mode
+       routes exactly like the hotel wifi did. The crow only speaks when
+       neither knows the roads. */
+    const ask = async () => {
+      const online = typeof navigator === 'undefined' || navigator.onLine !== false
+      const found =
+        (online ? await routeToStop(tripId, from, to, mode) : null) ??
+        (await localRoute(tripId, from, to, mode))
       if (!alive) return
       if (!found) {
         setState(crow)
@@ -71,7 +80,8 @@ export default function useRouteToStop({
           `${Math.max(1, Math.round(found.seconds / 60))} min ` +
           (mode === 'pedestrian' ? 'walk' : 'drive'),
       })
-    })
+    }
+    ask()
     return () => {
       alive = false
     }

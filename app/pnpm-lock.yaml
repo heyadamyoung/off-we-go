@@ -119,6 +119,9 @@ importers:
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
+      valhalla-wasm:
+        specifier: ^0.1.0
+        version: 0.1.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -3283,6 +3286,9 @@ packages:
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
+
+  valhalla-wasm@0.1.0:
+    resolution: {integrity: sha512-n+8cAINtQtnQ77ccmMKuUkFRM+Vw3dm+dMyuS+bVCMVmxv6mF9vPQmGyg658FvjD0wmylwlm2O34k3DLJYs55w==}
 
   vite@8.2.2:
     resolution: {integrity: sha512-cFKLV/PRgAUlIRm5WjMjJ86jrftzpqcgH+Us+DS8mI3CDNiH30Whrz8uHL3+MOLPAgqbMBAqWdAHAphOAM+z/Q==}
@@ -6614,6 +6620,8 @@ snapshots:
       react: 19.2.8
 
   util-deprecate@1.0.2: {}
+
+  valhalla-wasm@0.1.0: {}
 
   vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0):
     dependencies:

@@ -8,3 +8,5 @@ newtrip.png
 signed-in.png
 .tmp/
 deploy/release.env
+public/valhalla.js
+public/valhalla.wasm

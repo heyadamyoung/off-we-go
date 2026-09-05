@@ -25,7 +25,8 @@
     "android:sync": "pnpm build:android && cap sync android",
     "android:open": "cap open android",
     "seed:attractions": "node scripts/seed-attractions.mjs",
-    "migrate:supabase": "node scripts/migrate-from-supabase.mjs"
+    "migrate:supabase": "node scripts/migrate-from-supabase.mjs",
+    "postinstall": "node scripts/copyValhallaWasm.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "7.1.6",
@@ -65,6 +66,7 @@
     "rrweb-player": "^2.1.1",
     "sharp": "~0.35.4",
     "tailwindcss": "4.3.3",
+    "valhalla-wasm": "^0.1.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
