@@ -690,7 +690,6 @@
 .vinput input:focus { border-color: var(--c-accent) }
 .vinput button { width: 37px; height: 37px; border-radius: 8px; background: var(--c-accent); color: var(--c-accent-ink); display: grid; place-items: center }
 .vinput button:disabled { opacity: .4 }
-.vedit input { width: 100%; border-radius: 8px; background: var(--c-raised); border: 1px solid var(--c-line); padding: 8px 11px; font-size: 13px; outline: none }
 /* Deleting asks for a held press: the red fills for the whole hold, and
    letting go early cancels. A tap can never do it. */
 .vdel {

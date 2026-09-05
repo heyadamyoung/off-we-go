@@ -56,6 +56,7 @@ function PhotoViewer({
   const photo = list[index]
   const stop = stops.find(s => s.id === photo?.stopId)
   const [draft, setDraft] = useState('')
+  const [details, setDetails] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -104,6 +105,19 @@ function PhotoViewer({
   const contributors = [...new Set(here.map(p => p.by))]
   const cmts = comments[photo.id] || []
   const liked = likes.has(photo.id)
+  /* The wire carries ISO instants; a person gets their locale's words. A
+     fresh upload once printed 2026-09-04T17:16:41.000Z under its author. */
+  const taken = (() => {
+    const at = new Date(photo.when || '')
+    return Number.isFinite(at.getTime())
+      ? at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+      : photo.when
+  })()
+  /* "Say something nice, adam.young1986." — an email localpart is not a
+     name; personalise only when a human first name is actually known. */
+  const firstName = /^[A-Za-z]{2,}$/.test(me.name?.split(' ')[0] || '')
+    ? me.name.split(' ')[0]
+    : null
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -115,6 +129,67 @@ function PhotoViewer({
 
   return (
     <div className="viewer">
+      {/* Editing a photo's facts is deliberate, so it lives behind the pencil
+          in the chrome, not loose in the reading flow: labelled fields, and
+          the one destructive act at the very end of the deliberate context —
+          never beside a select where a stray thumb finds it. */}
+      {details && canEdit && (
+        // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; the card's Done is the keyboard way
+        // biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the whole viewer by design
+        <div
+          className="absolute inset-0 z-20 grid place-items-center bg-black/60 p-5
+                     pb-[calc(1.25rem+var(--keyboard,0px))]"
+          onClick={() => setDetails(false)}>
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim */}
+          <div
+            className="flex w-full max-w-[420px] flex-col gap-3 rounded-2xl border border-line
+                       bg-solid p-4 shadow-panel"
+            role="dialog"
+            aria-label="Photo details"
+            onClick={event => event.stopPropagation()}>
+            <b className="text-sm font-extrabold">Photo details</b>
+            <label className="flex flex-col gap-1 text-[11px] font-bold text-muted">
+              Caption
+              <input
+                className="rounded-lg border border-line bg-raised px-3 py-2 text-sm font-normal
+                           text-ink outline-none focus:border-accent"
+                value={photo.caption || ''}
+                placeholder="What is this a picture of?"
+                onChange={e => onPhotoChange(photo.id, { caption: e.target.value })}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-bold text-muted">
+              Taken at
+              <select
+                className="rounded-lg border border-line bg-raised px-3 py-2 text-sm font-normal
+                           text-ink outline-none focus:border-accent"
+                value={photo.stopId || ''}
+                onChange={e => onPhotoChange(photo.id, { stopId: e.target.value || null })}>
+                <option value="">Not at a stop</option>
+                {stops.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-1 flex items-center justify-between border-t border-line pt-3">
+              <HoldToDelete
+                what="this photo"
+                onDelete={() => {
+                  setDetails(false)
+                  onPhotoDelete(photo.id)
+                }}
+              />
+              <button
+                className="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-accent-ink"
+                onClick={() => setDetails(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="vstage">
         <div className="vtop">
           <div className="who">
@@ -122,12 +197,17 @@ function PhotoViewer({
             <div>
               <b>{photo.by}</b>
               <span>
-                {photo.when}
+                {taken}
                 {stop ? ' · ' + stop.name : ''}
               </span>
             </div>
           </div>
           <div className="acts">
+            {canEdit && (
+              <button onClick={() => setDetails(true)} title="Edit photo details">
+                <Icon n="pencil" s={16} c="#f2f4f8" />
+              </button>
+            )}
             <button
               className={liked ? 'liked' : ''}
               onClick={() => toggleLike(photo.id)}
@@ -231,29 +311,6 @@ function PhotoViewer({
           <span className="n">{here.length}</span>
         </div>
 
-        {canEdit && (
-          <div className="vedit">
-            <input
-              value={photo.caption || ''}
-              placeholder="Caption"
-              onChange={e => onPhotoChange(photo.id, { caption: e.target.value })}
-            />
-            <div className="row">
-              <select
-                value={photo.stopId || ''}
-                onChange={e => onPhotoChange(photo.id, { stopId: e.target.value || null })}>
-                <option value="">Not at a stop</option>
-                {stops.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <HoldToDelete what="this photo" onDelete={() => onPhotoDelete(photo.id)} />
-            </div>
-          </div>
-        )}
-
         <div className="vcomments">
           {cmts.length === 0 && (
             <div className="vnone">No notes yet. Be the first to say something.</div>
@@ -283,7 +340,7 @@ function PhotoViewer({
             ref={inputRef}
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            placeholder={`Say something nice, ${me.name}…`}
+            placeholder={firstName ? `Say something nice, ${firstName}…` : 'Say something nice…'}
           />
           <button type="submit" disabled={!draft.trim()}>
             <Icon n="send" s={16} c="#fff" />

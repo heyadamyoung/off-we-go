@@ -242,6 +242,8 @@ test('deleting a photo takes a held press — a tap does nothing', async ({ page
   const count = () => page.locator('.vcap .ct').textContent()
   const before = await count()
 
+  // The destructive act lives behind the deliberate edit context now.
+  await page.getByTitle('Edit photo details').click()
   const del = page.locator('.vdel')
   await del.scrollIntoViewIfNeeded()
   // A tap — pointer down and up in a beat — must never take a picture away.

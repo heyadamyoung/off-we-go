@@ -414,7 +414,7 @@ test('two questions take turns — codex never runs beside itself', async () => 
   let overlapped = false
   const run = createCodexRunner({
     home,
-    spawn: (binary, args) => {
+    spawn: (_binary, args) => {
       alive += 1
       if (alive > 1) overlapped = true
       const child = new EventEmitter()
