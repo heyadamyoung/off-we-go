@@ -623,7 +623,14 @@
    the filmstrip's full row of thumbnails, and a viewer holding a dozen photos
    pushed the side column off the screen. */
 .vstage { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: #06070a }
-.vtop { height: 60px; flex: none; display: flex; align-items: center; gap: 11px; padding: 0 18px; color: #f2f4f8 }
+/* The bar grows by exactly the bezel: on an iPhone Pro the island sat ON the
+   close and edit buttons — a viewer you could open and never leave. */
+.vtop {
+  height: calc(60px + env(safe-area-inset-top, 0px)); flex: none; display: flex;
+  align-items: center; gap: 11px; color: #f2f4f8;
+  padding: env(safe-area-inset-top, 0px) calc(18px + env(safe-area-inset-right, 0px)) 0
+    calc(18px + env(safe-area-inset-left, 0px));
+}
 .vtop .who { display: flex; align-items: center; gap: 10px; min-width: 0 }
 .vtop .who img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover }
 .vtop .who b { display: block; font-size: 14px; font-weight: 600 }

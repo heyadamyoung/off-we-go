@@ -55,7 +55,7 @@ export default function Toast({ notice }: { notice: ToastNotice | null }) {
   return (
     <div
       className={
-        'toast toast-rise fixed left-1/2 top-6 z-[300] flex ' +
+        'toast toast-rise fixed left-1/2 top-[calc(1.5rem+env(safe-area-inset-top,0px))] z-[300] flex ' +
         'max-w-[min(520px,calc(100vw-28px))] ' +
         (error ? 'error ' : 'success ') +
         'items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold shadow-panel ' +

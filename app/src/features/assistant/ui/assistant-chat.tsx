@@ -111,7 +111,9 @@ export default function AssistantChat({
         )}
       </div>
 
-      <div className="flex flex-none items-end gap-2 border-t border-line p-3">
+      <div
+        className="flex flex-none items-end gap-2 border-t border-line p-3
+                   max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
         <textarea
           ref={box}
           value={text}
