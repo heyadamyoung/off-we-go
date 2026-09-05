@@ -5,10 +5,10 @@
   "packageManager": "pnpm@10.6.5",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:ios": "vite build --mode ios",
-    "build:android": "vite build --mode android",
+    "dev": "node scripts/copyValhallaWasm.mjs && vite",
+    "build": "node scripts/copyValhallaWasm.mjs && vite build",
+    "build:ios": "node scripts/copyValhallaWasm.mjs && vite build --mode ios",
+    "build:android": "node scripts/copyValhallaWasm.mjs && vite build --mode android",
     "brand:icons": "node scripts/generate-brand-icons.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
@@ -25,8 +25,7 @@
     "android:sync": "pnpm build:android && cap sync android",
     "android:open": "cap open android",
     "seed:attractions": "node scripts/seed-attractions.mjs",
-    "migrate:supabase": "node scripts/migrate-from-supabase.mjs",
-    "postinstall": "node scripts/copyValhallaWasm.mjs"
+    "migrate:supabase": "node scripts/migrate-from-supabase.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "7.1.6",
