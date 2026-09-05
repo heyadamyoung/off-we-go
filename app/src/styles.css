@@ -638,10 +638,12 @@
 .vbody { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 0 20px; min-height: 0 }
 .vbody img.main { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; box-shadow: 0 30px 80px rgb(0 0 0 / .6) }
 /* The photo is tappable without ever looking like a widget: the button is an
-   invisible frame that lets the image keep its own size. */
+   invisible frame filling the stage, so the image's percentage constraints
+   still resolve. Sized any other way the full-resolution photograph grew
+   past the stage and lay OVER the chrome, eating the pencil's clicks. */
 .vmaintap {
   display: flex; align-items: center; justify-content: center;
-  min-width: 0; min-height: 0; max-width: 100%; max-height: 100%;
+  width: 100%; height: 100%; min-width: 0; min-height: 0;
 }
 /* The Instagram beat: the heart pops in over the picture, holds, and lets go.
    White with a soft shadow so it reads over any photograph. */

@@ -738,11 +738,12 @@ test('editing a caption shows immediately in the open viewer', async ({ page }) 
   await page.locator('.grid button').first().click()
   await expect(page.locator('.viewer')).toBeVisible()
 
-  await page.locator('.vcap .vedit, .vcap h2').first().click()
-  const input = page.locator('.vedit input')
-  if (await input.count()) {
-    await input.fill('A brand new caption')
-    await input.press('Enter')
+  // Caption editing lives behind the pencil's Photo details dialog now.
+  const pencil = page.getByTitle('Edit photo details')
+  if (await pencil.count()) {
+    await pencil.click()
+    await page.getByLabel('Caption').fill('A brand new caption')
+    await page.getByRole('button', { name: 'Done' }).click()
     await expect(page.locator('.vcap h2')).toHaveText('A brand new caption')
   }
 })
