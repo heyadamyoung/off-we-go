@@ -11,6 +11,7 @@ import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { validLngLat } from '../../../shared/lib/geo'
 import { paddingOffset } from '../../../live-map-view-core'
+import useHeadingCamera from '../model/use-heading-camera'
 import useIndoorLayers from '../model/indoor-layers'
 import makeTrailSweep from '../model/trail-sweep'
 import useMapLayers from '../model/use-map-layers'
@@ -46,9 +47,8 @@ const MapCanvas = memo(function MapCanvas({
   stops = [],
   photos = [],
   markers = [],
-  facing = null,
-  facingKey = null,
   you = null,
+  headingUp = null,
   trail = [],
   trailFaded = [],
   selectedStop,
@@ -74,6 +74,13 @@ const MapCanvas = memo(function MapCanvas({
   const [map, setMap] = useState<MapGL | null>(null)
   const [moving, setMoving] = useState(false) // any camera movement
   const [dragging, setDragging] = useState(false) // the user's hand, specifically
+  useHeadingCamera({
+    map,
+    on: !!headingUp,
+    facing: headingUp?.facing ?? null,
+    at: headingUp?.at ?? null,
+    busy: dragging,
+  })
 
   const oref = useRef(onView)
   oref.current = onView
@@ -380,16 +387,9 @@ const MapCanvas = memo(function MapCanvas({
 
       {map &&
         markers.map(m => (
-          <LiveMarker
-            key={m.key}
-            map={map}
-            m={m}
-            facing={m.key === facingKey ? facing : null}
-            onClick={onLive}
-            movedRef={moved}
-          />
+          <LiveMarker key={m.key} map={map} m={m} onClick={onLive} movedRef={moved} />
         ))}
-      {map && you && <YouBeam map={map} at={you} facing={facing} />}
+      {map && you && <YouBeam map={map} at={you.at} facing={you.facing} />}
 
       {children}
     </div>

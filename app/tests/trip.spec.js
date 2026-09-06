@@ -1108,9 +1108,23 @@ test('the compass button raises a facing beam at the browser fix', async ({ page
   const turned = await page.locator('.youb .beam').evaluate(el => el.style.transform)
   expect(turned).toBe('rotate(180deg)')
 
-  // Off means off: the dot leaves with the beam.
+  // Second press: heading-up. The map itself turns to the facing — south up
+  // means bearing 180 — and the beam counter-turns to keep pointing at the
+  // world (180 world minus 180 map = 0 on screen).
+  await page.getByTitle("Show which way you're facing").click()
+  await expect
+    .poll(() => page.evaluate(() => Math.round(window.__offwegoMap?.getBearing() ?? 0)))
+    .toBe(180)
+  await expect
+    .poll(() => page.locator('.youb .beam').evaluate(el => el.style.transform))
+    .toBe('rotate(0deg)')
+
+  // Third press: everything stands down — the dot leaves, north comes back.
   await page.getByTitle("Show which way you're facing").click()
   await expect(page.locator('.youb')).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate(() => Math.round(window.__offwegoMap?.getBearing() ?? 99)))
+    .toBe(0)
 })
 
 test('the itinerary day is a calendar fenced to the trip range', async ({ page }) => {

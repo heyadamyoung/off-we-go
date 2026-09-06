@@ -35,12 +35,10 @@ export interface MapCanvasProps {
   stops?: Stop[]
   photos?: TripPhoto[]
   markers?: PhoneMarker[]
-  /** the device compass, degrees clockwise from north, when the owner armed it */
-  facing?: number | null
-  /** which marker is this very device, and so wears the compass beam */
-  facingKey?: string | null
-  /** where to draw the compass dot when no marker is this device */
-  you?: Coordinates | null
+  /** this device's own compass dot, when no marker is this device */
+  you?: { at: Coordinates; facing: number | null } | null
+  /** heading-up: turn the map to the device's facing and keep it under the walker */
+  headingUp?: { facing: number | null; at: Coordinates | null } | null
   trail?: Coordinates[][]
   /** the walked line older than the recency window, drawn as a ghost */
   trailFaded?: Coordinates[][]

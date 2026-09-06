@@ -91,11 +91,24 @@ function useTurned(heading: number | null): number | null {
   return cumulative.current
 }
 
+/* A beam is a bearing in the WORLD; the marker's element is glued to the
+   screen. While heading-up mode turns the map, every wedge counter-turns by
+   the map's own bearing or it would point at nothing. */
+function useMapBearing(map: MapLibreMap): number {
+  const [bearing, setBearing] = useState(() => map.getBearing())
+  useEffect(() => {
+    const read = () => setBearing(map.getBearing())
+    map.on('rotate', read)
+    return () => {
+      map.off('rotate', read)
+    }
+  }, [map])
+  return bearing
+}
+
 interface LiveMarkerProps {
   map: MapLibreMap
   m: PhoneMarker
-  /** compass facing for the traveller's own phone; overrides the GPS course */
-  facing?: number | null
   onClick?: () => void
   /** true while a map drag is in flight — a drag must not count as a click */
   movedRef: MutableRefObject<boolean>
@@ -105,10 +118,11 @@ interface LiveMarkerProps {
 // position. Eased between fixes so it walks rather than teleports. A phone that
 // has gone quiet keeps its dot at the last place it was heard from, dimmed and
 // without the pulse: out of signal is not the same as gone.
-function LiveMarker({ map, m, facing, onClick, movedRef }: LiveMarkerProps) {
+function LiveMarker({ map, m, onClick, movedRef }: LiveMarkerProps) {
   const target = useMemo<Coordinates>(() => [m.lng, m.lat], [m.lng, m.lat])
   const pt = useGliding(target, 800)
-  const beam = useTurned(facing ?? m.course)
+  const bearing = useMapBearing(map)
+  const beam = useTurned(m.course == null ? null : m.course - bearing)
   return (
     <MapMarker map={map} lng={pt[0]} lat={pt[1]}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: a map pin is the pointer route; the people rail is the keyboard route */}
@@ -148,7 +162,8 @@ function YouBeam({
   at: Coordinates
   facing: number | null
 }) {
-  const beam = useTurned(facing)
+  const bearing = useMapBearing(map)
+  const beam = useTurned(facing == null ? null : facing - bearing)
   return (
     <MapMarker map={map} lng={at[0]} lat={at[1]}>
       <div className="youb" title="You">

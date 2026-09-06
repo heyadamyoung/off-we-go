@@ -23,9 +23,15 @@ export default function TripMap({
     onMapClicked, onStopMove, places, pickPlace, attractions, setAttractionCard, indoor,
   } = page
   /* The beam rides this device's own reporting phone when it has one on the
-     map still talking; otherwise a plain compass dot at the browser's fix. */
+     map still talking; otherwise a plain compass dot at the browser's fix.
+     Folding the facing into that one marker HERE keeps the canvas's contract
+     plain: markers carry their own directions. */
   const compass = ask.compass
   const selfLive = markers.some(m => !m.stale && m.key === compass.selfKey)
+  const beamed =
+    compass.on && selfLive && compass.facing != null
+      ? markers.map(m => (m.key === compass.selfKey ? { ...m, course: compass.facing } : m))
+      : markers
   return (
     <MapCanvas
       theme={mapTheme}
@@ -36,10 +42,11 @@ export default function TripMap({
       route={routeDraft || track}
       stops={liveStops}
       photos={photos}
-      markers={markers}
-      facing={compass.on ? compass.facing : null}
-      facingKey={compass.on && selfLive ? compass.selfKey : null}
-      you={compass.on && !selfLive ? compass.at : null}
+      markers={beamed}
+      you={
+        compass.on && !selfLive && compass.at ? { at: compass.at, facing: compass.facing } : null
+      }
+      headingUp={compass.mode === 'heading' ? { facing: compass.facing, at: compass.at } : null}
       trail={trail}
       trailFaded={trailFaded}
       measure={ask.measure}

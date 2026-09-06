@@ -29,15 +29,17 @@ const screenAngle = () => {
   }
 }
 
-const remember = (on: boolean) => {
+export type CompassMode = 'off' | 'beam' | 'heading'
+
+const remember = (mode: CompassMode) => {
   try {
-    if (on) localStorage.setItem(REMEMBER_KEY, '1')
-    else localStorage.removeItem(REMEMBER_KEY)
+    if (mode === 'off') localStorage.removeItem(REMEMBER_KEY)
+    else localStorage.setItem(REMEMBER_KEY, mode === 'heading' ? '2' : '1')
   } catch {}
 }
 
 export default function useCompass({ notify }: { notify: (m: string, tone?: 'error') => void }) {
-  const [on, setOn] = useState(false)
+  const [mode, setMode] = useState<CompassMode>('off')
   const [facing, setFacing] = useState<number | null>(null)
   const [at, setAt] = useState<Coordinates | null>(null)
   /* Which reporting phone is THIS device, so its avatar can wear the beam.
@@ -51,10 +53,10 @@ export default function useCompass({ notify }: { notify: (m: string, tone?: 'err
   const stop = useCallback(() => {
     teardown.current()
     teardown.current = () => {}
-    setOn(false)
+    setMode('off')
     setFacing(null)
     setAt(null)
-    remember(false)
+    remember('off')
   }, [])
 
   const start = useCallback(
@@ -71,16 +73,26 @@ export default function useCompass({ notify }: { notify: (m: string, tone?: 'err
         } catch {}
         if (verdict !== 'granted') {
           if (!quiet) notify('The compass needs permission — allow motion access', 'error')
-          remember(false)
+          remember('off')
           return
         }
       }
 
       let heard = false
+      /* The sensor speaks at up to 60Hz and every word was a re-render. A
+         reading has to be either fresh enough in time or different enough in
+         angle to be worth repainting a beam or turning a map for. */
+      let spokeAt = 0
+      let spokeDeg = -999
       const onReading = (event: DeviceOrientationEvent) => {
         const heading = headingFromEvent(event, screenAngle())
         if (heading == null) return
         heard = true
+        const now = performance.now()
+        const turned = Math.abs(((heading - spokeDeg + 540) % 360) - 180)
+        if (now - spokeAt < 120 && turned < 2) return
+        spokeAt = now
+        spokeDeg = heading
         setFacing(heading)
       }
       /* Chrome fires the absolute stream; Safari only the plain one, but with
@@ -120,33 +132,50 @@ export default function useCompass({ notify }: { notify: (m: string, tone?: 'err
         if (watch != null) navigator.geolocation?.clearWatch(watch)
         window.clearTimeout(silence)
       }
-      setOn(true)
-      remember(true)
+      setMode(current => {
+        const next = current === 'off' ? 'beam' : current
+        remember(next)
+        return next
+      })
       track('toggle compass', { engaged: 'true' })
     },
     [notify, stop],
   )
 
-  /* A traveller who turned the beam on wants it on tomorrow too. Quietly: a
-     silent failure here just means the button waits for its tap again. */
+  /* A traveller who turned the beam on wants it on tomorrow too — and one who
+     walked with the map turning under their thumbs wants that back as well.
+     Quietly: a silent failure just means the button waits for its tap. */
   const wanted = useRef(false)
   useEffect(() => {
     if (wanted.current) return
     wanted.current = true
     try {
-      if (localStorage.getItem(REMEMBER_KEY) === '1') void start(true)
+      const stored = localStorage.getItem(REMEMBER_KEY)
+      if (stored === '1' || stored === '2') {
+        void start(true).then(() => {
+          if (stored === '2') setMode(current => (current === 'beam' ? 'heading' : current))
+        })
+      }
     } catch {}
     return () => teardown.current()
   }, [start])
 
+  /* One button, three gaits, the Google cadence: off arms the beam; the beam
+     hands the map its bearing; heading stands everything down. */
   const toggle = useCallback(() => {
-    if (on) {
-      track('toggle compass', { engaged: 'false' })
-      stop()
+    if (mode === 'off') {
+      void start()
       return
     }
-    void start()
-  }, [on, start, stop])
+    if (mode === 'beam') {
+      setMode('heading')
+      remember('heading')
+      track('toggle compass', { engaged: 'heading' })
+      return
+    }
+    track('toggle compass', { engaged: 'false' })
+    stop()
+  }, [mode, start, stop])
 
-  return { on, facing, at, selfKey, toggle }
+  return { on: mode !== 'off', mode, facing, at, selfKey, toggle }
 }
