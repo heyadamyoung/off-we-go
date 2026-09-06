@@ -5,6 +5,7 @@ import DetailCard from './detail-card'
 import { EditHint, PlaceHint } from './trip-chrome'
 import type useTripPage from '../model/use-trip-page'
 
+import type { RouteToStop } from '../model/use-route-to-stop'
 import type { StopDocTools } from '../model/use-stop-docs'
 
 interface TripCardsProps {
@@ -12,22 +13,14 @@ interface TripCardsProps {
   canEdit: boolean
   patch: (changes: Record<string, unknown>) => void
   stopDocs: StopDocTools
-  /** "1.4 km · 17 min walk" from the person's live position to the open stop */
-  fromYou: string | null
-  fromYouPending: boolean
+  /** distance and both gaits' minutes from the person to the open stop */
+  stats: RouteToStop | null
 }
 
 /* The floating layer over the map: the stop card, the stop editor, the
    placement and route hints, and the attraction card. The page decides what
    exists; this layer decides how it hovers. */
-export default function TripCards({
-  page,
-  canEdit,
-  patch,
-  stopDocs,
-  fromYou,
-  fromYouPending,
-}: TripCardsProps) {
+export default function TripCards({ page, canEdit, patch, stopDocs, stats }: TripCardsProps) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     draft, selectedItem, panelOpen, here, openViewer, startEditing, setDraft,
@@ -64,8 +57,7 @@ export default function TripCards({
               : undefined
           }
           docs={stopDocs}
-          fromYou={fromYou}
-          fromYouPending={fromYouPending}
+          stats={stats}
         />
       )}
 

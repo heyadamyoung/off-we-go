@@ -216,8 +216,7 @@ function Trip({
         canEdit={canEdit}
         patch={patch}
         stopDocs={stopDocs}
-        fromYou={ask.pending ? null : ask.summary}
-        fromYouPending={ask.pending}
+        stats={ask.stats}
       />
 
       {!panelOpen && (

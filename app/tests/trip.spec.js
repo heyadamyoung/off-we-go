@@ -1027,9 +1027,13 @@ test('a selected stop answers how far from you, and draws the way', async ({ pag
     .getByRole('button', { name: /Rijksmuseum/ })
     .first()
     .click()
-  // The demo has no engine, so the crow answers: a distance and a straight
-  // dashed line from Maya's live dot to the museum.
-  await expect(page.locator('.detailcard')).toContainText('km direct from you')
+  // The demo has no engine, so the crow answers: a distance marked "direct"
+  // in the stats strip, and a straight dashed line from Maya's live dot.
+  await expect(page.locator('.detailcard .dstats')).toContainText('km')
+  await expect(page.locator('.detailcard .dstats')).toContainText('direct')
+  // The description is prose, not chrome: it must actually be on screen —
+  // it once collapsed to nothing inside an auto-height card.
+  await expect(page.locator('.detailcard .dprose')).toContainText('The Night Watch')
   const drawn = () =>
     page.evaluate(
       () =>
@@ -1140,7 +1144,7 @@ test('the way to a stop survives closing its card', async ({ page }) => {
   await open(page)
   await page.locator('.fcard', { hasText: 'Rijksmuseum' }).first().click()
   await expect(page.locator('.detailcard')).toBeVisible()
-  await expect(page.locator('.detailcard')).toContainText('from you')
+  await expect(page.locator('.detailcard .dstats')).toContainText('km')
 
   await page.locator('.detailcard').getByRole('button', { name: 'Close' }).click()
   await expect(page.locator('.detailcard')).toHaveCount(0)

@@ -85,6 +85,8 @@ export default function useMapAsk({
     measure: route.measure,
     summary: route.summary,
     pending: route.pending,
+    /** the whole answer — distance, both gaits' minutes — for the stop card */
+    stats: route,
     /** the floating pill: the route's own voice whenever no card speaks for it —
         a loose probe, or the way to a stop whose card has been closed */
     pill: !stop && (probe || held) ? { summary: route.summary, pending: route.pending } : null,
