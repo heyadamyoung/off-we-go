@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
@@ -94,6 +94,11 @@ function Trip({
     stop: selectedItem?.stop || null,
     toast,
   })
+  /* Heading-up owns the camera; two authorities easing it at once would fight. */
+  const headingUp = ask.compass.mode === 'heading'
+  useEffect(() => {
+    if (headingUp) setFollowing(false)
+  }, [headingUp, setFollowing])
 
   return (
     <div
@@ -219,15 +224,7 @@ function Trip({
         stats={ask.stats}
       />
 
-      {!panelOpen && (
-        <Advisories
-          segments={transport.segments}
-          markers={markers}
-          phones={phones}
-          now={clock}
-          sample={data.source === 'sample'}
-        />
-      )}
+      {!panelOpen && <Advisories segments={transport.segments} markers={markers} now={clock} />}
 
       <MapChrome>
         <ScopeToggle
