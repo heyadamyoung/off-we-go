@@ -1,5 +1,5 @@
 import Icon from '../../../shared/ui/icon'
-import { failed, type Upload } from '../../../upload-queue-core'
+import { countable, failed, type Upload } from '../../../upload-queue-core'
 
 /* What is still going up, in the corner, out of the way. Uploading a
    photograph should not hold the screen: the tray says what is happening and
@@ -25,7 +25,7 @@ export default function UploadTray({
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-xs text-muted">
         {going > 0 && <span className="size-2 animate-pulse rounded-full bg-accent" />}
         {going > 0
-          ? `Adding ${going} photo${going === 1 ? '' : 's'}…`
+          ? `Adding ${going} ${countable(uploads)}…`
           : `${failed(uploads).length} did not go up`}
       </div>
       <ul className="m-0 flex max-h-[168px] list-none flex-col gap-1 overflow-y-auto p-1.5">
@@ -38,8 +38,11 @@ export default function UploadTray({
                 className="size-9 flex-none rounded-lg object-cover"
               />
             ) : (
+              /* A film whose opening frame would not decode has no tile of
+                 its own; the camcorder says what is going up rather than a
+                 broken picture would. */
               <span className="grid size-9 flex-none place-items-center rounded-lg bg-raised text-faint">
-                <Icon n="camera" s={14} />
+                <Icon n={upload.kind === 'video' ? 'video' : 'camera'} s={14} />
               </span>
             )}
             <span className="flex min-w-0 flex-1 flex-col">

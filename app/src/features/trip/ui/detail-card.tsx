@@ -171,7 +171,7 @@ export default function DetailCard(props: DetailCardProps) {
       <div className="mx-[18px] mb-2.5 mt-2 flex flex-none items-center gap-1 border-t border-line pt-2">
         <Act
           icon="camera"
-          label={props.photoCount ? `${props.photoCount} photos` : 'Add photos'}
+          label={props.photoCount ? `${props.photoCount} photos` : 'Add photos or videos'}
           count={props.photoCount}
           onClick={props.photoCount ? props.onOpenPhotos : props.onAddPhotos}
         />

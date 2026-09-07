@@ -115,18 +115,27 @@ export async function uploadPhoto(
       sampleTrip().photos.length,
       ...sampleTrip().photos.map(photo => (photo.seq ?? -1) + 1),
     )
+    /* The poster is a File, not a link: the demo trip has no server to turn
+       it into one, so it becomes an object URL here or the sample's videos
+       are grey tiles. */
+    const { poster, ...rest } = meta
     const photo = {
       id: uid(),
       by: '',
       src: URL.createObjectURL(file),
       seq: nextSequence,
-      ...meta,
+      ...rest,
+      ...(poster ? { posterSrc: URL.createObjectURL(poster) } : {}),
     } as TripPhoto
     sampleTrip().photos.push(photo)
     return { ...photo }
   }
   const form = new FormData()
   form.append('photo', file, file.name)
+  /* A film's opening frame, drawn on this device. It rides in the same
+     request so a video is never on the map without a picture, and the server
+     never needs a decoder to make one. */
+  if (meta.poster) form.append('poster', meta.poster, meta.poster.name)
   const values = {
     stopId: meta.stopId,
     lng: meta.lng,
@@ -137,6 +146,7 @@ export async function uploadPhoto(
     fallbackLocationSource: meta.fallbackLocationSource,
     takenAt: meta.when || meta.takenAt,
     locationSource: meta.locationSource,
+    durationMs: meta.durationMs,
     uploadKey: meta.uploadKey,
   }
   for (const [key, value] of Object.entries(values))

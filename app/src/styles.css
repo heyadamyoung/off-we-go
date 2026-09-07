@@ -671,7 +671,10 @@
    never becomes an orange block; amber belongs to the journey, not to love. */
 .vtop .acts button.liked { background: rgb(255 255 255 / .08) }
 .vbody { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 0 20px; min-height: 0 }
-.vbody img.main { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; box-shadow: 0 30px 80px rgb(0 0 0 / .6) }
+.vbody img.main, .vbody video.main { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; box-shadow: 0 30px 80px rgb(0 0 0 / .6) }
+/* A film fills the stage the way a photograph does, and keeps its own
+   controls: the scrubber is the point, so nothing is layered over it. */
+.vbody video.main { width: 100%; background: #000 }
 /* The photo is tappable without ever looking like a widget: the button is an
    invisible frame filling the stage, so the image's percentage constraints
    still resolve. Sized any other way the full-resolution photograph grew

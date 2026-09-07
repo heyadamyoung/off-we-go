@@ -47,7 +47,7 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
     props.canEdit
       ? [
           ['pin', 'Place a pin', 'Pin', 'pinplus', props.placing, props.onPlace],
-          ['add', 'Add photos', 'Upload', 'camera', false, props.onAdd],
+          ['add', 'Add photos or videos', 'Upload', 'camera', false, props.onAdd],
         ]
       : []
   if (props.canEdit) {

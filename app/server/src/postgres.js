@@ -90,6 +90,30 @@ const segmentRow = row =>
       }
     : null
 
+/* One shape for a photograph or a film. `kind` is what the app switches on;
+   a video also carries the poster frame every grid draws it with, the type
+   its bytes are in, and how long it runs. */
+const photoRow = value => ({
+  id: value.id,
+  stopId: value.stop_id,
+  kind: value.media_kind || 'photo',
+  mime: value.media_mime || null,
+  durationMs:
+    value.duration_ms === null || value.duration_ms === undefined
+      ? null
+      : Number(value.duration_ms),
+  lng: value.lng,
+  lat: value.lat,
+  caption: value.caption,
+  by: value.taken_by,
+  when: value.taken_at?.toISOString?.() || value.taken_at,
+  locationSource: value.location_source,
+  storagePath: value.storage_path,
+  posterPath: value.poster_path || null,
+  thumbPath: value.thumb_path,
+  seq: value.seq,
+})
+
 /* One shape for a segment's document. The storage path stays server-side. */
 const documentRow = row =>
   row
@@ -905,19 +929,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           sourceUrl: value.source_url,
           documents: value.documents || [],
         })),
-        photos: rows(photos).map(value => ({
-          id: value.id,
-          stopId: value.stop_id,
-          lng: value.lng,
-          lat: value.lat,
-          caption: value.caption,
-          by: value.taken_by,
-          when: value.taken_at?.toISOString?.() || value.taken_at,
-          locationSource: value.location_source,
-          storagePath: value.storage_path,
-          thumbPath: value.thumb_path,
-          seq: value.seq,
-        })),
+        photos: rows(photos).map(photoRow),
         route: rows(route).map(value => [value.lng, value.lat]),
         comments: groupedComments,
         likes: rows(likes).map(value => String(value.photo_id)),
@@ -1834,8 +1846,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       ])
       const result = await pool.query(
         `insert into photos
-        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,thumb_path,client_key,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,nextval('photo_order_seq')) returning *`,
+        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,poster_path,thumb_path,media_kind,media_mime,duration_ms,client_key,seq)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,nextval('photo_order_seq')) returning *`,
         [
           tripId,
           input.stopId,
@@ -1847,24 +1859,15 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.takenAt,
           input.locationSource,
           input.storagePath,
+          input.posterPath || null,
           input.thumbPath,
+          input.kind === 'video' ? 'video' : 'photo',
+          input.mime || null,
+          input.durationMs ?? null,
           input.clientKey || null,
         ],
       )
-      const value = result.rows[0]
-      return {
-        id: value.id,
-        stopId: value.stop_id,
-        lng: value.lng,
-        lat: value.lat,
-        caption: value.caption,
-        by: value.taken_by,
-        when: value.taken_at?.toISOString?.() || value.taken_at,
-        locationSource: value.location_source,
-        storagePath: value.storage_path,
-        thumbPath: value.thumb_path,
-        seq: value.seq,
-      }
+      return photoRow(result.rows[0])
     },
     async findPhotoByClientKey(user, tripId, clientKey) {
       if (!clientKey || !(await this.canEditTrip(user.id, tripId))) return null
@@ -1872,22 +1875,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         `select * from photos where trip_id=$1 and user_id=$2 and client_key=$3`,
         [tripId, user.id, clientKey],
       )
-      const value = result.rows[0]
-      return value
-        ? {
-            id: value.id,
-            stopId: value.stop_id,
-            lng: value.lng,
-            lat: value.lat,
-            caption: value.caption,
-            by: value.taken_by,
-            when: value.taken_at?.toISOString?.() || value.taken_at,
-            locationSource: value.location_source,
-            storagePath: value.storage_path,
-            thumbPath: value.thumb_path,
-            seq: value.seq,
-          }
-        : null
+      return result.rows[0] ? photoRow(result.rows[0]) : null
     },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
@@ -1913,16 +1901,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         photoId,
         tripId,
       ])
-      const value = result.rows[0]
-      return value
-        ? {
-            id: value.id,
-            stopId: value.stop_id,
-            caption: value.caption,
-            storagePath: value.storage_path,
-            thumbPath: value.thumb_path,
-          }
-        : null
+      return result.rows[0] ? photoRow(result.rows[0]) : null
     },
     async deletePhoto(user, tripId, photoId) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
@@ -1931,7 +1910,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         await client.query('begin')
         const result = await client.query(
           `delete from photos where id=$1 and trip_id=$2
-          returning storage_path,thumb_path`,
+          returning storage_path,poster_path,thumb_path`,
           [photoId, tripId],
         )
         const value = result.rows[0]
@@ -1939,7 +1918,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           await client.query('rollback')
           return null
         }
-        for (const path of [value.storage_path, value.thumb_path].filter(Boolean)) {
+        for (const path of [value.storage_path, value.poster_path, value.thumb_path].filter(
+          Boolean,
+        )) {
           await client.query(
             `insert into file_deletion_queue(path) values($1)
             on conflict(path) do update set next_attempt_at=now()`,
@@ -1947,7 +1928,11 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           )
         }
         await client.query('commit')
-        return { storagePath: value.storage_path, thumbPath: value.thumb_path }
+        return {
+          storagePath: value.storage_path,
+          posterPath: value.poster_path || null,
+          thumbPath: value.thumb_path,
+        }
       } catch (error) {
         await client.query('rollback')
         throw error
@@ -2361,6 +2346,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           photos: photos.rows.map(value => ({
             id: value.id,
             stopId: value.stop_id,
+            kind: value.media_kind || 'photo',
+            durationMs: value.duration_ms ?? null,
             caption: value.caption,
             by: value.taken_by,
             takenAt: value.taken_at,
@@ -2398,6 +2385,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         const files = await client.query(
           `
           select storage_path path from photos where user_id=$1 or trip_id=any($2::uuid[])
+          union select poster_path from photos where poster_path is not null and (user_id=$1 or trip_id=any($2::uuid[]))
           union select thumb_path from photos where thumb_path is not null and (user_id=$1 or trip_id=any($2::uuid[]))
           union select avatar_path from profiles where id=$1 and avatar_path is not null`,
           [user.id, tripIds],

@@ -110,6 +110,10 @@ const app = await buildServer({
       }
     : null,
   mailboxTokenKey: process.env.MAILBOX_TOKEN_KEY || null,
+  /* How much film one upload may be. The default suits a couple of minutes
+     off a phone; a box with a small volume lowers it rather than discovering
+     the ceiling as a full disk. */
+  maxVideoBytes: Number(process.env.WAYFARE_MAX_VIDEO_BYTES) || undefined,
   valhallaUrl: process.env.VALHALLA_URL || null,
   coverage,
   assistant,

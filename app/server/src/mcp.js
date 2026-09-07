@@ -233,7 +233,8 @@ function tripForMcp(row) {
     })),
     stops: row.stops,
     photos: row.photos.map(
-      ({ storagePath: _storagePath, thumbPath: _thumbPath, ...photo }) => photo,
+      ({ storagePath: _storagePath, posterPath: _posterPath, thumbPath: _thumbPath, ...photo }) =>
+        photo,
     ),
     route: row.route,
     comments: row.comments,
