@@ -57,6 +57,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const photo = {
         id: fakeUuid(3, nextPhoto++),
         stopId: null,
+        kind: 'photo',
+        mime: null,
+        durationMs: null,
         lng: 0,
         lat: 0,
         caption: 'Seed photo',
@@ -64,6 +67,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         when: null,
         locationSource: 'manual',
         storagePath: `${tripId}/seed.jpg`,
+        posterPath: null,
         thumbPath: null,
         seq: trip.photos.length,
         userId: trip.ownerId,
@@ -401,6 +405,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
           photos: trip.photos.map(photo => ({
             id: photo.id,
             stopId: photo.stopId,
+            kind: photo.kind || 'photo',
+            durationMs: photo.durationMs ?? null,
             caption: photo.caption,
             by: photo.by,
             takenAt: photo.when,
@@ -485,6 +491,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const photo = {
         id: fakeUuid(3, nextPhoto++),
         stopId: input.stopId || null,
+        kind: input.kind === 'video' ? 'video' : 'photo',
+        mime: input.mime || null,
+        durationMs: input.durationMs ?? null,
         lng: input.lng,
         lat: input.lat,
         caption: input.caption || null,
@@ -492,7 +501,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         when: input.takenAt || null,
         locationSource: input.locationSource || null,
         storagePath: input.storagePath,
-        thumbPath: input.thumbPath,
+        posterPath: input.posterPath || null,
+        thumbPath: input.thumbPath || null,
         userId: user.id,
         clientKey: input.clientKey || null,
         seq: Math.max(trip.photos.length, ...trip.photos.map(value => (value.seq ?? -1) + 1)),
@@ -526,9 +536,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       trip.photos = trip.photos.filter(value => value.id !== photoId)
       delete trip.comments[photoId]
       trip.likes = trip.likes.filter(value => value !== photoId)
-      for (const path of [photo.storagePath, photo.thumbPath].filter(Boolean))
+      for (const path of [photo.storagePath, photo.posterPath, photo.thumbPath].filter(Boolean))
         fileDeletionQueue.set(path, new Date(0))
-      return { storagePath: photo.storagePath, thumbPath: photo.thumbPath }
+      return {
+        storagePath: photo.storagePath,
+        posterPath: photo.posterPath || null,
+        thumbPath: photo.thumbPath,
+      }
     },
     async listPendingFileDeletions(now, limit = 50) {
       return [...fileDeletionQueue]
@@ -947,12 +961,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         const owners = trip.members.filter(member => member.role === 'owner')
         const soleOwner = owners.length === 1 && owners[0].profileId === user.id
         if (soleOwner) {
-          for (const photo of trip.photos) paths.push(photo.storagePath, photo.thumbPath)
+          for (const photo of trip.photos)
+            paths.push(photo.storagePath, photo.posterPath, photo.thumbPath)
           trips.delete(tripId)
           continue
         }
         for (const photo of trip.photos.filter(value => value.userId === user.id))
-          paths.push(photo.storagePath, photo.thumbPath)
+          paths.push(photo.storagePath, photo.posterPath, photo.thumbPath)
         trip.photos = trip.photos.filter(value => value.userId !== user.id)
         trip.members = trip.members.filter(value => value.profileId !== user.id)
         trip.invites = trip.invites.filter(value => value.email !== user.email)

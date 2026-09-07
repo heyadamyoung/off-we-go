@@ -32,6 +32,7 @@ import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 import { validChunk } from './replay-store.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
+import { isSupportedVideo, isVideoPath, mediaContentType } from './media-types.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -118,6 +119,12 @@ export async function buildServer({
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
   deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 },
   maxDevicesPerTrip = 20,
+  /* A photograph off a phone is a handful of megabytes; a minute of 4K is a
+     hundred. One ceiling for both would either refuse ordinary films or let a
+     single request fill the volume, so each kind is told its own limit and
+     the refusal says which one was hit. */
+  maxImageBytes = 25 * 1024 * 1024,
+  maxVideoBytes = 512 * 1024 * 1024,
   appleTeamId = null,
   appleBundleId = 'ai.threadway.wayfare',
   logger = false,
@@ -397,6 +404,15 @@ export async function buildServer({
     const expires = Math.floor(clock().getTime() / 1000) + 3600
     return `${publicUrl.replace(/\/$/, '')}/api/media/${storagePath}?expires=${expires}&signature=${mediaSignature(storagePath, expires)}`
   }
+  /* One row, whichever kind it is, with every link the app draws it from: the
+     thing itself, the poster frame standing in for a film, and the small copy
+     the grids and map markers use. */
+  const withMediaLinks = photo => ({
+    ...photo,
+    src: mediaUrl(photo.storagePath),
+    posterSrc: photo.posterPath ? mediaUrl(photo.posterPath) : null,
+    thumbSrc: photo.thumbPath ? mediaUrl(photo.thumbPath) : null,
+  })
   const STOP_STATUSES = new Set(['done', 'now', 'next', 'planned'])
 
   /* One address, and only one: a comma or a newline here becomes several
@@ -918,11 +934,7 @@ export async function buildServer({
           src: mediaUrl(storagePath),
         })),
       })),
-      photos: row.photos.map(photo => ({
-        ...photo,
-        src: mediaUrl(photo.storagePath),
-        thumbSrc: photo.thumbPath ? mediaUrl(photo.thumbPath) : null,
-      })),
+      photos: row.photos.map(withMediaLinks),
       route: row.route,
       comments: row.comments,
       likes: row.likes,
@@ -1282,141 +1294,225 @@ export async function buildServer({
       .send({ avatarPath: stored.avatarPath, avatar: mediaUrl(stored.avatarPath) })
   })
 
-  app.post('/api/trips/:tripId/photos', { bodyLimit: 30 * 1024 * 1024 }, async (request, reply) => {
-    const user = await authenticated(request, reply)
-    if (!user) return
-    if (!fileStore) return reply.code(503).send({ error: 'Photo storage is not configured' })
-    if (!(await repository.canEditTrip(user.id, request.params.tripId))) {
-      return reply.code(403).send({ error: 'You cannot add photos to this trip' })
-    }
+  const megabytes = value => Math.round(value / (1024 * 1024))
+  /* Two files at most — the picture or the film, and the poster frame that
+     stands in for it. The byte ceiling here is the hard one that stops a
+     request filling the volume; which of the two limits actually applies is
+     decided below, once the part has said what it is. */
+  const uploadLimits = { files: 2, fileSize: Math.max(maxImageBytes, maxVideoBytes), fields: 24 }
 
-    let bytes = null
-    const fields = {}
-    for await (const part of request.parts()) {
-      if (part.type === 'file') {
-        if (!part.mimetype?.startsWith('image/'))
-          return reply.code(415).send({ error: 'Only images can be uploaded' })
-        bytes = await part.toBuffer()
-      } else fields[part.fieldname] = part.value
-    }
-    if (!bytes?.length) return reply.code(400).send({ error: 'Choose a photo to upload' })
-    const clientKey = String(fields.uploadKey || '').trim() || null
-    if (clientKey && (clientKey.length < 16 || clientKey.length > 100)) {
-      return reply.code(400).send({ error: 'The photo upload key is invalid' })
-    }
-    if (clientKey && repository.findPhotoByClientKey) {
-      const existing = await repository.findPhotoByClientKey(user, request.params.tripId, clientKey)
-      if (existing)
+  app.post(
+    '/api/trips/:tripId/photos',
+    { bodyLimit: Math.max(maxImageBytes, maxVideoBytes) + 8 * 1024 * 1024 },
+    async (request, reply) => {
+      const user = await authenticated(request, reply)
+      if (!user) return
+      if (!fileStore) return reply.code(503).send({ error: 'Photo storage is not configured' })
+      if (!(await repository.canEditTrip(user.id, request.params.tripId))) {
+        return reply.code(403).send({ error: 'You cannot add photos to this trip' })
+      }
+
+      let bytes = null
+      let mime = ''
+      /* The still the phone drew from the opening second of the film. It
+         rides along as a second part so this server never needs a decoder. */
+      let posterBytes = null
+      const fields = {}
+      try {
+        for await (const part of request.parts({ limits: uploadLimits })) {
+          if (part.type !== 'file') {
+            fields[part.fieldname] = part.value
+            continue
+          }
+          if (part.fieldname === 'poster') {
+            if (!part.mimetype?.startsWith('image/'))
+              return reply.code(415).send({ error: 'A poster frame must be an image' })
+            posterBytes = await part.toBuffer()
+            continue
+          }
+          mime = String(part.mimetype || '')
+          if (!mime.startsWith('image/') && !isSupportedVideo(mime)) {
+            stamp({ 'upload.rejected_mime': mime.slice(0, 80) || 'none' })
+            return reply.code(415).send({ error: 'Only photos and videos can be uploaded' })
+          }
+          bytes = await part.toBuffer()
+        }
+      } catch (error) {
+        /* multipart stops reading at the ceiling rather than filling memory
+           with it. The person gets the number; the span gets the kind, so
+           "everyone's videos bounce" is one query rather than a guess. */
+        if (error.code !== 'FST_REQ_FILE_TOO_LARGE') throw error
+        stamp({ 'upload.too_large': true, 'upload.mime': mime.slice(0, 80) || 'unknown' })
+        return reply.code(413).send({
+          error: `Videos can be up to ${megabytes(maxVideoBytes)} MB and photos up to ${megabytes(maxImageBytes)} MB`,
+        })
+      }
+      const isVideo = isSupportedVideo(mime)
+      if (!bytes?.length)
+        return reply.code(400).send({ error: 'Choose a photo or video to upload' })
+      const sizeLimit = isVideo ? maxVideoBytes : maxImageBytes
+      if (bytes.length > sizeLimit) {
+        stamp({ 'upload.too_large': true, 'upload.mime': mime, 'upload.bytes': bytes.length })
+        return reply.code(413).send({
+          error: `${isVideo ? 'Videos' : 'Photos'} can be up to ${megabytes(sizeLimit)} MB`,
+        })
+      }
+      const clientKey = String(fields.uploadKey || '').trim() || null
+      if (clientKey && (clientKey.length < 16 || clientKey.length > 100)) {
+        return reply.code(400).send({ error: 'The photo upload key is invalid' })
+      }
+      if (clientKey && repository.findPhotoByClientKey) {
+        const existing = await repository.findPhotoByClientKey(
+          user,
+          request.params.tripId,
+          clientKey,
+        )
+        if (existing) {
+          stamp({
+            'trip.id': request.params.tripId,
+            'photo.id': existing.id,
+            'photo.kind': existing.kind || 'photo',
+            'photo.dedupe_hit': true,
+          })
+          return withMediaLinks(existing)
+        }
+      }
+
+      const coordinatePair = (lngField, latField, label) => {
+        const lngPresent = fields[lngField] != null && String(fields[lngField]).trim() !== ''
+        const latPresent = fields[latField] != null && String(fields[latField]).trim() !== ''
+        if (lngPresent !== latPresent)
+          return { error: `${label} longitude and latitude must be supplied together` }
+        if (!lngPresent) return { lng: null, lat: null }
+        const lng = finite(fields[lngField]),
+          lat = finite(fields[latField])
+        if (lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
+          return { error: `${label} coordinates are invalid` }
+        }
+        return { lng, lat }
+      }
+      const supplied = coordinatePair('lng', 'lat', 'Photo')
+      if (supplied.error) return reply.code(400).send({ error: supplied.error })
+      const fallback = coordinatePair('fallbackLng', 'fallbackLat', 'Fallback')
+      if (fallback.error) return reply.code(400).send({ error: fallback.error })
+      const allowedLocationSources = new Set(['exif', 'trail', 'live', 'manual', 'approximate'])
+      const requestedLocationSource = String(fields.locationSource || '').trim() || null
+      if (requestedLocationSource && !allowedLocationSources.has(requestedLocationSource)) {
+        return reply.code(400).send({ error: 'The photo location source is invalid' })
+      }
+      const fallbackLocationSource = String(fields.fallbackLocationSource || 'live').trim()
+      if (!['live', 'approximate'].includes(fallbackLocationSource)) {
+        return reply.code(400).send({ error: 'The photo fallback location source is invalid' })
+      }
+      /* How long the film runs, so a grid can say 0:42 without fetching tens
+         of megabytes to find out. The phone measured it; three hours is far
+         past anything a camera roll hands over, so anything longer is a
+         decoder's guess rather than a fact. */
+      const durationMs = fields.durationMs == null ? null : finite(fields.durationMs)
+      if (
+        fields.durationMs != null &&
+        (durationMs == null || durationMs < 0 || durationMs > 10_800_000)
+      ) {
+        return reply.code(400).send({ error: 'The video duration is invalid' })
+      }
+
+      let lng = supplied.lng,
+        lat = supplied.lat
+      const takenAt = dateFrom(fields.takenAt)
+      if (fields.takenAt && !takenAt) {
+        return reply.code(400).send({ error: 'The photo capture time is invalid' })
+      }
+      let locationSource = requestedLocationSource
+      if ((lng == null || lat == null) && takenAt && repository.findPositionNearCapture) {
+        const matched = await repository.findPositionNearCapture(
+          user,
+          request.params.tripId,
+          takenAt,
+          30 * 60_000,
+        )
+        if (matched) {
+          lng = matched.lng
+          lat = matched.lat
+          locationSource = 'trail'
+        }
+      }
+      if (lng == null || lat == null) {
+        if (fallback.lng != null && fallback.lat != null) {
+          lng = fallback.lng
+          lat = fallback.lat
+          locationSource = fallbackLocationSource
+        }
+      }
+      if (lng == null || lat == null) locationSource = null
+
+      let stored
+      try {
+        stored = isVideo
+          ? await fileStore.storeVideo({ tripId: request.params.tripId, bytes, mime })
+          : await fileStore.storePhoto({ tripId: request.params.tripId, bytes })
+      } catch (error) {
+        // A full disk or unwritable volume must not impersonate a bad photo:
+        // the 400 is for the user, the cause is for the span.
+        recordFailure(error)
+        stamp({ 'upload.fail_cause': String(error.message || error).slice(0, 200) })
+        return reply.code(400).send({
+          error: isVideo
+            ? 'That file is not a readable video'
+            : 'That file is not a readable image',
+        })
+      }
+      /* A film whose poster frame will not decode is still the film: it lands
+         under a play badge on an empty tile rather than not landing at all.
+         The reason goes on the span, because a grid of empty tiles with no
+         trail to follow is exactly the failure nobody can debug. */
+      if (isVideo && posterBytes?.length) {
+        try {
+          Object.assign(
+            stored,
+            await fileStore.storePoster({ storagePath: stored.storagePath, bytes: posterBytes }),
+          )
+        } catch (error) {
+          recordFailure(error)
+          stamp({ 'photo.poster_fail_cause': String(error.message || error).slice(0, 200) })
+        }
+      }
+      try {
+        const photo = await repository.createPhoto(user, request.params.tripId, {
+          ...stored,
+          kind: isVideo ? 'video' : 'photo',
+          mime: isVideo ? mime : null,
+          durationMs: isVideo && durationMs != null ? Math.round(durationMs) : null,
+          stopId: fields.stopId || null,
+          caption: String(fields.caption || '').trim() || null,
+          lng,
+          lat,
+          takenAt,
+          locationSource,
+          clientKey,
+        })
+        if (!photo) throw new Error('Trip not found')
+        // The richest domain logic on the server deserves the richest span:
+        // "why did her photo land with no pin" is a slice, not a shrug.
         stamp({
           'trip.id': request.params.tripId,
-          'photo.id': existing.id,
-          'photo.dedupe_hit': true,
+          'photo.id': photo.id,
+          'photo.kind': isVideo ? 'video' : 'photo',
+          'photo.bytes': bytes.length,
+          'photo.has_poster': !!stored.posterPath,
+          'photo.location_source': locationSource || 'none',
+          'photo.dedupe_hit': false,
         })
-      if (existing)
-        return {
-          ...existing,
-          src: mediaUrl(existing.storagePath),
-          thumbSrc: existing.thumbPath ? mediaUrl(existing.thumbPath) : null,
+        return reply.code(201).send(withMediaLinks(photo))
+      } catch (error) {
+        for (const path of [stored.storagePath, stored.posterPath, stored.thumbPath].filter(
+          Boolean,
+        )) {
+          await fileStore.remove(path)
         }
-    }
-
-    const coordinatePair = (lngField, latField, label) => {
-      const lngPresent = fields[lngField] != null && String(fields[lngField]).trim() !== ''
-      const latPresent = fields[latField] != null && String(fields[latField]).trim() !== ''
-      if (lngPresent !== latPresent)
-        return { error: `${label} longitude and latitude must be supplied together` }
-      if (!lngPresent) return { lng: null, lat: null }
-      const lng = finite(fields[lngField]),
-        lat = finite(fields[latField])
-      if (lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
-        return { error: `${label} coordinates are invalid` }
+        throw error
       }
-      return { lng, lat }
-    }
-    const supplied = coordinatePair('lng', 'lat', 'Photo')
-    if (supplied.error) return reply.code(400).send({ error: supplied.error })
-    const fallback = coordinatePair('fallbackLng', 'fallbackLat', 'Fallback')
-    if (fallback.error) return reply.code(400).send({ error: fallback.error })
-    const allowedLocationSources = new Set(['exif', 'trail', 'live', 'manual', 'approximate'])
-    const requestedLocationSource = String(fields.locationSource || '').trim() || null
-    if (requestedLocationSource && !allowedLocationSources.has(requestedLocationSource)) {
-      return reply.code(400).send({ error: 'The photo location source is invalid' })
-    }
-    const fallbackLocationSource = String(fields.fallbackLocationSource || 'live').trim()
-    if (!['live', 'approximate'].includes(fallbackLocationSource)) {
-      return reply.code(400).send({ error: 'The photo fallback location source is invalid' })
-    }
-
-    let lng = supplied.lng,
-      lat = supplied.lat
-    const takenAt = dateFrom(fields.takenAt)
-    if (fields.takenAt && !takenAt) {
-      return reply.code(400).send({ error: 'The photo capture time is invalid' })
-    }
-    let locationSource = requestedLocationSource
-    if ((lng == null || lat == null) && takenAt && repository.findPositionNearCapture) {
-      const matched = await repository.findPositionNearCapture(
-        user,
-        request.params.tripId,
-        takenAt,
-        30 * 60_000,
-      )
-      if (matched) {
-        lng = matched.lng
-        lat = matched.lat
-        locationSource = 'trail'
-      }
-    }
-    if (lng == null || lat == null) {
-      if (fallback.lng != null && fallback.lat != null) {
-        lng = fallback.lng
-        lat = fallback.lat
-        locationSource = fallbackLocationSource
-      }
-    }
-    if (lng == null || lat == null) locationSource = null
-
-    let stored
-    try {
-      stored = await fileStore.storePhoto({ tripId: request.params.tripId, bytes })
-    } catch (error) {
-      // A full disk or unwritable volume must not impersonate a bad photo:
-      // the 400 is for the user, the cause is for the span.
-      recordFailure(error)
-      stamp({ 'upload.fail_cause': String(error.message || error).slice(0, 200) })
-      return reply.code(400).send({ error: 'That file is not a readable image' })
-    }
-    try {
-      const photo = await repository.createPhoto(user, request.params.tripId, {
-        ...stored,
-        stopId: fields.stopId || null,
-        caption: String(fields.caption || '').trim() || null,
-        lng,
-        lat,
-        takenAt,
-        locationSource,
-        clientKey,
-      })
-      if (!photo) throw new Error('Trip not found')
-      // The richest domain logic on the server deserves the richest span:
-      // "why did her photo land with no pin" is a slice, not a shrug.
-      stamp({
-        'trip.id': request.params.tripId,
-        'photo.id': photo.id,
-        'photo.location_source': locationSource || 'none',
-        'photo.dedupe_hit': false,
-      })
-      return reply.code(201).send({
-        ...photo,
-        src: mediaUrl(photo.storagePath),
-        thumbSrc: photo.thumbPath ? mediaUrl(photo.thumbPath) : null,
-      })
-    } catch (error) {
-      await fileStore.remove(stored.storagePath)
-      await fileStore.remove(stored.thumbPath)
-      throw error
-    }
-  })
+    },
+  )
 
   app.patch('/api/trips/:tripId/photos/:photoId', async (request, reply) => {
     const user = await authenticated(request, reply)
@@ -1446,7 +1542,9 @@ export async function buildServer({
     )
     if (!removed) return reply.code(404).send({ error: 'Photo not found' })
     if (fileStore) {
-      for (const path of [removed.storagePath, removed.thumbPath].filter(Boolean))
+      for (const path of [removed.storagePath, removed.posterPath, removed.thumbPath].filter(
+        Boolean,
+      ))
         await removeQueuedFile(path)
     }
     return reply.code(204).send()
@@ -1463,9 +1561,41 @@ export async function buildServer({
       expires >= Math.floor(clock().getTime() / 1000) &&
       sameSignature(supplied, expected)
     if (!valid) return reply.code(403).send({ error: 'That photo link has expired' })
+    /* Everything on this volume was written by this server, so its own
+       extension says what it is. Serving a film — or a boarding pass — as
+       image/jpeg is a file the browser will not open. */
+    const contentType = mediaContentType(storagePath)
     try {
-      const bytes = await fileStore.read(storagePath)
-      return reply.type('image/jpeg').header('cache-control', 'private, max-age=3600').send(bytes)
+      if (!isVideoPath(storagePath)) {
+        const bytes = await fileStore.read(storagePath)
+        return reply.type(contentType).header('cache-control', 'private, max-age=3600').send(bytes)
+      }
+      /* A film is watched from wherever the thumb drops it, so it is served
+         by the range rather than by the file: seeking a video that answers
+         200-with-everything means downloading it again from the top. */
+      const size = await fileStore.size(storagePath)
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range || '').trim())
+      reply
+        .header('accept-ranges', 'bytes')
+        .header('cache-control', 'private, max-age=3600')
+        .type(contentType)
+      if (!range) {
+        return reply.header('content-length', String(size)).send(fileStore.open(storagePath))
+      }
+      // `bytes=-500` asks for the last 500, not for byte -500.
+      const suffix = range[1] === ''
+      const start = suffix ? Math.max(0, size - Number(range[2] || 0)) : Number(range[1])
+      const end = suffix || range[2] === '' ? size - 1 : Math.min(Number(range[2]), size - 1)
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) {
+        stamp({ 'media.range_unsatisfiable': true, 'media.bytes_total': size })
+        return reply.code(416).header('content-range', `bytes */${size}`).send()
+      }
+      stamp({ 'media.range': true, 'media.bytes_sent': end - start + 1, 'media.bytes_total': size })
+      return reply
+        .code(206)
+        .header('content-range', `bytes ${start}-${end}/${size}`)
+        .header('content-length', String(end - start + 1))
+        .send(fileStore.open(storagePath, { start, end }))
     } catch (error) {
       // An unmounted uploads volume must not look like a thousand expired
       // links: only a true ENOENT is an ordinary 404.

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Icon from '../../../shared/ui/icon'
-import Img from '../../../shared/ui/img'
+import MediaThumb from '../../../shared/ui/media-thumb'
 import { SightsList, type SightsListProps } from '../../sights'
 import { SegmentChain } from '../../transport'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
@@ -52,7 +52,7 @@ const HEADINGS: Record<string, [string, string]> = {
     'Every leg of the journey — deadlines, seats and documents in one chain.',
   ],
   chat: ['Chat', 'The whole crew, one room — travellers and followers alike.'],
-  photos: ['Photos', 'Everything anyone has taken on this trip, newest first.'],
+  photos: ['Photos and videos', 'Everything anyone has taken on this trip, newest first.'],
   sights: ['Sights nearby', 'Places worth a detour, from where the map is looking.'],
   people: ['People', 'Who is travelling, and who is following from home.'],
 }
@@ -62,7 +62,7 @@ export default function TripPanel(props: PanelProps) {
   const action =
     props.view === 'photos' && props.onAddPhotos ? (
       <button className="mini mini-accent" onClick={props.onAddPhotos}>
-        Add photos
+        Add photos or videos
       </button>
     ) : props.view === 'people' ? (
       <button className="mini mini-accent" onClick={props.onInvite}>
@@ -210,13 +210,21 @@ function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
                     <Row
                       key={photo.id}
                       time=""
-                      title={photo.caption || 'Photo'}
+                      title={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
                       detail={[photo.by, photo.when].filter(Boolean).join(' · ')}
                       selected={selected === photo.id}
                       onClick={() => onSelect(photoItem(photo, byStop.get(stop.id)))}
                       icon={
                         <span className="size-[30px] flex-none overflow-hidden rounded-lg">
-                          <Img item={photo} w={90} h={90} className="size-full object-cover" />
+                          {/* No length at 30px: the play mark alone says it
+                              moves, and a timestamp there is unreadable. */}
+                          <MediaThumb
+                            item={photo}
+                            w={90}
+                            h={90}
+                            badge={14}
+                            className="size-full object-cover"
+                          />
                         </span>
                       }
                     />
@@ -269,7 +277,7 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
           {shown.map(photo => (
             <button
               key={photo.id}
-              aria-label={photo.caption || 'Photo'}
+              aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
               className={
                 'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
                 (selected === photo.id ? 'outline outline-2 -outline-offset-2 outline-accent' : '')
@@ -277,7 +285,7 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
               onClick={() =>
                 onSelect(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
               }>
-              <Img item={photo} w={320} h={320} className="size-full object-cover" />
+              <MediaThumb item={photo} w={320} h={320} className="size-full object-cover" />
               {photo.caption && (
                 <span
                   className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
@@ -289,7 +297,7 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
           ))}
         </div>
       ) : (
-        <p className="hint p-4">No photos yet. Add some from the camera button.</p>
+        <p className="hint p-4">No photos or videos yet. Add some from the camera button.</p>
       )}
     </>
   )

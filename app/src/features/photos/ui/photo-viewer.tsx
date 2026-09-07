@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { MapCanvas } from '../../map'
-import HoldToDelete from '../../../shared/ui/hold-delete'
 import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
+import MediaThumb from '../../../shared/ui/media-thumb'
+import PhotoDetails from './photo-details'
+import { durationLabel } from '../../../mobile-videos-core'
 import { validLngLat } from '../../../shared/lib/geo'
 import type { MapTint } from '../../map'
 import type {
@@ -90,7 +92,9 @@ function PhotoViewer({
     if (list.length < 2) return
     for (const i of [(index + 1) % list.length, (index - 1 + list.length) % list.length]) {
       const p = list[i]
-      if (!p) continue
+      /* Warming a film would pull tens of megabytes nobody has asked to
+         watch; its poster is already in the strip. */
+      if (!p || p.kind === 'video') continue
       const url = srcFor(p, 1200, 900)
       if (SEEN.has(url)) continue
       const im = new Image()
@@ -114,6 +118,8 @@ function PhotoViewer({
   const noop = useCallback(() => {}, [])
 
   if (!photo) return null
+  const video = photo.kind === 'video'
+  const length = video ? durationLabel(photo.durationMs) : null
   const author = byName(photo.by)
   const here = list.filter(p => p.stopId === photo.stopId)
   const contributors = [...new Set(here.map(p => p.by))]
@@ -143,66 +149,14 @@ function PhotoViewer({
 
   return (
     <div className="viewer">
-      {/* Editing a photo's facts is deliberate, so it lives behind the pencil
-          in the chrome, not loose in the reading flow: labelled fields, and
-          the one destructive act at the very end of the deliberate context —
-          never beside a select where a stray thumb finds it. */}
       {details && canEdit && (
-        // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; the card's Done is the keyboard way
-        // biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the whole viewer by design
-        <div
-          className="absolute inset-0 z-20 grid place-items-center overflow-y-auto bg-black/60 p-5
-                     pb-[calc(1.25rem+var(--keyboard,0px))]"
-          onClick={() => setDetails(false)}>
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim */}
-          <div
-            className="flex w-full max-w-[min(420px,calc(100vw-2.5rem))] flex-col gap-3
-                       rounded-2xl border border-line bg-solid p-4 shadow-panel"
-            role="dialog"
-            aria-label="Photo details"
-            onClick={event => event.stopPropagation()}>
-            <b className="text-sm font-extrabold">Photo details</b>
-            <label className="flex flex-col gap-1 text-[11px] font-bold text-muted">
-              Caption
-              <input
-                className="rounded-lg border border-line bg-raised px-3 py-2 text-sm font-normal
-                           text-ink outline-none focus:border-accent"
-                value={photo.caption || ''}
-                placeholder="What is this a picture of?"
-                onChange={e => onPhotoChange(photo.id, { caption: e.target.value })}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] font-bold text-muted">
-              Taken at
-              <select
-                className="rounded-lg border border-line bg-raised px-3 py-2 text-sm font-normal
-                           text-ink outline-none focus:border-accent"
-                value={photo.stopId || ''}
-                onChange={e => onPhotoChange(photo.id, { stopId: e.target.value || null })}>
-                <option value="">Not at a stop</option>
-                {stops.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="mt-1 flex items-center justify-between border-t border-line pt-3">
-              <HoldToDelete
-                what="this photo"
-                onDelete={() => {
-                  setDetails(false)
-                  onPhotoDelete(photo.id)
-                }}
-              />
-              <button
-                className="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-accent-ink"
-                onClick={() => setDetails(false)}>
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+        <PhotoDetails
+          photo={photo}
+          stops={stops}
+          onClose={() => setDetails(false)}
+          onChange={onPhotoChange}
+          onDelete={onPhotoDelete}
+        />
       )}
       <div className="vstage">
         <div className="vtop">
@@ -218,7 +172,9 @@ function PhotoViewer({
           </div>
           <div className="acts">
             {canEdit && (
-              <button onClick={() => setDetails(true)} title="Edit photo details">
+              <button
+                onClick={() => setDetails(true)}
+                title={video ? 'Edit video details' : 'Edit photo details'}>
                 <Icon n="pencil" s={16} c="#f2f4f8" />
               </button>
             )}
@@ -255,17 +211,33 @@ function PhotoViewer({
           {/* The photograph is the like button: a tap hearts it and answers
               with the big heart, the way every thumb already expects. A tap
               never UN-likes — losing a heart to a stray touch would sting;
-              the chrome's heart stays the deliberate way back. */}
-          <button
-            type="button"
-            className="vmaintap"
-            aria-label={liked ? 'Liked' : 'Like this photo'}
-            onClick={() => {
-              if (!liked) toggleLike(photo.id)
-              setBurst(value => value + 1)
-            }}>
-            <Img className="main" item={photo} w={1200} h={900} alt={photo.caption} eager />
-          </button>
+              the chrome's heart stays the deliberate way back.
+
+              A film is not: on a video the tap belongs to play, pause and the
+              scrubber, so the heart in the chrome is its only way in. */}
+          {video ? (
+            <video
+              key={photo.id}
+              className="main"
+              src={photo.src}
+              poster={photo.posterSrc || undefined}
+              controls
+              playsInline
+              preload="metadata">
+              <track kind="captions" />
+            </video>
+          ) : (
+            <button
+              type="button"
+              className="vmaintap"
+              aria-label={liked ? 'Liked' : 'Like this photo'}
+              onClick={() => {
+                if (!liked) toggleLike(photo.id)
+                setBurst(value => value + 1)
+              }}>
+              <Img className="main" item={photo} w={1200} h={900} alt={photo.caption} eager />
+            </button>
+          )}
           {burst > 0 && (
             <span
               key={burst}
@@ -289,6 +261,7 @@ function PhotoViewer({
         <div className="vcap">
           <h2>{photo.caption || ''}</h2>
           <div className="ct">
+            {length ? `${length} · ` : ''}
             {index + 1} of {list.length}
           </div>
         </div>
@@ -296,7 +269,7 @@ function PhotoViewer({
         <div className="vfilm">
           {list.map((p, i) => (
             <button key={p.id} className={i === index ? 'on' : ''} onClick={() => setIndex(i)}>
-              <Img item={p} w={300} h={200} />
+              <MediaThumb item={p} w={300} h={200} badge={20} />
             </button>
           ))}
         </div>
@@ -320,8 +293,12 @@ function PhotoViewer({
           <div className="cap">
             <b>{mini ? 'Taken here' : 'Location unavailable'}</b>
             <span>
-              {mini ? (stop ? stop.name : 'On the move') : 'This photo has no coordinates'}
-              {mini ? ` · ${here.length} photo${here.length === 1 ? '' : 's'}` : ''}
+              {mini
+                ? stop
+                  ? stop.name
+                  : 'On the move'
+                : `This ${video ? 'video' : 'photo'} has no coordinates`}
+              {mini ? ` · ${here.length} here` : ''}
             </span>
           </div>
         </div>
@@ -349,7 +326,7 @@ function PhotoViewer({
           </div>
           <div className="t">
             <b>{contributors.join(', ')}</b>
-            <span>contributed photos here</span>
+            <span>contributed photos and videos here</span>
           </div>
           <span className="n">{here.length}</span>
         </div>

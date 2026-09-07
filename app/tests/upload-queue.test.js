@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   begin,
+  countable,
   dismiss,
   done,
   enqueue,
@@ -86,4 +87,26 @@ test('a failure can be waved away', () => {
 test('an empty queue has nothing to send', () => {
   assert.equal(next([]), null)
   assert.equal(queued([]), 0)
+})
+
+test('the tray names what is going up: films, pictures, or a mix of the two', () => {
+  const films = enqueue(
+    [],
+    [
+      { key: 'v1', name: 'one.mp4', kind: 'video' },
+      { key: 'v2', name: 'two.mov', kind: 'video' },
+    ],
+  )
+  assert.equal(countable(films), 'videos')
+  assert.equal(countable(enqueue([], [{ key: 'v1', name: 'one.mp4', kind: 'video' }])), 'video')
+  assert.equal(countable(two), 'photos')
+  assert.equal(countable(enqueue([], [{ key: 'a', name: 'one.jpg' }])), 'photo')
+  assert.equal(
+    countable(enqueue(films, [{ key: 'a', name: 'one.jpg', kind: 'photo' }])),
+    'items',
+    'a mixed queue is counted, not mislabelled',
+  )
+
+  // A failure is not still going up, so it is not counted in the going noun.
+  assert.equal(countable(fail(films, 'v2', 'no signal')), 'video')
 })

@@ -77,6 +77,7 @@ services:
       MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
       MS_TENANT: ${MS_TENANT:-common}
       MAILBOX_TOKEN_KEY: ${MAILBOX_TOKEN_KEY:-}
+      WAYFARE_MAX_VIDEO_BYTES: ${WAYFARE_MAX_VIDEO_BYTES:-}
       CODEX_AUTH_JSON_B64: ${CODEX_AUTH_JSON_B64:-}
       # On by default: the engine's coverage follows the trips on its own.
       # Empty this out to turn routing off entirely.

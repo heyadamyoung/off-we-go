@@ -713,7 +713,7 @@ test('photo upload previews multiple selections and lets them be replaced', asyn
   ])
 
   await expect(page.locator('.previews .preview')).toHaveCount(2)
-  await expect(page.getByRole('button', { name: 'Choose different photos' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Choose different files' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Add 2 to the map' })).toBeEnabled()
 })
 

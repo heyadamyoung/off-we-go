@@ -48,6 +48,14 @@ export interface Stop {
 export interface TripPhoto {
   id: Id
   stopId?: Id | null
+  /** Photographs and films share a row, a place on the map, and a comment
+      thread; this is the one thing the screen has to switch on. */
+  kind?: 'photo' | 'video'
+  /** The film's own type, so a `<video>` element can name its source. */
+  mime?: string | null
+  durationMs?: number | null
+  /** The still a film is drawn as wherever it cannot play. */
+  posterSrc?: string | null
   lng?: number | null
   lat?: number | null
   by: string
@@ -58,6 +66,7 @@ export interface TripPhoto {
   src?: string
   url?: string
   thumbUrl?: string
+  thumbSrc?: string | null
   kw?: string
   lock?: number
   seed?: string
@@ -298,6 +307,10 @@ export interface AttractionPoi {
 
 export interface UploadInput {
   file: File
+  /** A film's opening frame, drawn on this device and sent beside it: the
+      server keeps no decoder, so without this a video has no picture. */
+  poster?: File | null
+  durationMs?: number | null
   stopId?: Id | null
   caption?: string
   lng?: number

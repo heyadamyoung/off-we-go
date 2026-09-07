@@ -1,4 +1,5 @@
 import { metres } from './shared/lib/geo'
+import { isVideoFile, videoMetadata } from './mobile-videos-core'
 import exifr from 'exifr'
 import type { Coordinates, Id, Stop, UploadInput } from './shared/model/types'
 
@@ -113,6 +114,10 @@ export async function readPhotoFilesMetadata(
 ) {
   await Promise.all(
     (files || []).map(async file => {
+      /* A film has no EXIF block to read; asking anyway costs a decode per
+         file to learn nothing. What it does have is the moment the phone
+         wrote it, which is close enough to place it on the right day. */
+      if (isVideoFile(file)) return attachMetadata(file, videoMetadata(file))
       let parsed: PhotoExifMetadata | null = null
       try {
         parsed = metadataFromExif(await parseExif(file))
@@ -211,6 +216,10 @@ export interface PhotoUploadMetadata {
   when?: string
   by: string
   seq: number
+  kind?: 'photo' | 'video'
+  /** A film's opening frame, drawn on this device and sent beside it. */
+  poster?: File | null
+  durationMs?: number | null
   lng?: number
   lat?: number
   fallbackLng?: number
@@ -242,6 +251,11 @@ export function photoUploadMetadata(
   if (input.fallbackLocationSource) metadata.fallbackLocationSource = input.fallbackLocationSource
   if (input.locationSource) metadata.locationSource = input.locationSource
   if (input.uploadKey) metadata.uploadKey = input.uploadKey
+  if (isVideoFile(input.file)) {
+    metadata.kind = 'video'
+    if (input.poster) metadata.poster = input.poster
+    if (input.durationMs != null) metadata.durationMs = input.durationMs
+  }
   return metadata
 }
 

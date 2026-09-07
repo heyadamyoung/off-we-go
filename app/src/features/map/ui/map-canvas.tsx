@@ -8,7 +8,7 @@ import {
 } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import Icon from '../../../shared/ui/icon'
-import Img from '../../../shared/ui/img'
+import MediaThumb from '../../../shared/ui/media-thumb'
 import { validLngLat } from '../../../shared/lib/geo'
 import { paddingOffset } from '../../../live-map-view-core'
 import useHeadingCamera from '../model/use-heading-camera'
@@ -360,7 +360,7 @@ const MapCanvas = memo(function MapCanvas({
                       zIndex: 3 - i,
                       transform: `translate(${i * 5}px,${i * -4}px) rotate(${(i - 1) * 4}deg)`,
                     }}>
-                    <Img item={p} w={160} h={160} />
+                    <MediaThumb item={p} w={160} h={160} badge={i === 0 ? 18 : false} />
                   </span>
                 ))}
                 {g.items.length > 1 && <span className="ct">{g.items.length}</span>}

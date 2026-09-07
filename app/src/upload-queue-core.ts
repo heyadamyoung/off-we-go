@@ -11,12 +11,25 @@ export interface Upload {
   key: string
   name: string
   preview?: string
+  /** What is going up, so the tray can say "3 videos" and draw the right
+      stand-in for one whose opening frame would not decode. */
+  kind?: 'photo' | 'video'
   state: UploadState
   error?: string
 }
 
 export const queued = (uploads: Upload[]) => uploads.filter(item => item.state !== 'failed').length
 export const failed = (uploads: Upload[]) => uploads.filter(item => item.state === 'failed')
+
+/** What to call what is going up: films, pictures, or a mix of the two. */
+export function countable(uploads: Upload[]): string {
+  const going = uploads.filter(item => item.state !== 'failed')
+  const videos = going.filter(item => item.kind === 'video').length
+  const one = going.length === 1
+  if (videos && videos === going.length) return one ? 'video' : 'videos'
+  if (videos) return 'items'
+  return one ? 'photo' : 'photos'
+}
 
 /** Adds files to the back of the queue, keeping whatever is already going. */
 export function enqueue(uploads: Upload[], additions: Array<Omit<Upload, 'state'>>): Upload[] {

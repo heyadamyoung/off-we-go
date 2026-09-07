@@ -42,7 +42,10 @@ export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
   return {
     id: photo.id,
     kind: 'photo',
-    title: photo.caption || [photo.when, stop?.name].filter(Boolean).join(' · ') || 'Photo',
+    title:
+      photo.caption ||
+      [photo.when, stop?.name].filter(Boolean).join(' · ') ||
+      (photo.kind === 'video' ? 'Video' : 'Photo'),
     meta: [photo.when, photo.by].filter(Boolean).join(' · '),
     day: stop?.day || '',
     time: photo.when || stop?.time || '',
