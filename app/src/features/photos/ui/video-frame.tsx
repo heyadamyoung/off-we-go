@@ -39,6 +39,22 @@ export default function VideoFrame({ photo }: { photo: TripPhoto }) {
      take it. An empty answer from canPlayType is the browser saying no. */
   const playable = canProbablyPlay(photo.mime)
 
+  /* Still being converted. The bytes exist and would even play for whoever
+     filmed them, but they are about to be replaced by ones that play for
+     everybody, and starting the old file now would only be interrupted. */
+  if (photo.status === 'pending' || photo.status === 'working') {
+    return (
+      <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl bg-black/40 p-8 text-center">
+        <span className="size-2 animate-pulse rounded-full bg-white/70" />
+        <b className="text-sm text-white">Getting this video ready</b>
+        <p className="text-xs text-white/70">
+          It is being converted so it plays on everyone’s phone, not just the one that filmed it.
+          This appears on its own when it is done.
+        </p>
+      </div>
+    )
+  }
+
   if (dead || !playable) {
     return (
       <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl bg-black/40 p-8 text-center">

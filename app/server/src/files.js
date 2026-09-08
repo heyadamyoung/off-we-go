@@ -128,6 +128,39 @@ export function createDiskFileStore({ directory }) {
       }
       return { posterPath, thumbPath }
     },
+    /* A worker needs the film on its own disk to convert it. On this store
+       that is a copy; on an object store it will be a download — which is
+       exactly why the worker asks for it by name rather than reaching for a
+       path itself. */
+    async download(storagePath, localPath) {
+      await pipeline(createReadStream(absolute(storagePath)), createWriteStream(localPath))
+      return localPath
+    },
+    /* The converted film takes the original's place. It gets a new path
+       because the container changed — a .mov that is now an mp4 served as
+       video/quicktime is refused by the browsers the conversion was for. The
+       old path is returned so the caller can retire it once the row points at
+       the new one, never before. */
+    async replaceVideo({ storagePath, file, mime }) {
+      const extension = videoExtension(mime) || 'mp4'
+      const stem = String(storagePath).slice(0, -extname(String(storagePath)).length)
+      const target = `${stem}.converted.${extension}`
+      const destination = absolute(target)
+      await mkdir(dirname(destination), { recursive: true })
+      const temporary = `${destination}.${randomUUID()}.tmp`
+      try {
+        await pipeline(createReadStream(file), createWriteStream(temporary, { flags: 'wx' }))
+        await rename(temporary, destination)
+      } catch (error) {
+        await rm(temporary, { force: true })
+        throw error
+      }
+      return { storagePath: target, replaced: storagePath }
+    },
+    /** The same poster derivatives, from a frame already drawn to a file. */
+    async storePosterFile({ storagePath, file }) {
+      return this.storePoster({ storagePath, bytes: await readFile(file) })
+    },
     /* A leg's paperwork, stored as it arrived: a boarding pass loses its QR
        to recompression, so documents are bytes in, bytes out. */
     async storeDocument({ tripId, bytes, extension }) {

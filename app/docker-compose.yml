@@ -78,6 +78,11 @@ services:
       MS_TENANT: ${MS_TENANT:-common}
       MAILBOX_TOKEN_KEY: ${MAILBOX_TOKEN_KEY:-}
       WAYFARE_MAX_VIDEO_BYTES: ${WAYFARE_MAX_VIDEO_BYTES:-}
+      # Conversion runs inside the API today because this is one box. When it
+      # is several, set this to 0 on the web nodes and run the same image with
+      # a higher count on a worker node — the queue coordinates them.
+      WAYFARE_MEDIA_WORKERS: ${WAYFARE_MEDIA_WORKERS:-1}
+      WAYFARE_TRANSCODE: ${WAYFARE_TRANSCODE:-on}
       CODEX_AUTH_JSON_B64: ${CODEX_AUTH_JSON_B64:-}
       # On by default: the engine's coverage follows the trips on its own.
       # Empty this out to turn routing off entirely.

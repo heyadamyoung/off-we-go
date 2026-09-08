@@ -97,6 +97,7 @@ const photoRow = value => ({
   id: value.id,
   stopId: value.stop_id,
   kind: value.media_kind || 'photo',
+  status: value.media_status || 'ready',
   mime: value.media_mime || null,
   durationMs:
     value.duration_ms === null || value.duration_ms === undefined
@@ -1846,8 +1847,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       ])
       const result = await pool.query(
         `insert into photos
-        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,poster_path,thumb_path,media_kind,media_mime,duration_ms,client_key,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,nextval('photo_order_seq')) returning *`,
+        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,poster_path,thumb_path,media_kind,media_mime,duration_ms,media_status,client_key,seq)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,nextval('photo_order_seq')) returning *`,
         [
           tripId,
           input.stopId,
@@ -1864,6 +1865,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.kind === 'video' ? 'video' : 'photo',
           input.mime || null,
           input.durationMs ?? null,
+          input.kind === 'video' && input.status ? input.status : 'ready',
           input.clientKey || null,
         ],
       )
@@ -1938,6 +1940,145 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         throw error
       } finally {
         client.release()
+      }
+    },
+    /* ---- the media conversion queue --------------------------------------
+       A job is enqueued in the same breath as the row it describes, so a
+       crash between the two is impossible. */
+    async enqueueMediaJob(photoId, kind = 'transcode') {
+      await pool.query(
+        `insert into media_jobs(photo_id, kind) values($1,$2)
+        on conflict (photo_id, kind) do nothing`,
+        [photoId, kind],
+      )
+    },
+    /* One job, taken exclusively. `skip locked` is what lets a second worker
+       on a second box take the next row instead of queueing behind this one,
+       and the claim window is what returns a job whose worker died. */
+    async claimMediaJob({ workerId, until, now = new Date() }) {
+      const result = await pool.query(
+        `update media_jobs j set
+           state = 'working',
+           attempts = j.attempts + 1,
+           claimed_by = $1,
+           claimed_until = $2,
+           updated_at = now()
+         where j.id = (
+           select c.id from media_jobs c
+           where c.state = 'pending'
+              or (c.state = 'working' and c.claimed_until < $3)
+           order by c.run_after
+           for update skip locked
+           limit 1
+         )
+         and j.run_after <= $3
+         returning j.id, j.photo_id, j.attempts`,
+        [workerId, until, now],
+      )
+      const job = result.rows[0]
+      if (!job) return null
+      /* The row is read after the claim rather than joined into it: the claim
+         must be the smallest possible lock. */
+      const photo = await pool.query(
+        'select storage_path, poster_path, thumb_path, trip_id from photos where id=$1',
+        [job.photo_id],
+      )
+      const row = photo.rows[0]
+      if (!row) {
+        // Deleted while it waited. Nothing to convert, nothing to mourn.
+        await pool.query('delete from media_jobs where id=$1', [job.id])
+        return null
+      }
+      return {
+        id: job.id,
+        photoId: job.photo_id,
+        attempts: job.attempts - 1,
+        tripId: row.trip_id,
+        storagePath: row.storage_path,
+        posterPath: row.poster_path,
+        thumbPath: row.thumb_path,
+      }
+    },
+    /* The row and the job move together, so a photograph is never left saying
+       'working' with no job to make it otherwise. */
+    async completeMediaJob({
+      id,
+      photoId,
+      storagePath,
+      mime,
+      posterPath,
+      thumbPath,
+      durationMs,
+      replaced,
+    }) {
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const sets = ["media_status='ready'"]
+        const values = [photoId]
+        const add = (column, value) => {
+          values.push(value)
+          sets.push(`${column}=$${values.length}`)
+        }
+        if (storagePath) add('storage_path', storagePath)
+        if (mime) add('media_mime', mime)
+        if (posterPath) add('poster_path', posterPath)
+        if (thumbPath) add('thumb_path', thumbPath)
+        if (durationMs != null) add('duration_ms', Math.round(durationMs))
+        await client.query(`update photos set ${sets.join(',')} where id=$1`, values)
+        await client.query('delete from media_jobs where id=$1', [id])
+        /* The bytes the conversion replaced go through the same queue as any
+           other retired file, so a failed unlink is retried rather than lost. */
+        if (replaced) {
+          await client.query(
+            `insert into file_deletion_queue(path) values($1)
+            on conflict(path) do update set next_attempt_at=now()`,
+            [replaced],
+          )
+        }
+        await client.query('commit')
+      } catch (error) {
+        await client.query('rollback')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+    /* A conversion that will not happen must not leave the film behind a
+       spinner for ever: the row goes back to ready and plays for whoever can
+       decode it, which is at least the person who filmed it. */
+    async failMediaJob({ id, photoId, error, fatal, runAfter }) {
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        if (fatal) {
+          await client.query('delete from media_jobs where id=$1', [id])
+          await client.query("update photos set media_status='failed' where id=$1", [photoId])
+        } else {
+          await client.query(
+            `update media_jobs set state='pending', last_error=$2, run_after=$3,
+             claimed_by=null, claimed_until=null, updated_at=now() where id=$1`,
+            [id, String(error).slice(0, 2000), runAfter],
+          )
+        }
+        await client.query('commit')
+      } catch (caught) {
+        await client.query('rollback')
+        throw caught
+      } finally {
+        client.release()
+      }
+    },
+    /** How much work is waiting, for the health endpoint and for alerting. */
+    async mediaQueueDepth() {
+      const result = await pool.query(
+        `select count(*) filter (where state='pending') pending,
+                count(*) filter (where state='working') working
+         from media_jobs`,
+      )
+      return {
+        pending: Number(result.rows[0]?.pending || 0),
+        working: Number(result.rows[0]?.working || 0),
       }
     },
     async listPendingFileDeletions(now, limit = 50) {

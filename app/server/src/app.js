@@ -127,6 +127,11 @@ export async function buildServer({
      and the nightly backup copies every byte of it. */
   maxImageBytes = 25 * 1024 * 1024,
   maxVideoBytes = 256 * 1024 * 1024,
+  /* Whether this deployment can convert film to something every device
+     plays. Optional like every other integration: without it the app says so
+     at /api/health rather than quietly storing videos half the trip cannot
+     watch. */
+  transcoding = false,
   /* A signed media link's life. Long enough that an app left open all day
      keeps drawing, short enough that a link which escapes stops working. */
   mediaLinkSeconds = 24 * 60 * 60,
@@ -243,6 +248,13 @@ export async function buildServer({
     if (kind === 'stops') coverage?.refreshSoon()
   }
 
+  /* A conversion finishing is a change nobody made a request for: the film
+     was pending when the app last looked and is playable now. Without this
+     nudge it stays behind a spinner until something else happens to the trip. */
+  const announceMediaReady = job => {
+    if (job?.tripId) touched(job.tripId, 'photos')
+  }
+
   /* One hook rather than an announce buried in every route: a request that
      changed something, and was allowed to, tells whoever is watching that trip.
      After the response, so nothing is announced that did not happen. */
@@ -252,6 +264,7 @@ export async function buildServer({
     const kind = tripId && changeKind(request.method, request.raw?.url)
     if (kind) touched(tripId, kind)
   })
+  app.decorate('announceMediaReady', announceMediaReady)
 
   /* One shape for the positions whether they are asked for or pushed, so a
      browser cannot tell the two apart beyond how quickly they arrived. */
@@ -356,7 +369,11 @@ export async function buildServer({
           assistant: !!assistant,
           routing: await routingAlive(),
           replay: !!replayStore,
+          transcoding: !!transcoding,
         },
+        /* The first question of any "my video is still spinning" is how much
+           work is queued and whether anything is draining it. */
+        ...(repository.mediaQueueDepth ? { media: await repository.mediaQueueDepth() } : {}),
       }
     } catch (error) {
       app.log.warn({ err: error }, 'readiness check failed')
@@ -1315,6 +1332,11 @@ export async function buildServer({
       .send({ avatarPath: stored.avatarPath, avatar: mediaUrl(stored.avatarPath) })
   })
 
+  /* Whether anything is standing by to convert a film. Set once at boot by
+     index.js probing for ffmpeg; without it videos are stored as filmed and
+     said to be ready, which is honest rather than hopeful. */
+  const mediaWorkerReady = () => !!transcoding && !!repository.enqueueMediaJob
+
   const megabytes = value => Math.round(value / (1024 * 1024))
   /* Two files at most — the picture or the film, and the poster frame that
      stands in for it. The byte ceiling here is the hard one that stops a
@@ -1521,6 +1543,10 @@ export async function buildServer({
         const photo = await repository.createPhoto(user, request.params.tripId, {
           ...stored,
           kind: isVideo ? 'video' : 'photo',
+          /* A film is only 'pending' if something can actually convert it.
+             Promising a conversion no box can perform would leave every video
+             behind a spinner that never resolves. */
+          status: isVideo && mediaWorkerReady() ? 'pending' : 'ready',
           mime: isVideo ? mime : null,
           durationMs: isVideo && durationMs != null ? Math.round(durationMs) : null,
           stopId: fields.stopId || null,
@@ -1544,6 +1570,12 @@ export async function buildServer({
           'photo.location_source': locationSource || 'none',
           'photo.dedupe_hit': false,
         })
+        /* Enqueued after the row exists and before the reply goes out, so a
+           film is never returned to the app as pending with nothing coming
+           for it. */
+        if (photo.status === 'pending' && repository.enqueueMediaJob) {
+          await repository.enqueueMediaJob(photo.id)
+        }
         committed = true
         return reply.code(201).send(withMediaLinks(photo))
       } finally {
