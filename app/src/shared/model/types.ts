@@ -59,6 +59,11 @@ export interface TripPhoto {
   durationMs?: number | null
   /** The still a film is drawn as wherever it cannot play. */
   posterSrc?: string | null
+  /* The same film at several sizes, for a player that can change its mind
+     halfway through. Alongside `src` rather than instead of it: a browser
+     without streaming still gets the single file, and so does a film whose
+     renditions are still being built. */
+  hlsSrc?: string | null
   lng?: number | null
   lat?: number | null
   by: string

@@ -39,6 +39,11 @@ const CONTENT_TYPES = new Map([
   ['gif', 'image/gif'],
   ['heic', 'image/heic'],
   ['pdf', 'application/pdf'],
+  /* The two halves of an adaptive stream. A segment served as
+     application/octet-stream is one some players will not touch, and a
+     playlist under the wrong type is one Safari refuses outright. */
+  ['m3u8', 'application/vnd.apple.mpegurl'],
+  ['ts', 'video/mp2t'],
   ...[...VIDEO_EXTENSIONS].map(([mime, extension]) => [extension, mime]),
 ])
 
@@ -50,3 +55,8 @@ export const mediaContentType = storagePath =>
   ) || 'application/octet-stream'
 
 export const isVideoPath = storagePath => mediaContentType(storagePath).startsWith('video/')
+
+/* A playlist is never sent as it was stored: the links inside it are signed
+   as it goes out, so it is read whole and rewritten rather than streamed. */
+export const isPlaylistPath = storagePath =>
+  mediaContentType(storagePath) === 'application/vnd.apple.mpegurl'

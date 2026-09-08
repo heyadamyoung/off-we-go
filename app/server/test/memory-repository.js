@@ -558,12 +558,19 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       trip.photos = trip.photos.filter(value => value.id !== photoId)
       delete trip.comments[photoId]
       trip.likes = trip.likes.filter(value => value !== photoId)
-      for (const path of [photo.storagePath, photo.posterPath, photo.thumbPath].filter(Boolean))
+      for (const path of [
+        photo.storagePath,
+        photo.posterPath,
+        photo.thumbPath,
+        // The whole stream; the trailing slash is what marks it as a tree.
+        photo.hlsPath ? `${photo.hlsPath.replace(/\/[^/]*$/, '')}/` : null,
+      ].filter(Boolean))
         fileDeletionQueue.set(path, new Date(0))
       return {
         storagePath: photo.storagePath,
         posterPath: photo.posterPath || null,
         thumbPath: photo.thumbPath,
+        hlsPath: photo.hlsPath || null,
       }
     },
     async enqueueMediaJob(photoId, kind = 'transcode') {
@@ -603,11 +610,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       return {
         id: claimable.id,
         photoId: claimable.photoId,
+        kind: claimable.kind || 'transcode',
         attempts: claimable.attempts - 1,
         tripId: photo.tripId,
         storagePath: photo.storagePath,
         posterPath: photo.posterPath,
         thumbPath: photo.thumbPath,
+        hlsPath: photo.hlsPath || null,
       }
     },
     async completeMediaJob({
@@ -617,8 +626,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       mime,
       posterPath,
       thumbPath,
+      hlsPath,
       durationMs,
       replaced,
+      thenQueue = null,
     }) {
       for (const trip of trips.values()) {
         const photo = trip.photos.find(value => value.id === photoId)
@@ -628,19 +639,24 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (mime) photo.mime = mime
         if (posterPath) photo.posterPath = posterPath
         if (thumbPath) photo.thumbPath = thumbPath
+        if (hlsPath) photo.hlsPath = hlsPath
         if (durationMs != null) photo.durationMs = Math.round(durationMs)
       }
       mediaJobs.delete(id)
       if (replaced) fileDeletionQueue.set(replaced, new Date(0))
+      if (thenQueue) await this.enqueueMediaJob(photoId, thenQueue)
     },
-    async failMediaJob({ id, photoId, error, fatal, runAfter }) {
+    async failMediaJob({ id, photoId, error, fatal, runAfter, kind = 'transcode' }) {
       const job = mediaJobs.get(id)
       if (!job) return
       if (fatal) {
         mediaJobs.delete(id)
-        for (const trip of trips.values()) {
-          const photo = trip.photos.find(value => value.id === photoId)
-          if (photo) photo.status = 'failed'
+        // Only a conversion decides whether a film is watchable at all.
+        if (kind === 'transcode') {
+          for (const trip of trips.values()) {
+            const photo = trip.photos.find(value => value.id === photoId)
+            if (photo) photo.status = 'failed'
+          }
         }
         return
       }

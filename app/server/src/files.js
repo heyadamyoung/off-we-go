@@ -1,10 +1,23 @@
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants, createReadStream, createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
-import { dirname, extname, normalize, relative, resolve } from 'node:path'
+import { dirname, extname, join, normalize, posix, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { videoExtension } from './media-types.js'
+import { MASTER_NAME, hlsDirectory } from './hls.js'
+
+/** Every file under a directory, as paths relative to it, deepest last. */
+export async function filesUnder(directory, base = '') {
+  const entries = await readdir(join(directory, base), { withFileTypes: true })
+  const found = []
+  for (const entry of entries) {
+    const next = base ? posix.join(base, entry.name) : entry.name
+    if (entry.isDirectory()) found.push(...(await filesUnder(directory, next)))
+    else found.push(next)
+  }
+  return found
+}
 
 /** Thrown when a stream runs past the ceiling it was given. */
 export class TooLarge extends Error {
@@ -160,6 +173,46 @@ export function createDiskFileStore({ directory }) {
     /** The same poster derivatives, from a frame already drawn to a file. */
     async storePosterFile({ storagePath, file }) {
       return this.storePoster({ storagePath, bytes: await readFile(file) })
+    },
+    /* A film's adaptive stream: a small tree of playlists and segments that
+       goes up whole or not at all. It lives beside the film under a name
+       derived from it, so the two are found, served and forgotten together
+       without a second column to keep in step.
+
+       The master playlist is written last. It is the only path anything else
+       records, so until it exists the tree is invisible — which is exactly
+       what should happen to a stream whose upload died halfway. */
+    async storeHls({ storagePath, directory }) {
+      const prefix = hlsDirectory(storagePath)
+      const files = (await filesUnder(directory)).filter(name => name !== MASTER_NAME)
+      let bytes = 0
+      for (const name of files) {
+        const source = join(directory, name)
+        const target = absolute(`${prefix}/${name}`)
+        await mkdir(dirname(target), { recursive: true })
+        const temporary = `${target}.${randomUUID()}.tmp`
+        try {
+          await pipeline(createReadStream(source), createWriteStream(temporary, { flags: 'wx' }))
+          await rename(temporary, target)
+        } catch (error) {
+          await rm(temporary, { force: true })
+          throw error
+        }
+        bytes += (await stat(target)).size
+      }
+      const master = await readFile(join(directory, MASTER_NAME))
+      await writeAtomic(`${prefix}/${MASTER_NAME}`, master)
+      return {
+        hlsPath: `${prefix}/${MASTER_NAME}`,
+        files: files.length + 1,
+        bytes: bytes + master.length,
+      }
+    },
+    /* A whole stream, gone. The deletion queue holds paths rather than
+       trees, so a prefix arrives here with a trailing slash and is expanded
+       on the store that knows how — which on a volume is one call. */
+    async removeTree(prefix) {
+      await rm(absolute(String(prefix).replace(/\/+$/, '')), { recursive: true, force: true })
     },
     /* A leg's paperwork, stored as it arrived: a boarding pass loses its QR
        to recompression, so documents are bytes in, bytes out. */

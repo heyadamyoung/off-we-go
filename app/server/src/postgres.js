@@ -112,6 +112,7 @@ const photoRow = value => ({
   storagePath: value.storage_path,
   posterPath: value.poster_path || null,
   thumbPath: value.thumb_path,
+  hlsPath: value.hls_path || null,
   seq: value.seq,
 })
 
@@ -1959,7 +1960,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         await client.query('begin')
         const result = await client.query(
           `delete from photos where id=$1 and trip_id=$2
-          returning storage_path,poster_path,thumb_path`,
+          returning storage_path,poster_path,thumb_path,hls_path`,
           [photoId, tripId],
         )
         const value = result.rows[0]
@@ -1967,9 +1968,16 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           await client.query('rollback')
           return null
         }
-        for (const path of [value.storage_path, value.poster_path, value.thumb_path].filter(
-          Boolean,
-        )) {
+        for (const path of [
+          value.storage_path,
+          value.poster_path,
+          value.thumb_path,
+          /* The whole stream, not just the playlist that names it. The
+             trailing slash is what tells the sweeper this is a tree: a
+             playlist removed on its own would leave every segment behind as
+             bytes nobody can reach and nobody is charging us less for. */
+          value.hls_path ? `${value.hls_path.replace(/\/[^/]*$/, '')}/` : null,
+        ].filter(Boolean)) {
           await client.query(
             `insert into file_deletion_queue(path) values($1)
             on conflict(path) do update set next_attempt_at=now()`,
@@ -1981,6 +1989,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           storagePath: value.storage_path,
           posterPath: value.poster_path || null,
           thumbPath: value.thumb_path,
+          hlsPath: value.hls_path || null,
         }
       } catch (error) {
         await client.query('rollback')
@@ -2019,7 +2028,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
            limit 1
          )
          and j.run_after <= $3
-         returning j.id, j.photo_id, j.attempts`,
+         returning j.id, j.photo_id, j.kind, j.attempts`,
         [workerId, until, now],
       )
       const job = result.rows[0]
@@ -2027,7 +2036,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       /* The row is read after the claim rather than joined into it: the claim
          must be the smallest possible lock. */
       const photo = await pool.query(
-        'select storage_path, poster_path, thumb_path, trip_id from photos where id=$1',
+        'select storage_path, poster_path, thumb_path, hls_path, trip_id from photos where id=$1',
         [job.photo_id],
       )
       const row = photo.rows[0]
@@ -2039,11 +2048,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       return {
         id: job.id,
         photoId: job.photo_id,
+        kind: job.kind || 'transcode',
         attempts: job.attempts - 1,
         tripId: row.trip_id,
         storagePath: row.storage_path,
         posterPath: row.poster_path,
         thumbPath: row.thumb_path,
+        hlsPath: row.hls_path,
       }
     },
     /* The row and the job move together, so a photograph is never left saying
@@ -2055,8 +2066,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       mime,
       posterPath,
       thumbPath,
+      hlsPath,
       durationMs,
       replaced,
+      /* Work this one finishing makes possible. Enqueued in the same
+         transaction that finishes it, so a crash between the two cannot
+         leave a film converted and its ladder never asked for. */
+      thenQueue = null,
     }) {
       const client = await pool.connect()
       try {
@@ -2071,9 +2087,17 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         if (mime) add('media_mime', mime)
         if (posterPath) add('poster_path', posterPath)
         if (thumbPath) add('thumb_path', thumbPath)
+        if (hlsPath) add('hls_path', hlsPath)
         if (durationMs != null) add('duration_ms', Math.round(durationMs))
         await client.query(`update photos set ${sets.join(',')} where id=$1`, values)
         await client.query('delete from media_jobs where id=$1', [id])
+        if (thenQueue) {
+          await client.query(
+            `insert into media_jobs(photo_id, kind) values($1,$2)
+            on conflict (photo_id, kind) do nothing`,
+            [photoId, thenQueue],
+          )
+        }
         /* The bytes the conversion replaced go through the same queue as any
            other retired file, so a failed unlink is retried rather than lost. */
         if (replaced) {
@@ -2094,13 +2118,19 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     /* A conversion that will not happen must not leave the film behind a
        spinner for ever: the row goes back to ready and plays for whoever can
        decode it, which is at least the person who filmed it. */
-    async failMediaJob({ id, photoId, error, fatal, runAfter }) {
+    async failMediaJob({ id, photoId, error, fatal, runAfter, kind = 'transcode' }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
         if (fatal) {
           await client.query('delete from media_jobs where id=$1', [id])
-          await client.query("update photos set media_status='failed' where id=$1", [photoId])
+          /* Only the conversion decides whether a film is watchable. A ladder
+             that will not build leaves the film exactly as playable as it was
+             a moment ago, so the row stays ready and nobody is shown an error
+             about a video that works. */
+          if (kind === 'transcode') {
+            await client.query("update photos set media_status='failed' where id=$1", [photoId])
+          }
         } else {
           await client.query(
             `update media_jobs set state='pending', last_error=$2, run_after=$3,

@@ -114,8 +114,17 @@ test('an unplayable film is converted behind the upload, not during it', { skip 
 
   assert.equal(await world.worker.runOne(), true)
 
+  /* The conversion is finished and has asked for the next thing: the same
+     film at several sizes. Queued rather than done here, because a ladder
+     that will not build must not cost a film its conversion. */
+  assert.deepEqual(await world.repository.mediaQueueDepth(), { pending: 1, working: 0 })
+  assert.deepEqual(
+    world.repository.__mediaJobs().map(job => job.kind),
+    ['hls'],
+  )
+  assert.equal(await world.worker.runOne(), true)
   const after = await world.repository.claimMediaJob({ workerId: 'x', until: new Date() })
-  assert.equal(after, null, 'the job is gone once it is done')
+  assert.equal(after, null, 'the queue is empty once both are done')
   assert.deepEqual(await world.repository.mediaQueueDepth(), { pending: 0, working: 0 })
 
   const reloaded = await fetch(`${world.origin}/api/trips/current?t=${world.trip.slug}`, {
@@ -132,8 +141,9 @@ test('an unplayable film is converted behind the upload, not during it', { skip 
   assert.equal(converted.audioCodec, 'aac')
 
   // Whoever is watching the trip is told, without having made a request.
-  assert.equal(world.announced.length, 1)
+  assert.equal(world.announced.length, 2)
   assert.equal(world.announced[0].converted, true)
+  assert.equal(world.announced[1].streamed, true)
 })
 
 test('a film already playable everywhere keeps its own bytes', { skip }, async t => {
@@ -172,6 +182,16 @@ test('a film already playable everywhere keeps its own bytes', { skip }, async t
   )
   assert.ok(row.posterSrc, 'it still gains the poster it never had')
   assert.equal(world.announced[0].converted, false)
+
+  /* A film nobody had to convert still gets a ladder. Playing everywhere and
+     playing well on a train are different problems, and the first one being
+     already solved does not solve the second. */
+  await world.worker.runOne()
+  const streamed = await fetch(`${world.origin}/api/trips/current?t=${world.trip.slug}`, {
+    headers: { authorization: `Bearer ${world.accessToken}` },
+  })
+  const withLadder = (await streamed.json()).photos.find(photo => photo.id === video.id)
+  assert.ok(withLadder.hlsSrc, 'and it is published as a stream as well as a file')
 })
 
 test('a film that will not convert stops being retried, and still plays for its owner', {

@@ -32,7 +32,8 @@ import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 import { validChunk } from './replay-store.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
-import { isSupportedVideo, isVideoPath, mediaContentType } from './media-types.js'
+import { isPlaylistPath, isSupportedVideo, isVideoPath, mediaContentType } from './media-types.js'
+import { signPlaylist } from './hls.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -450,6 +451,11 @@ export async function buildServer({
     src: mediaUrl(photo.storagePath),
     posterSrc: photo.posterPath ? mediaUrl(photo.posterPath) : null,
     thumbSrc: photo.thumbPath ? mediaUrl(photo.thumbPath) : null,
+    /* The adaptive stream, when there is one. Alongside the single file
+       rather than instead of it: a player that cannot do HLS still gets
+       something it can play, and a film whose ladder is still building — or
+       never built — is watchable the whole time. */
+    hlsSrc: photo.hlsPath ? mediaUrl(photo.hlsPath) : null,
   })
   const STOP_STATUSES = new Set(['done', 'now', 'next', 'planned'])
 
@@ -847,7 +853,12 @@ export async function buildServer({
 
   const removeQueuedFile = async path => {
     try {
-      await fileStore.remove(path)
+      /* A trailing slash is a tree rather than a file — a film's adaptive
+         stream, which is a playlist and however many segments. Only the
+         store knows what that means: one call on a volume, a listing and a
+         great many deletes on an object store. */
+      if (path.endsWith('/')) await fileStore.removeTree(path)
+      else await fileStore.remove(path)
       await repository.completeFileDeletion(path)
       return true
     } catch (error) {
@@ -1709,6 +1720,27 @@ export async function buildServer({
        image/jpeg is a file the browser will not open. */
     const contentType = mediaContentType(storagePath)
     try {
+      /* A playlist is a list of links, and a player does not carry this
+         request's signature down to the segments it names — neither hls.js
+         nor Safari does. So the links are signed as the playlist goes out:
+         what is stored keeps the relative names ffmpeg wrote, and every read
+         hands back a copy in which each of them is a URL this reader may
+         follow. It costs no lookup, so a cache can still sit in front of the
+         segments even though the playlist itself must not be shared. */
+      if (isPlaylistPath(storagePath)) {
+        const stored = await fileStore.read(storagePath)
+        const directory = storagePath.slice(0, storagePath.lastIndexOf('/') + 1)
+        const body = signPlaylist(stored.toString('utf8'), directory, mediaUrl)
+        stamp({ 'media.playlist': true, 'media.playlist_bytes': body.length })
+        return (
+          reply
+            .type(contentType)
+            /* Never shared and never kept: it holds one reader's signatures,
+             and it is a few hundred bytes to fetch again. */
+            .header('cache-control', 'private, no-store')
+            .send(body)
+        )
+      }
       if (!isVideoPath(storagePath)) {
         const bytes = await fileStore.read(storagePath)
         return reply.type(contentType).header('cache-control', 'private, max-age=3600').send(bytes)

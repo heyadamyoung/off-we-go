@@ -170,6 +170,10 @@ const workers = Array.from({ length: workerCount }, () =>
     repository,
     fileStore,
     logger: app.log,
+    /* Adaptive streams as well as conversions, unless a deployment says
+       otherwise. A ladder is several encodes rather than one, so a box that
+       is already at its limit converting can be told to stop at that. */
+    ladders: process.env.WAYFARE_VIDEO_LADDERS !== '0',
     onFinished: job => app.announceMediaReady?.(job),
   }),
 )

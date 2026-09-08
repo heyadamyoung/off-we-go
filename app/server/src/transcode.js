@@ -11,7 +11,9 @@
    later without any of this coming with it. */
 
 import { spawn } from 'node:child_process'
-import { stat, rm } from 'node:fs/promises'
+import { mkdir, readdir, stat, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { MASTER_NAME, SEGMENT_SECONDS, renditionLadder, rungScale } from './hls.js'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe'
@@ -80,8 +82,14 @@ export async function probe(path) {
   const video = streams.find(stream => stream.codec_type === 'video') || null
   const audio = streams.find(stream => stream.codec_type === 'audio') || null
   const seconds = Number(parsed.format?.duration)
+  /* What the picture actually cost, in bits per second. Some containers only
+     carry it for the file as a whole, which is close enough: the point of
+     knowing is to avoid re-encoding a film at more bits than it was ever
+     filmed with, and audio is a rounding error against video. */
+  const videoBits = Number(video?.bit_rate) || Number(parsed.format?.bit_rate) || 0
   return {
     container: String(parsed.format?.format_name || ''),
+    videoKbps: videoBits > 0 ? Math.round(videoBits / 1000) : null,
     videoCodec: video?.codec_name || null,
     audioCodec: audio?.codec_name || null,
     width: Number(video?.width) || null,
@@ -194,4 +202,133 @@ export async function posterFrame({ source, target, atMs = 1000, durationMs, tim
   const written = await stat(target).catch(() => null)
   if (!written?.size) throw new Error('No frame could be drawn from this video')
   return { bytes: written.size }
+}
+
+/**
+ * The same film at several sizes, as an HLS stream a player can switch inside.
+ *
+ * One pass: the source is decoded once and split into as many encoders as
+ * there are rungs. Decoding it once per rendition would be three or four
+ * times the work for exactly the same output.
+ *
+ * Every rendition is cut at the same instants — the key frames are forced
+ * onto a fixed grid rather than left where the encoder would choose — because
+ * a player switching quality resumes at a segment boundary, and boundaries
+ * that do not line up across renditions are a visible stutter at every
+ * switch.
+ *
+ * @param {{ source: string, target: string, facts?: object, timeoutMs?: number }} options
+ * @returns {Promise<{ master: string, rungs: object[], bytes: number }>}
+ */
+export async function toHlsLadder({ source, target, facts, timeoutMs }) {
+  const known = facts || (await probe(source))
+  const ladder = renditionLadder(known)
+  if (!ladder.length) throw new Error('This file has no video to stream')
+  const hasAudio = !!known.audioCodec
+
+  await mkdir(target, { recursive: true })
+  for (const rung of ladder) await mkdir(join(target, rung.name), { recursive: true })
+
+  const split = ladder.map((_, index) => `[s${index}]`).join('')
+  const filter = [
+    `[0:v]split=${ladder.length}${split}`,
+    ...ladder.map((rung, index) => `[s${index}]${rungScale(rung)}[v${index}]`),
+  ].join(';')
+
+  const perRung = ladder.flatMap((rung, index) => [
+    '-map',
+    `[v${index}]`,
+    `-c:v:${index}`,
+    'libx264',
+    `-b:v:${index}`,
+    `${rung.videoKbps}k`,
+    /* A ceiling and a buffer as well as an average: a player choosing this
+       rung has decided it can afford this many bits per second, and an
+       unbounded peak in the middle of it is the stall the ladder exists to
+       avoid. */
+    `-maxrate:v:${index}`,
+    `${Math.round(rung.videoKbps * 1.07)}k`,
+    `-bufsize:v:${index}`,
+    `${rung.videoKbps * 2}k`,
+  ])
+  const perRungAudio = hasAudio
+    ? ladder.flatMap((rung, index) => [
+        '-map',
+        'a:0',
+        `-c:a:${index}`,
+        'aac',
+        `-b:a:${index}`,
+        `${rung.audioKbps}k`,
+        `-ac:a:${index}`,
+        '2',
+      ])
+    : []
+
+  const streamMap = ladder
+    .map((_, index) => (hasAudio ? `v:${index},a:${index}` : `v:${index}`))
+    .join(' ')
+
+  await run(
+    FFMPEG,
+    [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-i',
+      String(source),
+      '-filter_complex',
+      filter,
+      ...perRung,
+      ...perRungAudio,
+      '-preset',
+      'veryfast',
+      '-profile:v',
+      'high',
+      '-pix_fmt',
+      'yuv420p',
+      /* The grid every rendition is cut on. Forcing the key frames by time
+         rather than by frame count keeps the boundaries identical even when
+         the source has a variable frame rate, which phone video routinely
+         does. */
+      '-force_key_frames',
+      `expr:gte(t,n_forced*${SEGMENT_SECONDS})`,
+      '-sc_threshold',
+      '0',
+      '-f',
+      'hls',
+      '-hls_time',
+      String(SEGMENT_SECONDS),
+      '-hls_playlist_type',
+      'vod',
+      /* Every segment decodable on its own, which is what lets a player join
+         at one and switch at the next. */
+      '-hls_flags',
+      'independent_segments',
+      '-hls_segment_filename',
+      join(target, '%v', 'seg%05d.ts'),
+      '-master_pl_name',
+      MASTER_NAME,
+      '-var_stream_map',
+      streamMap,
+      join(target, '%v', 'index.m3u8'),
+    ],
+    { timeoutMs },
+  )
+
+  const master = join(target, MASTER_NAME)
+  const written = await stat(master).catch(() => null)
+  if (!written?.size) throw new Error('The stream was built with no master playlist')
+
+  /* What it cost, counted rather than estimated: a ladder is several times
+     the bytes of the film it came from, and that is the number that decides
+     whether this is affordable per trip. */
+  let bytes = 0
+  for (const rung of ladder) {
+    for (const entry of await readdir(join(target, rung.name))) {
+      const file = await stat(join(target, rung.name, entry)).catch(() => null)
+      bytes += file?.size || 0
+    }
+  }
+  return { master, rungs: ladder, bytes: bytes + written.size }
 }
