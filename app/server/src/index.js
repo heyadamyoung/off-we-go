@@ -1,6 +1,7 @@
 import { createPostgresRepository } from './postgres.js'
 import { createReplayStore } from './replay-store.js'
 import { createDiskFileStore } from './files.js'
+import { createS3FileStore } from './s3-store.js'
 import { createSmtpMailer } from './mailer.js'
 import { buildServer } from './app.js'
 import { writeFile } from 'node:fs/promises'
@@ -81,10 +82,25 @@ const coverage = process.env.VALHALLA_URL
     })
   : null
 
+/* Where media lives. A volume on this box until S3_BUCKET says otherwise —
+   and nothing above this line knows which, because both stores answer the
+   same calls. A single volume is the thing that stops there being a second
+   web node, so this is the switch that makes one possible. */
+const fileStore = process.env.S3_BUCKET
+  ? createS3FileStore({
+      bucket: process.env.S3_BUCKET,
+      endpoint: required('S3_ENDPOINT'),
+      region: process.env.S3_REGION || 'auto',
+      accessKeyId: required('S3_ACCESS_KEY_ID'),
+      secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
+      prefix: process.env.S3_PREFIX || '',
+    })
+  : createDiskFileStore({ directory: process.env.UPLOAD_DIR || '/data/uploads' })
+
 /* Can this box convert film? Asked once, at boot, rather than per upload —
    and reported at /api/health, because "why is my video still spinning" is
    first a question about whether anything is standing by to convert it. */
-const fileStore = createDiskFileStore({ directory: process.env.UPLOAD_DIR || '/data/uploads' })
 const transcoding = process.env.WAYFARE_TRANSCODE === 'off' ? false : await transcoderAvailable()
 if (!transcoding) {
   console.warn(
