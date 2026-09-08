@@ -73,32 +73,71 @@ test('production compose runs a private pinned Logto service behind the existing
   assert.equal(compose.services.web.environment.LOGTO_ADMIN_DOMAIN, 'auth-admin.example.com')
 })
 
+const stackEnv = extra => ({
+  ...process.env,
+  WAYFARE_DOMAIN: 'offwego.example.com',
+  POSTGRES_PASSWORD: 'database-secret',
+  LOGTO_DOMAIN: 'auth.example.com',
+  LOGTO_ADMIN_DOMAIN: 'auth-admin.example.com',
+  LOGTO_POSTGRES_PASSWORD: 'logto-database-secret',
+  LOGTO_SECRET_VAULT_KEK: 'base64-key',
+  WAYFARE_OIDC_ISSUER: 'https://auth.example.com/oidc',
+  WAYFARE_OIDC_CLIENT_ID: 'offwego-web',
+  WAYFARE_OIDC_CLIENT_SECRET: 'oidc-secret',
+  COMPOSE_PROFILES: '',
+  MINIO_ROOT_PASSWORD: '',
+  S3_SECRET_ACCESS_KEY: '',
+  ...extra,
+})
+
+const renderCompose = extra =>
+  spawnSync('docker', ['compose', 'config', '--format', 'json'], {
+    cwd: appRoot,
+    env: stackEnv(extra),
+    encoding: 'utf8',
+  })
+
+/* `docker compose config` is the deploy's own gate: it runs before a single
+   container is touched, and a file it will not render stops the release.
+
+   This has cost one. Object storage was added with its credentials marked
+   required, so every deploy demanded secrets for a service nothing was using
+   yet — and compose interpolates a service's variables whether or not its
+   profile is active, so gating it was not enough on its own. A stack with no
+   object storage configured has to render, because that is every deployment
+   that has not opted in. */
+test('the stack still renders with no object storage configured at all', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const result = renderCompose({})
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+
+  const compose = JSON.parse(result.stdout)
+  assert.equal(
+    compose.services.minio,
+    undefined,
+    'an unasked-for object store must not be in the stack at all',
+  )
+  // And the rest of the stack is untouched by its absence.
+  for (const name of ['api', 'web', 'db', 'logto']) {
+    assert.ok(compose.services[name], `${name} is missing`)
+  }
+})
+
 /* The object store holds every photograph anyone has taken on a trip. Two
    things about how it is run are worth a test rather than a habit, because
    both are invisible when they are wrong and catastrophic when they are. */
 test('the object store is private, and the api is not its root user', {
   skip: dockerAvailable ? false : 'docker is not installed on this machine',
 }, () => {
-  const result = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      WAYFARE_DOMAIN: 'offwego.example.com',
-      POSTGRES_PASSWORD: 'database-secret',
-      LOGTO_DOMAIN: 'auth.example.com',
-      LOGTO_ADMIN_DOMAIN: 'auth-admin.example.com',
-      LOGTO_POSTGRES_PASSWORD: 'logto-database-secret',
-      LOGTO_SECRET_VAULT_KEK: 'base64-key',
-      WAYFARE_OIDC_ISSUER: 'https://auth.example.com/oidc',
-      WAYFARE_OIDC_CLIENT_ID: 'offwego-web',
-      WAYFARE_OIDC_CLIENT_SECRET: 'oidc-secret',
-      MINIO_ROOT_PASSWORD: 'object-store-root-secret',
-      S3_SECRET_ACCESS_KEY: 'object-store-app-secret',
-    },
-    encoding: 'utf8',
+  const result = renderCompose({
+    COMPOSE_PROFILES: 'objectstore',
+    MINIO_ROOT_PASSWORD: 'object-store-root-secret',
+    S3_SECRET_ACCESS_KEY: 'object-store-app-secret',
   })
   assert.equal(result.status, 0, result.stderr || result.error?.message)
   const compose = JSON.parse(result.stdout)
+  assert.ok(compose.services.minio, 'the profile brings the object store in')
 
   /* Nothing on the internet. The api reads and writes on a viewer's behalf and
      the console is for a person on the box, so the only port published is the
