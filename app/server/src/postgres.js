@@ -842,7 +842,26 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       }))
     },
 
-    async loadCurrentTrip(user, slug) {
+    /* One page of a trip's photographs, older than the cursor. Newest first,
+       because that is the order anybody wants them in, and by seq because it
+       is the order the app already sorts by. */
+    async listTripPhotos(user, tripId, { before = null, limit = 200 } = {}) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const size = Math.min(Math.max(Number(limit) || 200, 1), 500)
+      const result = await pool.query(
+        `select * from photos where trip_id=$1 ${before == null ? '' : 'and seq < $3'}
+         order by seq desc, created_at desc limit $2`,
+        before == null ? [tripId, size] : [tripId, size, before],
+      )
+      const photos = rows(result).map(photoRow)
+      return {
+        photos,
+        /* The lowest seq handed over, so the next ask is unambiguous even as
+           photographs are added at the other end while somebody pages. */
+        nextCursor: photos.length === size ? photos[photos.length - 1].seq : null,
+      }
+    },
+    async loadCurrentTrip(user, slug, { photoLimit = 200 } = {}) {
       const values = [user.id]
       let where = 'm.profile_id=$1'
       if (slug) {
@@ -857,7 +876,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       )
       if (!tripResult.rows[0]) return null
       const trip = tripResult.rows[0]
-      const [members, stops, photos, route, comments, likes] = await Promise.all([
+      const [members, stops, photos, photoTotal, route, comments, likes] = await Promise.all([
         pool.query(
           `select m.profile_id,m.role,p.handle,p.display_name,p.avatar_path,u.email from trip_members m
           join profiles p on p.id=m.profile_id join users u on u.id=p.id
@@ -877,7 +896,20 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           where s.trip_id=$1 order by s.seq, s.created_at`,
           [trip.id],
         ),
-        pool.query('select * from photos where trip_id=$1 order by seq,created_at', [trip.id]),
+        /* Bounded, newest first, then handed back in the order the app has
+           always seen. A trip going for a fortnight holds thousands of
+           photographs, and shipping every one on every load is what breaks
+           first — the payload, the parse, and every signed link in it aging
+           out together. The rest is paged in behind the first paint.
+           (The account export below is deliberately not bounded: somebody
+           asking for their own data is owed all of it.) */
+        pool.query(
+          `select * from (
+             select * from photos where trip_id=$1 order by seq desc, created_at desc limit $2
+           ) newest order by seq, created_at`,
+          [trip.id, photoLimit],
+        ),
+        pool.query('select count(*)::int count from photos where trip_id=$1', [trip.id]),
         pool.query('select lng,lat from route_points where trip_id=$1 order by seq', [trip.id]),
         pool.query(
           `select c.*,p.display_name as author from comments c
@@ -931,6 +963,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           documents: value.documents || [],
         })),
         photos: rows(photos).map(photoRow),
+        /* The whole truth, not the length of what was sent: the map's pins,
+           a stop's count and "N photos" all mean every photograph. */
+        photoCount: Number(photoTotal.rows[0]?.count || 0),
         route: rows(route).map(value => [value.lng, value.lat]),
         comments: groupedComments,
         likes: rows(likes).map(value => String(value.photo_id)),

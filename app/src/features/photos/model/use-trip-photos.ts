@@ -1,12 +1,14 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addComment as saveComment,
   deleteComment,
   deletePhoto,
+  loadTripPhotoPage,
   setLike,
   updatePhoto,
   uploadPhoto,
 } from '../../../backend'
+import { track } from '../../../shared/lib/telemetry'
 import { photoUploadMetadata } from '../../../mobile-photos-core'
 import { clamp } from '../../../shared/lib/numbers'
 import { appErrorMessage } from '../../../user-messages-core'
@@ -40,6 +42,56 @@ export default function useTripPhotos({
   const [comments, setComments] = useState<Record<Id, TripComment[]>>(data.comments || {})
   const [likes, setLikes] = useState<Set<Id>>(() => new Set(data.likes || []))
   const [viewer, setViewer] = useState<ViewerState | null>(null)
+
+  /* The trip read is bounded now, so what arrived is the newest few hundred
+     rather than the lot. Everything that draws photographs — the map's pins,
+     a stop's tally, the grid — still wants all of them, so the rest is
+     fetched quietly behind the first paint instead of being waited for.
+
+     A ceiling, because "all of them" on a trip somebody has been adding to
+     for a year is not a thing a phone should hold; hitting it is counted
+     rather than hidden, because it is the signal that this needs to become
+     windowed rendering rather than a bigger number. */
+  const MOST_TO_HOLD = 2000
+  const paging = useRef(false)
+  useEffect(() => {
+    const total = data.photoCount ?? 0
+    if (paging.current || photos.length >= Math.min(total, MOST_TO_HOLD)) return
+    paging.current = true
+    let alive = true
+    const oldest = photos.reduce(
+      (low, photo) => Math.min(low, photo.seq ?? Number.POSITIVE_INFINITY),
+      Number.POSITIVE_INFINITY,
+    )
+    loadTripPhotoPage(tripId, Number.isFinite(oldest) ? oldest : null)
+      .then(page => {
+        if (!alive || !page.photos.length) return
+        setPhotos(list => {
+          const known = new Set(list.map(photo => photo.id))
+          const older = page.photos.filter(photo => !known.has(photo.id))
+          if (!older.length) return list
+          // Oldest first, so the array stays in the seq order everything sorts by.
+          return [...older.slice().reverse(), ...list]
+        })
+      })
+      .catch(() => {
+        /* A page that will not come is not worth a message: the trip is
+           usable with what it has, and the next render tries again. */
+      })
+      .finally(() => {
+        if (alive) paging.current = false
+      })
+    return () => {
+      alive = false
+    }
+  }, [tripId, photos, data.photoCount])
+
+  useEffect(() => {
+    const total = data.photoCount ?? 0
+    if (total > MOST_TO_HOLD) {
+      track('trip photos capped', { held: String(MOST_TO_HOLD), total: String(total) })
+    }
+  }, [data.photoCount])
 
   // Ids, not a snapshot: the viewer must reflect edits and deletions made while
   // it is open, which a captured array cannot.

@@ -105,6 +105,20 @@ export async function removeMember(tripId: Id, profileId: Id): Promise<unknown> 
   })
 }
 
+/* The photographs the bounded trip read did not carry. Newest first, oldest
+   last, and null when there are no more — so the app can quietly finish
+   assembling a trip that is too big to send in one go. */
+export async function loadTripPhotoPage(
+  tripId: Id,
+  before: number | null,
+  limit = 200,
+): Promise<{ photos: TripPhoto[]; nextCursor: number | null }> {
+  if (isSample(tripId)) return { photos: [], nextCursor: null }
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (before != null) query.set('before', String(before))
+  return authClient.request(`${tripPath(tripId)}/photos?${query}`)
+}
+
 export async function uploadPhoto(
   tripId: Id,
   file: File,

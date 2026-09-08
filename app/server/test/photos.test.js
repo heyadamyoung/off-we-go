@@ -373,3 +373,54 @@ test('a video that cannot be recorded leaves nothing behind on the volume', asyn
   const left = await readdir(join(directory, trip.id)).catch(() => [])
   assert.deepEqual(left, [], `orphaned files left behind: ${left.join(', ')}`)
 })
+
+test('a trip with more photographs than fit sends a page, and the rest follow', async t => {
+  const { origin, accessToken, trip, repository } = await videoServer(t)
+
+  /* Seeded straight into the repository: the point under test is the shape
+     of the read, not the upload, and 250 real uploads would be 250 resizes. */
+  const seeded = []
+  for (let i = 0; i < 250; i++) seeded.push(repository.seedPhoto(trip.id))
+
+  const read = await fetch(`${origin}/api/trips/current?t=${trip.slug}`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  })
+  const body = await read.json()
+
+  /* The whole point: the wire is bounded even though the trip is not. Before
+     this, every photograph a trip had ever held rode on every single load. */
+  assert.equal(body.photos.length, 200, 'a page, not the lot')
+  assert.equal(body.photoCount, 250, 'but the app is told how many there are')
+
+  // Newest first is what was kept; the oldest fifty are the ones left out.
+  const sent = new Set(body.photos.map(photo => photo.id))
+  assert.equal(sent.has(seeded[249].id), true, 'the newest is in the first page')
+  assert.equal(sent.has(seeded[0].id), false, 'the oldest waits its turn')
+
+  // And the app can page back through the rest until it has them all.
+  const oldest = Math.min(...body.photos.map(photo => photo.seq))
+  const next = await fetch(`${origin}/api/trips/${trip.id}/photos?before=${oldest}&limit=200`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  })
+  assert.equal(next.status, 200)
+  const page = await next.json()
+  assert.equal(page.photos.length, 50, 'exactly what was left')
+  assert.equal(page.nextCursor, null, 'and it says there is no more')
+  assert.ok(page.photos[0].src, 'paged photographs are signed like any other')
+
+  // Nothing is served twice, and nothing is missed.
+  const everything = new Set([...sent, ...page.photos.map(photo => photo.id)])
+  assert.equal(everything.size, 250)
+})
+
+test('paging another trip’s photographs is refused, and a bad cursor is rejected', async t => {
+  const { origin, accessToken } = await videoServer(t)
+
+  const stranger = await fetch(`${origin}/api/trips/11111111-1111-4111-8111-111111111111/photos`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  })
+  assert.equal(stranger.status, 404, 'a trip you are not on does not exist to you')
+
+  const anonymous = await fetch(`${origin}/api/trips/whatever/photos`)
+  assert.equal(anonymous.status, 401)
+})

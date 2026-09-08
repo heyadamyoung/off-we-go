@@ -60,6 +60,9 @@ test('an authenticated owner can create and reload a trip in the app contract', 
     },
     stops: [],
     photos: [],
+    /* How many there are, not how many were sent: the trip read is bounded
+       now, so anything counting photographs has to count this instead. */
+    photoCount: 0,
     route: [],
     comments: {},
     likes: [],

@@ -210,6 +210,9 @@ export interface TripData {
   trip: Trip
   stops: Stop[]
   photos: TripPhoto[]
+  /* How many the trip has, as opposed to how many arrived in the payload.
+     The read is bounded; the rest is paged in behind the first paint. */
+  photoCount?: number
   route: Coordinates[]
   family: Person[]
   comments: Record<Id, TripComment[]>

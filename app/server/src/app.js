@@ -973,6 +973,9 @@ export async function buildServer({
         })),
       })),
       photos: row.photos.map(withMediaLinks),
+      /* How many there are, as opposed to how many were sent — the map's
+         pins, a stop's tally and "N photos" all mean the whole trip. */
+      photoCount: row.photoCount ?? row.photos.length,
       route: row.route,
       comments: row.comments,
       likes: row.likes,
@@ -1586,6 +1589,30 @@ export async function buildServer({
       }
     },
   )
+
+  /* The rest of a trip's photographs, a page at a time. The trip read hands
+     back the newest few hundred so the first paint is bounded; everything
+     older comes through here, which is also what lets a screen show a
+     thousand of them without a payload nobody can parse. */
+  app.get('/api/trips/:tripId/photos', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const before = request.query?.before == null ? null : finite(request.query.before)
+    if (request.query?.before != null && before == null) {
+      return reply.code(400).send({ error: 'That photo cursor is invalid' })
+    }
+    const page = await repository.listTripPhotos(user, request.params.tripId, {
+      before,
+      limit: finite(request.query?.limit) ?? 200,
+    })
+    if (!page) return reply.code(404).send({ error: 'Trip not found' })
+    stamp({
+      'trip.id': request.params.tripId,
+      'photo.page_size': page.photos.length,
+      'photo.paging': before != null,
+    })
+    return { photos: page.photos.map(withMediaLinks), nextCursor: page.nextCursor }
+  })
 
   app.patch('/api/trips/:tripId/photos/:photoId', async (request, reply) => {
     const user = await authenticated(request, reply)

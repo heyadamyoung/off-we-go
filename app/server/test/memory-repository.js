@@ -337,15 +337,33 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
           memberCount: trip.members.length,
         }))
     },
-    async loadCurrentTrip(user, slug) {
+    async listTripPhotos(user, tripId, { before = null, limit = 200 } = {}) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const size = Math.min(Math.max(Number(limit) || 200, 1), 500)
+      const all = [...(trips.get(tripId)?.photos || [])]
+        .sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
+        .filter(photo => before == null || (photo.seq ?? 0) < before)
+      const photos = all.slice(0, size).map(photo => ({ ...photo }))
+      return {
+        photos,
+        nextCursor: photos.length === size ? photos[photos.length - 1].seq : null,
+      }
+    },
+    async loadCurrentTrip(user, slug, { photoLimit = 200 } = {}) {
       const trip = [...trips.values()].find(
         value =>
           (!slug || value.slug === slug) &&
           value.members.some(member => member.profileId === user.id),
       )
       if (!trip) return null
+      const newest = [...(trip.photos || [])]
+        .sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
+        .slice(0, photoLimit)
+        .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
       return {
         ...trip,
+        photos: newest,
+        photoCount: (trip.photos || []).length,
         stops: (trip.stops || []).map(stop => ({
           ...stop,
           documents: [...stopDocuments.values()].filter(d => d.stopId === stop.id),
