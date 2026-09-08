@@ -619,9 +619,38 @@
 /* ------------------------------------------------------------------ images
    Photos fade in over their container's placeholder colour instead of popping
    in as a half-drawn band. */
-.im { background-color: var(--c-raised-2); opacity: 0; transition: opacity .3s ease }
-.im.rdy { opacity: 1 }
-@media (prefers-reduced-motion: reduce) { .im { transition: none } }
+/* Every picture arrives on its own, so every picture waits on its own. One
+   indicator for the screen would say "loading" long after most of the grid
+   had drawn, and say nothing about the one tile still coming.
+
+   The mark is the image element's own background, which is all there is to
+   see until the bytes land — so it costs no extra element and works
+   everywhere an <img> is used, including inside the map's photo stacks and
+   the viewer's strip, where a wrapper would break the layout. */
+.im {
+  background-color: var(--c-raised-2);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / .07) 50%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: media-loading 1.1s linear infinite;
+}
+.im.rdy {
+  background-image: none;
+  /* The picture fades up over the space its own shimmer was holding. */
+  animation: media-arrived .3s ease
+}
+@keyframes media-loading {
+  from { background-position: 120% 0 }
+  to { background-position: -120% 0 }
+}
+@keyframes media-arrived { from { opacity: 0 } to { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) {
+  .im, .im.rdy { animation: none }
+}
 
 /* ------------------------------------------------------------------ motion */
 @keyframes rise { from { transform: translateY(10px); opacity: 0 } to { transform: none; opacity: 1 } }
