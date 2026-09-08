@@ -5,7 +5,11 @@ WORKDIR /app
 # which this slim image ships empty. Without these roots every TLS connection
 # to the model fails "UnknownIssuer" and codex retries until it is killed —
 # the assistant hangs at "Thinking…" forever.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# ffmpeg converts what a phone filmed into what every phone can play: an
+# iPhone's HEVC-in-.mov is refused by Chrome and Android, so without this half
+# a trip cannot watch the other half's videos. ~80MB, and the alternative is
+# shipping films most devices decline.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./

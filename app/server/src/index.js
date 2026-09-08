@@ -8,6 +8,8 @@ import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
 import { productionLoggerOptions } from './logging.js'
 import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
+import { createMediaWorker } from './media-worker.js'
+import { transcoderAvailable } from './transcode.js'
 
 const required = name => {
   const value = process.env[name]
@@ -79,9 +81,25 @@ const coverage = process.env.VALHALLA_URL
     })
   : null
 
+/* Can this box convert film? Asked once, at boot, rather than per upload —
+   and reported at /api/health, because "why is my video still spinning" is
+   first a question about whether anything is standing by to convert it. */
+const fileStore = createDiskFileStore({ directory: process.env.UPLOAD_DIR || '/data/uploads' })
+const transcoding = process.env.WAYFARE_TRANSCODE === 'off' ? false : await transcoderAvailable()
+if (!transcoding) {
+  console.warn(
+    JSON.stringify({
+      level: 40,
+      evt: 'boot.transcoding',
+      msg: 'Video conversion is off: ffmpeg was not found, so films are stored exactly as filmed',
+    }),
+  )
+}
+
 const app = await buildServer({
   repository,
-  fileStore: createDiskFileStore({ directory: process.env.UPLOAD_DIR || '/data/uploads' }),
+  fileStore,
+  transcoding,
   mailer: createSmtpMailer({
     host: required('SMTP_HOST'),
     port: process.env.SMTP_PORT || '587',
@@ -125,6 +143,21 @@ const app = await buildServer({
     .filter(Boolean),
   logger: productionLoggerOptions(process.env.LOG_LEVEL || 'info'),
 })
+
+/* The conversion worker. In-process today because this is one box; it claims
+   with `for update skip locked`, so the day it is several boxes this same
+   file runs on each of them and nothing else changes. WAYFARE_MEDIA_WORKERS=0
+   turns it off on a web node once the work lives elsewhere. */
+const workerCount = transcoding ? Math.max(0, Number(process.env.WAYFARE_MEDIA_WORKERS ?? 1)) : 0
+const workers = Array.from({ length: workerCount }, () =>
+  createMediaWorker({
+    repository,
+    fileStore,
+    logger: app.log,
+    onFinished: job => app.announceMediaReady?.(job),
+  }),
+)
+for (const worker of workers) worker.start()
 
 const port = Number(process.env.PORT || 3000)
 coverageLog.current = app.log

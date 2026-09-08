@@ -53,6 +53,9 @@ export interface TripPhoto {
   kind?: 'photo' | 'video'
   /** The film's own type, so a `<video>` element can name its source. */
   mime?: string | null
+  /* Where a film is in being made playable everywhere. Only ever anything
+     but `ready` for a video: a photograph is finished when it is resized. */
+  status?: 'ready' | 'pending' | 'working' | 'failed'
   durationMs?: number | null
   /** The still a film is drawn as wherever it cannot play. */
   posterSrc?: string | null

@@ -40,6 +40,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const mcpTokens = new Map()
   const mcpUsedRefreshTokens = new Map()
   const fileDeletionQueue = new Map()
+  const mediaJobs = new Map()
+  let nextMediaJob = 1
   let nextUser = 1
   let nextTrip = 1
   let nextPhoto = 1
@@ -58,6 +60,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         id: fakeUuid(3, nextPhoto++),
         stopId: null,
         kind: 'photo',
+        status: 'ready',
         mime: null,
         durationMs: null,
         lng: 0,
@@ -492,6 +495,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         id: fakeUuid(3, nextPhoto++),
         stopId: input.stopId || null,
         kind: input.kind === 'video' ? 'video' : 'photo',
+        status: input.kind === 'video' && input.status ? input.status : 'ready',
         mime: input.mime || null,
         durationMs: input.durationMs ?? null,
         lng: input.lng,
@@ -542,6 +546,100 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         storagePath: photo.storagePath,
         posterPath: photo.posterPath || null,
         thumbPath: photo.thumbPath,
+      }
+    },
+    async enqueueMediaJob(photoId, kind = 'transcode') {
+      if (![...mediaJobs.values()].some(job => job.photoId === photoId && job.kind === kind)) {
+        const id = fakeUuid(9, nextMediaJob++)
+        mediaJobs.set(id, {
+          id,
+          photoId,
+          kind,
+          state: 'pending',
+          attempts: 0,
+          runAfter: new Date(0),
+          claimedUntil: null,
+        })
+      }
+    },
+    async claimMediaJob({ workerId, until, now = new Date() }) {
+      const claimable = [...mediaJobs.values()]
+        .filter(
+          job =>
+            job.runAfter <= now &&
+            (job.state === 'pending' || (job.state === 'working' && job.claimedUntil < now)),
+        )
+        .sort((a, b) => a.runAfter - b.runAfter)[0]
+      if (!claimable) return null
+      claimable.state = 'working'
+      claimable.attempts += 1
+      claimable.claimedBy = workerId
+      claimable.claimedUntil = until
+      const photo = [...trips.values()]
+        .flatMap(trip => trip.photos.map(value => ({ ...value, tripId: trip.id })))
+        .find(value => value.id === claimable.photoId)
+      if (!photo) {
+        mediaJobs.delete(claimable.id)
+        return null
+      }
+      return {
+        id: claimable.id,
+        photoId: claimable.photoId,
+        attempts: claimable.attempts - 1,
+        tripId: photo.tripId,
+        storagePath: photo.storagePath,
+        posterPath: photo.posterPath,
+        thumbPath: photo.thumbPath,
+      }
+    },
+    async completeMediaJob({
+      id,
+      photoId,
+      storagePath,
+      mime,
+      posterPath,
+      thumbPath,
+      durationMs,
+      replaced,
+    }) {
+      for (const trip of trips.values()) {
+        const photo = trip.photos.find(value => value.id === photoId)
+        if (!photo) continue
+        photo.status = 'ready'
+        if (storagePath) photo.storagePath = storagePath
+        if (mime) photo.mime = mime
+        if (posterPath) photo.posterPath = posterPath
+        if (thumbPath) photo.thumbPath = thumbPath
+        if (durationMs != null) photo.durationMs = Math.round(durationMs)
+      }
+      mediaJobs.delete(id)
+      if (replaced) fileDeletionQueue.set(replaced, new Date(0))
+    },
+    async failMediaJob({ id, photoId, error, fatal, runAfter }) {
+      const job = mediaJobs.get(id)
+      if (!job) return
+      if (fatal) {
+        mediaJobs.delete(id)
+        for (const trip of trips.values()) {
+          const photo = trip.photos.find(value => value.id === photoId)
+          if (photo) photo.status = 'failed'
+        }
+        return
+      }
+      job.state = 'pending'
+      job.lastError = String(error)
+      job.runAfter = runAfter
+      job.claimedUntil = null
+    },
+    /** A test seam: reach past the backoff without waiting minutes for it. */
+    __mediaJobs() {
+      return [...mediaJobs.values()]
+    },
+    async mediaQueueDepth() {
+      const all = [...mediaJobs.values()]
+      return {
+        pending: all.filter(job => job.state === 'pending').length,
+        working: all.filter(job => job.state === 'working').length,
       }
     },
     async listPendingFileDeletions(now, limit = 50) {

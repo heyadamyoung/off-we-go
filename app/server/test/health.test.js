@@ -42,13 +42,30 @@ test('health says whether the mailbox connector came up configured', async () =>
     mailboxTokenKey: Buffer.alloc(32, 7).toString('base64'),
   })
 
+  /* Conversion is an optional integration like the rest, and the queue depth
+     rides along: "my video is still spinning" is first a question about
+     whether anything is draining the work. */
   assert.deepEqual((await bare.inject({ method: 'GET', url: '/api/health' })).json(), {
     ok: true,
-    connectors: { outlook: false, assistant: false, routing: false, replay: false },
+    connectors: {
+      outlook: false,
+      assistant: false,
+      routing: false,
+      replay: false,
+      transcoding: false,
+    },
+    media: { pending: 0, working: 0 },
   })
   assert.deepEqual((await connected.inject({ method: 'GET', url: '/api/health' })).json(), {
     ok: true,
-    connectors: { outlook: true, assistant: false, routing: false, replay: false },
+    connectors: {
+      outlook: true,
+      assistant: false,
+      routing: false,
+      replay: false,
+      transcoding: false,
+    },
+    media: { pending: 0, working: 0 },
   })
   await bare.close()
   await connected.close()

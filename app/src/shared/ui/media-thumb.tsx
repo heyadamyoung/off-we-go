@@ -52,6 +52,7 @@ export default function MediaThumb({
       <Img item={item} w={w} h={h} className={className} style={style} alt={alt} eager={eager} />
     )
 
+  const converting = item.status === 'pending' || item.status === 'working'
   const length = durationLabel(item.durationMs)
   return (
     <span className="relative block size-full" style={style}>
@@ -67,7 +68,16 @@ export default function MediaThumb({
       ) : (
         <span className={'block size-full bg-ink/85 ' + (className || '')} />
       )}
-      {badge !== false && <PlayBadge size={badge} />}
+      {badge !== false &&
+        (converting ? (
+          <span
+            className="pointer-events-none absolute inset-0 grid place-items-center"
+            title="Getting this video ready">
+            <span className="size-2 animate-pulse rounded-full bg-white/80" />
+          </span>
+        ) : (
+          <PlayBadge size={badge} />
+        ))}
       {length && badge !== false && badge >= 22 && (
         <span
           className="pointer-events-none absolute bottom-1 right-1 rounded-md bg-black/70 px-1
