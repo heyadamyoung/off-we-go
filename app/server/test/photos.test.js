@@ -280,3 +280,96 @@ test('a video whose poster frame will not decode still lands, without one', asyn
   assert.equal(video.posterSrc, null)
   assert.ok(video.src, 'the film is the point; its poster is not')
 })
+
+test('an aged-out link is re-signed for a reader who may still see it', async t => {
+  const { origin, accessToken, trip, directory } = await videoServer(t)
+
+  const source = await sharp({
+    create: { width: 800, height: 600, channels: 3, background: '#4477aa' },
+  })
+    .jpeg()
+    .toBuffer()
+  const form = new FormData()
+  form.set('photo', new Blob([source], { type: 'image/jpeg' }), 'IMG_1.jpg')
+  const photo = await (
+    await fetch(`${origin}/api/trips/${trip.id}/photos`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessToken}` },
+      body: form,
+    })
+  ).json()
+
+  // The link the app is holding, aged past its signature. The signature names
+  // the public domain, so it is replayed against this test server's port.
+  const local = link => origin + new URL(link).pathname + new URL(link).search
+  const stale = new URL(photo.src)
+  stale.searchParams.set('expires', '1')
+  const refused = await fetch(origin + stale.pathname + stale.search)
+  assert.equal(refused.status, 403)
+  assert.equal((await refused.json()).code, 'media_link_expired')
+
+  const refreshed = await post(
+    `${origin}/api/media/links`,
+    { paths: [photo.storagePath, photo.thumbPath] },
+    accessToken,
+  )
+  assert.equal(refreshed.status, 200)
+  const { links } = await refreshed.json()
+  assert.ok(links[photo.storagePath], 'the photograph this reader may see is re-signed')
+
+  const served = await fetch(local(links[photo.storagePath]))
+  assert.equal(served.status, 200)
+  assert.equal(served.headers.get('content-type'), 'image/jpeg')
+  await readFile(join(directory, photo.storagePath))
+})
+
+test('re-signing is refused for a trip the asker is not on, and for nonsense', async t => {
+  const { origin, accessToken, trip } = await videoServer(t)
+
+  // A path shaped like another trip's: readable only by that trip's members.
+  const otherTripPath = '11111111-1111-4111-8111-111111111111/secret.jpg'
+  const answer = await post(
+    `${origin}/api/media/links`,
+    { paths: [otherTripPath, '../../etc/passwd', 'not-a-uuid/x.jpg'] },
+    accessToken,
+  )
+  assert.equal(answer.status, 200)
+  assert.deepEqual(await answer.json(), { links: {} }, 'nothing outside the asker is signed')
+
+  const unauthenticated = await post(`${origin}/api/media/links`, { paths: [] })
+  assert.equal(unauthenticated.status, 401)
+
+  const nonsense = await post(`${origin}/api/media/links`, { paths: 'everything' }, accessToken)
+  assert.equal(nonsense.status, 400)
+
+  // Its own trip's photograph is fine, which proves the refusals above are
+  // about access rather than the endpoint simply never signing anything.
+  const mine = await post(`${origin}/api/media/links`, { paths: [`${trip.id}/x.jpg`] }, accessToken)
+  assert.ok((await mine.json()).links[`${trip.id}/x.jpg`])
+})
+
+test('a video that cannot be recorded leaves nothing behind on the volume', async t => {
+  const { origin, accessToken, trip, directory, repository } = await videoServer(t)
+
+  /* The film streams to disk before the row is attempted, so the row failing
+     is exactly the case that leaks. A database that refuses the insert is the
+     honest way to reach it. */
+  repository.createPhoto = async () => {
+    throw new Error('the database said no')
+  }
+
+  const form = new FormData()
+  form.set('photo', new Blob([fakeMp4(2048)], { type: 'video/mp4' }), 'IMG_5.mp4')
+  const refused = await fetch(`${origin}/api/trips/${trip.id}/photos`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}` },
+    body: form,
+  })
+  assert.equal(refused.status, 500)
+
+  /* If the refusal does not sweep the bytes up, every failed upload is a
+     permanent leak on a volume the nightly backup copies in full. */
+  const { readdir } = await import('node:fs/promises')
+  const left = await readdir(join(directory, trip.id)).catch(() => [])
+  assert.deepEqual(left, [], `orphaned files left behind: ${left.join(', ')}`)
+})

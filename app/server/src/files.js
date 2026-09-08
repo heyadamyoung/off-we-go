@@ -1,9 +1,20 @@
 import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { constants, createReadStream } from 'node:fs'
+import { constants, createReadStream, createWriteStream } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { dirname, extname, normalize, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { videoExtension } from './media-types.js'
+
+/** Thrown when a stream runs past the ceiling it was given. */
+export class TooLarge extends Error {
+  constructor(limit) {
+    super(`Larger than the ${limit} byte limit`)
+    this.name = 'TooLarge'
+    this.code = 'MEDIA_TOO_LARGE'
+    this.limit = limit
+  }
+}
 
 export function createDiskFileStore({ directory }) {
   const root = resolve(directory)
@@ -63,13 +74,41 @@ export function createDiskFileStore({ directory }) {
     },
     /* A film, kept as it was filmed. There is no encoder on this box and no
        wish for one: re-encoding a holiday video costs minutes of CPU to make
-       it worse, and the phone already wrote something every browser plays. */
-    async storeVideo({ tripId, bytes, mime }) {
+       it worse, and the phone already wrote something every browser plays.
+
+       It is written straight from the wire to the disk and never held whole
+       in memory: a minute of 4K is a couple of hundred megabytes, and
+       buffering that on a 2GB box beside Postgres is how the API dies
+       mid-upload — taking every other request with it. */
+    async storeVideo({ tripId, source, mime, limit = Number.POSITIVE_INFINITY }) {
       const extension = videoExtension(mime)
       if (!extension) throw new Error('Unsupported video type')
       const storagePath = `${tripId}/${randomUUID()}.${extension}`
-      await writeAtomic(storagePath, bytes)
-      return { storagePath, bytes: bytes.length }
+      const target = absolute(storagePath)
+      await mkdir(dirname(target), { recursive: true })
+      const temporary = `${target}.${randomUUID()}.tmp`
+      let written = 0
+      /* The ceiling is enforced as the bytes go past, not after they have all
+         arrived: the point is never to hold or store more than the limit. */
+      async function* metered(chunks) {
+        for await (const chunk of chunks) {
+          written += chunk.length
+          if (written > limit) throw new TooLarge(limit)
+          yield chunk
+        }
+      }
+      try {
+        await pipeline(metered(source), createWriteStream(temporary, { flags: 'wx' }))
+      } catch (error) {
+        await rm(temporary, { force: true })
+        throw error
+      }
+      if (!written) {
+        await rm(temporary, { force: true })
+        throw new Error('The upload carried no bytes')
+      }
+      await rename(temporary, target)
+      return { storagePath, bytes: written }
     },
     /* The still that stands in for a film everywhere a film cannot play: the
        grid, the map marker, the strip under the viewer. It is derived from a

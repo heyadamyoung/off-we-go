@@ -4,6 +4,7 @@ import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import PhotoDetails from './photo-details'
+import VideoFrame from './video-frame'
 import { durationLabel } from '../../../mobile-videos-core'
 import { validLngLat } from '../../../shared/lib/geo'
 import type { MapTint } from '../../map'
@@ -216,16 +217,7 @@ function PhotoViewer({
               A film is not: on a video the tap belongs to play, pause and the
               scrubber, so the heart in the chrome is its only way in. */}
           {video ? (
-            <video
-              key={photo.id}
-              className="main"
-              src={photo.src}
-              poster={photo.posterSrc || undefined}
-              controls
-              playsInline
-              preload="metadata">
-              <track kind="captions" />
-            </video>
+            <VideoFrame photo={photo} />
           ) : (
             <button
               type="button"
