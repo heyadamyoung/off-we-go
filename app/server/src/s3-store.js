@@ -13,9 +13,11 @@ import { readFile, rm, stat } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { randomUUID } from 'node:crypto'
-import { extname } from 'node:path'
+import { extname, join } from 'node:path'
 import sharp from 'sharp'
-import { videoExtension } from './media-types.js'
+import { videoExtension, mediaContentType } from './media-types.js'
+import { MASTER_NAME, hlsDirectory } from './hls.js'
+import { filesUnder } from './files.js'
 import { EMPTY_SHA256, UNSIGNED_PAYLOAD, encodeKey, sha256Hex, signRequest } from './s3-signer.js'
 
 class ObjectMissing extends Error {
@@ -51,8 +53,9 @@ export function createS3FileStore({
     return new URL(`${base.protocol}//${bucket}.${base.host}/${key}`)
   }
 
-  const send = async (method, storagePath, { body, headers = {}, payloadHash } = {}) => {
+  const send = async (method, storagePath, { body, headers = {}, payloadHash, query } = {}) => {
     const url = urlFor(storagePath)
+    if (query) for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value)
     const signed = signRequest({
       method,
       url,
@@ -261,6 +264,65 @@ export function createS3FileStore({
         })
         .catch(error => out.destroy(error))
       return out
+    },
+    /* A film's adaptive stream, put up whole. The master playlist goes last:
+       it is the only path anything else records, so a tree whose upload died
+       halfway is never referenced by anything and is swept up as ordinary
+       unreferenced bytes rather than served as a broken stream. */
+    async storeHls({ storagePath, directory }) {
+      const prefix = hlsDirectory(storagePath)
+      const files = (await filesUnder(directory)).filter(name => name !== MASTER_NAME)
+      let bytes = 0
+      for (const name of files) {
+        const written = await putFile(
+          `${prefix}/${name}`,
+          join(directory, name),
+          mediaContentType(name),
+        )
+        bytes += written.bytes
+      }
+      const master = await putFile(
+        `${prefix}/${MASTER_NAME}`,
+        join(directory, MASTER_NAME),
+        mediaContentType(MASTER_NAME),
+      )
+      return {
+        hlsPath: `${prefix}/${MASTER_NAME}`,
+        files: files.length + 1,
+        bytes: bytes + master.bytes,
+      }
+    },
+    /* Everything under a prefix. An object store has no directories, so a
+       tree is a listing and a great many deletes — which is precisely why
+       this is the store's problem rather than the caller's. */
+    async removeTree(tree) {
+      const under = `${String(tree).replace(/\/+$/, '')}/`
+      let token = null
+      do {
+        const response = await send('GET', '', {
+          query: {
+            'list-type': '2',
+            prefix: keyFor(under),
+            'max-keys': '1000',
+            ...(token ? { 'continuation-token': token } : {}),
+          },
+        })
+        const xml = await response.text()
+        /* The listing is keys and a continuation token; a parser for the
+           whole of S3's XML would be a dependency to keep something this
+           small honest. */
+        const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map(([, key]) =>
+          key.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
+        )
+        for (const key of keys) {
+          // Back to a storage path: the store adds its own prefix on the way out.
+          await this.remove(prefix ? key.slice(prefix.length) : key)
+        }
+        const more = /<IsTruncated>true<\/IsTruncated>/.test(xml)
+        token = more
+          ? (/<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(xml) || [])[1]
+          : null
+      } while (token)
     },
     async remove(storagePath) {
       await send('DELETE', storagePath).catch(error => {

@@ -86,6 +86,9 @@ importers:
       heic-to:
         specifier: 1.5.2
         version: 1.5.2
+      hls.js:
+        specifier: 1.7.2
+        version: 1.7.2
       maplibre-gl:
         specifier: ^6.5.0
         version: 6.5.0
@@ -2459,6 +2462,9 @@ packages:
 
   heic-to@1.5.2:
     resolution: {integrity: sha512-8Fns+lZHAWmz5U5IUxDeXKwIf3foBoKNPLxxFY4B0MkLjNuomEIHCoDbDE+x/llFK3NCEO1cu4+n3iUKY+Svmw==}
+
+  hls.js@1.7.2:
+    resolution: {integrity: sha512-CW/pPvSOFIRsosbwxrYaE9ERmpTo5fbTqL7wCvuCFlqW1Bmb1K5fXsY7yiH95rmlr4rVuA7UXHbM/cIXQ6AXwg==}
 
   hono@4.13.5:
     resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
@@ -5820,6 +5826,8 @@ snapshots:
       srvx: 0.11.22
 
   heic-to@1.5.2: {}
+
+  hls.js@1.7.2: {}
 
   hono@4.13.5: {}
 

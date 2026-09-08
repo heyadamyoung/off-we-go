@@ -14,7 +14,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { alreadyPlayable, posterFrame, probe, toPlayableMp4 } from './transcode.js'
+import { alreadyPlayable, posterFrame, probe, toHlsLadder, toPlayableMp4 } from './transcode.js'
 import { span, stamp } from './tracing.js'
 
 /** How long a worker may hold a job before others assume it died. */
@@ -31,10 +31,56 @@ export function createMediaWorker({
   workerId = `${process.env.HOSTNAME || 'api'}-${randomUUID().slice(0, 8)}`,
   idleMs = 5_000,
   onFinished = null,
+  /* Whether this fleet publishes adaptive streams as well as converting.
+     Off, and everything still works: a film is a single MP4 served by the
+     range, which is what it was before and what every browser can still
+     play. On, and the same film also comes in several sizes a player can
+     move between as somebody walks out of wifi. */
+  ladders = true,
   now = () => new Date(),
 }) {
   let running = false
   let timer = null
+
+  /* The same film at several sizes, published as a stream.
+
+     Its own job rather than the tail of the conversion, because the two are
+     worth different things and fail differently: the conversion is what makes
+     a film playable at all, and this only makes it play better. A ladder that
+     will not build must cost the film nothing — the MP4 stays exactly where
+     it is, and the row goes on saying ready. */
+  const buildLadder = async (job, scratch) => {
+    const source = join(scratch, 'source')
+    const target = join(scratch, 'hls')
+    await fileStore.download(job.storagePath, source)
+    const facts = await probe(source)
+    stamp({
+      'video.width': facts.width || 0,
+      'video.height': facts.height || 0,
+      'video.kbps': facts.videoKbps || 0,
+      'video.duration_ms': facts.durationMs || 0,
+    })
+
+    const built = await toHlsLadder({ source, target, facts })
+    /* The ladder as built, on the span: which sizes a film was actually
+       published at is the first question when somebody says it looked soft,
+       and it is not otherwise recorded anywhere. */
+    stamp({
+      'hls.rungs': built.rungs.length,
+      'hls.ladder': built.rungs
+        .map(rung => `${rung.width}x${rung.height}@${rung.videoKbps}k`)
+        .join(' '),
+      'hls.bytes': built.bytes,
+    })
+
+    const stored = await fileStore.storeHls({ storagePath: job.storagePath, directory: target })
+    stamp({ 'hls.files': stored.files })
+    await repository.completeMediaJob({
+      id: job.id,
+      photoId: job.photoId,
+      hlsPath: stored.hlsPath,
+    })
+  }
 
   /* One job, start to finish. Returns whether anything was done, so the loop
      knows to come straight back rather than sleep. */
@@ -47,9 +93,10 @@ export function createMediaWorker({
     if (!job) return false
 
     return span(
-      'convert video',
+      job.kind === 'hls' ? 'build video ladder' : 'convert video',
       {
         'job.id': job.id,
+        'job.kind': job.kind || 'transcode',
         'photo.id': job.photoId,
         'job.attempts': job.attempts,
         'worker.id': workerId,
@@ -58,6 +105,12 @@ export function createMediaWorker({
         const scratch = await mkdtemp(join(tmpdir(), 'offwego-convert-'))
         const started = now().getTime()
         try {
+          if (job.kind === 'hls') {
+            await buildLadder(job, scratch)
+            stamp({ 'job.outcome': 'done', 'job.ms': now().getTime() - started })
+            onFinished?.({ ...job, streamed: true })
+            return true
+          }
           const original = join(scratch, 'original')
           const converted = join(scratch, 'converted.mp4')
           const poster = join(scratch, 'poster.jpg')
@@ -121,6 +174,11 @@ export function createMediaWorker({
             /* The bytes it replaced are nobody's now; the deletion queue
                sweeps them so a failed sweep is retried rather than lost. */
             replaced: stored ? job.storagePath : null,
+            /* And now the ladder, against whatever the file has just become.
+               Asked for in the same transaction that finished this, so a
+               crash in between cannot leave a converted film that nobody
+               ever queues renditions for. */
+            ...(ladders ? { thenQueue: 'hls' } : {}),
           })
           stamp({ 'job.outcome': 'done', 'job.ms': now().getTime() - started })
           onFinished?.({ ...job, converted: needsConvert })
@@ -134,12 +192,24 @@ export function createMediaWorker({
             'job.ffmpeg': String(error.stderr || '').slice(-600),
           })
           logger.warn?.(
-            { err: error, jobId: job.id, photoId: job.photoId, ffmpeg: error.stderr },
+            {
+              err: error,
+              jobId: job.id,
+              photoId: job.photoId,
+              kind: job.kind,
+              ffmpeg: error.stderr,
+            },
             'media conversion failed',
           )
           await repository.failMediaJob({
             id: job.id,
             photoId: job.photoId,
+            /* Which work failed, because it decides what it costs. A film
+               whose conversion will not happen has to say so; a film whose
+               ladder will not build has lost nothing anybody can see, and
+               marking it failed would put an error over something that
+               plays perfectly well. */
+            kind: job.kind || 'transcode',
             error:
               `${error.message || error}${error.stderr ? ` :: ${error.stderr.slice(-400)}` : ''}`.slice(
                 0,

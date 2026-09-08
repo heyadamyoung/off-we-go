@@ -83,6 +83,10 @@ services:
       # a higher count on a worker node — the queue coordinates them.
       WAYFARE_MEDIA_WORKERS: ${WAYFARE_MEDIA_WORKERS:-1}
       WAYFARE_TRANSCODE: ${WAYFARE_TRANSCODE:-on}
+      # Adaptive renditions as well as the single file. Several encodes and a
+      # few times the storage per film, which is what buys a video that keeps
+      # playing when the line gets worse rather than stopping.
+      WAYFARE_VIDEO_LADDERS: ${WAYFARE_VIDEO_LADDERS:-1}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-auto}
