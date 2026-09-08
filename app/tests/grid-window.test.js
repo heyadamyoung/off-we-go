@@ -22,10 +22,36 @@ test('the two spacers and the rendered rows always add up to the same height', (
 
   for (const scrolled of [0, 500, 12_345, full - 100, full * 2]) {
     const window = gridWindow({ ...phone, total, scrolled })
+    /* Asserted before it is used: a window whose start is past its end
+       renders nothing, and the height arithmetic below cancels out to the
+       right answer anyway — so this invariant is what stops that passing. */
+    assert.ok(window.start <= window.end, `start ${window.start} past end ${window.end}`)
     const renderedRows = Math.ceil((window.end - window.start) / 3)
     const measured = window.topPad + renderedRows * phone.rowHeight + window.bottomPad
     assert.equal(measured, full, `scrollbar changed size at ${scrolled}px`)
   }
+})
+
+test('a scroller sitting past the whole grid still shows the grid', () => {
+  /* The trip panel has one scroller for all its views. Scroll a long list of
+     stops, tap Photos, and the grid is measured as being somewhere far above
+     the window — which used to put its first row past its last and render
+     nothing at all. Not a slow grid or a short one: a blank one, with the
+     scrollbar still claiming everything was there. */
+  for (const scrolled of [2_000, 50_000, 1e7]) {
+    const window = gridWindow({ ...phone, total: 12, scrolled })
+    assert.ok(window.start <= window.end, `start ${window.start} past end ${window.end}`)
+    assert.ok(
+      window.end - window.start > 0,
+      `nothing rendered with the scroller ${scrolled}px past a twelve-photograph grid`,
+    )
+  }
+
+  // And on a grid long enough to really be scrolled past, it shows the end.
+  const long = gridWindow({ ...phone, total: 3000, scrolled: 1e7 })
+  assert.equal(long.end, 3000, 'the last photograph is what is nearest the scroller')
+  assert.ok(long.start < long.end)
+  assert.equal(long.bottomPad, 0)
 })
 
 test('scrolling moves the window down by whole rows', () => {
