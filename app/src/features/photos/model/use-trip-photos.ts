@@ -8,7 +8,6 @@ import {
   updatePhoto,
   uploadPhoto,
 } from '../../../backend'
-import { track } from '../../../shared/lib/telemetry'
 import { photoUploadMetadata } from '../../../mobile-photos-core'
 import { clamp } from '../../../shared/lib/numbers'
 import { appErrorMessage } from '../../../user-messages-core'
@@ -48,22 +47,26 @@ export default function useTripPhotos({
      a stop's tally, the grid — still wants all of them, so the rest is
      fetched quietly behind the first paint instead of being waited for.
 
-     A ceiling, because "all of them" on a trip somebody has been adding to
-     for a year is not a thing a phone should hold; hitting it is counted
-     rather than hidden, because it is the signal that this needs to become
-     windowed rendering rather than a bigger number. */
-  const MOST_TO_HOLD = 2000
+     All of them, with no ceiling. The map clusters what it draws and the grid
+     renders only the rows on screen, so a year of photographs costs a row in
+     an array each rather than an element each. Holding a number the trip did
+     not choose would mean a photograph somebody took being missing from their
+     own trip, which is a worse failure than a large array. */
   const paging = useRef(false)
   useEffect(() => {
     const total = data.photoCount ?? 0
-    if (paging.current || photos.length >= Math.min(total, MOST_TO_HOLD)) return
+    if (paging.current || photos.length >= total) return
     paging.current = true
     let alive = true
     const oldest = photos.reduce(
       (low, photo) => Math.min(low, photo.seq ?? Number.POSITIVE_INFINITY),
       Number.POSITIVE_INFINITY,
     )
-    loadTripPhotoPage(tripId, Number.isFinite(oldest) ? oldest : null)
+    /* The largest page the server will hand over. This runs behind a screen
+       that is already drawn, so what matters is the number of round trips,
+       not the size of any one of them: a trip of ten thousand is twenty
+       requests at five hundred and fifty at two hundred. */
+    loadTripPhotoPage(tripId, Number.isFinite(oldest) ? oldest : null, 500)
       .then(page => {
         if (!alive || !page.photos.length) return
         setPhotos(list => {
@@ -85,13 +88,6 @@ export default function useTripPhotos({
       alive = false
     }
   }, [tripId, photos, data.photoCount])
-
-  useEffect(() => {
-    const total = data.photoCount ?? 0
-    if (total > MOST_TO_HOLD) {
-      track('trip photos capped', { held: String(MOST_TO_HOLD), total: String(total) })
-    }
-  }, [data.photoCount])
 
   // Ids, not a snapshot: the viewer must reflect edits and deletions made while
   // it is open, which a captured array cannot.

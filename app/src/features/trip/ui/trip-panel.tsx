@@ -3,6 +3,7 @@ import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { SightsList, type SightsListProps } from '../../sights'
 import { SegmentChain } from '../../transport'
+import useGridWindow from '../model/use-grid-window'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
 import ChatPanel, { type ChatProps } from './panel-chat'
@@ -252,6 +253,7 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
   const shown = (photoBy ? photos.filter(photo => photo.by === photoBy) : photos).slice().reverse()
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
   const filter = 'rounded-full px-3 py-1.5 text-xs font-bold'
+  const { ref: grid, visible } = useGridWindow(shown.length)
 
   return (
     <>
@@ -273,28 +275,38 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
         ))}
       </div>
       {shown.length ? (
-        <div className="grid grid-cols-3 gap-2 p-3">
-          {shown.map(photo => (
-            <button
-              key={photo.id}
-              aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
-              className={
-                'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
-                (selected === photo.id ? 'outline outline-2 -outline-offset-2 outline-accent' : '')
-              }
-              onClick={() =>
-                onSelect(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
-              }>
-              <MediaThumb item={photo} w={320} h={320} className="size-full object-cover" />
-              {photo.caption && (
-                <span
-                  className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
-                                 to-transparent px-2 pb-1.5 pt-4 text-[11px] text-white">
-                  {photo.caption}
-                </span>
-              )}
-            </button>
-          ))}
+        /* Only the rows anybody can see are in the document. The two spacers
+           stand in for the rest, so the scrollbar is honest and nothing jumps
+           — and a trip can hold as many photographs as it likes without the
+           grid being the reason it cannot. */
+        <div className="p-3" ref={grid}>
+          <div style={{ height: visible.topPad }} />
+          <div className="grid grid-cols-3 gap-2">
+            {shown.slice(visible.start, visible.end).map(photo => (
+              <button
+                key={photo.id}
+                aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
+                className={
+                  'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
+                  (selected === photo.id
+                    ? 'outline outline-2 -outline-offset-2 outline-accent'
+                    : '')
+                }
+                onClick={() =>
+                  onSelect(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
+                }>
+                <MediaThumb item={photo} w={320} h={320} className="size-full object-cover" />
+                {photo.caption && (
+                  <span
+                    className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
+                               to-transparent px-2 pb-1.5 pt-4 text-[11px] text-white">
+                    {photo.caption}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <div style={{ height: visible.bottomPad }} />
         </div>
       ) : (
         <p className="hint p-4">No photos or videos yet. Add some from the camera button.</p>
