@@ -56,6 +56,8 @@ test('production compose runs a private pinned Logto service behind the existing
       LOGTO_SECRET_VAULT_KEK: 'base64-key',
       SMTP_HOST: 'smtp.example.com',
       SMTP_FROM: 'Off We Go <owner@example.com>',
+      MINIO_ROOT_PASSWORD: 'object-store-root-secret',
+      S3_SECRET_ACCESS_KEY: 'object-store-app-secret',
     },
     encoding: 'utf8',
   })
@@ -69,6 +71,55 @@ test('production compose runs a private pinned Logto service behind the existing
   assert.equal(compose.services.logto.environment.TRUST_PROXY_HEADER, '1')
   assert.equal(compose.services.web.environment.LOGTO_DOMAIN, 'auth.example.com')
   assert.equal(compose.services.web.environment.LOGTO_ADMIN_DOMAIN, 'auth-admin.example.com')
+})
+
+/* The object store holds every photograph anyone has taken on a trip. Two
+   things about how it is run are worth a test rather than a habit, because
+   both are invisible when they are wrong and catastrophic when they are. */
+test('the object store is private, and the api is not its root user', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const result = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
+    cwd: appRoot,
+    env: {
+      ...process.env,
+      WAYFARE_DOMAIN: 'offwego.example.com',
+      POSTGRES_PASSWORD: 'database-secret',
+      LOGTO_DOMAIN: 'auth.example.com',
+      LOGTO_ADMIN_DOMAIN: 'auth-admin.example.com',
+      LOGTO_POSTGRES_PASSWORD: 'logto-database-secret',
+      LOGTO_SECRET_VAULT_KEK: 'base64-key',
+      WAYFARE_OIDC_ISSUER: 'https://auth.example.com/oidc',
+      WAYFARE_OIDC_CLIENT_ID: 'offwego-web',
+      WAYFARE_OIDC_CLIENT_SECRET: 'oidc-secret',
+      MINIO_ROOT_PASSWORD: 'object-store-root-secret',
+      S3_SECRET_ACCESS_KEY: 'object-store-app-secret',
+    },
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  const compose = JSON.parse(result.stdout)
+
+  /* Nothing on the internet. The api reads and writes on a viewer's behalf and
+     the console is for a person on the box, so the only port published is the
+     console, on loopback, reachable through an SSH tunnel. A bucket of
+     somebody's holiday open to the world is the failure this prevents. */
+  for (const published of compose.services.minio.ports || []) {
+    assert.equal(
+      published.host_ip,
+      '127.0.0.1',
+      `minio published ${published.published} to ${published.host_ip || 'every interface'}`,
+    )
+    assert.notEqual(String(published.target), '9000', 'the S3 port is never published')
+  }
+
+  /* And the api is given its own account rather than the root one, so a
+     leaked application key cannot reach the store's administration — it can
+     read and write one bucket and nothing else. */
+  const api = compose.services.api.environment
+  assert.equal(api.S3_ACCESS_KEY_ID, 'offwego-api')
+  assert.notEqual(api.S3_SECRET_ACCESS_KEY, 'object-store-root-secret')
+  assert.equal(api.S3_ACCESS_KEY_ID === compose.services.minio.environment.MINIO_ROOT_USER, false)
 })
 
 test('production restore includes the Logto identity database', () => {

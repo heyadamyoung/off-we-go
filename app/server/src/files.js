@@ -208,6 +208,22 @@ export function createDiskFileStore({ directory }) {
         bytes: bytes + master.length,
       }
     },
+    /* Bytes at a path, exactly as given, with no derivatives and no renaming.
+       Every other write here decides where something goes; this one is told,
+       which is what moving a store's whole contents somewhere else needs. */
+    async putObject({ storagePath, file }) {
+      const destination = absolute(storagePath)
+      await mkdir(dirname(destination), { recursive: true })
+      const temporary = `${destination}.${randomUUID()}.tmp`
+      try {
+        await pipeline(createReadStream(file), createWriteStream(temporary, { flags: 'wx' }))
+        await rename(temporary, destination)
+      } catch (error) {
+        await rm(temporary, { force: true })
+        throw error
+      }
+      return { storagePath, bytes: (await stat(destination)).size }
+    },
     /* A whole stream, gone. The deletion queue holds paths rather than
        trees, so a prefix arrives here with a trailing slash and is expanded
        on the store that knows how — which on a volume is one call. */
