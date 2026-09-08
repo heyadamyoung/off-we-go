@@ -51,6 +51,30 @@ export function withVideoMime(file: MetadataFile): MetadataFile {
   return new File([file], file.name, { type: mime, lastModified: file.lastModified })
 }
 
+/* Whether this browser will decode a film before forty megabytes are pulled
+   down a phone line to find out. `canPlayType` answers "probably", "maybe" or
+   an empty string; only the empty string is a definite no, and that is the
+   case worth catching — an iPhone's HEVC-in-.mov, which Safari plays and
+   Chrome and Android do not. Anything less certain is left to try. */
+export function canProbablyPlay(
+  mime: string | null | undefined,
+  probe?: (type: string) => string,
+): boolean {
+  const type = String(mime || '').trim()
+  if (!type) return true
+  const ask =
+    probe ||
+    (typeof document === 'undefined'
+      ? null
+      : (value: string) => document.createElement('video').canPlayType(value))
+  if (!ask) return true
+  try {
+    return ask(type) !== ''
+  } catch {
+    return true
+  }
+}
+
 /** Three hours is past anything a camera roll holds; longer is a bad decode. */
 const MAX_DURATION_MS = 10_800_000
 

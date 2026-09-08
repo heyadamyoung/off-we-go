@@ -5,12 +5,21 @@ import {
   done,
   enqueue,
   fail,
+  hold,
   next,
+  requeue,
   retry,
+  retryDelay,
+  worthRetrying,
   type Upload,
 } from '../../../upload-queue-core'
 import { appErrorMessage } from '../../../user-messages-core'
 import { track } from '../../../shared/lib/telemetry'
+
+/* How many goes a photograph gets on its own before a person is asked. Three
+   covers the shape of a real mobile outage — a tunnel, a lift, a dead spot —
+   without holding a doomed upload for ever. */
+const OWN_ATTEMPTS = 3
 import type { UploadInput, Toast } from '../../../shared/model/types'
 
 interface Queued extends Omit<Upload, 'state'> {
@@ -37,6 +46,7 @@ export default function useUploadQueue({
   const [uploads, setUploads] = useState<Upload[]>([])
   const inputs = useRef(new Map<string, UploadInput>())
   const sending = useRef(false)
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
 
   const add = useCallback((items: Queued[]) => {
     for (const item of items) inputs.current.set(item.key, item.input)
@@ -79,6 +89,29 @@ export default function useUploadQueue({
         })
       })
       .catch(error => {
+        const attempts = waiting.attempts || 1
+        const again = worthRetrying(error) && attempts < OWN_ATTEMPTS
+        /* Every failure is counted whether or not it is shown, because "one
+           person's videos keep bouncing" is a question about the ones that
+           quietly succeeded on the second go too. */
+        track('upload failed', {
+          kind: waiting.kind || 'photo',
+          attempt: String(attempts),
+          retrying: again ? 'yes' : 'no',
+          status: String((error as { status?: number } | null)?.status ?? 'none'),
+        })
+        if (again) {
+          /* A dropped signal is not the traveller's problem to solve. It goes
+             quietly back into the queue and nothing is said unless the last
+             go fails too. */
+          const timer = setTimeout(() => {
+            timers.current.delete(timer)
+            setUploads(list => requeue(list, waiting.key))
+          }, retryDelay(attempts))
+          timers.current.add(timer)
+          setUploads(list => hold(list, waiting.key, 'Waiting for a better signal…'))
+          return
+        }
         setUploads(list => fail(list, waiting.key, appErrorMessage(error, 'upload-photo')))
         toast(appErrorMessage(error, 'upload-photo'), 'error')
       })
@@ -86,6 +119,15 @@ export default function useUploadQueue({
         sending.current = false
       })
   }, [uploads, send, toast])
+
+  // A queue that outlives its screen must not keep waking it up.
+  useEffect(
+    () => () => {
+      for (const timer of timers.current) clearTimeout(timer)
+      timers.current.clear()
+    },
+    [],
+  )
 
   return { uploads, add, tryAgain, forget }
 }

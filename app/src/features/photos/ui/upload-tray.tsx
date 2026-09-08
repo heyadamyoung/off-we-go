@@ -48,7 +48,9 @@ export default function UploadTray({
             <span className="flex min-w-0 flex-1 flex-col">
               <b className="truncate text-xs font-semibold">{upload.name}</b>
               <span className="truncate text-[11px] text-faint">
-                {upload.state === 'failed' ? upload.error : 'Uploading…'}
+                {upload.state === 'failed' || upload.state === 'retrying'
+                  ? upload.error
+                  : 'Uploading…'}
               </span>
             </span>
             {upload.state === 'failed' && (

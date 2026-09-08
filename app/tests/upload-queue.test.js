@@ -8,9 +8,13 @@ import {
   enqueue,
   fail,
   failed,
+  hold,
   next,
   queued,
+  requeue,
   retry,
+  retryDelay,
+  worthRetrying,
 } from '../src/upload-queue-core.ts'
 
 const two = enqueue(
@@ -109,4 +113,37 @@ test('the tray names what is going up: films, pictures, or a mix of the two', ()
 
   // A failure is not still going up, so it is not counted in the going noun.
   assert.equal(countable(fail(films, 'v2', 'no signal')), 'video')
+})
+
+test('a dropped line is retried unprompted; a refusal is not', () => {
+  // No response at all: the network, not the file.
+  assert.equal(worthRetrying(new Error('Failed to fetch')), true)
+  assert.equal(worthRetrying(Object.assign(new Error('gateway'), { status: 502 })), true)
+  assert.equal(worthRetrying(Object.assign(new Error('slow down'), { status: 429 })), true)
+  // The server looked at this upload and said no; sending it again is data burnt.
+  assert.equal(worthRetrying(Object.assign(new Error('too big'), { status: 413 })), false)
+  assert.equal(worthRetrying(Object.assign(new Error('nope'), { status: 403 })), false)
+
+  // Backoff grows, then stops growing.
+  assert.deepEqual([1, 2, 3].map(retryDelay), [2000, 6000, 18000])
+  assert.equal(retryDelay(9), 30_000)
+})
+
+test('a retrying upload is neither a failure nor something to prod', () => {
+  const going = begin(enqueue([], [{ key: 'v', name: 'clip.mp4', kind: 'video' }]), 'v')
+  assert.equal(going[0].attempts, 1, 'each send is counted, so backoff can grow')
+
+  const held = hold(going, 'v', 'Waiting for a better signal…')
+  assert.equal(held[0].state, 'retrying')
+  assert.deepEqual(failed(held), [], 'it has not failed — it is coming round again')
+  assert.equal(queued(held), 1, 'and it still counts as going up')
+  assert.equal(next(held), null, 'but it must not be picked up before its delay')
+
+  const again = requeue(held, 'v')
+  assert.equal(next(again)?.key, 'v')
+  assert.equal(again[0].attempts, 1, 'requeue keeps the count; only a person resets it')
+  assert.equal(begin(again, 'v')[0].attempts, 2)
+
+  // A person asking again is a fresh start, patience included.
+  assert.equal(retry(fail(going, 'v', 'no'), 'v')[0].attempts, 0)
 })

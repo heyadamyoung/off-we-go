@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  canProbablyPlay,
   durationLabel,
   isVideoFile,
   posterSize,
@@ -198,4 +199,37 @@ test('only a film carries a poster and a length into the upload', () => {
   assert.equal(photo.kind, undefined)
   assert.equal(photo.poster, undefined)
   assert.equal(photo.durationMs, undefined)
+})
+
+test('a format the browser will not decode is known before the bytes are fetched', () => {
+  // An empty answer is the browser's definite no — the iPhone HEVC case.
+  assert.equal(
+    canProbablyPlay('video/quicktime', () => ''),
+    false,
+  )
+  assert.equal(
+    canProbablyPlay('video/mp4', () => 'probably'),
+    true,
+  )
+  // "maybe" is not a no, so it is left to try rather than refused up front.
+  assert.equal(
+    canProbablyPlay('video/mp4', () => 'maybe'),
+    true,
+  )
+
+  // Nothing known, nothing to probe with: never block on a guess.
+  assert.equal(
+    canProbablyPlay('', () => ''),
+    true,
+  )
+  assert.equal(
+    canProbablyPlay(null, () => ''),
+    true,
+  )
+  assert.equal(
+    canProbablyPlay('video/mp4', () => {
+      throw new Error('no media element here')
+    }),
+    true,
+  )
 })

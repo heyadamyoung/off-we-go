@@ -315,6 +315,20 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
           </div>
         </div>
       )}
+      {/* A film this device could not draw a frame from is a film it could not
+          decode, and the people on the trip are mostly holding the same kind
+          of phone. Better said now than discovered on the map. */}
+      {chosen?.isVideo && !chosen.posterUrl && (
+        <div className="rounded-xl border border-line bg-raised p-4">
+          <b className="flex items-center gap-1.5 text-xs text-muted">
+            <Icon n="video" s={14} /> No preview frame
+          </b>
+          <p className="hint mt-1">
+            This device could not decode a frame from this video, so it will have no picture on the
+            map and may not play for everyone. It uploads exactly as filmed either way.
+          </p>
+        </div>
+      )}
       {files.length > 0 && placement && !placement.previewPoint && (
         <div className="rounded-xl border border-line bg-raised p-4">
           <b className="flex items-center gap-1.5 text-xs text-muted">
