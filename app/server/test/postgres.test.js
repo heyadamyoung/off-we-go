@@ -702,3 +702,64 @@ test('the VPS fails closed when Logto has no default sign-in experience to confi
     await client.end()
   }
 })
+
+test('photograph order is counted within a trip, and never handed out twice', async t => {
+  assert.ok(moduleUnderTest?.createPostgresRepository)
+  const admin = new pg.Client({ connectionString: databaseUrl })
+  await admin.connect()
+  t.after(() => admin.end())
+  await admin.query('drop schema if exists public cascade; create schema public')
+
+  const repository = await moduleUnderTest.createPostgresRepository({
+    databaseUrl,
+    adminEmail: 'owner@example.com',
+  })
+  await repository.migrate()
+  t.after(() => repository.close?.())
+
+  await repository.reserveProfileHandle({
+    reservationHash: 'ordering-handle-reservation',
+    handle: 'ordering-owner',
+    expiresAt: new Date(Date.now() + 60 * 60_000),
+  })
+  const user = await repository.resolveOidcUser({
+    issuer: 'https://identity.example.com/oidc',
+    subject: 'ordering-user',
+    email: 'owner@example.com',
+    handleReservationHash: 'ordering-handle-reservation',
+  })
+  assert.ok(user?.id, 'the test needs a user before it can own a trip')
+  const one = await repository.createTrip(user, { title: 'Iceland', dayCount: 1 })
+  const two = await repository.createTrip(user, { title: 'Japan', dayCount: 1 })
+  assert.ok(one?.id && two?.id, 'and two trips to number photographs within')
+
+  const add = (trip, name) =>
+    repository.createPhoto(user, trip.id, {
+      stopId: null,
+      lng: 1,
+      lat: 2,
+      caption: name,
+      locationSource: 'manual',
+      storagePath: `${trip.id}/${name}.jpg`,
+      thumbPath: `${trip.id}/${name}.thumb.jpg`,
+    })
+
+  /* Under one shared sequence these interleaved inserts would number
+     1,2,3,4 across both trips, so each trip's own photographs came out
+     numbered with the other trip's in the gaps. */
+  const a1 = await add(one, 'a1')
+  const b1 = await add(two, 'b1')
+  const a2 = await add(one, 'a2')
+  const b2 = await add(two, 'b2')
+
+  assert.equal(a1.seq, 1, 'each trip counts from its own beginning')
+  assert.equal(b1.seq, 1)
+  assert.equal(a2.seq, 2, 'and is not moved along by what other trips do')
+  assert.equal(b2.seq, 2)
+
+  /* The mark only goes up. `seq` is the cursor the app pages with, so a
+     number coming round again would silently skip or repeat a page. */
+  await repository.deletePhoto(user, one.id, a2.id)
+  const a3 = await add(one, 'a3')
+  assert.equal(a3.seq, 3, 'a deleted position is retired, not reissued')
+})
