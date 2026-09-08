@@ -292,11 +292,18 @@ export function createS3FileStore({
         bytes: bytes + master.bytes,
       }
     },
+    /* Bytes at a path, exactly as given. Every other write here decides where
+       something goes; this one is told, which is what moving a store's whole
+       contents into this one needs. */
+    async putObject({ storagePath, file, contentType }) {
+      return putFile(storagePath, file, contentType || mediaContentType(storagePath))
+    },
     /* Everything under a prefix. An object store has no directories, so a
        tree is a listing and a great many deletes — which is precisely why
        this is the store's problem rather than the caller's. */
     async removeTree(tree) {
       const under = `${String(tree).replace(/\/+$/, '')}/`
+      const found = []
       let token = null
       do {
         const response = await send('GET', '', {
@@ -311,18 +318,25 @@ export function createS3FileStore({
         /* The listing is keys and a continuation token; a parser for the
            whole of S3's XML would be a dependency to keep something this
            small honest. */
-        const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map(([, key]) =>
-          key.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
-        )
-        for (const key of keys) {
+        for (const [, key] of xml.matchAll(/<Key>([^<]*)<\/Key>/g)) {
           // Back to a storage path: the store adds its own prefix on the way out.
-          await this.remove(prefix ? key.slice(prefix.length) : key)
+          const path = key.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          found.push(prefix ? path.slice(prefix.length) : path)
         }
         const more = /<IsTruncated>true<\/IsTruncated>/.test(xml)
         token = more
           ? (/<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(xml) || [])[1]
           : null
       } while (token)
+
+      /* Listed to the end before anything is deleted. Deleting as the pages
+         arrive works against a store whose continuation token names the last
+         key it handed over, and silently skips half a film against one that
+         pages by position — the list shifts under the cursor. A film's tree
+         is a few hundred names; holding them is nothing beside leaving
+         segments nobody can reach and nobody is charging us less for. */
+      for (const path of found) await this.remove(path)
+      return { removed: found.length }
     },
     async remove(storagePath) {
       await send('DELETE', storagePath).catch(error => {

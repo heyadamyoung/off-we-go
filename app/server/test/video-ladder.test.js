@@ -8,6 +8,7 @@ import { buildServer } from '../src/app.js'
 import { createDiskFileStore } from '../src/files.js'
 import { createMediaWorker } from '../src/media-worker.js'
 import { createMemoryRepository } from './memory-repository.js'
+import { stubStore } from './fake-bucket.js'
 import { authenticate } from './auth-helper.js'
 
 /* What a player actually does with a film, done here over HTTP.
@@ -56,11 +57,11 @@ const film = (path, { width = 640, height = 360, seconds = 6 } = {}) => {
   return path
 }
 
-async function world(t) {
+async function world(t, { store = null } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'offwego-ladder-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
-  const fileStore = createDiskFileStore({ directory })
+  const fileStore = store || createDiskFileStore({ directory })
   const app = await buildServer({
     repository,
     fileStore,
@@ -124,9 +125,13 @@ test('a player can walk the whole ladder, and every link in it is signed', { ski
   const master = await replay(place.origin, row.hlsSrc)
   assert.equal(master.status, 200)
   assert.equal(master.headers.get('content-type')?.split(';')[0], 'application/vnd.apple.mpegurl')
-  /* Never cached: it holds one reader's signatures, and a shared copy would
-     be somebody else's link handed to a stranger. */
-  assert.match(master.headers.get('cache-control') || '', /no-store/)
+  /* Shareable, because links are minted in windows rather than off the clock:
+     every reader in one window gets a byte-identical playlist, so an edge can
+     answer all of them from one fetch. Not past that window, though — the
+     body changes with it. */
+  const caching = master.headers.get('cache-control') || ''
+  assert.match(caching, /^public,/)
+  assert.ok(Number(/max-age=(\d+)/.exec(caching)[1]) <= 3600)
   const masterText = await master.text()
   assert.match(masterText, /#EXTM3U/)
 
@@ -193,6 +198,52 @@ test('the renditions are cut at the same instants, or switching stutters', { ski
   // And the sizes really are different, or there was nothing to choose from.
   const resolutions = [...masterText.matchAll(/RESOLUTION=(\d+x\d+)/g)].map(([, value]) => value)
   assert.equal(new Set(resolutions).size, resolutions.length, 'two rungs of the same size')
+})
+
+test('two people on one trip are handed the very same links', { skip }, async t => {
+  const place = await world(t)
+  const row = await uploaded(place, film(join(place.directory, 'in.mp4')))
+
+  /* The reason any of this can be cached. Minting against the clock gave two
+     readers two URLs for one film — a cache key each, and a hit rate of zero
+     however good the edge in front of us was. */
+  const invited = await fetch(`${place.origin}/api/trips/${place.trip.id}/invites`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${place.accessToken}`,
+    },
+    body: JSON.stringify({ email: 'friend@example.com', name: 'Alex', role: 'viewer' }),
+  })
+  assert.equal(invited.status, 201)
+  const second = (await authenticate(place.repository, 'friend@example.com')).slice(7)
+  const joined = await fetch(`${place.origin}/api/invites/${(await invited.json()).id}/accept`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${second}` },
+  })
+  assert.equal(joined.status, 200)
+  const path = decodeURIComponent(new URL(row.src).pathname.replace('/api/media/', ''))
+  const ask = async token => {
+    const response = await fetch(`${place.origin}/api/media/links`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ paths: [path] }),
+    })
+    return (await response.json()).links[path]
+  }
+  const mine = await ask(place.accessToken)
+  const theirs = await ask(second)
+  assert.ok(mine, 'a link came back at all')
+  assert.ok(theirs, 'and to the person invited onto the trip as well')
+  assert.equal(mine, theirs, 'two readers, one URL, one thing for a cache to hold')
+  assert.equal(mine, await ask(place.accessToken), 'and asking twice is not two cache entries')
+
+  /* And the film's own bytes say a shared cache may hold them, which is the
+     other half: deterministic URLs that everything refuses to store are no
+     better than unique ones. */
+  const served = await replay(place.origin, mine)
+  assert.equal(served.status, 200)
+  assert.match(served.headers.get('cache-control') || '', /^public,.*immutable/)
 })
 
 test('a stream is refused to somebody who is not on the trip', { skip }, async t => {
@@ -291,4 +342,50 @@ test('deleting a film takes its whole stream with it', { skip }, async t => {
     queued.some(path => path.endsWith('.hls/')),
     `the stream was not queued for deletion: ${queued.join(', ')}`,
   )
+})
+
+test('the whole path works on object storage, not only on a volume', { skip }, async t => {
+  /* Everything above the store was written against an injected interface, and
+     the point of that is exactly this: a film uploaded, converted, laddered,
+     served by the range and walked by a player, with nothing on a disk. It is
+     worth a test rather than an assumption, because the failure mode is a
+     deployment that works on the machine it was built on and shows grey
+     squares on the one it was moved to. */
+  const bucket = await stubStore(t)
+  const place = await world(t, { store: bucket.store })
+  const row = await uploaded(place, film(join(place.directory, 'in.mp4')))
+
+  assert.ok(row.src, 'the film itself')
+  assert.ok(row.posterSrc, 'the frame drawn from it')
+  assert.ok(row.hlsSrc, 'and the ladder built from it')
+
+  /* Everything really is in the bucket: the film as filmed (this one already
+     played everywhere, so nothing re-encoded it), the frame drawn from it,
+     the small copy the grids use, and every part of the ladder. */
+  const keys = [...bucket.objects.keys()]
+  const has = suffix => keys.some(key => key.endsWith(suffix))
+  assert.ok(has('.mp4'), `no film in the bucket: ${keys.join(', ')}`)
+  assert.ok(has('.poster.jpg') && has('.thumb.jpg'), 'the poster and its small copy')
+  assert.ok(has('.hls/master.m3u8'), 'the master playlist')
+  assert.ok(keys.filter(key => key.endsWith('.ts')).length >= 2, 'and its segments')
+
+  // And a player can still walk it, which is the only thing that matters.
+  const masterText = await (await replay(place.origin, row.hlsSrc)).text()
+  const variant = masterText
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'))
+  const variantText = await (await replay(place.origin, variant)).text()
+  const segment = variantText
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'))
+  const bytes = Buffer.from(await (await replay(place.origin, segment)).arrayBuffer())
+  assert.equal(bytes[0], 0x47, 'a real MPEG-TS packet came back out of the bucket')
+
+  /* A range off the object store, which is how a film is watched from
+     wherever the thumb drops it: one request rather than a download. */
+  const ranged = await replay(place.origin, row.src, { headers: { range: 'bytes=0-99' } })
+  assert.equal(ranged.status, 206)
+  assert.equal((await ranged.arrayBuffer()).byteLength, 100)
 })

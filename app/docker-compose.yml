@@ -90,10 +90,19 @@ services:
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-auto}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      # The account minio-init makes for this service, never the root one: a
+      # leaked application key can read and write one bucket and nothing else.
+      # The default matches what minio-init creates, so the two cannot drift.
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-offwego-api}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
       S3_PREFIX: ${S3_PREFIX:-}
+      # How wide the window in which every reader gets the same media URL, and
+      # how long anything in front of us may hold the bytes. The first is what
+      # makes a cache possible at all; the second is what stops a deleted
+      # photograph outliving its deletion at an edge.
+      WAYFARE_MEDIA_LINK_WINDOW: ${WAYFARE_MEDIA_LINK_WINDOW:-3600}
+      WAYFARE_MEDIA_CACHE_SECONDS: ${WAYFARE_MEDIA_CACHE_SECONDS:-3600}
       CODEX_AUTH_JSON_B64: ${CODEX_AUTH_JSON_B64:-}
       # On by default: the engine's coverage follows the trips on its own.
       # Empty this out to turn routing off entirely.
@@ -136,6 +145,74 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  # Object storage on this box, speaking S3.
+  #
+  # Not because one volume was full, but because one volume is the thing that
+  # stops there being a second web node: a bind mount belongs to one machine,
+  # and every photograph on it has to be backed up by tarring the lot. A
+  # bucket is reachable from anywhere, replaces the nightly tar with the
+  # store's own durability, and — once a CDN is in front — is what the edge
+  # fills itself from.
+  #
+  # It runs whether or not the app is using it. Pointing the app at it is
+  # S3_BUCKET in .env, and that is deliberately a separate step from having
+  # somewhere to point: the existing media has to be moved into the bucket
+  # first, which is what `pnpm media:migrate` does.
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-offwego}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      # Browsers are never sent here directly; the api reads and writes on
+      # their behalf, so the console is the only human-facing part.
+      MINIO_BROWSER_REDIRECT_URL: http://127.0.0.1:9001
+    ports:
+      # Loopback only, reachable through an SSH tunnel. The bucket holds every
+      # photograph anyone has taken on a trip; it does not go on the internet.
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Makes the bucket, and an account for the api that is not the root one.
+  #
+  # Runs to completion and exits. Everything it does is idempotent, so it runs
+  # again on every deploy and simply finds its work already done — which is
+  # what makes it safe to leave in the stack rather than a thing somebody has
+  # to remember to have run once.
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-offwego}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      BUCKET: ${S3_BUCKET_NAME:-offwego-media}
+      APP_KEY: ${S3_ACCESS_KEY_ID:-offwego-api}
+      APP_SECRET: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in .env}
+    entrypoint:
+      - sh
+      - -c
+      - >
+        set -e;
+        mc alias set box http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
+        mc mb --ignore-existing "box/$$BUCKET";
+        mc anonymous set none "box/$$BUCKET";
+        mc admin user add box "$$APP_KEY" "$$APP_SECRET" || true;
+        printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::'"$$BUCKET"'","arn:aws:s3:::'"$$BUCKET"'/*"]}]}' > /tmp/policy.json;
+        mc admin policy create box offwego-media /tmp/policy.json || true;
+        mc admin policy attach box offwego-media --user "$$APP_KEY" || true;
+        echo "bucket $$BUCKET is ready for $$APP_KEY"
 
   web:
     build:
@@ -218,6 +295,7 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:
   logto_postgres_data:
   codex_data:
   caddy_data:

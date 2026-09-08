@@ -34,6 +34,12 @@ import { validChunk } from './replay-store.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
 import { isPlaylistPath, isSupportedVideo, isVideoPath, mediaContentType } from './media-types.js'
 import { signPlaylist } from './hls.js'
+import {
+  DEFAULT_BUCKET_SECONDS,
+  DEFAULT_CACHE_SECONDS,
+  linkExpiry,
+  mediaCacheControl,
+} from './media-cache.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -136,6 +142,15 @@ export async function buildServer({
   /* A signed media link's life. Long enough that an app left open all day
      keeps drawing, short enough that a link which escapes stops working. */
   mediaLinkSeconds = 24 * 60 * 60,
+  /* The window inside which every reader is handed the same URL for the same
+     bytes. Minting against the clock gave two people opening a trip a second
+     apart two different URLs for one photograph, which is a cache key each
+     and a hit rate of zero. Set to 0 to go back to that. */
+  mediaLinkBucketSeconds = DEFAULT_BUCKET_SECONDS,
+  /* And how long a copy of those bytes may be held. Shorter than the link on
+     purpose: a deleted photograph must stop being served, and an edge holding
+     it for the life of the link would be the one thing keeping it alive. */
+  mediaCacheSeconds = DEFAULT_CACHE_SECONDS,
   appleTeamId = null,
   appleBundleId = 'ai.threadway.wayfare',
   logger = false,
@@ -429,7 +444,11 @@ export async function buildServer({
      it died at the sixty-minute mark and the grid filled with grey. A day
      covers a session; anything older heals through /api/media/links. */
   const mediaUrl = storagePath => {
-    const expires = Math.floor(clock().getTime() / 1000) + mediaLinkSeconds
+    /* Rounded to a shared boundary rather than taken from the clock, so the
+       same photograph is the same URL for everybody who asks this hour — which
+       is what lets one fetch answer all of them. Rounding is upwards, so a
+       link is never shorter-lived than it was promised to be. */
+    const expires = linkExpiry(clock().getTime() / 1000, mediaLinkSeconds, mediaLinkBucketSeconds)
     return `${publicUrl.replace(/\/$/, '')}/api/media/${storagePath}?expires=${expires}&signature=${mediaSignature(storagePath, expires)}`
   }
   /* Who may be handed a fresh link for a stored path. Everything on the
@@ -1719,41 +1738,45 @@ export async function buildServer({
        extension says what it is. Serving a film — or a boarding pass — as
        image/jpeg is a file the browser will not open. */
     const contentType = mediaContentType(storagePath)
+    /* What a cache may do with this. The link is the authorisation — an HMAC
+       and an expiry, no cookie and no session — so an edge that does not have
+       the URL cannot build it, and one that does is holding bytes its holder
+       may already read. That is what makes `public` correct here where it
+       would be reckless on an ordinary private route. */
+    const caching = mediaCacheControl({
+      storagePath,
+      expires,
+      now: clock().getTime() / 1000,
+      maxSeconds: mediaCacheSeconds,
+      bucketSeconds: mediaLinkBucketSeconds,
+    })
+    stamp({ 'media.cache_control': caching })
     try {
       /* A playlist is a list of links, and a player does not carry this
          request's signature down to the segments it names — neither hls.js
          nor Safari does. So the links are signed as the playlist goes out:
          what is stored keeps the relative names ffmpeg wrote, and every read
          hands back a copy in which each of them is a URL this reader may
-         follow. It costs no lookup, so a cache can still sit in front of the
-         segments even though the playlist itself must not be shared. */
+         follow. It costs no lookup, and because those links are minted in
+         windows rather than off the clock the body is identical for every
+         reader in one — so an edge can hold this too. */
       if (isPlaylistPath(storagePath)) {
         const stored = await fileStore.read(storagePath)
         const directory = storagePath.slice(0, storagePath.lastIndexOf('/') + 1)
         const body = signPlaylist(stored.toString('utf8'), directory, mediaUrl)
         stamp({ 'media.playlist': true, 'media.playlist_bytes': body.length })
-        return (
-          reply
-            .type(contentType)
-            /* Never shared and never kept: it holds one reader's signatures,
-             and it is a few hundred bytes to fetch again. */
-            .header('cache-control', 'private, no-store')
-            .send(body)
-        )
+        return reply.type(contentType).header('cache-control', caching).send(body)
       }
       if (!isVideoPath(storagePath)) {
         const bytes = await fileStore.read(storagePath)
-        return reply.type(contentType).header('cache-control', 'private, max-age=3600').send(bytes)
+        return reply.type(contentType).header('cache-control', caching).send(bytes)
       }
       /* A film is watched from wherever the thumb drops it, so it is served
          by the range rather than by the file: seeking a video that answers
          200-with-everything means downloading it again from the top. */
       const size = await fileStore.size(storagePath)
       const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range || '').trim())
-      reply
-        .header('accept-ranges', 'bytes')
-        .header('cache-control', 'private, max-age=3600')
-        .type(contentType)
+      reply.header('accept-ranges', 'bytes').header('cache-control', caching).type(contentType)
       if (!range) {
         return reply.header('content-length', String(size)).send(fileStore.open(storagePath))
       }

@@ -1,65 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'node:http'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { Readable } from 'node:stream'
-import { createS3FileStore } from '../src/s3-store.js'
-
-/* An object store made of a Map. It is deliberately strict about the things
-   that are easy to get wrong and invisible when you do — an unsigned request,
-   a range ignored — so the test fails here rather than against a real bucket
-   at three in the morning. */
-async function stubStore(t) {
-  const objects = new Map()
-  const seen = []
-  const server = createServer(async (request, response) => {
-    const chunks = []
-    for await (const chunk of request) chunks.push(chunk)
-    const body = Buffer.concat(chunks)
-    const key = decodeURIComponent(request.url.split('?')[0].replace(/^\/[^/]+\//, ''))
-    seen.push({ method: request.method, key, auth: request.headers.authorization })
-
-    if (!request.headers.authorization?.startsWith('AWS4-HMAC-SHA256 Credential=')) {
-      response.writeHead(403).end('unsigned')
-      return
-    }
-    if (request.method === 'PUT') {
-      objects.set(key, body)
-      response.writeHead(200).end()
-    } else if (request.method === 'DELETE') {
-      objects.delete(key)
-      response.writeHead(204).end()
-    } else if (request.method === 'HEAD') {
-      const held = objects.get(key)
-      if (!held && key) return response.writeHead(404).end()
-      response.writeHead(200, { 'content-length': String(held ? held.length : 0) }).end()
-    } else {
-      const held = objects.get(key)
-      if (!held) return response.writeHead(404).end()
-      const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range || '')
-      if (!range) return response.writeHead(200).end(held)
-      const start = range[1] === '' ? held.length - Number(range[2]) : Number(range[1])
-      const end = range[1] === '' || range[2] === '' ? held.length - 1 : Number(range[2])
-      response
-        .writeHead(206, { 'content-range': `bytes ${start}-${end}/${held.length}` })
-        .end(held.subarray(start, end + 1))
-    }
-  })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  t.after(() => new Promise(resolve => server.close(resolve)))
-  const store = createS3FileStore({
-    bucket: 'trips',
-    region: 'auto',
-    endpoint: `http://127.0.0.1:${server.address().port}`,
-    accessKeyId: 'AKIDEXAMPLE',
-    secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
-    forcePathStyle: true,
-  })
-  return { store, objects, seen }
-}
+import { stubStore } from './fake-bucket.js'
 
 test('a photograph lands as both sizes, signed, and comes back', async t => {
   const { store, objects, seen } = await stubStore(t)
@@ -158,4 +104,85 @@ test('the worker can pull a film down to convert it', async t => {
   const local = join(dir, 'pulled.mp4')
   await store.download(stored.storagePath, local)
   assert.deepEqual(await readFile(local), film)
+})
+
+test("a film's whole stream goes up, master playlist last", async t => {
+  const { store, objects } = await stubStore(t)
+  const dir = await mkdtemp(join(tmpdir(), 'offwego-s3-hls-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await mkdir(join(dir, '0'), { recursive: true })
+  await mkdir(join(dir, '1'), { recursive: true })
+  await writeFile(join(dir, 'master.m3u8'), '#EXTM3U\n0/index.m3u8\n1/index.m3u8\n')
+  await writeFile(join(dir, '0', 'index.m3u8'), '#EXTM3U\nseg00000.ts\n')
+  await writeFile(join(dir, '0', 'seg00000.ts'), Buffer.alloc(2048, 7))
+  await writeFile(join(dir, '1', 'index.m3u8'), '#EXTM3U\nseg00000.ts\n')
+  await writeFile(join(dir, '1', 'seg00000.ts'), Buffer.alloc(1024, 8))
+
+  const stored = await store.storeHls({
+    storagePath: 'trip-1/film.converted.mp4',
+    directory: dir,
+  })
+
+  assert.equal(stored.hlsPath, 'trip-1/film.converted.hls/master.m3u8')
+  assert.equal(stored.files, 5)
+  assert.ok(objects.has('trip-1/film.converted.hls/0/seg00000.ts'))
+  assert.ok(objects.has('trip-1/film.converted.hls/1/index.m3u8'))
+  assert.equal(objects.get('trip-1/film.converted.hls/0/seg00000.ts').length, 2048)
+  /* The whole tree really is there before the one path anything records
+     points at it: a stream whose upload died halfway is then referenced by
+     nothing and is swept up as ordinary unreferenced bytes rather than served
+     as a playlist naming segments that were never written. */
+  assert.ok(objects.has('trip-1/film.converted.hls/master.m3u8'))
+})
+
+test('a segment goes up as a segment, not as unnamed bytes', async t => {
+  const { store, seen } = await stubStore(t)
+  const dir = await mkdtemp(join(tmpdir(), 'offwego-s3-type-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await writeFile(join(dir, 'master.m3u8'), '#EXTM3U\n')
+  await writeFile(join(dir, 'seg00000.ts'), Buffer.alloc(64, 1))
+  await store.storeHls({ storagePath: 'trip-1/film.mp4', directory: dir })
+
+  /* An object store hands back whatever content type it was given, and a
+     segment served as application/octet-stream is one some players decline
+     to touch. The type has to be set on the way in, because nothing rewrites
+     it on the way out. */
+  const put = seen.filter(call => call.method === 'PUT')
+  assert.ok(put.length >= 2)
+  assert.deepEqual(put.map(call => call.contentType).sort(), [
+    'application/vnd.apple.mpegurl',
+    'video/mp2t',
+  ])
+})
+
+test('deleting a stream deletes every part of it, however many pages', async t => {
+  const { store, objects } = await stubStore(t)
+  const dir = await mkdtemp(join(tmpdir(), 'offwego-s3-rm-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await mkdir(join(dir, '0'), { recursive: true })
+  await writeFile(join(dir, 'master.m3u8'), '#EXTM3U\n')
+  for (let index = 0; index < 5; index++) {
+    await writeFile(join(dir, '0', `seg0000${index}.ts`), Buffer.alloc(32, index))
+  }
+  await store.storeHls({ storagePath: 'trip-1/film.mp4', directory: dir })
+  await store.storeVideo({
+    tripId: 'trip-1',
+    source: Readable.from([Buffer.alloc(16, 3)]),
+    mime: 'video/mp4',
+  })
+  const before = objects.size
+  assert.ok(before > 6)
+
+  await store.removeTree('trip-1/film.hls/')
+
+  /* Segments are the bulk of what a film costs to keep, and there is no
+     directory to remove on an object store — only a listing and a great many
+     deletes. The listing is paged, so a client that reads the first page and
+     stops leaves most of the film behind. */
+  assert.deepEqual(
+    [...objects.keys()].filter(key => key.includes('.hls/')),
+    [],
+  )
+  // And nothing outside the tree was touched.
+  assert.equal(objects.size, before - 6)
 })
