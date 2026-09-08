@@ -1880,10 +1880,22 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const member = await pool.query('select display_name name from profiles where id=$1', [
         user.id,
       ])
+      /* The position comes from the trip's own high-water mark, bumped and
+         read in the same statement as the insert — so it is atomic, it never
+         hands out a number twice even after a deletion, and the only thing
+         two simultaneous uploads contend on is their own trip's row.
+
+         Never reusing matters beyond tidiness: `seq` is the cursor the app
+         pages photographs with, and a number that came round again would
+         silently skip or repeat a page. */
       const result = await pool.query(
-        `insert into photos
-        (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,poster_path,thumb_path,media_kind,media_mime,duration_ms,media_status,client_key,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,nextval('photo_order_seq')) returning *`,
+        `with bumped as (
+           update trips set photo_seq = photo_seq + 1 where id = $1 returning photo_seq
+         )
+         insert into photos
+         (trip_id,stop_id,user_id,lng,lat,caption,taken_by,taken_at,location_source,storage_path,poster_path,thumb_path,media_kind,media_mime,duration_ms,media_status,client_key,seq)
+         select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,(select photo_seq from bumped)
+         returning *`,
         [
           tripId,
           input.stopId,
