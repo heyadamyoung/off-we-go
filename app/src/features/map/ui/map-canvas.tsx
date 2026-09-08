@@ -9,9 +9,10 @@ import {
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
-import { validLngLat } from '../../../shared/lib/geo'
 import { paddingOffset } from '../../../live-map-view-core'
+import { clusterPhotos } from '../../../photo-cluster-core'
 import useHeadingCamera from '../model/use-heading-camera'
+import useViewport from '../model/use-viewport'
 import useIndoorLayers from '../model/indoor-layers'
 import makeTrailSweep from '../model/trail-sweep'
 import useMapLayers from '../model/use-map-layers'
@@ -19,7 +20,6 @@ import { creditControl, STYLE } from '../model/map-style'
 import registerOfflineTiles from '../model/offline-tiles'
 import { LiveMarker, MapMarker, YouBeam } from './map-marker'
 import type { MapCanvasProps } from '../model/map-props'
-import type { Id, TripPhoto } from '../../../shared/model/types'
 
 setWorkerUrl(maplibreWorkerUrl)
 /* Worker pool up at module load: the chunk lands ~30ms, the map builds ~100ms,
@@ -29,12 +29,6 @@ prewarm()
 // ask again, so the handler has to be in place first.
 registerOfflineTiles()
 /** photographs stacked on one spot, so a busy corner is one tidy pile */
-interface PhotoGroup {
-  key: string
-  lng: number
-  lat: number
-  items: TripPhoto[]
-}
 const MapCanvas = memo(function MapCanvas({
   view,
   onView,
@@ -272,32 +266,21 @@ const MapCanvas = memo(function MapCanvas({
   }, [map, editing, placing])
 
   /* ---- overlays --------------------------------------------------------- */
-  // Photos are grouped per stop so a busy corner shows one tidy stack, not a pile.
-  const groups = useMemo(() => {
-    const byStop = new Map<Id, TripPhoto[]>(),
-      loose: TripPhoto[] = []
-    photos.forEach(p => {
-      if (!p.stopId) {
-        if (validLngLat(p.lng, p.lat)) loose.push(p)
-        return
-      }
-      if (!byStop.has(p.stopId)) byStop.set(p.stopId, [])
-      byStop.get(p.stopId)!.push(p)
-    })
-    const out: PhotoGroup[] = []
-    byStop.forEach((items, stopId) => {
-      const s = stops.find(x => x.id === stopId) || items.find(p => validLngLat(p.lng, p.lat))
-      if (!s) return
-      items.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
-      // The anchor's coordinates exist by construction: a stop always has
-      // them, and the fallback photo was chosen for having them.
-      out.push({ key: 'g' + stopId, lng: s.lng!, lat: s.lat!, items })
-    })
-    loose.forEach(p => {
-      out.push({ key: String(p.id), lng: p.lng!, lat: p.lat!, items: [p] })
-    })
-    return out
-  }, [photos, stops])
+  /* Every marker is a DOM element, so the number of them has to be a function
+     of the screen rather than of the trip. Photographs at a stop were already
+     one stack each — bounded by the number of stops — but a loose photograph
+     used to get a marker of its own, and a day walking a city with the camera
+     out is a thousand of those. They are gathered by where they land on the
+     screen instead, and what is off-screen is not drawn at all. */
+  const viewport = useViewport(map, view?.zoom ?? 12)
+  const groups = useMemo(
+    () =>
+      clusterPhotos(photos, stops, {
+        zoom: viewport.zoom,
+        bounds: viewport.bounds,
+      }),
+    [photos, stops, viewport],
+  )
 
   return (
     <div
