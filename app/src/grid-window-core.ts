@@ -58,8 +58,20 @@ export function gridWindow({
     return { start: 0, end: total, topPad: 0, bottomPad: 0, rows }
   }
 
-  const firstVisibleRow = Math.floor(Math.max(0, scrolled) / rowHeight)
   const visibleRows = Math.ceil(viewportHeight / rowHeight)
+  /* Never past the last row there is.
+
+     A scroller that sits below the whole grid — a panel whose other views are
+     longer, so switching to this one arrives already scrolled past it — would
+     otherwise put the first row beyond the last, and a slice from beyond the
+     end to the end is empty. The grid rendered nothing at all: not a slow
+     grid or a short one, a blank one, with the scrollbar still claiming
+     everything was there. Clamping shows the end of the grid instead, which
+     is both something and the nearest true thing to where the scroller is. */
+  const firstVisibleRow = Math.min(
+    Math.floor(Math.max(0, scrolled) / rowHeight),
+    Math.max(0, rows - 1),
+  )
   const firstRow = Math.max(0, firstVisibleRow - overscanRows)
   const lastRow = Math.min(rows, firstVisibleRow + visibleRows + overscanRows)
 
