@@ -1,5 +1,6 @@
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
 import { maskHomeZones } from '../src/home-zone.js'
+import { stopForPhoto } from '../src/stop-placement.js'
 
 const profileShape = profile => ({
   profileId: profile.id,
@@ -710,6 +711,26 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       })
       trip.stops = trip.stops.filter(value => value.id !== stopId)
       return trip.stops.length < before
+    },
+    /* The same answer as the real repository, from the same rule. Kept
+       deliberately naive: this exists so the route can be tested, not to be
+       fast. */
+    async relinkTripPhotos(user, tripId, { radiusMetres } = {}) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const trip = trips.get(tripId)
+      const stops = [...trip.stops].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+      let examined = 0
+      let changed = 0
+      for (const photo of trip.photos) {
+        if (photo.lng == null || photo.lat == null) continue
+        examined += 1
+        const decided = stopForPhoto(photo, stops, { radiusMetres })
+        if (decided !== (photo.stopId ?? null)) {
+          photo.stopId = decided
+          changed += 1
+        }
+      }
+      return { examined, changed }
     },
     async replaceRoute(user, tripId, points) {
       if (!(await this.canEditTrip(user.id, tripId))) return false

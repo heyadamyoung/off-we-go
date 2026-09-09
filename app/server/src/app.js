@@ -1375,6 +1375,19 @@ export async function buildServer({
      said to be ready, which is honest rather than hopeful. */
   const mediaWorkerReady = () => !!transcoding && !!repository.enqueueMediaJob
 
+  /* An itinerary that changed shape means photographs may belong somewhere
+     else now. Bounded by one trip, and never allowed to fail the edit that
+     triggered it: the stop was saved, and a filing that can be redone is not
+     worth losing that over. */
+  const refileTrip = async (user, tripId) => {
+    try {
+      return await repository.relinkTripPhotos?.(user, tripId, { radiusMetres: stopRadiusMetres })
+    } catch (error) {
+      recordFailure(error)
+      return null
+    }
+  }
+
   /* Which itinerary item an arriving photograph belongs to.
 
      The rule is in stop-placement.js; this is the part that has to touch a
@@ -2690,6 +2703,9 @@ export async function buildServer({
       seq: Number.isInteger(body.seq) ? body.seq : 0,
     })
     if (!stop) return reply.code(403).send({ error: 'You cannot edit this trip' })
+    /* A stop is usually added after the photographs it belongs to — that is
+       how a trip gets written up — so this is the common case, not the edge. */
+    await refileTrip(user, request.params.tripId)
     return reply.code(201).send(stop)
   })
 
@@ -2721,6 +2737,9 @@ export async function buildServer({
       fields,
     )
     if (!stop) return reply.code(404).send({ error: 'Stop not found' })
+    // Moved somewhere else: what was near it may not be, and what was not may be.
+    if (fields.lng !== undefined || fields.lat !== undefined)
+      await refileTrip(user, request.params.tripId)
     return stop
   })
 
@@ -2729,6 +2748,11 @@ export async function buildServer({
     if (!user) return
     const removed = await repository.deleteStop(user, request.params.tripId, request.params.stopId)
     if (!removed) return reply.code(404).send({ error: 'Stop not found' })
+    /* Its photographs were unfiled to let the row go. Most of them are near
+       something else — the next stop along, the one across the square — and
+       leaving them orphaned because a different stop was deleted would be an
+       odd thing for the app to decide on their behalf. */
+    await refileTrip(user, request.params.tripId)
     return reply.code(204).send()
   })
 

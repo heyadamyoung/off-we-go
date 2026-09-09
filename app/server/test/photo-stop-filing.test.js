@@ -62,7 +62,17 @@ async function world(t, options = {}) {
     return JSON.parse(body)
   }
 
-  return { origin, accessToken, trip, stopAt, upload }
+  /* Read back the way the app does, so a filing that only exists in the
+     database and never reaches a client would still fail these. */
+  const photos = async () => {
+    const response = await fetch(`${origin}/api/trips/current?t=${trip.slug}`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
+    return (await response.json()).photos || []
+  }
+
+  const user = await repository.ensureUser('owner@example.com')
+  return { origin, accessToken, trip, stopAt, upload, photos, repository, user }
 }
 
 test('a photograph taken at a stop is filed there without being told', async t => {
@@ -124,4 +134,90 @@ test('the radius a deployment chose is the one that is used', async t => {
   // 300m north: inside the default 400, outside the 50 this server was given.
   const photo = await place.upload({ lng: 4.8852, lat: 52.36 + 300 / 111_320 })
   assert.equal(photo.stopId, null)
+})
+
+/* Re-filing: the half that upload-time placement can never do. */
+
+const patchStop = (origin, tripId, stopId, body, token) =>
+  fetch(`${origin}/api/trips/${tripId}/stops/${stopId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  })
+
+test('a stop added after the photographs collects them', async t => {
+  /* The ordinary way a trip is written up: shoot first, name the places
+     later. Before this, every one of these stayed filed under nothing. */
+  const place = await world(t)
+  const early = await place.upload({ lng: 4.8852, lat: 52.36 })
+  const elsewhere = await place.upload({ lng: 2.3522, lat: 48.8566 })
+  assert.equal(early.stopId, null, 'nothing to file against yet')
+
+  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+
+  const photos = await place.photos()
+  assert.equal(photos.find(photo => photo.id === early.id).stopId, rijks.id)
+  assert.equal(photos.find(photo => photo.id === elsewhere.id).stopId, null, 'Paris is still Paris')
+})
+
+test('a stop moved takes the right photographs with it', async t => {
+  const place = await world(t)
+  const stop = await place.stopAt('Somewhere', 4.8852, 52.36)
+  const atTheRijks = await place.upload({ lng: 4.8852, lat: 52.36 })
+  assert.equal(atTheRijks.stopId, stop.id)
+
+  // Moved to Centraal: the photograph by the museum is no longer near it.
+  const moved = await patchStop(
+    place.origin,
+    place.trip.id,
+    stop.id,
+    { lng: 4.9003, lat: 52.379 },
+    place.accessToken,
+  )
+  assert.equal(moved.status, 200)
+
+  const after = await place.photos()
+  assert.equal(after.find(photo => photo.id === atTheRijks.id).stopId, null)
+})
+
+test('a stop deleted hands its photographs to the next nearest, not to nothing', async t => {
+  /* Two stops a courtyard apart. Deleting one should not orphan pictures that
+     are plainly still at the other. */
+  const place = await world(t)
+  const anne = await place.stopAt('Anne Frank House', 4.8839, 52.3752)
+  const wester = await place.stopAt('Westerkerk', 4.8836, 52.3747)
+  const photo = await place.upload({ lng: 4.8839, lat: 52.3752 })
+  assert.equal(photo.stopId, anne.id)
+
+  const gone = await fetch(`${place.origin}/api/trips/${place.trip.id}/stops/${anne.id}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${place.accessToken}` },
+  })
+  assert.equal(gone.status, 204)
+
+  const after = await place.photos()
+  assert.equal(after.find(item => item.id === photo.id).stopId, wester.id)
+})
+
+test('re-filing only touches what actually moved', async t => {
+  /* It reports what it did, and a second run has nothing left to do. That is
+     what makes it safe to call on every itinerary edit. */
+  const place = await world(t)
+  await place.upload({ lng: 4.8852, lat: 52.36 })
+  await place.upload({ lng: 4.8852, lat: 52.36 })
+  await place.upload({ lng: 2.3522, lat: 48.8566 })
+  await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+
+  const again = await place.repository.relinkTripPhotos(place.user, place.trip.id, {})
+  assert.deepEqual(again, { examined: 3, changed: 0 }, 'already settled')
+})
+
+test('a photograph with no coordinates is left alone by re-filing', async t => {
+  const place = await world(t)
+  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+  const filed = await place.upload({ stopId: rijks.id })
+  await place.stopAt('Centraal', 4.9003, 52.379)
+
+  const after = await place.photos()
+  assert.equal(after.find(photo => photo.id === filed.id).stopId, rijks.id)
 })
