@@ -19,13 +19,17 @@
  *   pnpm media:migrate             do it
  *
  * The bucket comes from the same S3_* variables the server reads, and the
- * volume from UPLOAD_DIR. Run it in the api container, where both are already
- * set: `docker compose exec api pnpm media:migrate --check`.
+ * volume from UPLOAD_DIR, so it runs inside the api container where both are
+ * already set. The deploy runs it for you — see deploy/object-storage.sh —
+ * and this is here for when somebody wants to watch it happen:
+ *
+ *   docker compose exec -e S3_BUCKET=offwego-media api \
+ *     node server/scripts/migrate-media-to-bucket.mjs --check
  */
 
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createS3FileStore } from '../server/src/s3-store.js'
+import { createS3FileStore } from '../src/s3-store.js'
 import {
   copyDecision,
   humanBytes,
