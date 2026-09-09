@@ -78,6 +78,7 @@ services:
       MS_TENANT: ${MS_TENANT:-common}
       MAILBOX_TOKEN_KEY: ${MAILBOX_TOKEN_KEY:-}
       WAYFARE_MAX_VIDEO_BYTES: ${WAYFARE_MAX_VIDEO_BYTES:-}
+      WAYFARE_STOP_RADIUS_METRES: ${WAYFARE_STOP_RADIUS_METRES:-}
       # Conversion runs inside the API today because this is one box. When it
       # is several, set this to 0 on the web nodes and run the same image with
       # a higher count on a worker node — the queue coordinates them.

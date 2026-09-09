@@ -40,6 +40,7 @@ import {
   linkExpiry,
   mediaCacheControl,
 } from './media-cache.js'
+import { STOP_RADIUS_METRES, stopForPhoto } from './stop-placement.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -134,6 +135,10 @@ export async function buildServer({
      and the nightly backup copies every byte of it. */
   maxImageBytes = 25 * 1024 * 1024,
   maxVideoBytes = 256 * 1024 * 1024,
+  /* How near a photograph has to be taken to an itinerary item to count as
+     being at it. A number rather than a constant because a city walk and a
+     road trip want different ones, and neither should need a new build. */
+  stopRadiusMetres = STOP_RADIUS_METRES,
   /* Whether this deployment can convert film to something every device
      plays. Optional like every other integration: without it the app says so
      at /api/health rather than quietly storing videos half the trip cannot
@@ -1370,6 +1375,24 @@ export async function buildServer({
      said to be ready, which is honest rather than hopeful. */
   const mediaWorkerReady = () => !!transcoding && !!repository.enqueueMediaJob
 
+  /* Which itinerary item an arriving photograph belongs to.
+
+     The rule is in stop-placement.js; this is the part that has to touch a
+     database, kept apart from it so the arithmetic stays testable without one.
+     A trip with no stops, or a photograph with no coordinates, costs nothing:
+     there is no query worth making when there is nothing to decide. */
+  const stopForUpload = async (user, tripId, photo) => {
+    if (photo.lng == null || photo.lat == null) return photo.stopId ?? null
+    try {
+      const stops = await repository.listStops(user, tripId)
+      return stopForPhoto(photo, stops || [], { radiusMetres: stopRadiusMetres })
+    } catch {
+      /* Filing is a convenience, and losing the photograph over it would not
+         be. It lands unfiled and the next re-link pass picks it up. */
+      return photo.stopId ?? null
+    }
+  }
+
   const megabytes = value => Math.round(value / (1024 * 1024))
   /* Two files at most — the picture or the film, and the poster frame that
      stands in for it. The byte ceiling here is the hard one that stops a
@@ -1582,7 +1605,17 @@ export async function buildServer({
           status: isVideo && mediaWorkerReady() ? 'pending' : 'ready',
           mime: isVideo ? mime : null,
           durationMs: isVideo && durationMs != null ? Math.round(durationMs) : null,
-          stopId: fields.stopId || null,
+          /* Decided here rather than taken on trust. Every client computes
+             this too, to draw "grouped at the Rijksmuseum" before sending —
+             but a preview is not a filing, and two clients that disagree must
+             not file the same photograph two different ways. A row with no
+             coordinates keeps whatever it arrived with, there being nothing
+             to decide from. */
+          stopId: await stopForUpload(user, request.params.tripId, {
+            lng,
+            lat,
+            stopId: fields.stopId || null,
+          }),
           caption: String(fields.caption || '').trim() || null,
           lng,
           lat,

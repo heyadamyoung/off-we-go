@@ -148,6 +148,7 @@ const app = await buildServer({
      off a phone; a box with a small volume lowers it rather than discovering
      the ceiling as a full disk. */
   maxVideoBytes: Number(process.env.WAYFARE_MAX_VIDEO_BYTES) || undefined,
+  stopRadiusMetres: Number(process.env.WAYFARE_STOP_RADIUS_METRES) || undefined,
   /* How wide the window in which every reader is handed the same media URL,
      and how long anything in front of us may hold the bytes. Both matter only
      once there is a cache there; until then the first is a smaller number of
