@@ -182,25 +182,38 @@ services:
     # second one-shot container: `compose up --wait` and a container that
     # exits on purpose do not get along, and this has to be idempotent
     # anyway — it runs again on every restart and finds its work done.
+    #
+    # The setup cannot take the server down with it. It leans on `mc`, which
+    # ships in this image, and if that ever stops being true the server still
+    # runs, the bucket is simply not made, and the deploy's cutover finds no
+    # bucket to copy into and leaves media on the volume. That is a quiet
+    # no-op; the alternative — a container that will not start — fails
+    # `compose up --wait` and rolls back a release that was otherwise fine.
     entrypoint:
       - sh
       - -c
       - >
-        set -e;
         if [ $${#MINIO_ROOT_PASSWORD} -lt 8 ] || [ -z "$$APP_SECRET" ]; then
         echo "MINIO_ROOT_PASSWORD (8+ chars) and S3_SECRET_ACCESS_KEY must be set in .env before object storage can run." >&2;
         exit 78;
         fi;
         minio server /data --console-address ":9001" &
         server=$$!;
-        until mc alias set box http://127.0.0.1:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" 2>/dev/null; do sleep 1; done;
-        mc mb --ignore-existing "box/$$BUCKET";
-        mc anonymous set none "box/$$BUCKET";
+        (
+        tries=0;
+        until mc alias set box http://127.0.0.1:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" 2>/dev/null; do
+        tries=$$((tries + 1));
+        [ $$tries -gt 60 ] && echo "the object store never answered; the bucket was not made" >&2 && exit 1;
+        sleep 1;
+        done;
+        mc mb --ignore-existing "box/$$BUCKET" || exit 1;
+        mc anonymous set none "box/$$BUCKET" || exit 1;
         mc admin user add box "$$APP_KEY" "$$APP_SECRET" || true;
         printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::'"$$BUCKET"'","arn:aws:s3:::'"$$BUCKET"'/*"]}]}' > /tmp/policy.json;
         mc admin policy create box offwego-media /tmp/policy.json || true;
         mc admin policy attach box offwego-media --user "$$APP_KEY" || true;
         echo "bucket $$BUCKET is ready for $$APP_KEY";
+        ) || echo "the object store came up but could not be set up; media stays where it is" >&2;
         wait $$server
     ports:
       # Loopback only, reachable through an SSH tunnel. The bucket holds every
@@ -208,12 +221,11 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
+    # No healthcheck on purpose. `compose up --wait` treats a service without
+    # one as ready once it is running, and a probe that leans on a tool being
+    # in the image is one more way for object storage to fail a deploy that
+    # has nothing to do with it. Whether the bucket is actually usable is
+    # answered where it matters: the copy fails and media stays on the volume.
 
   web:
     build:

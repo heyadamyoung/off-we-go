@@ -359,3 +359,113 @@ test('an app that will not come back puts itself on the volume again', () => {
   box.run('cutover')
   assert.equal(box.bucket(), '', 'left the app pointing at a bucket it cannot read')
 })
+
+/* The object store's own container, exercised with minio and mc stubbed.
+
+   It has to survive its own setup failing. A container that will not start
+   fails `compose up --wait`, which trips the deploy's error trap and rolls
+   back a release that had nothing to do with object storage — so the worst
+   this is allowed to do is not make the bucket, and let the cutover find
+   nothing to copy into. */
+const minioEntrypoint = () => {
+  const rendered = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
+    cwd: appRoot,
+    env: stackEnv({
+      COMPOSE_PROFILES: 'objectstore',
+      MINIO_ROOT_PASSWORD: 'object-store-root-secret',
+      S3_SECRET_ACCESS_KEY: 'object-store-app-secret',
+    }),
+    encoding: 'utf8',
+  })
+  assert.equal(rendered.status, 0, rendered.stderr)
+  const minio = JSON.parse(rendered.stdout).services.minio
+  // compose re-escapes $ as $$ when it prints; the container sees one.
+  return { script: minio.entrypoint[2].replaceAll('$$', '$'), service: minio }
+}
+
+const runEntrypoint = (script, { mc, seconds = 1 }) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'offwego-minio-'))
+  writeFileSync(path.join(dir, 'minio'), `#!/bin/sh\nsleep ${seconds}\n`)
+  if (mc) writeFileSync(path.join(dir, 'mc'), mc)
+  chmodSync(path.join(dir, 'minio'), 0o755)
+  if (mc) chmodSync(path.join(dir, 'mc'), 0o755)
+  return spawnSync('sh', ['-c', script], {
+    env: {
+      PATH: `${dir}:${process.env.PATH}`,
+      MINIO_ROOT_USER: 'offwego',
+      MINIO_ROOT_PASSWORD: 'a-long-enough-password',
+      APP_SECRET: 'an-app-secret',
+      APP_KEY: 'offwego-api',
+      BUCKET: 'offwego-media',
+    },
+    encoding: 'utf8',
+    timeout: 90_000,
+  })
+}
+
+test('the object store has no healthcheck that can fail a deploy', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  /* `compose up --wait` treats a service without one as ready once it is
+     running. A probe leaning on a tool being present in somebody else's
+     image is one more way for object storage to roll back a release that
+     has nothing to do with it. */
+  assert.equal(minioEntrypoint().service.healthcheck, undefined)
+})
+
+test('the object store still runs when its own setup cannot', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const { script } = minioEntrypoint()
+
+  // mc missing altogether — the tool the setup leans on is simply not there.
+  const bare = runEntrypoint(script, { mc: null, seconds: 1 })
+  assert.equal(bare.status, 0, 'the container died because it could not set itself up')
+  assert.match(bare.stderr, /could not be set up/)
+
+  // And present, but refusing to make the bucket.
+  const refused = runEntrypoint(script, {
+    mc: [
+      '#!/bin/sh',
+      'case "$1" in',
+      '  alias) exit 0 ;;',
+      '  mb) exit 1 ;;',
+      '  *) exit 0 ;;',
+      'esac',
+      '',
+    ].join('\n'),
+    seconds: 1,
+  })
+  assert.equal(refused.status, 0)
+  /* And it must not claim otherwise. `set -e` inside a compound command on
+     the left of `||` is disabled, so a failing step used to run straight on
+     to printing that the bucket was ready. */
+  assert.doesNotMatch(refused.stdout, /is ready/, 'said the bucket was ready when it was not')
+  assert.match(refused.stderr, /could not be set up/)
+})
+
+test('a working object store says so, once', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const { script } = minioEntrypoint()
+  const fine = runEntrypoint(script, { mc: '#!/bin/sh\nexit 0\n', seconds: 1 })
+  assert.equal(fine.status, 0)
+  assert.match(fine.stdout, /bucket offwego-media is ready for offwego-api/)
+  assert.doesNotMatch(fine.stderr, /could not be set up/)
+})
+
+test('the object store refuses to run on a guessable password', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const { script } = minioEntrypoint()
+  const weak = spawnSync('sh', ['-c', script], {
+    env: { PATH: process.env.PATH, MINIO_ROOT_PASSWORD: 'short', APP_SECRET: 'x' },
+    encoding: 'utf8',
+  })
+  /* The one refusal that is deliberate. The deploy always writes a real
+     password before enabling the profile, so only a hand-edited .env reaches
+     this — and running a bucket of everybody's photographs on five
+     characters is worse than not running it. */
+  assert.equal(weak.status, 78)
+  assert.match(weak.stderr, /must be set in .env/)
+})
