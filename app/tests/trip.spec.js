@@ -685,13 +685,17 @@ test('the people panel separates the travellers from the followers', async ({ pa
 test('the photos panel filters by who took them', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
-  const all = await page.locator('.grid button').count()
+  /* Chronological, so the count is the whole trip rather than whichever cards
+     the window happens to be over: by place the grid is taller than a screen,
+     and a filter that removed nothing visible would still look like a pass. */
+  await page.getByRole('button', { name: 'By date' }).click()
+  const all = await page.locator('.pgrid-photo').count()
   expect(all).toBeGreaterThan(1)
 
   await page.getByRole('button', { name: 'Maya', exact: true }).click()
-  await expect.poll(() => page.locator('.grid button').count()).toBeLessThan(all)
+  await expect.poll(() => page.locator('.pgrid-photo').count()).toBeLessThan(all)
   await page.getByRole('button', { name: 'Everyone' }).click()
-  await expect.poll(() => page.locator('.grid button').count()).toBe(all)
+  await expect.poll(() => page.locator('.pgrid-photo').count()).toBe(all)
 })
 
 /* --------------------------------------------------------------- photos */

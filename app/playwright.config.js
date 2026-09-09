@@ -11,6 +11,11 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.js',
+  /* tests/live is a different suite with a different world behind it — a real
+     server, and a build made against it. It has its own config and its own
+     command; picked up here it would run against the sample build with
+     nothing listening, and fail for reasons that are not about the app. */
+  testIgnore: '**/live/**',
   fullyParallel: false,
   workers: process.env.CI ? 2 : 4,
   /* CI only, one retry: the sights and place-search specs lean on live
@@ -26,7 +31,22 @@ export default defineConfig({
     viewport: { width: 1600, height: 950 },
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        /* A machine that already has a browser can say so. Playwright resolves
+           its own by exact build number, and a container with a different one
+           pre-installed would otherwise be told to download one it cannot
+           reach. Unset — as on CI, which installs its own — this changes
+           nothing. */
+        ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+          ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } }
+          : {}),
+      },
+    },
+  ],
   webServer: {
     command: 'pnpm build && node scripts/serve-release.mjs dist/client 4180',
     url: 'http://localhost:4180',

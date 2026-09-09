@@ -77,8 +77,13 @@ test('a video is chosen, drawn from its own first frame, and plays in the viewer
   await page.getByRole('button', { name: 'Add 1 to the map' }).click()
 
   /* In the grid it is a poster under a play mark, like every camera roll.
-     Newest first, so the film just added is the first tile. */
+
+     Asked for by date rather than by place: the grid groups by itinerary item
+     now, so the film just added is inside the card for wherever it was taken,
+     which is not the top of the list and may not be on screen at all. By date
+     is the chronological view, and newest is still first there. */
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await page.getByRole('button', { name: 'By date' }).click()
   const tile = page.locator('.pgrid-photo').first()
   await expect(tile).toHaveAttribute('aria-label', 'Video', { timeout: 15_000 })
   await expect(tile.locator('svg')).toBeVisible()
