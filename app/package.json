@@ -20,6 +20,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "playwright test",
+    "test:live": "playwright test --config playwright.live.config.ts",
     "test:ui": "playwright test --ui",
     "ios:sync": "pnpm build:ios && cap sync ios",
     "ios:open": "cap open ios",
