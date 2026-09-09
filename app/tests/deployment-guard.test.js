@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import test from 'node:test'
@@ -206,4 +207,155 @@ test('the production Caddyfile is one Caddy will accept', {
   assert.equal(result.status, 0, result.stderr || result.error?.message)
   // Caddy says where it says it; take either stream.
   assert.match(`${result.stdout || ''}${result.stderr || ''}`, /Valid configuration/)
+})
+
+/* Turning object storage on used to be a runbook — invent two secrets, set a
+   profile, deploy, exec a migration, read its output, set one more variable,
+   deploy again — and getting the order wrong meant every photograph on the
+   volume with nothing pointing at it. The deploy does it now, which means the
+   deploy can also get it wrong, on a box holding the only copy of somebody's
+   holiday. So every branch of it is exercised here.
+
+   Docker and curl are stubbed onto the PATH, so this runs anywhere and tests
+   the decisions rather than the containers. */
+
+const objectStorage = ({ env, ...world }) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'offwego-cutover-'))
+  writeFileSync(path.join(dir, '.env'), env)
+  for (const name of ['object-storage.sh', 'merge-env.sh']) {
+    writeFileSync(path.join(dir, name), readFileSync(path.join(appRoot, 'deploy', name)))
+  }
+  mkdirSync(path.join(dir, 'stub'))
+  const script = lines => lines.join('\n')
+  writeFileSync(
+    path.join(dir, 'stub', 'docker'),
+    script([
+      '#!/bin/sh',
+      'case "$*" in',
+      '  *"ps --services --status running"*) [ "$MINIO_UP" = 1 ] && echo minio; exit 0 ;;',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: shell expansion, inside a shell script
+      '  *"migrate-media-to-bucket"*) exit ${MIGRATION_EXIT:-0} ;;',
+      '  *) exit 0 ;;',
+      'esac',
+      '',
+    ]),
+  )
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell expansion, inside a shell script
+  const health = 'exit ${HEALTH_EXIT:-0}'
+  writeFileSync(path.join(dir, 'stub', 'curl'), script(['#!/bin/sh', health, '']))
+  chmodSync(path.join(dir, 'stub', 'docker'), 0o755)
+  chmodSync(path.join(dir, 'stub', 'curl'), 0o755)
+
+  return {
+    dir,
+    run(phase, extra = {}) {
+      const result = spawnSync(
+        'bash',
+        [`${dir}/object-storage.sh`, phase, `${dir}/.env`, 'offwego.example.com'],
+        {
+          cwd: dir,
+          env: { ...process.env, PATH: `${dir}/stub:${process.env.PATH}`, ...world, ...extra },
+          encoding: 'utf8',
+        },
+      )
+      assert.equal(result.status, 0, result.stderr)
+      return result
+    },
+    bucket() {
+      const text = readFileSync(path.join(dir, '.env'), 'utf8')
+      return (/^S3_BUCKET=(.*)$/m.exec(text) || [])[1]
+    },
+    env() {
+      return readFileSync(path.join(dir, '.env'), 'utf8')
+    },
+  }
+}
+
+const BARE_ENV = [
+  'WAYFARE_DOMAIN=offwego.example.com',
+  'POSTGRES_PASSWORD=a-secret-with-$-and-/-in-it',
+  'S3_BUCKET=',
+  'S3_SECRET_ACCESS_KEY=',
+  '',
+].join('\n')
+
+test('the first deploy makes the object store its own credentials', () => {
+  const world = objectStorage({ env: BARE_ENV })
+  world.run('prepare')
+
+  const env = world.env()
+  /* Made on the box and never anywhere else: nothing to put in a GitHub
+     secret, nothing to paste into a terminal, nothing to leak in transit. */
+  const secret = /^S3_SECRET_ACCESS_KEY=(.+)$/m.exec(env)?.[1] || ''
+  const root = /^MINIO_ROOT_PASSWORD=(.+)$/m.exec(env)?.[1] || ''
+  assert.ok(secret.length >= 32, `the app's key is ${secret.length} characters`)
+  // MinIO refuses to start under eight, and this is the thing guarding a
+  // bucket of everybody's photographs.
+  assert.ok(root.length >= 32, `the root password is ${root.length} characters`)
+  assert.match(secret, /^[0-9a-f]+$/, 'no / or + to break an .env line or a signature')
+  assert.notEqual(secret, root, 'the app is not given the root credential')
+
+  assert.match(env, /^COMPOSE_PROFILES=objectstore$/m)
+  assert.match(env, /^S3_ENDPOINT=http:\/\/minio:9000$/m)
+  assert.match(env, /^S3_FORCE_PATH_STYLE=true$/m)
+  // Everything else on the box is left exactly as it was, awkward bytes and all.
+  assert.match(env, /^POSTGRES_PASSWORD=a-secret-with-\$-and-\/-in-it$/m)
+  // And nothing reads the bucket until the media is in it.
+  assert.equal(world.bucket(), '')
+})
+
+test('later deploys do not mint new credentials over the working ones', () => {
+  const world = objectStorage({ env: BARE_ENV })
+  world.run('prepare')
+  const first = world.env()
+  world.run('prepare')
+  /* A second secret would lock the app out of the bucket its own data is in,
+     on an ordinary deploy that changed nothing. */
+  assert.equal(world.env(), first)
+})
+
+test('nothing is pointed at the bucket until the media is safely in it', () => {
+  for (const [why, world] of [
+    ['the object store is not running', { MINIO_UP: '0' }],
+    ['the copy did not finish', { MINIO_UP: '1', MIGRATION_EXIT: '1' }],
+  ]) {
+    const box = objectStorage({ env: BARE_ENV, ...world })
+    box.run('prepare')
+    box.run('cutover')
+    assert.equal(box.bucket(), '', `switched over when ${why}`)
+  }
+})
+
+test('a copy that lands, and an app that answers, switches the bucket on', () => {
+  const box = objectStorage({
+    env: BARE_ENV,
+    MINIO_UP: '1',
+    MIGRATION_EXIT: '0',
+    HEALTH_EXIT: '0',
+  })
+  box.run('prepare')
+  box.run('cutover')
+  assert.equal(box.bucket(), 'offwego-media')
+
+  // And then never touches it again.
+  const settled = box.env()
+  box.run('prepare')
+  box.run('cutover')
+  assert.equal(box.env(), settled)
+})
+
+test('an app that will not come back puts itself on the volume again', () => {
+  /* The one that matters. The health check asks the file store whether it is
+     really there, so a bucket the app cannot reach fails it — and a deploy
+     that switched over into a trip full of grey squares and left it that way
+     would be worse than never switching at all. */
+  const box = objectStorage({
+    env: BARE_ENV,
+    MINIO_UP: '1',
+    MIGRATION_EXIT: '0',
+    HEALTH_EXIT: '22',
+  })
+  box.run('prepare')
+  box.run('cutover')
+  assert.equal(box.bucket(), '', 'left the app pointing at a bucket it cannot read')
 })

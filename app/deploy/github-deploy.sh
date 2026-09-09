@@ -55,7 +55,7 @@ done < <(find "$staged_app/deploy" -type f -name '*.sh' -print0)
 # Everything the two image builds read. A release that omits one of these
 # is rejected here, with the missing name, rather than failing minutes
 # later as an unreadable docker cache-key error.
-for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile deploy/alloy.config; do
+for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile deploy/alloy.config deploy/object-storage.sh server/scripts/migrate-media-to-bucket.mjs; do
   if [[ ! -e "$staged_app/$required_path" ]]; then
     echo "Release is missing app/$required_path." >&2
     exit 66
@@ -120,6 +120,10 @@ rollback() {
 trap rollback ERR
 
 cd "$APP_ROOT"
+# Credentials and the compose profile for the object store, made here on the
+# first deploy that sees none and read back from .env on every one after. It
+# does nothing once media is already served from the bucket.
+bash ./deploy/object-storage.sh prepare "$APP_ROOT/.env"
 docker compose config --quiet
 # The release sha reaches the web build so browser telemetry can be sliced
 # by deploy.
@@ -142,6 +146,12 @@ install -o root -g root -m 755 \
   "$APP_ROOT/deploy/github-deploy.sh" /usr/local/sbin/wayfare-github-deploy
 printf '%s\n' "$release_sha" > .deployed-sha
 trap - ERR
+
+# Media onto the object store, once, with the release already live and
+# answering. Deliberately after the trap comes off: a copy that will not
+# finish must not roll back a deploy that is otherwise perfectly good, and
+# this leaves the app reading the volume when anything goes wrong.
+bash ./deploy/object-storage.sh cutover "$APP_ROOT/.env" "$deployment_domain" || true
 
 # The attractions seed is versioned: bump the number when the seeding policy
 # changes and the next deploy walks the default regions again. Detached —
