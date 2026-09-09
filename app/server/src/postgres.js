@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
+import { stopForPhoto } from './stop-placement.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -1516,6 +1517,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
+        /* Cleared here so the foreign key has nothing to complain about; the
+           re-link below decides where they actually belong now, which is
+           usually the next-nearest stop rather than nowhere. */
         await client.query('update photos set stop_id=null where trip_id=$1 and stop_id=$2', [
           tripId,
           stopId,
@@ -1532,6 +1536,53 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       } finally {
         client.release()
       }
+    },
+    /* Re-file a whole trip's photographs against its itinerary as it stands now.
+
+       Filing at upload only ever answers for the itinerary that existed at
+       that moment, and that is not how a trip gets written up: the stops are
+       usually added afterwards, from the photographs. Without this, every
+       picture taken before its stop existed stays filed under nothing for
+       ever, and moving a stop leaves its photographs at the old place.
+
+       The rule is not repeated here. It would be faster as one SQL statement
+       with the haversine inlined, and it would also be a second copy of the
+       thing that decides where a photograph belongs — free to drift from the
+       first, silently, in whichever direction rounds differently. So the rows
+       come here, stop-placement.js answers, and only what actually changed is
+       written, in one statement rather than one per photograph.
+
+       What comes back is bounded by one trip's photographs, and only the three
+       columns needed to decide: less than the trip read already sends. */
+    async relinkTripPhotos(user, tripId, { radiusMetres } = {}) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const [stops, photos] = await Promise.all([
+        pool.query('select id, lng, lat from stops where trip_id=$1 order by seq,created_at', [
+          tripId,
+        ]),
+        pool.query(
+          'select id, lng, lat, stop_id from photos where trip_id=$1 and lng is not null and lat is not null',
+          [tripId],
+        ),
+      ])
+      const ids = []
+      const next = []
+      for (const photo of photos.rows) {
+        const decided = stopForPhoto(photo, stops.rows, { radiusMetres })
+        if (decided !== photo.stop_id) {
+          ids.push(photo.id)
+          next.push(decided)
+        }
+      }
+      if (ids.length) {
+        await pool.query(
+          `update photos p set stop_id = v.stop_id
+           from (select * from unnest($1::uuid[], $2::uuid[]) as t(id, stop_id)) v
+           where p.id = v.id`,
+          [ids, next],
+        )
+      }
+      return { examined: photos.rowCount, changed: ids.length }
     },
     async replaceRoute(user, tripId, points) {
       if (!(await this.canEditTrip(user.id, tripId))) return false
