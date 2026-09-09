@@ -1,18 +1,29 @@
 import { useCallback, useLayoutEffect, useState } from 'react'
-import { gridWindow, squareRowHeight, type GridWindow } from '../../../grid-window-core'
 
-/* The measuring half of a windowed grid: how wide the grid is, how far its
-   scroller has moved past its top, and how tall the scroller is. The
-   arithmetic lives in grid-window-core, where it can be tested without a
-   layout engine. */
-export default function useGridWindow(total: number, columns = 3, gap = 8) {
+export interface GridBox {
+  /** The grid's content width: what a row of cells actually has to fill. */
+  width: number
+  /** How far the grid's own first row has gone past the top of the view. */
+  scrolled: number
+  viewportHeight: number
+}
+
+/* The measuring half of a windowed grid, and the only part that needs a layout
+   engine. Both grids lean on it — the uniform one and the grouped one — and
+   neither of them should have to know how to find a scroller.
+
+   Kept apart from the arithmetic on purpose: what is hard to get right here is
+   which element scrolls and which box is being measured, and what is hard to
+   get right there is the slice. Testing them together would mean testing
+   neither. */
+export default function useGridBox() {
   /* A callback ref rather than a ref object, because the grid is only in the
      document once there is something to put in it. A layout effect reading
      `ref.current` would find nothing on the first paint of an empty trip and,
      having no dependency to change, would never look again. */
   const [grid, setGrid] = useState<HTMLDivElement | null>(null)
   const ref = useCallback((node: HTMLDivElement | null) => setGrid(node), [])
-  const [box, setBox] = useState({ width: 0, scrolled: 0, viewportHeight: 0 })
+  const [box, setBox] = useState<GridBox>({ width: 0, scrolled: 0, viewportHeight: 0 })
 
   useLayoutEffect(() => {
     if (!grid) return
@@ -42,7 +53,6 @@ export default function useGridWindow(total: number, columns = 3, gap = 8) {
       setBox(current => {
         const next = {
           width: Math.max(0, grid.clientWidth - (Number.isFinite(sides) ? sides : 0)),
-          // How far the grid's own first row has gone past the top of the view.
           scrolled: Math.max(0, viewTop - gridTop),
           viewportHeight: view ? view.clientHeight : window.innerHeight,
         }
@@ -71,13 +81,5 @@ export default function useGridWindow(total: number, columns = 3, gap = 8) {
     }
   }, [grid])
 
-  const rowHeight = squareRowHeight(box.width, columns, gap)
-  const visible: GridWindow = gridWindow({
-    total,
-    columns,
-    rowHeight,
-    scrolled: box.scrolled,
-    viewportHeight: box.viewportHeight,
-  })
-  return { ref, visible }
+  return { ref, box }
 }

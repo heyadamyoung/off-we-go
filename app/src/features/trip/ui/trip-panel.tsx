@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { SightsList, type SightsListProps } from '../../sights'
 import { SegmentChain } from '../../transport'
-import useGridWindow from '../model/use-grid-window'
+import usePhotoGroups from '../model/use-photo-groups'
+import type { GroupMode } from '../../../photo-groups-core'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
 import ChatPanel, { type ChatProps } from './panel-chat'
@@ -250,10 +251,14 @@ function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
 
 function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: PanelProps) {
   const people = [...new Set(photos.map(photo => photo.by).filter(Boolean))]
-  const shown = (photoBy ? photos.filter(photo => photo.by === photoBy) : photos).slice().reverse()
+  const shown = photoBy ? photos.filter(photo => photo.by === photoBy) : photos
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
   const filter = 'rounded-full px-3 py-1.5 text-xs font-bold'
-  const { ref: grid, visible } = useGridWindow(shown.length)
+
+  /* By place by default: the trip already knows where it went, and a wall of
+     everything is the harder thing to read once there is a lot of it. */
+  const [mode, setMode] = useState<GroupMode>('stop')
+  const { ref: grid, rows, height, visible, collapsed, toggle } = usePhotoGroups(shown, stops, mode)
 
   return (
     <>
@@ -274,38 +279,79 @@ function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: Panel
           </button>
         ))}
       </div>
+      {shown.length > 0 && (
+        <div className="flex gap-1.5 px-3 pb-1 pt-2">
+          <button
+            className={filter + (mode === 'stop' ? ' bg-ink text-canvas' : ' bg-raised text-muted')}
+            aria-pressed={mode === 'stop'}
+            onClick={() => setMode('stop')}>
+            By place
+          </button>
+          <button
+            className={filter + (mode === 'date' ? ' bg-ink text-canvas' : ' bg-raised text-muted')}
+            aria-pressed={mode === 'date'}
+            onClick={() => setMode('date')}>
+            By date
+          </button>
+        </div>
+      )}
       {shown.length ? (
         /* Only the rows anybody can see are in the document. The two spacers
            stand in for the rest, so the scrollbar is honest and nothing jumps
            — and a trip can hold as many photographs as it likes without the
-           grid being the reason it cannot. */
-        <div className="p-3" ref={grid}>
+           grid being the reason it cannot. Headers are rows like any other,
+           which is what lets a card collapse without any of this changing. */
+        <div className="p-3" ref={grid} style={{ minHeight: height }}>
           <div style={{ height: visible.topPad }} />
-          <div className="grid grid-cols-3 gap-2">
-            {shown.slice(visible.start, visible.end).map(photo => (
+          {rows.slice(visible.start, visible.end).map(row =>
+            row.kind === 'header' ? (
               <button
-                key={photo.id}
-                aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
-                className={
-                  'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
-                  (selected === photo.id
-                    ? 'outline outline-2 -outline-offset-2 outline-accent'
-                    : '')
-                }
-                onClick={() =>
-                  onSelect(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
-                }>
-                <MediaThumb item={photo} w={320} h={320} className="size-full object-cover" />
-                {photo.caption && (
-                  <span
-                    className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
-                               to-transparent px-2 pb-1.5 pt-4 text-[11px] text-white">
-                    {photo.caption}
-                  </span>
-                )}
+                key={row.key}
+                className="pgrid-head flex w-full items-center gap-2 pb-2 pt-3 text-left"
+                style={{ height: row.height }}
+                aria-expanded={!collapsed.has(row.group.key)}
+                onClick={() => toggle(row.group.key)}>
+                <span
+                  className={
+                    'text-muted transition-transform ' +
+                    (collapsed.has(row.group.key) ? '-rotate-90' : '')
+                  }
+                  aria-hidden="true">
+                  ▾
+                </span>
+                <span className="truncate text-sm font-bold">{row.group.title}</span>
+                <span className="text-xs text-muted">{row.group.photos.length}</span>
               </button>
-            ))}
-          </div>
+            ) : (
+              <div key={row.key} className="grid grid-cols-3 gap-2" style={{ height: row.height }}>
+                {row.items.map(photo => (
+                  <button
+                    key={photo.id}
+                    aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
+                    className={
+                      'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
+                      (selected === photo.id
+                        ? 'outline outline-2 -outline-offset-2 outline-accent'
+                        : '')
+                    }
+                    onClick={() =>
+                      onSelect(
+                        photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined),
+                      )
+                    }>
+                    <MediaThumb item={photo} w={320} h={320} className="size-full object-cover" />
+                    {photo.caption && (
+                      <span
+                        className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
+                                   to-transparent px-2 pb-1.5 pt-4 text-[11px] text-white">
+                        {photo.caption}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ),
+          )}
           <div style={{ height: visible.bottomPad }} />
         </div>
       ) : (
