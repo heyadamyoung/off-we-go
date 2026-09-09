@@ -149,5 +149,10 @@ if (counts.failed) {
 if (dryRun) {
   console.log('\nRun again without --check to copy. Nothing on the volume is ever deleted.')
 } else {
-  console.log('\nNow set S3_BUCKET in .env and deploy. The volume stays as it is until you say.')
+  /* Deliberately not an instruction. The deploy sets S3_BUCKET itself the moment
+     this returns, so telling a log reader to go and do it would be telling them to
+     redo something already done. What is true either way is the condition. */
+  console.log(
+    '\nThe volume still holds every byte. Nothing reads from the bucket until S3_BUCKET is set.',
+  )
 }
