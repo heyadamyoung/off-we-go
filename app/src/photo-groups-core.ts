@@ -127,6 +127,19 @@ export function groupPhotos<P extends GroupablePhoto>(
   return mode === 'stop' ? groupByStop(photos, stops) : ungrouped(photos)
 }
 
+/* How many photographs fit across, given the room there is.
+
+   Three was right when this lived in a 440px column and wrong the moment the
+   grid could have the whole screen: the same three tiles stretched to 500px
+   each is not a gallery, it is a slideshow with extra steps. So the count
+   comes from the width, aiming at a tile somebody can actually recognise a
+   face in, and is bounded at both ends — never so few that a wide screen
+   wastes itself, never so many that a phone shows a mosaic. */
+export function columnsForWidth(width: number, { target = 150, min = 3, max = 10 } = {}): number {
+  if (!(width > 0)) return min
+  return Math.max(min, Math.min(max, Math.floor(width / target)))
+}
+
 export type LayoutRow<P = GroupablePhoto> =
   | { kind: 'header'; key: string; group: PhotoGroup<P>; top: number; height: number }
   | {

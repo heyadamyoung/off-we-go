@@ -692,9 +692,11 @@ test('the photos panel filters by who took them', async ({ page }) => {
   const all = await page.locator('.pgrid-photo').count()
   expect(all).toBeGreaterThan(1)
 
-  await page.getByRole('button', { name: 'Maya', exact: true }).click()
+  /* A face rather than a name: the row has to stay one row, and four names
+     spelled out in pills is most of a phone's width. */
+  await page.getByRole('button', { name: 'Show only Maya' }).click()
   await expect.poll(() => page.locator('.pgrid-photo').count()).toBeLessThan(all)
-  await page.getByRole('button', { name: 'Everyone' }).click()
+  await page.getByRole('button', { name: 'Everyone', exact: true }).click()
   await expect.poll(() => page.locator('.pgrid-photo').count()).toBe(all)
 })
 

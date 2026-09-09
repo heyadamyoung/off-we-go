@@ -1,10 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { SightsList, type SightsListProps } from '../../sights'
 import { SegmentChain } from '../../transport'
-import usePhotoGroups from '../model/use-photo-groups'
-import type { GroupMode } from '../../../photo-groups-core'
+import PanelPhotos from './panel-photos'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
 import ChatPanel, { type ChatProps } from './panel-chat'
@@ -54,17 +53,26 @@ const HEADINGS: Record<string, [string, string]> = {
     'Every leg of the journey — deadlines, seats and documents in one chain.',
   ],
   chat: ['Chat', 'The whole crew, one room — travellers and followers alike.'],
-  photos: ['Photos and videos', 'Everything anyone has taken on this trip, newest first.'],
+  photos: ['Photos', ''],
   sights: ['Sights nearby', 'Places worth a detour, from where the map is looking.'],
   people: ['People', 'Who is travelling, and who is following from home.'],
 }
 
 export default function TripPanel(props: PanelProps) {
   const [title, sub] = HEADINGS[props.view] || ['', '']
+  /* The gallery takes the screen. A wall of photographs in a 440px column is a
+     column of photographs — three across, most of the screen given to a map
+     nobody is looking at while they are looking at these. Everywhere else the
+     panel is still a panel: a timeline or a chat has a natural width and does
+     not get better for being stretched across a desktop. */
+  const wide = props.view === 'photos'
   const action =
     props.view === 'photos' && props.onAddPhotos ? (
-      <button className="mini mini-accent" onClick={props.onAddPhotos}>
-        Add photos or videos
+      <button
+        className="mini mini-accent inline-flex items-center gap-1"
+        onClick={props.onAddPhotos}>
+        <Icon n="plus" s={13} />
+        Add
       </button>
     ) : props.view === 'people' ? (
       <button className="mini mini-accent" onClick={props.onInvite}>
@@ -78,34 +86,53 @@ export default function TripPanel(props: PanelProps) {
 
   return (
     <aside
-      className="sheet rise absolute bottom-[var(--trip-1)] left-7 top-[var(--trip-top)] z-[6] flex
-                      w-[440px] flex-col overflow-hidden rounded-2xl
-                      max-lg:inset-x-4 max-lg:w-auto
-                      max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-none max-sm:border-x-0
-                      max-sm:border-b-0">
-      <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
-        <div>
-          <h2 className="m-0 text-2xl font-extrabold tracking-[-.02em]">{title}</h2>
-          <p className="mt-1 text-xs text-muted">{sub}</p>
+      className={
+        'sheet rise absolute flex flex-col overflow-hidden ' +
+        (wide
+          ? /* The whole screen, over the trip's own chrome rather than under
+               it. Two bands across the top — the trip's, then the gallery's —
+               is two things claiming to be the header of one screen, and the
+               one somebody actually opened should win. Its own row carries the
+               way back out, so nothing is stranded behind it. */
+            `sheet-flat inset-0 z-30 rounded-none border-0
+             max-sm:pb-[env(safe-area-inset-bottom,0px)]`
+          : `z-[6] bottom-[var(--trip-1)] left-7 top-[var(--trip-top)] w-[440px] rounded-2xl
+             max-lg:inset-x-4 max-lg:w-auto
+             max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-none max-sm:border-x-0
+             max-sm:border-b-0`)
+      }>
+      {/* The gallery draws its own, because a title bar and a row of controls
+          stacked on top of each other is two bands of chrome above the thing
+          somebody actually opened. */}
+      {!wide && (
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
+          <div className="min-w-0">
+            <h2 className="m-0 truncate text-2xl font-extrabold tracking-[-.02em]">{title}</h2>
+            {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
+          </div>
+          <div className="flex flex-none items-center gap-1.5">
+            {action}
+            <button
+              className="grid size-8 place-items-center rounded-lg text-muted hover:bg-raised2 hover:text-ink"
+              onClick={props.onClose}
+              title="Back to map"
+              aria-label="Back to map">
+              <Icon n="x" s={16} />
+            </button>
+          </div>
         </div>
-        <div className="flex flex-none gap-1.5">
-          {action}
-          <button
-            className="grid size-8 place-items-center rounded-lg text-muted hover:bg-raised2 hover:text-ink"
-            onClick={props.onClose}
-            title="Back to map"
-            aria-label="Back to map">
-            <Icon n="x" s={16} />
-          </button>
-        </div>
-      </div>
+      )}
       <div
-        className="flex-1 overflow-y-auto px-2 pb-4 pt-2
-                      max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+        className={
+          'flex-1 overflow-y-auto ' +
+          (wide
+            ? 'pb-6 max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]'
+            : 'px-2 pb-4 pt-2 max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]')
+        }>
         {props.view === 'timeline' && <Timeline {...props} />}
         {props.view === 'travel' && <Travel {...props} />}
         {props.view === 'chat' && props.chat && <ChatPanel {...props.chat} />}
-        {props.view === 'photos' && <Photos {...props} />}
+        {props.view === 'photos' && <PanelPhotos {...props} />}
         {props.view === 'sights' && <SightsList {...props.sights} />}
         {props.view === 'people' && (
           <PeopleList people={props.people} photos={props.photos} viewers={props.viewers} />
@@ -245,118 +272,6 @@ function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
           </div>
         )
       })}
-    </>
-  )
-}
-
-function Photos({ photos, stops, selected, photoBy, onPhotoBy, onSelect }: PanelProps) {
-  const people = [...new Set(photos.map(photo => photo.by).filter(Boolean))]
-  const shown = photoBy ? photos.filter(photo => photo.by === photoBy) : photos
-  const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  const filter = 'rounded-full px-3 py-1.5 text-xs font-bold'
-
-  /* By place by default: the trip already knows where it went, and a wall of
-     everything is the harder thing to read once there is a lot of it. */
-  const [mode, setMode] = useState<GroupMode>('stop')
-  const { ref: grid, rows, height, visible, collapsed, toggle } = usePhotoGroups(shown, stops, mode)
-
-  return (
-    <>
-      <div className="flex gap-1.5 px-3 pb-1 pt-3">
-        <button
-          className={filter + (photoBy ? ' bg-raised text-muted' : ' bg-ink text-canvas')}
-          onClick={() => onPhotoBy(null)}>
-          Everyone
-        </button>
-        {people.map(name => (
-          <button
-            key={name}
-            className={
-              filter + (photoBy === name ? ' bg-ink text-canvas' : ' bg-raised text-muted')
-            }
-            onClick={() => onPhotoBy(name)}>
-            {name.split(' ')[0]}
-          </button>
-        ))}
-      </div>
-      {shown.length > 0 && (
-        <div className="flex gap-1.5 px-3 pb-1 pt-2">
-          <button
-            className={filter + (mode === 'stop' ? ' bg-ink text-canvas' : ' bg-raised text-muted')}
-            aria-pressed={mode === 'stop'}
-            onClick={() => setMode('stop')}>
-            By place
-          </button>
-          <button
-            className={filter + (mode === 'date' ? ' bg-ink text-canvas' : ' bg-raised text-muted')}
-            aria-pressed={mode === 'date'}
-            onClick={() => setMode('date')}>
-            By date
-          </button>
-        </div>
-      )}
-      {shown.length ? (
-        /* Only the rows anybody can see are in the document. The two spacers
-           stand in for the rest, so the scrollbar is honest and nothing jumps
-           — and a trip can hold as many photographs as it likes without the
-           grid being the reason it cannot. Headers are rows like any other,
-           which is what lets a card collapse without any of this changing. */
-        <div className="p-3" ref={grid} style={{ minHeight: height }}>
-          <div style={{ height: visible.topPad }} />
-          {rows.slice(visible.start, visible.end).map(row =>
-            row.kind === 'header' ? (
-              <button
-                key={row.key}
-                className="pgrid-head flex w-full items-center gap-2 pb-2 pt-3 text-left"
-                style={{ height: row.height }}
-                aria-expanded={!collapsed.has(row.group.key)}
-                onClick={() => toggle(row.group.key)}>
-                <span
-                  className={
-                    'text-muted transition-transform ' +
-                    (collapsed.has(row.group.key) ? '-rotate-90' : '')
-                  }
-                  aria-hidden="true">
-                  ▾
-                </span>
-                <span className="truncate text-sm font-bold">{row.group.title}</span>
-                <span className="text-xs text-muted">{row.group.photos.length}</span>
-              </button>
-            ) : (
-              <div key={row.key} className="grid grid-cols-3 gap-2" style={{ height: row.height }}>
-                {row.items.map(photo => (
-                  <button
-                    key={photo.id}
-                    aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
-                    className={
-                      'pgrid-photo relative aspect-square overflow-hidden rounded-xl bg-raised ' +
-                      (selected === photo.id
-                        ? 'outline outline-2 -outline-offset-2 outline-accent'
-                        : '')
-                    }
-                    onClick={() =>
-                      onSelect(
-                        photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined),
-                      )
-                    }>
-                    <MediaThumb item={photo} w={320} h={320} className="size-full object-cover" />
-                    {photo.caption && (
-                      <span
-                        className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65
-                                   to-transparent px-2 pb-1.5 pt-4 text-[11px] text-white">
-                        {photo.caption}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            ),
-          )}
-          <div style={{ height: visible.bottomPad }} />
-        </div>
-      ) : (
-        <p className="hint p-4">No photos or videos yet. Add some from the camera button.</p>
-      )}
     </>
   )
 }

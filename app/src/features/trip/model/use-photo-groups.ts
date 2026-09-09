@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { squareRowHeight } from '../../../grid-window-core'
 import {
+  columnsForWidth,
   groupPhotos,
   layoutGroups,
   windowRows,
@@ -23,7 +24,6 @@ export default function usePhotoGroups(
   photos: TripPhoto[],
   stops: GroupableStop[],
   mode: GroupMode,
-  columns = 3,
   gap = 8,
 ) {
   const { ref, box } = useGridBox()
@@ -39,6 +39,10 @@ export default function usePhotoGroups(
 
   const groups = useMemo(() => groupPhotos(photos, stops, mode), [photos, stops, mode])
 
+  /* From the room there is, not a constant: this grid is a column on a phone
+     and the whole screen on a desktop, and three tiles stretched across a
+     desktop is not a gallery. */
+  const columns = columnsForWidth(box.width)
   const rowHeight = squareRowHeight(box.width, columns, gap)
   /* Only the by-stop view is a set of cards. Ungrouped is one list, and a
      lone header over the whole trip saying nothing would be furniture. */
@@ -61,5 +65,5 @@ export default function usePhotoGroups(
     [rows, height, box.scrolled, box.viewportHeight],
   )
 
-  return { ref, groups, rows, height, visible, collapsed, toggle }
+  return { ref, columns, groups, rows, height, visible, collapsed, toggle }
 }
