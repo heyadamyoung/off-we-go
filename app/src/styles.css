@@ -278,6 +278,16 @@
     box-shadow: var(--c-shadow);
   }
 
+  /* A sheet with nothing behind it worth seeing. Translucency is right for a
+     panel floating over a map — it keeps you oriented — and wrong for one
+     covering the screen, where the map bleeding through at four percent is
+     not depth, it is a smudge behind the photographs. */
+  .sheet-flat {
+    background: var(--c-panel-solid);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 9px 16px; border-radius: 999px;
@@ -376,6 +386,13 @@
     border: 2px solid var(--c-bg); overflow: hidden;
   }
   .avatar img { width: 100%; height: 100%; object-fit: cover }
+  /* The initial, when there is no portrait or it would not load. It carries
+     the circle's own background rather than the transparent one an <img> would
+     have left behind. */
+  .avatar .avatar-letter {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    background: var(--c-raised-2); color: var(--c-muted); font-weight: 700;
+  }
   .avatar.plain { background: var(--c-raised-2); color: var(--c-muted); font-weight: 700 }
 
   /* Touch and sight are different budgets: the visual box stays compact while
@@ -869,6 +886,30 @@
   padding: 9px 11px; font-size: 13px; outline: none; width: 100%; resize: vertical;
 }
 .editor input:focus, .editor textarea:focus { border-color: var(--c-accent) }
+/* A compact segmented control, for places where a row of choices should read
+   as one control rather than as several buttons that happen to be adjacent.
+   Deliberately small: in the gallery these sit above the photographs and are
+   not the thing anybody came to look at. */
+/* The gallery's controls, when a phone is narrower than they are. Sliding
+   beats wrapping: a wrapped row is a second band of chrome that every screen
+   pays for, and this one costs nothing until somebody needs it. */
+.gallery-controls { scrollbar-width: none; -ms-overflow-style: none }
+.gallery-controls::-webkit-scrollbar { display: none }
+
+.segbar {
+  display: inline-flex; gap: 2px; margin: 0; padding: 2px; border: 0;
+  border-radius: 999px; background: var(--c-raised); min-inline-size: auto;
+}
+.segbar button {
+  height: 24px; padding: 0 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; color: var(--c-faint); white-space: nowrap;
+  transition: color .12s, background .12s;
+}
+.segbar button:hover { color: var(--c-ink) }
+.segbar button[aria-pressed='true'] {
+  background: var(--c-panel-solid); color: var(--c-ink); box-shadow: 0 1px 2px rgb(0 0 0 / .18);
+}
+
 .editor .seg { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: var(--c-raised) }
 .editor .seg button { flex: 1; height: 27px; border-radius: 8px; font-size: 11px; font-weight: 700; color: var(--c-faint) }
 .editor .seg button.on { background: var(--c-panel-solid); color: var(--c-ink) }
