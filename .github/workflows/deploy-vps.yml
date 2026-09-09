@@ -77,6 +77,12 @@ jobs:
       - name: Run browser tests
         run: pnpm test
 
+      # The suite above runs in sample mode, where uploads never leave the tab.
+      # This one has a real server behind it, so "does a film actually upload"
+      # is a question CI can answer rather than infer.
+      - name: Run browser tests against a real server
+        run: pnpm test:live
+
       # A CI-only flake with no trace is unfixable folklore; a failure here
       # hands its Playwright traces and DOM snapshots to the run page instead.
       - name: Keep the failure traces
