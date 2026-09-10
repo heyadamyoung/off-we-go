@@ -758,6 +758,45 @@
   .vtop .acts button.liked svg { animation: none }
 }
 
+/* The stage reads the finger, so the browser must not: without this a swipe
+   across a photograph is the browser's own back-gesture or a scroll, and the
+   page turns nowhere. Vertical is left alone — the comments are down there. */
+.vbody { touch-action: pan-y }
+
+/* The photograph on its own. Over everything, including the viewer's chrome,
+   because the whole point is that there is nothing else on the screen. */
+.vzoom {
+  position: fixed; inset: 0; z-index: 60; background: #000;
+  display: flex; align-items: center; justify-content: center;
+  animation: media-arrived .16s ease;
+}
+/* No touch-action at all here: pinch, drag and swipe are all read by hand, and
+   anything the browser keeps for itself is a gesture that arrives half-eaten. */
+.vzstage {
+  position: absolute; inset: 0; overflow: hidden; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.vzimg {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  transform-origin: center center; will-change: transform;
+  /* A dragged photograph must never be a selected photograph. */
+  user-select: none; -webkit-user-select: none; -webkit-user-drag: none;
+}
+.vzclose, .vzreset {
+  position: absolute; z-index: 2; border-radius: 999px; color: #fff;
+  background: rgb(255 255 255 / .14); backdrop-filter: blur(8px);
+}
+.vzclose {
+  top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px;
+  width: 40px; height: 40px; display: grid; place-items: center;
+}
+.vzreset {
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+  padding: 8px 16px; font-size: 12px; font-weight: 700; letter-spacing: .02em;
+}
+.vzclose:hover, .vzreset:hover { background: rgb(255 255 255 / .26) }
+@media (prefers-reduced-motion: reduce) { .vzoom { animation: none } }
+
 .vnav {
   position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px;
   border-radius: 50%; background: rgb(255 255 255 / .12); backdrop-filter: blur(8px);

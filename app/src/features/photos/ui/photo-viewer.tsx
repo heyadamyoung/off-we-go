@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { MapCanvas } from '../../map'
 import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import PhotoDetails from './photo-details'
+import PhotoSide from './photo-side'
+import PhotoZoom from './photo-zoom'
 import VideoFrame from './video-frame'
 import { durationLabel } from '../../../mobile-videos-core'
+import { pageBy } from '../../../swipe-core'
+import useViewerGestures from '../model/use-viewer-gestures'
 import { validLngLat } from '../../../shared/lib/geo'
 import type { MapTint } from '../../map'
 import type {
@@ -74,6 +77,10 @@ function PhotoViewer({
   const [draft, setDraft] = useState('')
   const [details, setDetails] = useState(false)
   const [burst, setBurst] = useState(0)
+  /* The photograph on its own, big. The viewer is a good place to read a trip
+     and a poor place to look at a picture — caption, comments and a map are
+     all competing with it for a phone screen. */
+  const [zoomed, setZoomed] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -116,7 +123,25 @@ function PhotoViewer({
 
     [mapPoint?.[0], mapPoint?.[1]],
   )
-  const noop = useCallback(() => {}, [])
+  /* A tap never UN-likes — losing a heart to a stray touch would sting; the
+     chrome's heart stays the deliberate way back. Reads the set rather than
+     closing over a `liked` computed further down, so the gesture handlers can
+     be declared before the render body needs them. */
+  const like = useCallback(() => {
+    const id = photo?.id
+    if (!id) return
+    if (!likes.has(id)) toggleLike(id)
+    setBurst(value => value + 1)
+  }, [likes, toggleLike, photo?.id])
+
+  const openZoom = useCallback(() => setZoomed(true), [])
+  const gestures = useViewerGestures({
+    index,
+    length: list.length,
+    setIndex,
+    onLike: like,
+    onOpen: openZoom,
+  })
 
   if (!photo) return null
   const video = photo.kind === 'video'
@@ -201,7 +226,10 @@ function PhotoViewer({
           </div>
         </div>
 
-        <div className="vbody">
+        {/* The stage reads the finger. On the whole stage rather than on the
+            photograph, because a phone's picture rarely fills it and a swipe
+            that starts in the letterbox is still a swipe. */}
+        <div className="vbody" {...gestures}>
           {list.length > 1 && (
             <button
               className="vnav p"
@@ -209,13 +237,21 @@ function PhotoViewer({
               <Icon n="chevl" s={20} c="#fff" w={2} />
             </button>
           )}
-          {/* The photograph is the like button: a tap hearts it and answers
-              with the big heart, the way every thumb already expects. A tap
-              never UN-likes — losing a heart to a stray touch would sting;
-              the chrome's heart stays the deliberate way back.
+          {/* DOUBLE tap hearts it, and answers with the big heart — the way
+              every thumb already expects, and the only like gesture that
+              cannot be mistaken for something else. A single tap used to do
+              it, which meant there was no gesture left for paging: a swipe
+              across a phone ends as a tap, so every attempt to move through a
+              trip hearted the picture instead.
 
-              A film is not: on a video the tap belongs to play, pause and the
-              scrubber, so the heart in the chrome is its only way in. */}
+              Keyboard and pointer come in by different doors. The button's
+              onClick is the keyboard's (and a mouse's double click); the
+              pointer handlers on the stage own touch, because only they can
+              tell a swipe from a tap.
+
+              A film is not tappable at all: on a video the touch belongs to
+              play, pause and the scrubber, so the heart in the chrome is its
+              only way in. */}
           {video ? (
             <VideoFrame photo={photo} />
           ) : (
@@ -223,9 +259,11 @@ function PhotoViewer({
               type="button"
               className="vmaintap"
               aria-label={liked ? 'Liked' : 'Like this photo'}
-              onClick={() => {
-                if (!liked) toggleLike(photo.id)
-                setBurst(value => value + 1)
+              onDoubleClick={like}
+              onClick={event => {
+                // detail 0 is a click the keyboard made; a pointer's is 1 or more,
+                // and a pointer has already been read by the stage's handlers.
+                if (event.detail === 0) setZoomed(true)
               }}>
               <Img className="main" item={photo} w={1200} h={900} alt={photo.caption} eager />
             </button>
@@ -258,6 +296,15 @@ function PhotoViewer({
           </div>
         </div>
 
+        {zoomed && !video && (
+          <PhotoZoom
+            photo={photo}
+            siblings={list.length > 1}
+            onClose={() => setZoomed(false)}
+            onPage={way => setIndex(pageBy(way, index, list.length))}
+          />
+        )}
+
         <div className="vfilm">
           {list.map((p, i) => (
             <button key={p.id} className={i === index ? 'on' : ''} onClick={() => setIndex(i)}>
@@ -267,98 +314,26 @@ function PhotoViewer({
         </div>
       </div>
 
-      <div className="vside">
-        <div className="vminimap">
-          {mini && (
-            <MapCanvas
-              theme={theme}
-              tint={tint}
-              interactive={false}
-              view={mini}
-              onView={noop}
-              route={[]}
-              stops={stop ? [stop] : []}
-              photos={here}
-              highlight={photo.id}
-            />
-          )}
-          <div className="cap">
-            <b>{mini ? 'Taken here' : 'Location unavailable'}</b>
-            <span>
-              {mini
-                ? stop
-                  ? stop.name
-                  : 'On the move'
-                : `This ${video ? 'video' : 'photo'} has no coordinates`}
-              {mini ? ` · ${here.length} here` : ''}
-            </span>
-          </div>
-        </div>
-
-        {stop && (
-          <div className="vinfo">
-            <div className="k">
-              {stop.status === 'now'
-                ? 'Happening now'
-                : stop.status === 'done'
-                  ? 'Visited'
-                  : 'Planned'}{' '}
-              · {stop.time}
-            </div>
-            <h3>{stop.name}</h3>
-            <p>{stop.note}</p>
-          </div>
-        )}
-
-        <div className="vcontrib">
-          <div className="st">
-            {contributors.map(n => (
-              <img key={n} src={byName(n).avatar} alt="" />
-            ))}
-          </div>
-          <div className="t">
-            <b>{contributors.join(', ')}</b>
-            <span>contributed photos and videos here</span>
-          </div>
-          <span className="n">{here.length}</span>
-        </div>
-
-        <div className="vcomments">
-          {cmts.length === 0 && (
-            <div className="vnone">No notes yet. Be the first to say something.</div>
-          )}
-          {cmts.map(c => (
-            <div className={'cmt' + (c.pending ? ' pending' : '')} key={c.id}>
-              <img src={byName(c.by).avatar} alt="" />
-              <div className="t">
-                <b>{c.by}</b>
-                <em>{c.when}</em>
-                <p>{c.text}</p>
-              </div>
-              {(canEdit || c.by === me.name) && !c.pending && (
-                <button
-                  className="cdel"
-                  title="Delete"
-                  onClick={() => onCommentDelete(photo.id, c.id)}>
-                  <Icon n="x" s={12} w={2} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <form className="vinput" onSubmit={submit}>
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            placeholder={firstName ? `Say something nice, ${firstName}…` : 'Say something nice…'}
-          />
-          <button type="submit" disabled={!draft.trim()}>
-            <Icon n="send" s={16} c="#fff" />
-          </button>
-        </form>
-      </div>
+      <PhotoSide
+        photo={photo}
+        stop={stop}
+        here={here}
+        mini={mini}
+        theme={theme}
+        tint={tint}
+        video={video}
+        byName={byName}
+        contributors={contributors}
+        comments={cmts}
+        canEdit={canEdit}
+        me={me}
+        onCommentDelete={onCommentDelete}
+        draft={draft}
+        setDraft={setDraft}
+        submit={submit}
+        inputRef={inputRef}
+        firstName={firstName}
+      />
     </div>
   )
 }
