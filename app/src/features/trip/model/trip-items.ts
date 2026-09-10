@@ -104,3 +104,18 @@ export function tripItems({
 
 export const daysOf = (stops: Stop[]) =>
   [...new Set(stops.map(stop => stop.day).filter(Boolean))] as string[]
+
+/* The line under a trip's name: who is on it, when, and how the party splits
+   between the people travelling and the people following from home. A
+   formatted string rather than state, which is why it lives out here — the
+   hook next door holds what the screen knows, not what it shows. */
+export function tripSubtitle(
+  trip: { crew?: string | null; dates?: string | null },
+  family: { memberRole?: string }[],
+): string {
+  const travelling = family.filter(person => person.memberRole !== 'viewer').length
+  const following = family.length - travelling
+  return [trip.crew, trip.dates, `${travelling} travelling`, `${following} following`]
+    .filter(Boolean)
+    .join(' · ')
+}

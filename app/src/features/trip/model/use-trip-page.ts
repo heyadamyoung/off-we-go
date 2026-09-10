@@ -16,7 +16,7 @@ import useTripEscape from './use-trip-escape'
 import useOfflineEdits from './use-offline-edits'
 import { track as trackEvent } from '../../../shared/lib/telemetry'
 import { withFace } from './faces'
-import { daysOf } from './trip-items'
+import { daysOf, tripSubtitle } from './trip-items'
 import type {
   Attraction,
   Coordinates,
@@ -337,6 +337,7 @@ export default function useTripPage({
     [placing, stops, onStopMove, onMapClick, editing, toast],
   )
 
+  const panelOpen = view !== 'map'
   useTripEscape({
     viewerOpen: !!viewer,
     closeViewer,
@@ -348,6 +349,7 @@ export default function useTripPage({
     setAsking,
     indoor,
     selected,
+    viewOpen: panelOpen,
     patch,
   })
 
@@ -365,15 +367,7 @@ export default function useTripPage({
 
   const here = photos.filter(photo => photo.stopId === selectedItem?.stop?.id)
   const origin = typeof window === 'undefined' ? '' : window.location.origin
-  const panelOpen = view !== 'map'
-  const subtitle = [
-    trip.crew,
-    trip.dates,
-    `${family.filter(person => person.memberRole !== 'viewer').length} travelling`,
-    `${family.filter(person => person.memberRole === 'viewer').length} following`,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const subtitle = tripSubtitle(trip, family)
 
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   return {
