@@ -234,20 +234,102 @@ test('a photo’s notes are readable and writable on a phone', async ({ page }) 
   await expect(input).toBeFocused()
 })
 
-test('tapping the photograph hearts it, and never un-hearts it', async ({ page }) => {
+/* Opening the viewer, which three tests below all want. */
+async function openViewer(page) {
   await open(page)
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
   await page.locator('.pgrid-photo').first().click()
   await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+}
 
-  await page.locator('.vmaintap').click()
+/* A drag across the stage, in the steps a finger would make — one jump from
+   end to end is not a swipe, it is a teleport, and nothing that watches
+   movement would see it. */
+async function dragAcross(page, by) {
+  const stage = await page.locator('.vbody').boundingBox()
+  const y = stage.y + stage.height / 2
+  const from = stage.x + stage.width / 2 - by / 2
+  await page.mouse.move(from, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 6; step++) await page.mouse.move(from + (by * step) / 6, y)
+  await page.mouse.up()
+}
+
+test('double-tapping the photograph hearts it, and never un-hearts it', async ({ page }) => {
+  /* A SINGLE tap used to do this, which left no gesture for paging: a swipe
+     across a phone ends as a tap, so every attempt to move through a trip
+     hearted the picture instead of turning the page. */
+  await openViewer(page)
+
+  await page.locator('.vmaintap').dblclick()
   await expect(page.locator('.vheart')).toBeVisible()
   await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
 
-  // A second tap pops the heart again but the like survives — un-liking is
-  // the chrome heart's deliberate job.
-  await page.locator('.vmaintap').click()
+  // Again pops the heart but the like survives — un-liking is the chrome
+  // heart's deliberate job.
+  await page.locator('.vmaintap').dblclick()
   await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
+})
+
+test('dragging across the photograph turns the page', async ({ page }) => {
+  /* The reported bug: there was no swipe at all. The arrows worked, the
+     filmstrip worked, and the gesture every phone has used for fifteen years
+     did nothing — because the whole photograph was a like button. */
+  await openViewer(page)
+  const at = () => page.locator('.vcap .ct').innerText()
+  const first = await at()
+
+  await dragAcross(page, -160)
+  await expect.poll(at).not.toBe(first)
+  const second = await at()
+
+  await dragAcross(page, 160)
+  await expect.poll(at).toBe(first)
+
+  expect(second).not.toBe(first)
+  // And it never hearts on the way past.
+  await expect(page.locator('.vtop .acts button.liked')).toHaveCount(0)
+})
+
+test('a swipe that is really a scroll leaves the page alone', async ({ page }) => {
+  /* The comments sit under the photograph on a phone, so a finger going down
+     the thread passes right over the stage. */
+  await openViewer(page)
+  const at = () => page.locator('.vcap .ct').innerText()
+  const first = await at()
+
+  const stage = await page.locator('.vbody').boundingBox()
+  const x = stage.x + stage.width / 2
+  const y = stage.y + stage.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 6; step++) await page.mouse.move(x - step * 8, y + step * 30)
+  await page.mouse.up()
+
+  await page.waitForTimeout(400)
+  expect(await at()).toBe(first)
+})
+
+test('tapping the photograph opens it full screen, where it zooms', async ({ page }) => {
+  await openViewer(page)
+  await page.locator('.vmaintap').click()
+  await expect(page.locator('.vzoom')).toBeVisible()
+
+  const scale = async () => {
+    const t = await page.locator('.vzimg').evaluate(el => getComputedStyle(el).transform)
+    return t === 'none' ? 1 : Number(t.match(/matrix\(([-\d.]+)/)?.[1] ?? 1)
+  }
+  expect(await scale()).toBeCloseTo(1, 1)
+
+  // Double tap goes in; the "Fit" way back appears with it.
+  await page.locator('.vzstage').dblclick()
+  await expect.poll(scale).toBeGreaterThan(1.5)
+  await page.locator('.vzreset').click()
+  await expect.poll(scale).toBeCloseTo(1, 1)
+
+  await page.locator('.vzclose').click()
+  await expect(page.locator('.vzoom')).toHaveCount(0)
+  await expect(page.locator('.viewer')).toBeVisible()
 })
 
 test('deleting a photo takes a held press — a tap does nothing', async ({ page }) => {
