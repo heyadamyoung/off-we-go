@@ -93,14 +93,29 @@ await repository.createSession({
   userId: user.id,
   expiresAt: new Date('2100-01-01T00:00:00.000Z'),
 })
-const trip = await repository.createTrip(user, { title: 'Live stack' })
+/* A trip with dates of its own, unlike the sample — whose stops say September
+   while its range floats around today, on purpose, so that nothing on it can
+   ever be placed on a date. Every browser test runs against that, which means
+   the path a real trip takes once its days are dates was never drawn in a
+   browser at all. This is that trip. */
+const TRIP_DAYS = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
+const trip = await repository.createTrip(user, { title: 'Live stack', ...TRIP_DAYS })
 
 /* Two stops, a kilometre or so apart: far enough that "nearest wins" has
-   something to decide, and that somewhere between them belongs to neither. */
+   something to decide, and that somewhere between them belongs to neither.
+
+   Their days are spelled the four ways the database actually holds them — a
+   date from the picker, the label the app used to write, a label whose weekday
+   is stale, and the bare number somebody typed before there was anywhere to
+   pick. Three of these are the fourth of September and must come out as one
+   day, not four. */
 const stops = []
 for (const stop of [
-  { name: 'Anne Frank House', lng: 4.8839, lat: 52.3752 },
-  { name: 'Rijksmuseum', lng: 4.8852, lat: 52.36 },
+  { name: 'Anne Frank House', lng: 4.8839, lat: 52.3752, day: '2026-09-04' },
+  { name: 'Rijksmuseum', lng: 4.8852, lat: 52.36, day: 'Fri 4 Sep' },
+  { name: 'Westerkerk', lng: 4.8836, lat: 52.3747, day: 'Tue 4 Sep' },
+  { name: 'Vondelpark', lng: 4.8686, lat: 52.3579, day: '4' },
+  { name: 'Centraal', lng: 4.9003, lat: 52.379, day: 'Sat 5 Sep' },
 ]) {
   stops.push(await repository.createStop(user, trip.id, { ...stop, icon: 'pin' }))
 }
