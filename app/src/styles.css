@@ -703,11 +703,22 @@
   padding: env(safe-area-inset-top, 0px) calc(18px + env(safe-area-inset-right, 0px)) 0
     calc(18px + env(safe-area-inset-left, 0px));
 }
-.vtop .who { display: flex; align-items: center; gap: 10px; min-width: 0 }
-.vtop .who img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover }
-.vtop .who b { display: block; font-size: 14px; font-weight: 600 }
+.vtop .who { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 }
+.vtop .who img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex: none }
+/* The bar is exactly one bezel and two lines tall, so both lines must BE one
+   line each. "8 Sept 2026, 12:09 · Enterprise, Edinburgh Airport" wrapped to
+   three on a phone, grew the row past its own height, and was clipped through
+   the middle — the name above it losing its top half to the same overflow.
+   min-width:0 on the column is what lets the text shrink at all: a flex item
+   defaults to refusing to go below its content's width. */
+.vtop .who > div { min-width: 0 }
+.vtop .who b, .vtop .who span {
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.vtop .who b { font-size: 14px; font-weight: 600 }
 .vtop .who span { font-size: 13px; color: rgb(255 255 255 / .5) }
-.vtop .acts { margin-left: auto; display: flex; gap: 8px }
+/* Never squeezed by a long name: these are the way out of the viewer. */
+.vtop .acts { margin-left: auto; display: flex; gap: 8px; flex: none }
 .vtop .acts button {
   width: 36px; height: 36px; border-radius: 8px; background: rgb(255 255 255 / .08);
   display: grid; place-items: center;

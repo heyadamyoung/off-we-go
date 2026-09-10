@@ -223,3 +223,52 @@ test('a channel is added back when it is switched on again', () => {
     channels: ['push', 'email'],
   })
 })
+
+test('a chip selects its rows on a trip that never declared its dates', () => {
+  /* The reported bug, and a regression of my own: the day bar read correctly
+     and every chip on it selected nothing, so the strip said "Nothing planned
+     for this day yet" under a map full of pins.
+
+     The rows hold dates now and the chips hold dates, but the filter was
+     comparing the chip against the row's LABEL — and a label carries no year,
+     so on a trip with no declared range it cannot be resolved to a date at
+     all. Text against date, every time, for every row.
+
+     Only a title is needed to start a trip, so a trip with no dates of its own
+     is not an edge case. Compare the dates both sides already hold. */
+  const range = {}
+  const stops = [
+    { id: 'a', name: 'Edinburgh', day: '2026-09-10', seq: 0, lng: 0, lat: 0 },
+    { id: 'b', name: 'Glasgow', day: '2026-09-09', seq: 1, lng: 0, lat: 0 },
+  ]
+  for (const day of daysOf(stops, range)) {
+    const items = tripItems({ stops, photos: [], day: day.iso, range })
+    assert.equal(items.length, 1, `the ${day.label} chip selects its own stop`)
+  }
+})
+
+test('a chip selects its rows however each one spells its day', () => {
+  /* And with a range, the whole point of storing the date: one chip, whatever
+     anybody ever typed into the rows under it. */
+  const range = { startsOn: '2026-09-03', endsOn: '2026-09-14' }
+  const stops = [
+    { id: 'a', name: 'Picked', day: '2026-09-04', seq: 0, lng: 0, lat: 0 },
+    { id: 'b', name: 'Labelled', day: 'Fri 4 Sep', seq: 1, lng: 0, lat: 0 },
+    { id: 'c', name: 'Typed', day: '4', seq: 2, lng: 0, lat: 0 },
+    { id: 'd', name: 'Elsewhere', day: '2026-09-09', seq: 3, lng: 0, lat: 0 },
+  ]
+  assert.equal(tripItems({ stops, photos: [], day: '2026-09-04', range }).length, 3)
+  assert.equal(tripItems({ stops, photos: [], day: '2026-09-09', range }).length, 1)
+})
+
+test('a day nothing could date still selects its own rows', () => {
+  const stops = [
+    { id: 'a', name: 'Sometime', day: 'tbc', seq: 0, lng: 0, lat: 0 },
+    { id: 'b', name: 'Dated', day: '2026-09-09', seq: 1, lng: 0, lat: 0 },
+  ]
+  const items = tripItems({ stops, photos: [], day: 'tbc', range: {} })
+  assert.deepEqual(
+    items.map(item => item.title),
+    ['Sometime'],
+  )
+})

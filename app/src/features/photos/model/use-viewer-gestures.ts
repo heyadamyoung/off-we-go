@@ -20,6 +20,14 @@ import { dragMeans, isDoubleTap, pageBy, type Tap } from '../../../swipe-core'
  * same one every phone uses, and without it a like would flash the full-screen
  * view open on its way past.
  */
+/* Whether a pointer came down on something that answers for itself. The
+   photograph is a button too — it is the keyboard's way to like — so it is the
+   one control the stage still reads. */
+function fromChrome(target: EventTarget | null): boolean {
+  const control = (target as Element | null)?.closest?.('button, a[href], input, video')
+  return !!control && !control.classList.contains('vmaintap')
+}
+
 export default function useViewerGestures({
   index,
   length,
@@ -42,6 +50,14 @@ export default function useViewerGestures({
   useEffect(() => () => clearTimeout(opening.current ?? undefined), [])
 
   const onPointerDown = useCallback((event: React.PointerEvent) => {
+    /* The arrows and the film's own controls live on this stage too, and a
+       click on one of them is a tap as far as a pointer is concerned — so
+       turning the page with the arrow ALSO opened the picture full screen.
+       A control is answering for itself; the stage stays out of it. */
+    if (fromChrome(event.target)) {
+      from.current = null
+      return
+    }
     from.current = { x: event.clientX, y: event.clientY, at: event.timeStamp }
   }, [])
 

@@ -1,12 +1,6 @@
 import { ALL_DAYS } from '../../../trip-search-core'
 import { dayLabelOf } from '../../../day-label-core'
-import {
-  dayIsoOf,
-  onDay as isOnDay,
-  photoDayIso,
-  tripDays,
-  type DayRange,
-} from '../../../trip-days-core'
+import { dayIsoOf, photoDayIso, tripDays, type DayRange } from '../../../trip-days-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
 /* The bottom strip and the timeline show one list, not two: what happened on a
@@ -32,6 +26,18 @@ export interface TripItem {
 }
 
 const text = (value?: string | null) => (value || '').toLowerCase()
+
+/** Whether a row belongs under the chosen chip. */
+export function itemOnDay(item: TripItem, day: string, range: DayRange = {}): boolean {
+  const wanted = dayIsoOf(day, range)
+  /* Two dates: the whole point of storing one. Neither side needs the trip to
+     have declared a range for this to be right. */
+  if (item.dayIso && wanted) return item.dayIso === wanted
+  /* Either side unplaceable — 'tbc', 'later', somebody's own word. It is still
+     a chip somebody chose, and it should still select its own rows. Those rows
+     kept their text exactly as written, which is what makes this work. */
+  return String(item.day ?? '').trim() === String(day ?? '').trim()
+}
 
 /* A day is stored as a date and shown as a label. Searching goes through the
    label too — somebody looking for what they did on the Friday types 'Fri',
@@ -108,11 +114,15 @@ export function tripItems({
       items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined, range))
     }
   }
-  /* By date rather than by spelling. A chip holds a day; the rows hold
-     whatever anybody ever typed, and comparing those as text is how a chip
-     comes to select nothing. */
+  /* Both sides already hold a date, so compare those. Comparing the chip
+     against the row's LABEL instead is how every chip came to select nothing:
+     a label carries no year, so on a trip that never declared its dates it
+     cannot be resolved at all, and the comparison was text against date for
+     every row on the bar. Only a title is needed to start a trip, so that is
+     not an edge case — it is a map full of pins under the words "Nothing
+     planned for this day yet". */
   const chosen =
-    needle || day === ALL_DAYS ? items : items.filter(item => isOnDay(item.day, day, range))
+    needle || day === ALL_DAYS ? items : items.filter(item => itemOnDay(item, day, range))
   const matched = needle
     ? chosen.filter(
         item =>

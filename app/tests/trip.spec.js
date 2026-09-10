@@ -1350,3 +1350,50 @@ test('the timeline heads its days the way the day bar does', async ({ page }) =>
     expect(named).toContain(flat(heading))
   }
 })
+
+test('a long name and place do not burst the viewer header', async ({ page }) => {
+  /* "8 Sept 2026, 12:09 · Enterprise, Edinburgh Airport" wrapped to three
+     lines on a phone, grew the bar past its own fixed height, and was clipped
+     through the middle — taking the top half of the name with it. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openViewer(page)
+
+  const bar = page.locator('.vtop')
+  const fits = await bar.evaluate(el => ({
+    overflowing: el.scrollHeight > el.clientHeight + 1,
+    lines: [...el.querySelectorAll('.who b, .who span')].map(t => ({
+      height: t.getBoundingClientRect().height,
+      // One line, whatever the text: the ellipsis does the rest.
+      wrapped: t.scrollHeight > t.clientHeight + 1,
+      inside: t.getBoundingClientRect().right <= el.getBoundingClientRect().right + 1,
+    })),
+  }))
+  expect(fits.overflowing, 'the header bar is taller than the room it has').toBe(false)
+  for (const line of fits.lines) {
+    expect(line.wrapped, 'a line of the header wrapped instead of eliding').toBe(false)
+    expect(line.inside, 'a line of the header runs past the bar').toBe(true)
+  }
+
+  // And the way out is never squeezed away by a long name.
+  await expect(page.locator('.vtop .acts button').last()).toBeVisible()
+})
+
+test('the arrow turns the page without opening the picture', async ({ page }) => {
+  /* The arrows sit on the stage that reads the finger, and a click on one is
+     a tap as far as a pointer is concerned — so turning the page with the
+     arrow also threw the photograph full screen on top of it. */
+  await openViewer(page)
+  const at = () => page.locator('.vcap .ct').innerText()
+  const first = await at()
+
+  await page.locator('.vnav.n').click()
+  await expect.poll(at).not.toBe(first)
+  // Well past the wait that tells a single tap from a double one.
+  await page.waitForTimeout(600)
+  await expect(page.locator('.vzoom')).toHaveCount(0)
+
+  await page.locator('.vnav.p').click()
+  await expect.poll(at).toBe(first)
+  await page.waitForTimeout(600)
+  await expect(page.locator('.vzoom')).toHaveCount(0)
+})
