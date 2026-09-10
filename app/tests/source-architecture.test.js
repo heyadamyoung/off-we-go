@@ -123,3 +123,32 @@ test('the all-days sentinel is defined exactly once', async () => {
   }
   assert.deepEqual(defined, ['trip-search-core.ts'])
 })
+
+test('anything pinned to the edge of the screen accounts for the bezel', async () => {
+  /* An island, a notch, a home bar. A dialog centred in the whole viewport is
+     a dialog whose title sits under the island and whose buttons sit under the
+     home bar, and no test browser can see it because env() is zero everywhere
+     but a phone. So it is checked here, where the rule can be written down:
+     anything that pins itself to all four edges of the screen has to say what
+     it does about the bezel. */
+  const shells = []
+  for (const file of await sourceFiles(sourceRoot)) {
+    const source = await readFile(file, 'utf8')
+    const pinned =
+      /className="[^"]*\bfixed\b[^"]*\binset-0\b/.test(source) ||
+      /position:\s*fixed;\s*inset:\s*0/.test(source)
+    /* Either it handles the bezel, or it says in as many words why it does not
+       have to. Silence is the only answer that is not allowed: a scrim that
+       catches clicks and holds nothing is fine, and so is one anchored to
+       something that already carries the inset — but somebody has to have
+       thought about it. */
+    const excused = source.includes('safe-area-inset') || source.includes('no-safe-area:')
+    if (pinned && !excused) shells.push(path.relative(sourceRoot, file))
+  }
+  assert.deepEqual(
+    shells,
+    [],
+    `These pin themselves to the screen and say nothing about the bezel.
+Handle it, or write "no-safe-area: <why not>" in the file:\n${shells.join('\n')}`,
+  )
+})

@@ -92,12 +92,13 @@ export default function TripPanel(props: PanelProps) {
       className={
         'sheet rise absolute flex flex-col overflow-hidden ' +
         (wide
-          ? /* The whole screen, over the trip's own chrome rather than under
-               it. Two bands across the top — the trip's, then the gallery's —
-               is two things claiming to be the header of one screen, and the
-               one somebody actually opened should win. Its own row carries the
-               way back out, so nothing is stranded behind it. */
-            `sheet-flat inset-0 z-30 rounded-none border-0
+          ? /* Every pixel BELOW the trip's own chrome, and not one above it.
+               The gallery is a view of the trip, not a place you leave it: the
+               title and the row of tabs are how anybody gets to the map, the
+               timeline or anywhere else, and a screen that covers them is a
+               screen you are stuck in. --trip-top already carries the bezel,
+               so this clears an island without knowing there is one. */
+            `sheet-flat inset-x-0 bottom-0 top-[var(--trip-top)] z-30 rounded-none border-0
              max-sm:pb-[env(safe-area-inset-bottom,0px)]`
           : `z-[6] bottom-[var(--trip-1)] left-7 top-[var(--trip-top)] w-[440px] rounded-2xl
              max-lg:inset-x-4 max-lg:w-auto
