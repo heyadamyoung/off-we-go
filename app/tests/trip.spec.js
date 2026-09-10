@@ -253,16 +253,21 @@ async function openViewer(page) {
   await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
 }
 
-/* A drag across the stage, in the steps a finger would make — one jump from
-   end to end is not a swipe, it is a teleport, and nothing that watches
-   movement would see it. */
-async function dragAcross(page, by) {
+/* A drag across the stage, as a SHARE of its width rather than a number of
+   pixels — because that is how far the page turn asks to be carried, and a
+   test written in pixels goes stale the moment the threshold moves or the
+   window is a different size.
+
+   In the steps a finger would make: one jump from end to end is not a swipe,
+   it is a teleport, and nothing that watches movement would see it. */
+async function dragAcross(page, share) {
   const stage = await page.locator('.vbody').boundingBox()
+  const by = stage.width * share
   const y = stage.y + stage.height / 2
   const from = stage.x + stage.width / 2 - by / 2
   await page.mouse.move(from, y)
   await page.mouse.down()
-  for (let step = 1; step <= 6; step++) await page.mouse.move(from + (by * step) / 6, y)
+  for (let step = 1; step <= 8; step++) await page.mouse.move(from + (by * step) / 8, y)
   await page.mouse.up()
 }
 
@@ -290,11 +295,12 @@ test('dragging across the photograph turns the page', async ({ page }) => {
   const at = () => page.locator('.vcap .ct').innerText()
   const first = await at()
 
-  await dragAcross(page, -160)
+  // Most of the way across, which is what a page turn asks for.
+  await dragAcross(page, -0.7)
   await expect.poll(at).not.toBe(first)
   const second = await at()
 
-  await dragAcross(page, 160)
+  await dragAcross(page, 0.7)
   await expect.poll(at).toBe(first)
 
   expect(second).not.toBe(first)
@@ -1469,7 +1475,12 @@ test('the photograph follows the finger, and comes back if the swipe is short', 
      the picture, it sits there, and either the next one arrives or it does
      not. Moving under the finger says "yes, this is a page turn" while there
      is still time to change your mind — and coming back says the change of
-     mind was heard. */
+     mind was heard.
+
+     On a phone, so the distances mean something: 390px across asks for 156
+     before the page turns. A third of that moves the picture and nothing more,
+     which is the case that was wrong — it used to turn the page. */
+  await page.setViewportSize({ width: 390, height: 844 })
   await openViewer(page)
   const at = () => page.locator('.vcap .ct').innerText()
   const first = await at()
@@ -1481,22 +1492,56 @@ test('the photograph follows the finger, and comes back if the swipe is short', 
 
   const stage = await page.locator('.vbody').boundingBox()
   const y = stage.y + stage.height / 2
-  const from = stage.x + stage.width / 2
+  /* Starting near the right edge, because a full swipe is most of the screen
+     and one begun in the middle runs off the left of it — the pointer leaves
+     the window and the release never lands. */
+  const from = stage.x + stage.width - 12
+
+  const swipe = async distance => {
+    await page.mouse.move(from, y)
+    await page.mouse.down()
+    for (let step = 1; step <= 8; step++) await page.mouse.move(from - (distance * step) / 8, y)
+  }
 
   // Short of the threshold: it moves, and then it comes home.
-  await page.mouse.move(from, y)
-  await page.mouse.down()
-  for (let step = 1; step <= 4; step++) await page.mouse.move(from - step * 6, y)
+  await swipe(stage.width / 3)
   expect(await shifted(), 'the picture never moved under the finger').toBeLessThan(-10)
   await page.mouse.up()
   await expect.poll(shifted, { timeout: 3000 }).toBe(0)
   expect(await at(), 'a short swipe turned the page anyway').toBe(first)
 
-  // Past it: the page turns, and the picture is centred again for the next one.
-  await page.mouse.move(from, y)
-  await page.mouse.down()
-  for (let step = 1; step <= 6; step++) await page.mouse.move(from - step * 30, y)
+  // Carried most of the way across: the page turns, and it centres again.
+  await swipe(stage.width * 0.8)
   await page.mouse.up()
   await expect.poll(at).not.toBe(first)
   await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+})
+
+test('the viewer pages through the gallery in the order the gallery shows it', async ({ page }) => {
+  /* It used to page through the bottom strip instead — a different order,
+     filtered to a single day. So the picture after the one you tapped was
+     rarely the one sitting under it, and a photograph from another day had
+     nothing to swipe to at all. */
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  const tiles = page.locator('.pgrid-photo')
+  await expect(tiles.first()).toBeVisible()
+
+  // What the gallery shows, in the order it shows it.
+  const shown = await tiles.evaluateAll(all =>
+    all.map(tile => tile.getAttribute('aria-label') || ''),
+  )
+  expect(shown.length).toBeGreaterThan(2)
+
+  await tiles.nth(1).click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+  const count = await page.locator('.vcap .ct').innerText()
+  expect(count, 'the viewer holds the whole gallery, not one photograph').toContain(
+    `of ${shown.length}`,
+  )
+  expect(count, 'and it opened at the one that was tapped').toContain('2 of')
+
+  // The arrow goes to the tile that sits after it in the grid.
+  await page.locator('.vnav.n').click()
+  await expect(page.locator('.vcap .ct')).toContainText('3 of')
 })

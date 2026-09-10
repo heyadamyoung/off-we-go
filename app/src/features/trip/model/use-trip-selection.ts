@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { ALL_DAYS } from '../../../trip-search-core'
 import { tripItems, type TripItem } from './trip-items'
 import type { MapView, Stop, TripPhoto } from '../../../shared/model/types'
@@ -37,6 +37,14 @@ export default function useTripSelection({
     () => tripItems({ stops: liveStops, photos, day, range, query }),
     [liveStops, photos, day, range, query],
   )
+  /* The list the viewer should page through, put here by whoever opened it.
+     Without this the viewer always paged through the bottom strip — so a
+     photograph opened from the gallery was followed by whatever came next in
+     a DIFFERENT order, filtered to a single day, and often by nothing at all
+     because the strip did not contain it. You page through the list you were
+     looking at. */
+  const within = useRef<TripPhoto[] | null>(null)
+
   const selectedItem = useMemo(
     () =>
       items.find(item => item.id === selected) ||
@@ -52,13 +60,19 @@ export default function useTripSelection({
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the selection changes; the viewer must not reopen because the photo list refreshed under it
   useEffect(() => {
     if (selectedItem?.kind !== 'photo' || !selectedItem.photo) return
-    const strip = items.filter(item => item.kind === 'photo' && item.photo).map(item => item.photo!)
+    const opened = within.current
+    within.current = null
+    const strip =
+      opened && opened.some(photo => photo.id === selectedItem.photo!.id)
+        ? opened
+        : items.filter(item => item.kind === 'photo' && item.photo).map(item => item.photo!)
     const at = strip.findIndex(photo => photo.id === selectedItem.photo!.id)
     openViewer(at >= 0 ? strip : [selectedItem.photo], Math.max(at, 0))
   }, [selected])
 
   const select = useCallback(
-    (item: TripItem) => {
+    (item: TripItem, ordered?: TripPhoto[]) => {
+      within.current = ordered ?? null
       setFollowing(false)
       const target = item.stop
       if (item.kind === 'photo' && item.photo?.lng != null && item.photo?.lat != null) {

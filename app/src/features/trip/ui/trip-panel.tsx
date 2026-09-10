@@ -22,7 +22,9 @@ interface PanelProps {
   selected?: string
   photoBy: string | null
   onPhotoBy: (by: string | null) => void
-  onSelect: (item: TripItem) => void
+  /* The second argument is the list the viewer should page through: the one
+     the click came from, in the order it was being read. */
+  onSelect: (item: TripItem, ordered?: TripPhoto[]) => void
   onClose: () => void
   onInvite: () => void
   /** absent for read-only viewers — the button goes with it */
