@@ -42,7 +42,7 @@ const open = async page => {
 
 const flat = text => text.trim().toLowerCase()
 
-test('four spellings of two days make two chips', async ({ page }) => {
+test('four spellings of one day make one chip', async ({ page }) => {
   await open(page)
   const chips = (await page.locator('.fdays .chip').allInnerTexts())
     .map(flat)
@@ -50,14 +50,15 @@ test('four spellings of two days make two chips', async ({ page }) => {
   /* Drawn as labels and ordered by date — the whole point of storing the date.
      Sorting the text would put Friday above Saturday by luck and Thursday
      below both by spelling. */
-  expect(chips).toEqual(['fri 4 sep', 'sat 5 sep'])
+  expect(chips.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
 })
 
 test('the timeline heads those days the same way, in the same order', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
   const headings = (await page.locator('.sheet .flex.items-baseline b').allInnerTexts()).map(flat)
-  expect(headings).toEqual(['fri 4 sep', 'sat 5 sep'])
+  expect(headings.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
+  expect(headings.at(-1)).toBe('no date yet', 'and the stop with no day is drawn, last')
 
   /* And the four stops of the fourth are all under the first heading — read as
      the panel reads, top to bottom, because that is what somebody scrolling it

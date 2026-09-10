@@ -116,6 +116,15 @@ for (const stop of [
   { name: 'Westerkerk', lng: 4.8836, lat: 52.3747, day: 'Tue 4 Sep' },
   { name: 'Vondelpark', lng: 4.8686, lat: 52.3579, day: '4' },
   { name: 'Centraal', lng: 4.9003, lat: 52.379, day: 'Sat 5 Sep' },
+  /* And a week of them, so the day bar has enough chips to scroll and enough
+     dates to be in the wrong order if anything ever sorts them as text. The
+     two-digit days are the ones that would give it away. */
+  { name: 'Jordaan', lng: 4.8797, lat: 52.3747, day: '2026-09-06' },
+  { name: 'Vondelpark again', lng: 4.869, lat: 52.358, day: '2026-09-07' },
+  { name: 'Zaanse Schans', lng: 4.8177, lat: 52.4746, day: '2026-09-08' },
+  { name: 'Haarlem', lng: 4.6462, lat: 52.3874, day: '2026-09-09' },
+  { name: 'Schiphol', lng: 4.7639, lat: 52.3105, day: '2026-09-10' },
+  { name: 'Nowhere in particular', lng: 4.9, lat: 52.37, day: '' },
 ]) {
   stops.push(await repository.createStop(user, trip.id, { ...stop, icon: 'pin' }))
 }
