@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+import { serveOverpass } from './overpass-fixture.js'
+import { serveWikipedia } from './wikipedia-fixture.js'
 
 /* These cover the things that actually broke while the app was being built:
    double-created stops, a reorder that flung rows to the end, a photo viewer
@@ -8,6 +10,13 @@ import { test, expect } from '@playwright/test'
 const MAP_READY = 9000
 const PHOTOLESS = 'Bikes in Vondelpark' // a stop with no photographs of its own
 
+/* The cases that want articles back rather than an empty API. They used to be
+   the cases that called the REAL Wikipedia — which is not a test of this app
+   but of Wikipedia's uptime, of its rate limiter (the note that used to live
+   here admitted "the public API throttles concurrent callers"), and of whether
+   the machine running the suite has the open internet. All three can fail
+   without anything being wrong here, and a suite with a permanently red corner
+   is a suite nobody reads. They are answered from a fixture now. */
 const WIKIPEDIA_TESTS = new Set([
   'finding a place fills in its name, description and picture',
   'stops without a picture get a real one on load',
@@ -16,11 +25,13 @@ const WIKIPEDIA_TESTS = new Set([
 ])
 
 // These cases have isolated sample state and can safely use separate contexts.
-// Keep Wikipedia-backed coverage together below because the public API throttles
-// concurrent callers; unrelated UI cases receive a complete empty API response.
 test.describe.configure({ mode: 'parallel' })
 test.beforeEach(async ({ page }, testInfo) => {
-  if (WIKIPEDIA_TESTS.has(testInfo.title)) return
+  if (WIKIPEDIA_TESTS.has(testInfo.title)) {
+    await serveWikipedia(page)
+    return
+  }
+  // Everything else is not about landmarks and gets a complete empty answer.
   await page.route('https://en.wikipedia.org/**', route =>
     route.fulfill({
       contentType: 'application/json',
@@ -635,7 +646,22 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
   await page.locator('.detailcard').getByRole('button', { name: 'Close' }).click()
   await expect(page.locator('.detailcard')).toHaveCount(0)
 
-  await page.mouse.click(pin.x, pin.y)
+  /* And find the pin AGAIN, because closing the card gives the map back the
+     room the card was holding — which re-eases the camera and slides the pin
+     out from under the coordinates measured a moment ago. Alone that lands
+     before the click; under a full parallel suite it does not, which is what
+     made this one flake. */
+  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
+  const settled = await page.evaluate(name => {
+    const marker = [...document.querySelectorAll('.mstop')].find(stop =>
+      (stop.textContent || '').includes(name),
+    )
+    const box = marker?.querySelector('.pin')?.getBoundingClientRect()
+    return box && box.width > 0 ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null
+  }, PHOTOLESS)
+  expect(settled, 'the pin should still be on screen with the card closed').not.toBeNull()
+
+  await page.mouse.click(settled.x, settled.y)
   await expect(page.locator('.detailcard h3')).toHaveText(PHOTOLESS)
   const after = await page.locator('.detailcard h3').textContent()
 
@@ -1147,6 +1173,10 @@ test('a selected stop answers how far from you, and draws the way', async ({ pag
 })
 
 test('flying to an airport draws its gates', async ({ page }) => {
+  /* Overpass is a free public good with no funding — four mirrors deep in this
+     app precisely because any one of them may be down, slow or refusing. A
+     test suite is not entitled to it. */
+  await serveOverpass(page)
   await open(page)
   // Schiphol is a sample stop and richly mapped in OSM. The layer is GPU-drawn,
   // so ask the source what it holds — the night the gates were fetched and
@@ -1430,4 +1460,43 @@ test('adding photos opens from the gallery, on a phone', async ({ page }) => {
     .click({ timeout: 10_000 })
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByRole('dialog')).toContainText('Add photos and videos')
+})
+
+test('the photograph follows the finger, and comes back if the swipe is short', async ({
+  page,
+}) => {
+  /* A swipe that moves nothing is a swipe you cannot tell is working: you push
+     the picture, it sits there, and either the next one arrives or it does
+     not. Moving under the finger says "yes, this is a page turn" while there
+     is still time to change your mind — and coming back says the change of
+     mind was heard. */
+  await openViewer(page)
+  const at = () => page.locator('.vcap .ct').innerText()
+  const first = await at()
+  const shifted = () =>
+    page.locator('.vmaintap').evaluate(el => {
+      const t = getComputedStyle(el).transform
+      return t === 'none' ? 0 : Number(t.split(',')[4] ?? 0)
+    })
+
+  const stage = await page.locator('.vbody').boundingBox()
+  const y = stage.y + stage.height / 2
+  const from = stage.x + stage.width / 2
+
+  // Short of the threshold: it moves, and then it comes home.
+  await page.mouse.move(from, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 4; step++) await page.mouse.move(from - step * 6, y)
+  expect(await shifted(), 'the picture never moved under the finger').toBeLessThan(-10)
+  await page.mouse.up()
+  await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+  expect(await at(), 'a short swipe turned the page anyway').toBe(first)
+
+  // Past it: the page turns, and the picture is centred again for the next one.
+  await page.mouse.move(from, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 6; step++) await page.mouse.move(from - step * 30, y)
+  await page.mouse.up()
+  await expect.poll(at).not.toBe(first)
+  await expect.poll(shifted, { timeout: 3000 }).toBe(0)
 })

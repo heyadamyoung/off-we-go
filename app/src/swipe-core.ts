@@ -57,6 +57,27 @@ export function dragMeans(drag: Drag, limits: DragLimits = {}): DragMeans {
   return null
 }
 
+/**
+ * How far the picture should follow the finger, mid-drag.
+ *
+ * A swipe that moves nothing is a swipe you cannot tell is working: you push
+ * the photograph, it sits there, and either the next one appears or it does
+ * not. Letting it move under the finger says "yes, this is a page turn" while
+ * there is still time to change your mind — and going back when the finger
+ * lifts short of the threshold says the change of mind was heard.
+ *
+ * Nothing at all for a drag that is going down rather than across, so reading
+ * the comments never smears the photograph sideways.
+ */
+export function followed(drag: { dx: number; dy: number }, limits: DragLimits = {}): number {
+  const { slop = 10 } = limits
+  const across = Math.abs(drag.dx)
+  if (across <= slop) return 0
+  // The same across-beats-down rule the release uses, so what the picture does
+  // under the finger and what happens when it lifts can never disagree.
+  return across > Math.abs(drag.dy) ? drag.dx : 0
+}
+
 export interface Tap {
   at: number
   x: number

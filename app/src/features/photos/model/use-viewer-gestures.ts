@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type React from 'react'
-import { dragMeans, isDoubleTap, pageBy, type Tap } from '../../../swipe-core'
+import { dragMeans, followed, isDoubleTap, pageBy, type Tap } from '../../../swipe-core'
 
 /* What a finger does to the photograph on the viewer's stage.
  *
@@ -49,6 +49,14 @@ export default function useViewerGestures({
   const opening = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => clearTimeout(opening.current ?? undefined), [])
 
+  /* How far the photograph has followed the finger, and whether a finger is
+     still on it. A swipe that moves nothing is a swipe you cannot tell is
+     working; letting the picture move says "yes, this is a page turn" while
+     there is still time to change your mind. State rather than a ref, because
+     this one is drawn — it is the only part of a gesture that is. */
+  const [dx, setDx] = useState(0)
+  const [sliding, setSliding] = useState(false)
+
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     /* The arrows and the film's own controls live on this stage too, and a
        click on one of them is a tap as far as a pointer is concerned — so
@@ -59,16 +67,30 @@ export default function useViewerGestures({
       return
     }
     from.current = { x: event.clientX, y: event.clientY, at: event.timeStamp }
+    setSliding(true)
   }, [])
 
+  const onPointerMove = useCallback((event: React.PointerEvent) => {
+    const start = from.current
+    if (!start) return
+    setDx(followed({ dx: event.clientX - start.x, dy: event.clientY - start.y }))
+  }, [])
+
+  /* Let go of the drag and let the picture ease home. Cancelling counts: a
+     pointer the browser takes away mid-swipe must not leave the photograph
+     parked half off the screen. */
   const forget = useCallback(() => {
     from.current = null
+    setSliding(false)
+    setDx(0)
   }, [])
 
   const onPointerUp = useCallback(
     (event: React.PointerEvent) => {
       const start = from.current
       from.current = null
+      setSliding(false)
+      setDx(0)
       if (!start) return
 
       const means = dragMeans({
@@ -103,5 +125,17 @@ export default function useViewerGestures({
     [index, length, setIndex, onLike, onOpen],
   )
 
-  return { onPointerDown, onPointerUp, onPointerCancel: forget }
+  return {
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel: forget,
+    },
+    /* What the stage draws: how far across, and whether to ease. Under the
+       finger it tracks exactly; let go and it eases — to the next photograph
+       if the swipe carried, back to the middle if it did not. */
+    dx,
+    sliding,
+  }
 }

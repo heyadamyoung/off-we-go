@@ -229,7 +229,7 @@ function PhotoViewer({
         {/* The stage reads the finger. On the whole stage rather than on the
             photograph, because a phone's picture rarely fills it and a swipe
             that starts in the letterbox is still a swipe. */}
-        <div className="vbody" {...gestures}>
+        <div className="vbody" {...gestures.handlers}>
           {list.length > 1 && (
             <button
               className="vnav p"
@@ -258,6 +258,14 @@ function PhotoViewer({
             <button
               type="button"
               className="vmaintap"
+              /* The photograph follows the finger, and eases home when it
+                 lifts — to the next one if the swipe carried, back to the
+                 middle if it did not. No easing while a finger is down, or the
+                 picture lags behind it and reads as the phone struggling. */
+              style={{
+                transform: gestures.dx ? `translate3d(${gestures.dx}px, 0, 0)` : undefined,
+                transition: gestures.sliding ? 'none' : 'transform .22s cubic-bezier(.2,.8,.3,1)',
+              }}
               aria-label={liked ? 'Liked' : 'Like this photo'}
               onDoubleClick={like}
               onClick={event => {

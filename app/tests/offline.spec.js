@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { serveBasemap } from './basemap-fixture.js'
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, context }) => {
+  /* The basemap comes from the fixture, not from a free service with no
+     funding. These tests are about what the device KEEPS, not about what is
+     printed on the tiles. */
+  await serveBasemap(context)
   // Freeze the demo's walking traveller: layout and offline assertions need a
   // world that holds still. Set before boot; the router strips query params.
   await page.addInitScript(() => {
@@ -47,9 +52,9 @@ test('the app opens and the map draws with the network cut', async ({ page, cont
    free service every time the suite runs. */
 test('a trip’s map can be saved to the device before the signal goes', async ({ page }) => {
   let asked = 0
-  await page.route('**/tiles.openfreemap.org/planet/**', route => {
+  await page.route('**/tiles.openfreemap.org/planet/*/**', route => {
     asked++
-    return route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: 'x' })
+    return route.fallback()
   })
 
   await page.goto('/trips/sample?sheet=settings&tab=trip')

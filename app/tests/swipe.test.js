@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { dragMeans, isDoubleTap, pageBy } from '../src/swipe-core.ts'
+import { dragMeans, followed, isDoubleTap, pageBy } from '../src/swipe-core.ts'
 
 test('dragging across turns the page, and left goes forward', () => {
   /* The direction everything else on a phone uses: the picture follows the
@@ -56,4 +56,37 @@ test('paging wraps at both ends, the way the arrows already do', () => {
   assert.equal(pageBy('tap', 1, 3), 1, 'a tap does not move')
   assert.equal(pageBy(null, 1, 3), 1)
   assert.equal(pageBy('next', 0, 1), 0, 'one photograph stays put')
+})
+
+test('the picture follows the finger once it is going somewhere', () => {
+  /* A swipe that moves nothing is a swipe you cannot tell is working. */
+  assert.equal(followed({ dx: -80, dy: 4 }), -80)
+  assert.equal(followed({ dx: 120, dy: -10 }), 120)
+})
+
+test('it does not twitch under a finger that has barely moved', () => {
+  assert.equal(followed({ dx: 4, dy: 0 }), 0)
+  assert.equal(followed({ dx: -9, dy: 2 }), 0)
+})
+
+test('and it does not smear sideways while somebody is scrolling', () => {
+  /* The same across-beats-down rule the release uses, so what the picture does
+     under the finger and what happens when it lifts cannot disagree. */
+  assert.equal(followed({ dx: -40, dy: 160 }), 0)
+  assert.equal(followed({ dx: -100, dy: 99 }), -100)
+})
+
+test('what the picture does and what the release does agree', () => {
+  /* If one of these ever said "across" and the other "down", the photograph
+     would slide away and then snap back for no reason anybody could see. */
+  for (const drag of [
+    { dx: -80, dy: 4, ms: 200 },
+    { dx: 80, dy: 79, ms: 200 },
+    { dx: -40, dy: 160, ms: 300 },
+    { dx: 5, dy: 5, ms: 100 },
+  ]) {
+    const moved = followed(drag) !== 0
+    const paged = dragMeans(drag) === 'next' || dragMeans(drag) === 'previous'
+    if (paged) assert.ok(moved, `${JSON.stringify(drag)} paged without ever moving`)
+  }
 })
