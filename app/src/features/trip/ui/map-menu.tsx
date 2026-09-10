@@ -25,11 +25,16 @@ export function MapMenu({
     'flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm ' +
     'font-semibold hover:bg-raised2'
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; every action is a real button
-    // biome-ignore lint/a11y/useKeyWithClickEvents: as above
     /* no-safe-area: this layer catches clicks and holds nothing. The menu
        inside it is anchored to --trip-1, and the trip bar that measures from
-       already carries the home bar's inset. */
+       already carries the home bar's inset.
+
+       Nothing may come between the suppressions below and the element they
+       cover: biome-ignore applies to the very next line and nothing further,
+       so a comment slipped in between silently orphans both of them — and the
+       rule they were holding back fires in CI rather than here. */
+    // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; every action is a real button
+    // biome-ignore lint/a11y/useKeyWithClickEvents: as above
     <div className="fixed inset-0 z-[60]" onClick={onClose}>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim */}
       <div
