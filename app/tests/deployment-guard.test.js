@@ -552,3 +552,25 @@ test('the object store refuses to run on a guessable password', {
   assert.equal(weak.status, 78)
   assert.match(weak.stderr, /must be set in .env/)
 })
+
+test('the day census only ever reads', () => {
+  /* It runs against production on every deploy, so the one property that
+     matters is that it cannot change anything. A census that quietly repaired
+     a row would be a migration nobody reviewed, running unversioned, every
+     time somebody pushed. */
+  const source = readFileSync(
+    path.join(appRoot, 'server', 'scripts', 'day-census.mjs'),
+    'utf8',
+  ).toLowerCase()
+  for (const write of [
+    'insert ',
+    'update ',
+    'delete ',
+    'drop ',
+    'alter ',
+    'truncate ',
+    'create ',
+  ]) {
+    assert.ok(!source.includes(write), `day-census.mjs contains "${write.trim()}"`)
+  }
+})

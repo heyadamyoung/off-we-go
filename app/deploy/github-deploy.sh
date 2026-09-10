@@ -55,7 +55,7 @@ done < <(find "$staged_app/deploy" -type f -name '*.sh' -print0)
 # Everything the two image builds read. A release that omits one of these
 # is rejected here, with the missing name, rather than failing minutes
 # later as an unreadable docker cache-key error.
-for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile deploy/alloy.config deploy/object-storage.sh server/scripts/migrate-media-to-bucket.mjs; do
+for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile deploy/alloy.config deploy/object-storage.sh server/scripts/migrate-media-to-bucket.mjs server/scripts/day-census.mjs; do
   if [[ ! -e "$staged_app/$required_path" ]]; then
     echo "Release is missing app/$required_path." >&2
     exit 66
@@ -146,6 +146,15 @@ install -o root -g root -m 755 \
   "$APP_ROOT/deploy/github-deploy.sh" /usr/local/sbin/wayfare-github-deploy
 printf '%s\n' "$release_sha" > .deployed-sha
 trap - ERR
+
+# What the day repair actually did, counted rather than assumed. Migrations
+# 025 and 026 are one-time and neither says a word about what it changed, so
+# this is how anybody finds out whether it reached the trips that needed it —
+# the same discipline as the media cutover below, which reports its files and
+# its failures rather than claiming success. Read-only, and never a reason a
+# deploy fails: a census that cannot run tells nobody anything, but a release
+# that is already live and answering is not worth rolling back over it.
+docker compose exec -T api node server/scripts/day-census.mjs || true
 
 # Media onto the object store, once, with the release already live and
 # answering. Deliberately after the trap comes off: a copy that will not
