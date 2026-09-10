@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
-import { dayIsoOf } from '../src/trip-days-core.ts'
+import { dayIsoOf, tripDays } from '../src/trip-days-core.ts'
 
 /* Migration 025 repairs the days that were typed before there was a date
    picker, and it has to say the same thing in SQL that trip-days-core.ts says
@@ -74,10 +74,9 @@ const WRITTEN = [
   '',
 ]
 
-async function repaired(t, rows, range = TRIP) {
-  const client = new pg.Client({ connectionString: databaseUrl })
-  await client.connect()
-  t.after(() => client.end())
+/* 026 needs the tables 025 does not: photographs are where a trip with no
+   dates of its own gets its year from. */
+async function schema(client) {
   await client.query('drop schema if exists day_repair cascade; create schema day_repair')
   await client.query('set search_path to day_repair')
   await client.query(`create table trips(
@@ -85,18 +84,33 @@ async function repaired(t, rows, range = TRIP) {
   await client.query(`create table stops(
     id uuid primary key default gen_random_uuid(),
     trip_id uuid not null references trips(id), day text)`)
+  await client.query(`create table photos(
+    id uuid primary key default gen_random_uuid(),
+    trip_id uuid not null references trips(id), taken_at timestamptz)`)
+}
+
+const migration = name => readFile(join(here, '..', 'server', 'migrations', name), 'utf8')
+
+async function repaired(t, rows, range = TRIP) {
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  t.after(() => client.end())
+  await schema(client)
   const trip = await client.query(
     'insert into trips(starts_on,ends_on) values($1,$2) returning id',
-    [range.startsOn, range.endsOn],
+    [range.startsOn ?? null, range.endsOn ?? null],
   )
   for (const day of rows) {
     await client.query('insert into stops(trip_id,day) values($1,$2)', [trip.rows[0].id, day])
   }
-  const sql = await readFile(
-    join(here, '..', 'server', 'migrations', '025_repair_stop_days.sql'),
-    'utf8',
-  )
-  await client.query(sql)
+  for (const taken of range.photos || []) {
+    await client.query('insert into photos(trip_id,taken_at) values($1,$2)', [
+      trip.rows[0].id,
+      taken,
+    ])
+  }
+  await client.query(await migration('025_repair_stop_days.sql'))
+  await client.query(await migration('026_repair_days_on_undated_trips.sql'))
   const after = await client.query('select day from stops order by day nulls last')
   return { client, after: after.rows.map(row => row.day) }
 }
@@ -107,13 +121,7 @@ test('the repair never moves a stop to a day JavaScript would not', {
   const client = new pg.Client({ connectionString: databaseUrl })
   await client.connect()
   t.after(() => client.end())
-  await client.query('drop schema if exists day_repair cascade; create schema day_repair')
-  await client.query('set search_path to day_repair')
-  await client.query(`create table trips(
-    id uuid primary key default gen_random_uuid(), starts_on date, ends_on date)`)
-  await client.query(`create table stops(
-    id uuid primary key default gen_random_uuid(),
-    trip_id uuid not null references trips(id), day text)`)
+  await schema(client)
   const trip = await client.query(
     'insert into trips(starts_on,ends_on) values($1,$2) returning id',
     [TRIP.startsOn, TRIP.endsOn],
@@ -127,11 +135,7 @@ test('the repair never moves a stop to a day JavaScript would not', {
     before.set(row.rows[0].id, day)
   }
 
-  const sql = await readFile(
-    join(here, '..', 'server', 'migrations', '025_repair_stop_days.sql'),
-    'utf8',
-  )
-  await client.query(sql)
+  await client.query(await migration('025_repair_stop_days.sql'))
 
   const after = await client.query('select id, day from stops')
   for (const row of after.rows) {
@@ -186,11 +190,52 @@ test('a number two months could answer to is left alone', { skip: unreachable },
   assert.equal(dayIsoOf('30', oneAnswer), '2026-08-30')
 })
 
-test('a trip that never said when it was keeps every day as written', {
+test('a trip with nothing at all to date it by keeps every day as written', {
   skip: unreachable,
 }, async t => {
-  /* Without a range a label carries no year and a number carries nothing —
-     there is no date to derive, so nothing is invented. */
-  const { after } = await repaired(t, ['Fri 4 Sep', '4', '2026-09-04'], {})
-  assert.deepEqual(after.sort(), ['2026-09-04', '4', 'Fri 4 Sep'])
+  /* Without a range a label carries no year and a number carries nothing, and
+     with no photographs and no picked date there is nowhere to get one.
+     Nothing is invented. */
+  const { after } = await repaired(t, ['Fri 4 Sep', '4', 'tbc'], {})
+  assert.deepEqual(after.sort(), ['4', 'Fri 4 Sep', 'tbc'])
+})
+
+test('a trip with no dates takes its year from its photographs', {
+  skip: unreachable,
+}, async t => {
+  /* Only a title is needed to start a trip, so plenty have no dates at all —
+     and those are exactly the ones with hand-typed days on them. The camera
+     knows what year it was, which is all a label was ever missing. */
+  const { after } = await repaired(t, ['Fri 4 Sep', '4', 'Sat 5 Sep'], {
+    photos: ['2026-09-05T10:00:00.000Z'],
+  })
+  assert.deepEqual(after.sort(), ['2026-09-04', '2026-09-04', '2026-09-05'])
+})
+
+test('a stop somebody dated gives the rest of an undated trip its year', {
+  skip: unreachable,
+}, async t => {
+  /* One stop picked from the calendar is as good as a photograph. */
+  const { after } = await repaired(t, ['2026-09-04', 'Sat 5 Sep', '6'], {})
+  assert.deepEqual(after.sort(), ['2026-09-04', '2026-09-05', '2026-09-06'])
+})
+
+test('the inferred range is the one the client would have guessed', {
+  skip: unreachable,
+}, async t => {
+  /* The client has been placing these days at read time all along, from a
+     range it guesses the same way. The migration writing down a different
+     answer would be worse than writing down none. */
+  const rows = ['Fri 4 Sep', '4', 'Sat 5 Sep', 'Thu 10 Sep', 'tbc']
+  const { after } = await repaired(t, rows, { photos: ['2026-09-05T10:00:00.000Z'] })
+  const asClientSees = tripDays(
+    rows.map(day => ({ day })),
+    {},
+    ['2026-09-05'],
+  )
+  const dates = [...new Set(after.filter(day => day && /^\d{4}-\d{2}-\d{2}$/.test(day)))].sort()
+  assert.deepEqual(
+    dates,
+    asClientSees.map(day => day.iso).filter(iso => /^\d{4}-/.test(iso)),
+  )
 })
