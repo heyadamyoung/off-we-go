@@ -216,11 +216,22 @@ export function windowRows<P extends GroupablePhoto>(
   {
     scrolled,
     viewportHeight,
-    overscanRows = 3,
+    /* Kept beyond each edge, as a share of the screen rather than a number of
+       rows. Rows are a third of the width on a phone and a tenth of it on a
+       desktop, so a fixed count of them means a different amount of warning on
+       each — and measured, half a screen turned out to be *less* than the
+       three rows it replaced on a phone.
+
+       A whole screen either way, then. It is the difference between a tile
+       being destroyed while its picture is still arriving — cancelled,
+       uncached, and fetched again from nothing on the way back — and it simply
+       being kept. One screen of tiles is a cheap thing to hold and an
+       expensive thing to rebuild. */
+    overscan = 1,
   }: {
     scrolled: number
     viewportHeight: number
-    overscanRows?: number
+    overscan?: number
   },
 ): RowWindow {
   if (!rows.length) return { start: 0, end: 0, topPad: 0, bottomPad: 0 }
@@ -229,19 +240,19 @@ export function windowRows<P extends GroupablePhoto>(
      measurement is one frame away. */
   if (!(viewportHeight > 0)) return { start: 0, end: rows.length, topPad: 0, bottomPad: 0 }
 
+  const margin = Math.max(0, viewportHeight * overscan)
   const from = Math.max(0, scrolled)
   /* Never past the last row there is. The panel shares one scroller across
      its views, so arriving here from a longer one arrives already scrolled
      past the whole grid — and a slice from beyond the end to the end renders
      nothing at all, with the scrollbar still claiming everything is there. */
-  let first = lowerBound(rows, from)
-  first = Math.min(first, rows.length - 1)
-  const start = Math.max(0, first - overscanRows)
+  const first = Math.min(lowerBound(rows, from - margin), rows.length - 1)
+  const start = Math.max(0, first)
 
   let end = start
-  const until = from + viewportHeight
+  const until = from + viewportHeight + margin
   while (end < rows.length && rows[end].top < until) end += 1
-  end = Math.min(rows.length, end + overscanRows)
+  end = Math.max(start + 1, Math.min(rows.length, end))
 
   const topPad = rows[start].top
   const lastEdge = rows[end - 1].top + rows[end - 1].height

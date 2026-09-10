@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { pic, picFallback } from '../../data'
+import { tileLoading } from '../../img-loading-core'
 import { keepPhotoOffline, recallPhotoUrl } from '../../offline-photos-core'
 import { mediaPathOf } from '../../media-refresh-core'
 import { refreshMediaUrl } from '../../media-links'
@@ -30,7 +31,10 @@ interface ImgProps {
   className?: string
   style?: CSSProperties
   alt?: string
+  /** The one picture on screen: load it now and ahead of everything else. */
   eager?: boolean
+  /** A parent that windows its children has already decided this is visible. */
+  now?: boolean
 }
 
 const Img = memo(function Img({
@@ -41,6 +45,7 @@ const Img = memo(function Img({
   style,
   alt = '',
   eager = false,
+  now = false,
 }: ImgProps) {
   const first = srcFor(item, w, h)
   const [src, setSrc] = useState(first)
@@ -77,6 +82,9 @@ const Img = memo(function Img({
   }, [item.id, item.src, item.kw, item.lock, w, h])
 
   const cls = 'im' + (ready ? ' rdy' : '') + (className ? ' ' + className : '')
+  /* Read at render rather than held in state: a remounted tile asks afresh,
+     which is exactly the moment the answer matters. */
+  const plan = tileLoading({ seen: SEEN.has(src), eager, now })
   return (
     <img
       className={cls}
@@ -84,9 +92,7 @@ const Img = memo(function Img({
       src={src}
       alt={alt}
       draggable={false}
-      loading={eager ? 'eager' : 'lazy'}
-      decoding="async"
-      {...(eager ? { fetchPriority: 'high' as const } : {})}
+      {...plan}
       onLoad={() => {
         SEEN.add(src)
         setReady(true)

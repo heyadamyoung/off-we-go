@@ -250,6 +250,21 @@ test('rows are kept beyond each edge, so a flick does not show empty cells', () 
   assert.ok(bottomEdge > 4000 + 500, 'and rows below it')
 })
 
+test('the margin is a share of the screen, so a phone gets the same warning', () => {
+  /* A row is a third of the width on a phone and a tenth of it on a desktop.
+     Counting rows gives one of them half a screen of warning and the other a
+     sliver, and the sliver is the one somebody outruns. */
+  const groups = groupByStop(many(600, 'rijks'), stops)
+  const { rows, height } = layoutGroups(groups, sizes)
+  for (const viewportHeight of [400, 900]) {
+    const view = windowRows(rows, height, { scrolled: 5000, viewportHeight })
+    const above = 5000 - view.topPad
+    const below = height - view.bottomPad - (5000 + viewportHeight)
+    assert.ok(above >= viewportHeight * 0.4, `${above}px of warning above at ${viewportHeight}`)
+    assert.ok(below >= viewportHeight * 0.4, `${below}px of warning below at ${viewportHeight}`)
+  }
+})
+
 test('nonsense does not produce a window that renders nothing', () => {
   /* A measurement can arrive negative or not-a-number while a panel is
      opening, and a blank grid is a worse answer than a heavy one. */
