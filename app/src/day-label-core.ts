@@ -20,6 +20,11 @@ const isoDate = (date: Date) =>
 
 /** '2026-09-04' → 'Fri 4 Sep', the label format the whole app already speaks. */
 export function dayLabelOf(iso: string): string {
+  /* An ISO date or nothing. Callers hand this whatever they hold, and a
+     browser will happily read 'Fri 4 Sep' as the fourth of September 2001 —
+     which came back out as 'Tue 4 Sep' and got written to a stop. A label in
+     is not a date, and guessing a year for it silently moves the stop. */
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso ?? '').slice(0, 10))) return ''
   const date = onDay(iso)
   if (!Number.isFinite(date.getTime())) return ''
   return `${WEEKDAY[date.getDay()]} ${date.getDate()} ${MONTH[date.getMonth()]}`

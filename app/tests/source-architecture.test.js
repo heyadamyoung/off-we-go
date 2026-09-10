@@ -107,3 +107,19 @@ test('feature internals are imported only from their own slice', async () => {
     `Import feature internals only from within that feature:\n${violations.join('\n')}`,
   )
 })
+
+test('the all-days sentinel is defined exactly once', async () => {
+  /* It was defined twice, as 'all' and as 'all-days'. Everything that filters
+     compared against one and everything that chose a day set the other, so the
+     itinerary strip filtered every row out and said "Nothing planned for this
+     day yet" on a trip full of stops — and a stop added while viewing every
+     day was saved with the sentinel itself as its day. A sentinel is only a
+     sentinel if there is one of it. */
+  const defined = []
+  for (const file of await sourceFiles(sourceRoot)) {
+    if (/export const ALL_DAYS\b/.test(await readFile(file, 'utf8'))) {
+      defined.push(path.relative(sourceRoot, file))
+    }
+  }
+  assert.deepEqual(defined, ['trip-search-core.ts'])
+})

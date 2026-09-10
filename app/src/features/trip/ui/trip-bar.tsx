@@ -3,10 +3,11 @@ import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { ALL_DAYS } from '../../../trip-search-core'
 import type { TripItem } from '../model/trip-items'
+import type { TripDay } from '../../../trip-days-core'
 
 interface TripBarProps {
   items: TripItem[]
-  days: string[]
+  days: TripDay[]
   day: string
   liveDay?: string
   selected?: string
@@ -88,18 +89,18 @@ const TripBar = memo(function TripBar({
           </button>
           {days.map(value => (
             <button
-              key={value}
-              className={'chip hitslop' + (day === value ? ' sel' : '')}
+              key={value.iso}
+              className={'chip hitslop' + (day === value.iso ? ' sel' : '')}
               onClick={() => {
-                onDay(value)
+                onDay(value.iso)
                 if (peek) onPeek?.(false)
               }}>
               {/* The live dot stays amber even on the ink-inverted selected
                   chip — it marks the journey's day, and that is amber's job. */}
-              {value === liveDay && (
+              {value.iso === liveDay && (
                 <span className="size-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--c-glow)]" />
               )}
-              {value}
+              {value.label}
             </button>
           ))}
         </div>

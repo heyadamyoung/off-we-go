@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { ALL_DAYS, type TripView } from '../../../trip-search-core'
+import type { TripView } from '../../../trip-search-core'
 import { applyLiveStopStatuses } from '../../../live-stop-progress-core'
 import { initialTripView } from '../../../live-map-view-core'
 import { useAssistant } from '../../assistant'
@@ -16,7 +16,8 @@ import useTripEscape from './use-trip-escape'
 import useOfflineEdits from './use-offline-edits'
 import { track as trackEvent } from '../../../shared/lib/telemetry'
 import { withFace } from './faces'
-import { daysOf, tripSubtitle } from './trip-items'
+import { tripSubtitle } from './trip-items'
+import useTripDays from './use-trip-days'
 import type {
   Attraction,
   Coordinates,
@@ -189,7 +190,8 @@ export default function useTripPage({
     [setFollowing, setMapView, patch],
   )
   const liveStop = progress.currentStop || progress.destination
-  const day = search.day || liveStop?.day || ALL_DAYS
+  /* What gives a stored label its year and a bare number its month. Without
+     it neither can be placed on a date at all. */
   const liveStops = useMemo(() => applyLiveStopStatuses(ordered, progress), [ordered, progress])
 
   const {
@@ -211,7 +213,12 @@ export default function useTripPage({
     removeComment,
   } = useTripPhotos({ data, tripId, me, toast, setSelected: selectId })
 
-  const days = useMemo(() => daysOf(ordered), [ordered])
+  const {
+    range: dayRange,
+    days,
+    day,
+    liveDay,
+  } = useTripDays({ trip, stops: ordered, photos, searchDay: search.day, liveStop })
 
   /* Inside the terminal: zooming into an airport or its card's button opens
      it, the level picker or zooming away closes it. */
@@ -298,9 +305,8 @@ export default function useTripPage({
     setMapView,
     viewRef,
     openViewer,
+    range: dayRange,
   })
-
-  const liveDay = liveStop?.day
 
   const onMapView = useCallback(
     (next: MapView, options?: { user?: boolean }) => {
@@ -374,7 +380,7 @@ export default function useTripPage({
     theme, setTheme, trip, route, stops, family, me, viewers,
     placing, setPlacing, photoBy, setPhotoBy, setMapOverride,
     attraction, setAttractionCard, asking, setAsking, assistant,
-    view, setView, selected, query, day, days, toast,
+    view, setView, selected, query, day, days, dayRange, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
     progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,

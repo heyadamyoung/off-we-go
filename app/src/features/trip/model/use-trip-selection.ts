@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react'
 import { ALL_DAYS } from '../../../trip-search-core'
 import { tripItems, type TripItem } from './trip-items'
 import type { MapView, Stop, TripPhoto } from '../../../shared/model/types'
+import type { DayRange } from '../../../trip-days-core'
 
 /* The strip, the timeline and the map all select from one list. This owns that
    list, which item is chosen, and what choosing does — including the rule that
@@ -17,6 +18,7 @@ export default function useTripSelection({
   setMapView,
   viewRef,
   openViewer,
+  range,
 }: {
   liveStops: Stop[]
   photos: TripPhoto[]
@@ -28,16 +30,20 @@ export default function useTripSelection({
   setMapView: (view: MapView) => void
   viewRef: { current: MapView }
   openViewer: (list: TripPhoto[], index: number) => void
+  /** What gives a stored label its year and a bare number its month. */
+  range?: DayRange
 }) {
   const items = useMemo(
-    () => tripItems({ stops: liveStops, photos, day, query }),
-    [liveStops, photos, day, query],
+    () => tripItems({ stops: liveStops, photos, day, range, query }),
+    [liveStops, photos, day, range, query],
   )
   const selectedItem = useMemo(
     () =>
       items.find(item => item.id === selected) ||
-      tripItems({ stops: liveStops, photos, day: ALL_DAYS }).find(item => item.id === selected),
-    [items, liveStops, photos, selected],
+      tripItems({ stops: liveStops, photos, day: ALL_DAYS, range }).find(
+        item => item.id === selected,
+      ),
+    [items, liveStops, photos, selected, range],
   )
 
   /* Clicking a photograph anywhere — strip, panel, timeline — brings up the
