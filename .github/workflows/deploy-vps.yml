@@ -61,6 +61,15 @@ jobs:
         # This runner has docker, so the compose check must run rather than skip.
         run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
 
+      # Without it every video test quietly SKIPS. They have been skipping here
+      # since they were written — "ok … # SKIP ffmpeg is not installed on this
+      # machine" reads as a pass in the summary, so converting, the rendition
+      # ladder and the whole of the object-storage path have only ever been
+      # proved on somebody's laptop. The api image installs ffmpeg; the runner
+      # that tests it should have it too.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run server tests
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/offwego_test
