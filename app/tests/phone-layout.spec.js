@@ -147,6 +147,11 @@ const STATES = [
     'the people panel',
     'aside',
     async page => {
+      /* Back to the map first. The gallery is a screen rather than a side
+         panel now — it covers the trip's own navigation while it is open — so
+         the next panel is reached the way somebody actually reaches it. */
+      await page.keyboard.press('Escape')
+      await expect(page).not.toHaveURL(/view=/)
       await page.getByRole('button', { name: 'People', exact: true }).click()
       await page.waitForTimeout(600)
     },

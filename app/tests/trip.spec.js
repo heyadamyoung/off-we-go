@@ -661,6 +661,10 @@ test('search matches a stop by its photo caption, across the whole trip', async 
 
 test('each side panel is its own URL and closes back to the map', async ({ page }) => {
   await open(page)
+  /* Back to the map between each one, rather than straight from panel to
+     panel. Photos is not a side panel any more — it is a screen, and it
+     covers the trip's own navigation while it is open — so hopping between
+     them by way of the map is what somebody actually does now. */
   for (const [label, heading] of [
     ['Timeline', 'Timeline'],
     ['Photos', 'Photos'],
@@ -669,8 +673,19 @@ test('each side panel is its own URL and closes back to the map', async ({ page 
     await page.getByRole('button', { name: label, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`view=${heading.toLowerCase()}`))
     await expect(page.getByRole('heading', { name: heading })).toBeVisible()
+    await page.getByRole('button', { name: 'Back to map' }).click()
+    await expect(page).not.toHaveURL(/view=/)
   }
-  await page.getByRole('button', { name: 'Back to map' }).click()
+})
+
+test('the gallery lets go of the screen when you press escape', async ({ page }) => {
+  /* It covers everything while it is open, the trip's own navigation
+     included, so it has to answer the gesture every other full-screen thing
+     answers. */
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await expect(page).toHaveURL(/view=photos/)
+  await page.keyboard.press('Escape')
   await expect(page).not.toHaveURL(/view=/)
 })
 
