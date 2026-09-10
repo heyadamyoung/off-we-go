@@ -110,6 +110,7 @@ async function repaired(t, rows, range = TRIP) {
     ])
   }
   await client.query(await migration('025_repair_stop_days.sql'))
+  await client.query(await migration('025b_neutralise_impossible_dates.sql'))
   await client.query(await migration('026_repair_days_on_undated_trips.sql'))
   const after = await client.query('select day from stops order by day nulls last')
   return { client, after: after.rows.map(row => row.day) }
@@ -238,4 +239,37 @@ test('the inferred range is the one the client would have guessed', {
     dates,
     asClientSees.map(day => day.iso).filter(iso => /^\d{4}-/.test(iso)),
   )
+})
+
+test('day text shaped like a date that is not one never reaches a cast', {
+  skip: unreachable,
+}, async t => {
+  /* ^\d{4}-\d{2}-\d{2} says nothing about whether the number it matched is a
+     day anybody could have travelled on. 026 reads a stop's day as a date, and
+     casting '2026-13-45' raises — which takes the whole boot down with it,
+     because a migration that raises is a server that will not start.
+
+     Cleared rather than corrected: there is no honest way to decide whether
+     '2026-02-31' meant the 28th, the 1st of March or the 3rd, and the day it
+     names does not exist so no chip can hold it. The timeline still draws the
+     stop, under "No date yet", where somebody can put it right. */
+  const { after } = await repaired(
+    t,
+    ['2026-13-45', '2026-02-31', '0000-01-01', '2026-09-04', 'Fri 4 Sep'],
+    {},
+  )
+  assert.equal(after.filter(day => day === null).length, 3, 'the three that are not dates')
+  assert.equal(
+    after.filter(day => day === '2026-09-04').length,
+    2,
+    'the real date survives, and gives the label next to it its year',
+  )
+})
+
+test('every date a picker can produce survives the guard', { skip: unreachable }, async t => {
+  /* The guard clears what is not a date, so the thing that would hurt is it
+     clearing something that is. A leap day is the one everybody gets wrong. */
+  const dates = ['2024-02-29', '2026-01-01', '2026-12-31', '2026-06-30', '2026-03-01']
+  const { after } = await repaired(t, dates, { startsOn: '2024-01-01', endsOn: '2027-12-31' })
+  assert.deepEqual(after.slice().sort(), dates.slice().sort())
 })
