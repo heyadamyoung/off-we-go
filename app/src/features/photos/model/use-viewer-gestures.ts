@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type React from 'react'
-import { dragMeans, followed, isDoubleTap, pageBy, type Tap } from '../../../swipe-core'
+import {
+  carryDistance,
+  dragMeans,
+  followed,
+  isDoubleTap,
+  pageBy,
+  type Tap,
+} from '../../../swipe-core'
 
 /* What a finger does to the photograph on the viewer's stage.
  *
@@ -57,6 +64,11 @@ export default function useViewerGestures({
   const [dx, setDx] = useState(0)
   const [sliding, setSliding] = useState(false)
 
+  /* How far this particular picture has to be carried. Measured off the stage
+     the finger is actually on, at the moment it goes down, so a phone turned
+     on its side asks for the width it now has. */
+  const carry = useRef(64)
+
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     /* The arrows and the film's own controls live on this stage too, and a
        click on one of them is a tap as far as a pointer is concerned — so
@@ -66,6 +78,7 @@ export default function useViewerGestures({
       from.current = null
       return
     }
+    carry.current = carryDistance(event.currentTarget.getBoundingClientRect().width)
     from.current = { x: event.clientX, y: event.clientY, at: event.timeStamp }
     setSliding(true)
   }, [])
@@ -93,11 +106,14 @@ export default function useViewerGestures({
       setDx(0)
       if (!start) return
 
-      const means = dragMeans({
-        dx: event.clientX - start.x,
-        dy: event.clientY - start.y,
-        ms: event.timeStamp - start.at,
-      })
+      const means = dragMeans(
+        {
+          dx: event.clientX - start.x,
+          dy: event.clientY - start.y,
+          ms: event.timeStamp - start.at,
+        },
+        { travel: carry.current },
+      )
 
       if (means === 'next' || means === 'previous') {
         lastTap.current = null

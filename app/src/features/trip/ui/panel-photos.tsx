@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import type { GroupMode } from '../../../photo-groups-core'
@@ -18,7 +18,7 @@ export interface PhotosPanelProps {
   selected?: Id | null
   photoBy: string | null
   onPhotoBy: (name: string | null) => void
-  onSelect: (item: TripItem) => void
+  onSelect: (item: TripItem, ordered?: TripPhoto[]) => void
   onClose: () => void
   onAddPhotos?: () => void
 }
@@ -48,11 +48,25 @@ export default function PanelPhotos({
   const {
     ref: grid,
     columns,
+    groups,
     rows,
     visible,
     collapsed,
     toggle,
   } = usePhotoGroups(shown, stops, mode)
+
+  /* The gallery's own reading order, top to bottom — which is what the viewer
+     pages through when a photograph is opened from here. It used to page
+     through the bottom strip instead: a different order, filtered to one day,
+     so the picture after the one you tapped was rarely the one under it, and
+     from another day there was nothing to swipe to at all.
+
+     A collapsed group is not in it. Those photographs are not on the screen,
+     and swiping into pictures you cannot see is its own kind of lost. */
+  const reading = useMemo(
+    () => groups.filter(group => !collapsed.has(group.key)).flatMap(group => group.photos),
+    [groups, collapsed],
+  )
 
   if (!photos.length) {
     return (
@@ -213,6 +227,7 @@ export default function PanelPhotos({
                     onClick={() =>
                       onSelect(
                         photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined),
+                        reading,
                       )
                     }>
                     <MediaThumb

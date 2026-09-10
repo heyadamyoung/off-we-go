@@ -32,13 +32,31 @@ export interface DragLimits {
 }
 
 /**
+ * How far a finger has to carry the picture before the page turns.
+ *
+ * A fixed number of pixels is the wrong shape for this. Forty-four of them is
+ * a comfortable minimum on a watch and about a tenth of a phone, which meant a
+ * hesitant nudge — a finger that moved, thought better of it, and lifted —
+ * turned the page anyway. It has to be most of a swipe, so it is measured as a
+ * share of the picture being swiped.
+ *
+ * Floored so a narrow stage still needs a deliberate push, and capped so a
+ * wide desktop one does not ask for half a metre of mouse: there are arrows
+ * and arrow keys over there, and they are the better tool anyway.
+ */
+export function carryDistance(width: number, share = 0.4, least = 64, most = 240): number {
+  if (!(width > 0)) return least
+  return Math.min(Math.max(width * share, least), most)
+}
+
+/**
  * What to do about a finger that has just lifted.
  *
  * Dragging left shows the next photograph, the way a page turns and the way
  * every gallery on a phone already behaves.
  */
 export function dragMeans(drag: Drag, limits: DragLimits = {}): DragMeans {
-  const { travel = 44, slop = 10, restMs = 700 } = limits
+  const { travel = 64, slop = 10, restMs = 700 } = limits
   const { dx, dy, ms } = drag
   const across = Math.abs(dx)
   const down = Math.abs(dy)

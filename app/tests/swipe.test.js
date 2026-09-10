@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { dragMeans, followed, isDoubleTap, pageBy } from '../src/swipe-core.ts'
+import { carryDistance, dragMeans, followed, isDoubleTap, pageBy } from '../src/swipe-core.ts'
 
 test('dragging across turns the page, and left goes forward', () => {
   /* The direction everything else on a phone uses: the picture follows the
@@ -10,11 +10,12 @@ test('dragging across turns the page, and left goes forward', () => {
 })
 
 test('a short drag is not a page turn', () => {
-  /* A thumb never lands perfectly still. Paging on twenty pixels would make
-     the viewer feel like it was flinching. */
+  /* A thumb never lands perfectly still, and a hesitant nudge is not a
+     decision. The default is the floor; the viewer hands in a share of the
+     picture's own width, which is a good deal further. */
   assert.equal(dragMeans({ dx: -20, dy: 2, ms: 120 }), null)
-  assert.equal(dragMeans({ dx: -43, dy: 2, ms: 120 }), null)
-  assert.equal(dragMeans({ dx: -44, dy: 2, ms: 120 }), 'next')
+  assert.equal(dragMeans({ dx: -63, dy: 2, ms: 120 }), null)
+  assert.equal(dragMeans({ dx: -64, dy: 2, ms: 120 }), 'next')
 })
 
 test('a scroll is not a page turn, however far it wanders sideways', () => {
@@ -89,4 +90,26 @@ test('what the picture does and what the release does agree', () => {
     const paged = dragMeans(drag) === 'next' || dragMeans(drag) === 'previous'
     if (paged) assert.ok(moved, `${JSON.stringify(drag)} paged without ever moving`)
   }
+})
+
+test('the page turns only once the picture has been carried most of the way', () => {
+  /* A fixed 44px was about a tenth of a phone, so a hesitant nudge — a finger
+     that moved, thought better of it, and lifted — turned the page anyway. */
+  const phone = carryDistance(390)
+  assert.equal(phone, 156, 'most of the way across, not a tenth of it')
+  assert.equal(dragMeans({ dx: -80, dy: 4, ms: 200 }, { travel: phone }), null, 'a nudge holds')
+  assert.equal(dragMeans({ dx: -155, dy: 4, ms: 200 }, { travel: phone }), null, 'and just short')
+  assert.equal(dragMeans({ dx: -156, dy: 4, ms: 200 }, { travel: phone }), 'next')
+})
+
+test('a narrow stage still asks for a deliberate push', () => {
+  /* Two fifths of a very small stage is a twitch; there is a floor under it. */
+  assert.equal(carryDistance(120), 64)
+  assert.equal(carryDistance(0), 64, 'and an unmeasured stage does not ask for nothing')
+})
+
+test('a wide one does not ask for half a metre of mouse', () => {
+  /* There are arrows and arrow keys on a desktop, and they are the better
+     tool: the cap is there so the swipe stays possible, not so it is easy. */
+  assert.equal(carryDistance(1600), 240)
 })
