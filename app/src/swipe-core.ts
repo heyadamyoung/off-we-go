@@ -29,6 +29,11 @@ export interface DragLimits {
   slop?: number
   /** How long a tap may linger before it is a press, not a tap. */
   restMs?: number
+  /** Pixels per millisecond at which a short gesture is a flick, not a nudge.
+   A real thumb flick runs well over 1; the bar sits low because being
+   generous here costs a page turn somebody can undo, and being strict costs
+   the gesture everybody actually uses. */
+  flick?: number
 }
 
 /**
@@ -44,7 +49,7 @@ export interface DragLimits {
  * wide desktop one does not ask for half a metre of mouse: there are arrows
  * and arrow keys over there, and they are the better tool anyway.
  */
-export function carryDistance(width: number, share = 0.4, least = 64, most = 240): number {
+export function carryDistance(width: number, share = 0.22, least = 48, most = 140): number {
   if (!(width > 0)) return least
   return Math.min(Math.max(width * share, least), most)
 }
@@ -56,22 +61,36 @@ export function carryDistance(width: number, share = 0.4, least = 64, most = 240
  * every gallery on a phone already behaves.
  */
 export function dragMeans(drag: Drag, limits: DragLimits = {}): DragMeans {
-  const { travel = 64, slop = 10, restMs = 700 } = limits
+  const { travel = 48, slop = 10, restMs = 700, flick = 0.35 } = limits
   const { dx, dy, ms } = drag
   const across = Math.abs(dx)
   const down = Math.abs(dy)
+  const sideways = across > down
 
-  /* Across rather than down, and far enough to be deliberate. Comparing the
-     two is what keeps a scroll down a long comment thread from turning the
-     page as well: a finger that travelled further vertically was going
-     vertically, however far it also wandered. */
-  if (across >= travel && across > down) return dx < 0 ? 'next' : 'previous'
+  /* Across rather than down. Comparing the two is what keeps a scroll down a
+     long comment thread from turning the page as well: a finger that travelled
+     further vertically was going vertically, however far it also wandered. */
+  if (!sideways) return tapOrNothing(drag, slop, restMs)
 
-  // Barely moved, and not held: a tap.
-  if (across <= slop && down <= slop && ms <= restMs) return 'tap'
+  /* Far enough, OR fast enough. Distance alone is the wrong test on its own:
+     make it long enough that a hesitant nudge does not count and a quick flick
+     — which is how anybody actually pages through photographs — stops counting
+     too. A flick is short by nature; what makes it a decision is its speed. */
+  if (across >= travel) return dx < 0 ? 'next' : 'previous'
+  /* A gesture that took no measurable time is not slow — it is the fastest
+     thing there is. Treating an unmeasured duration as "no flick" is how a
+     genuine sweep gets refused on a device whose clock is coarse. */
+  const speed = ms > 0 ? across / ms : Number.POSITIVE_INFINITY
+  if (across > slop * 2 && speed >= flick) return dx < 0 ? 'next' : 'previous'
 
-  /* Somewhere in between — a scroll, a hesitation, a press. Doing nothing is
-     the only answer that cannot be wrong. */
+  return tapOrNothing(drag, slop, restMs)
+}
+
+/* A finger that went nowhere is a tap; one that went somewhere indecisive is
+   nothing at all. Doing nothing is the only answer that cannot be wrong. */
+function tapOrNothing(drag: Drag, slop: number, restMs: number): DragMeans {
+  const { dx, dy, ms } = drag
+  if (Math.abs(dx) <= slop && Math.abs(dy) <= slop && ms <= restMs) return 'tap'
   return null
 }
 

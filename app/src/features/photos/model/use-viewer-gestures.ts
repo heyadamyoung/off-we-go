@@ -102,9 +102,11 @@ export default function useViewerGestures({
     (event: React.PointerEvent) => {
       const start = from.current
       from.current = null
-      setSliding(false)
-      setDx(0)
-      if (!start) return
+      if (!start) {
+        setSliding(false)
+        setDx(0)
+        return
+      }
 
       const means = dragMeans(
         {
@@ -119,9 +121,19 @@ export default function useViewerGestures({
         lastTap.current = null
         clearTimeout(opening.current ?? undefined)
         opening.current = null
+        /* Home with no easing, because the page is turning: easing here walks
+           the OUTGOING photograph back to the middle in front of you and only
+           then swaps it, which reads as the swipe being refused a moment
+           before it is obeyed. `sliding` is left on, so this frame has no
+           transition; the next photograph simply arrives where it belongs. */
+        setDx(0)
         setIndex(pageBy(means, index, length))
         return
       }
+
+      // Not paging: let it ease back to the middle, which is the whole point.
+      setSliding(false)
+      setDx(0)
       if (means !== 'tap') return
 
       const tap = { at: event.timeStamp, x: event.clientX, y: event.clientY }

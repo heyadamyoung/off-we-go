@@ -808,8 +808,18 @@
 .vzclose:hover, .vzreset:hover { background: rgb(255 255 255 / .26) }
 @media (prefers-reduced-motion: reduce) { .vzoom { animation: none } }
 
+/* Above the photograph, always. A dragged picture is transformed, and a
+   transform makes a stacking context — which promotes it into the same paint
+   layer as these, where order is DOM order. So a swipe slid the photograph
+   over the arrow BEFORE it in the markup and under the one after it: the left
+   arrow vanished under your thumb and the right one did not, which is a very
+   confusing thing to be told is one feature.
+
+   The arrows are chrome and the picture is content. Chrome stays on top, the
+   way it does in every gallery on every platform. */
 .vnav {
-  position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px;
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 4;
+  width: 46px; height: 46px;
   border-radius: 50%; background: rgb(255 255 255 / .12); backdrop-filter: blur(8px);
   display: grid; place-items: center; color: #fff;
 }

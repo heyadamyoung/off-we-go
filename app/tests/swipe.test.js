@@ -9,13 +9,28 @@ test('dragging across turns the page, and left goes forward', () => {
   assert.equal(dragMeans({ dx: 90, dy: 4, ms: 180 }), 'previous')
 })
 
-test('a short drag is not a page turn', () => {
+test('a slow short drag is not a page turn', () => {
   /* A thumb never lands perfectly still, and a hesitant nudge is not a
-     decision. The default is the floor; the viewer hands in a share of the
-     picture's own width, which is a good deal further. */
-  assert.equal(dragMeans({ dx: -20, dy: 2, ms: 120 }), null)
-  assert.equal(dragMeans({ dx: -63, dy: 2, ms: 120 }), null)
-  assert.equal(dragMeans({ dx: -64, dy: 2, ms: 120 }), 'next')
+     decision. Slowly, so the flick below cannot answer for it. */
+  assert.equal(dragMeans({ dx: -20, dy: 2, ms: 600 }), null)
+  assert.equal(dragMeans({ dx: -47, dy: 2, ms: 600 }), null)
+  assert.equal(dragMeans({ dx: -48, dy: 2, ms: 600 }), 'next')
+})
+
+test('a flick turns the page however short it is', () => {
+  /* This is how anybody actually pages through photographs: a quick sweep of
+     the thumb, nowhere near the far side of the screen. Asking such a gesture
+     to cross a fixed distance is what made the viewer feel like hard work. */
+  assert.equal(dragMeans({ dx: -40, dy: 3, ms: 60 }), 'next', '0.67px per ms')
+  assert.equal(dragMeans({ dx: 36, dy: 0, ms: 50 }), 'previous')
+  // Same distance, taken at a stroll: not a flick, and not far enough either.
+  assert.equal(dragMeans({ dx: -40, dy: 3, ms: 500 }), null)
+})
+
+test('a flick still has to be a movement rather than a twitch', () => {
+  /* A tap is fast and tiny by definition; it must not read as a page turn. */
+  assert.equal(dragMeans({ dx: -8, dy: 1, ms: 10 }), 'tap')
+  assert.equal(dragMeans({ dx: -18, dy: 1, ms: 20 }), null, 'quick, but barely moved')
 })
 
 test('a scroll is not a page turn, however far it wanders sideways', () => {
@@ -92,24 +107,33 @@ test('what the picture does and what the release does agree', () => {
   }
 })
 
-test('the page turns only once the picture has been carried most of the way', () => {
-  /* A fixed 44px was about a tenth of a phone, so a hesitant nudge — a finger
-     that moved, thought better of it, and lifted — turned the page anyway. */
+test('a slow drag has to cross about a fifth of the picture', () => {
+  /* Two fifths was too much — a whole thumb's reach for one photograph, and it
+     made the viewer feel like hard work. About a fifth, with the flick above
+     carrying everything quicker than that. */
   const phone = carryDistance(390)
-  assert.equal(phone, 156, 'most of the way across, not a tenth of it')
-  assert.equal(dragMeans({ dx: -80, dy: 4, ms: 200 }, { travel: phone }), null, 'a nudge holds')
-  assert.equal(dragMeans({ dx: -155, dy: 4, ms: 200 }, { travel: phone }), null, 'and just short')
-  assert.equal(dragMeans({ dx: -156, dy: 4, ms: 200 }, { travel: phone }), 'next')
+  assert.ok(phone > 80 && phone < 92, `about a fifth of a phone, got ${phone}`)
+  const slowly = dx => dragMeans({ dx, dy: 4, ms: 700 }, { travel: phone })
+  assert.equal(slowly(-60), null, 'a nudge holds')
+  assert.equal(slowly(-(phone - 1)), null, 'and just short')
+  assert.equal(slowly(-phone), 'next')
 })
 
-test('a narrow stage still asks for a deliberate push', () => {
-  /* Two fifths of a very small stage is a twitch; there is a floor under it. */
-  assert.equal(carryDistance(120), 64)
-  assert.equal(carryDistance(0), 64, 'and an unmeasured stage does not ask for nothing')
+test('a narrow stage still asks for a real push', () => {
+  /* A fifth of a very small stage is a twitch; there is a floor under it. */
+  assert.equal(carryDistance(120), 48)
+  assert.equal(carryDistance(0), 48, 'and an unmeasured stage does not ask for nothing')
 })
 
 test('a wide one does not ask for half a metre of mouse', () => {
   /* There are arrows and arrow keys on a desktop, and they are the better
      tool: the cap is there so the swipe stays possible, not so it is easy. */
-  assert.equal(carryDistance(1600), 240)
+  assert.equal(carryDistance(1600), 140)
+})
+
+test('a sweep that took no measurable time is the fastest thing there is', () => {
+  /* Some clocks are coarse enough that a real gesture reports zero
+     milliseconds. Reading that as "slow" refuses the swipe outright. */
+  assert.equal(dragMeans({ dx: -50, dy: 2, ms: 0 }), 'next')
+  assert.equal(dragMeans({ dx: -8, dy: 1, ms: 0 }), 'tap', 'but a twitch is still a tap')
 })
