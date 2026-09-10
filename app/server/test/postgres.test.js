@@ -1,13 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
+import { privateDatabase } from './private-database.js'
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const moduleUnderTest = await import('../src/postgres.js').catch(() => null)
-const databaseUrl =
+const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
+
+/* Its own database, because this file resets the schema and so does the one
+   next door, and the runner runs them at the same time. See private-database.
+   Falls back to the base URL when there is no server to ask, so that the
+   skip-when-unreachable checks below still read the same. */
+const databaseUrl = await privateDatabase(baseUrl, 'repository').catch(() => baseUrl)
 const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations')
 const deployDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'deploy')
 

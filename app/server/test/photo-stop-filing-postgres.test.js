@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
+import { privateDatabase } from './private-database.js'
 
 /* The filing rule is proved next door against arrays and against a running
    server on the memory repository. This proves the part only PostgreSQL can:
@@ -17,18 +18,22 @@ import pg from 'pg'
    mismatch between the two would file photographs at each other's stops. */
 
 const moduleUnderTest = await import('../src/postgres.js').catch(() => null)
-const databaseUrl =
+const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
 
+/* Its own database, because this file resets the schema and so does the one
+   next door, and the runner runs them at the same time. See private-database. */
+let databaseUrl = baseUrl
 const reachable = await (async () => {
-  const client = new pg.Client({ connectionString: databaseUrl })
+  const client = new pg.Client({ connectionString: baseUrl })
   try {
     await client.connect()
     await client.end()
-    return false
   } catch {
     return 'no PostgreSQL to test against'
   }
+  databaseUrl = await privateDatabase(baseUrl, 'filing')
+  return false
 })()
 
 test('re-filing writes every change and only the changes', { skip: reachable }, async t => {
