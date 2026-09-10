@@ -168,7 +168,13 @@ export default function DetailCard(props: DetailCardProps) {
         />
       )}
 
-      <div className="mx-[18px] mb-2.5 mt-2 flex flex-none items-center gap-1 border-t border-line pt-2">
+      {/* Wraps rather than overflowing: an airport stop somebody can edit
+          carries seven of these, and seven 36px targets do not fit across a
+          320px phone however tightly they are packed. A second line on the
+          narrowest screens costs less than a button off the edge. */}
+      <div
+        className="mx-[18px] mb-2.5 mt-2 flex flex-none flex-wrap items-center gap-1
+                   border-t border-line pt-2">
         <Act
           icon="camera"
           label={props.photoCount ? `${props.photoCount} photos` : 'Add photos or videos'}

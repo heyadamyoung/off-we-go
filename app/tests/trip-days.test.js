@@ -234,3 +234,20 @@ test('grouping and the chips agree on which days there are', () => {
     tripDays(rows, trip).map(day => day.iso),
   )
 })
+
+test('a live day nothing can date still selects its own chip', () => {
+  /* The screen opens on the day the journey is on. Resolving that to a date
+     and taking nothing when it would not resolve meant a trip whose labels
+     fall outside its declared range opened on the whole trip instead of on
+     today — the wrong strip, the wrong first card. A day nothing can place is
+     still a chip on the bar, so it is still an answer. */
+  const outside = { startsOn: '2026-09-09', endsOn: '2026-09-11' }
+  const days = tripDays([{ day: 'Fri 4 Sep' }, { day: 'Sat 5 Sep' }], outside)
+  assert.deepEqual(
+    days.map(day => day.iso),
+    ['Fri 4 Sep', 'Sat 5 Sep'],
+    'kept as written, because the range cannot place them',
+  )
+  assert.equal(dayIsoOf('Sat 5 Sep', outside), null)
+  assert.ok(onDay('Sat 5 Sep', 'Sat 5 Sep', outside), 'and the chip still selects its rows')
+})
