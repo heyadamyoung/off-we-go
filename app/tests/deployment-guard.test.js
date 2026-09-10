@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -14,6 +21,33 @@ const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
    place this guard exists for, sets REQUIRE_DOCKER=1 so a silent skip cannot
    pass for a green deployment check. */
 const dockerAvailable = spawnSync('docker', ['--version'], { encoding: 'utf8' }).status === 0
+
+/* Everything object-storage.sh and merge-env.sh reach for, so a PATH can be
+   built that holds all of it and not `timeout`. */
+const NEEDED = [
+  'awk',
+  'bash',
+  'cat',
+  'chmod',
+  'cp',
+  'date',
+  'dirname',
+  'grep',
+  'head',
+  'mkdir',
+  'mktemp',
+  'mv',
+  'od',
+  'printf',
+  'rm',
+  'sed',
+  'sh',
+  'sort',
+  'tail',
+  'touch',
+  'tr',
+  'wc',
+]
 
 test('docker is present wherever the deployment guard is required', {
   skip: !process.env.REQUIRE_DOCKER,
@@ -246,15 +280,43 @@ const objectStorage = ({ env, ...world }) => {
   chmodSync(path.join(dir, 'stub', 'docker'), 0o755)
   chmodSync(path.join(dir, 'stub', 'curl'), 0o755)
 
+  /* A PATH with no `timeout` on it, for the machine that has none. It cannot
+     be done by dropping a directory — on Linux `timeout` sits in /usr/bin
+     beside everything else — so this is a farm of symlinks to what the script
+     actually uses, with that one left out. A command missing from the list
+     fails the run loudly rather than silently changing what is being tested. */
+  const withoutTimeout = () => {
+    const farm = path.join(dir, 'nogtimeout')
+    mkdirSync(farm, { recursive: true })
+    for (const name of NEEDED) {
+      const found = spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' })
+      if (found.status === 0) {
+        const target = found.stdout.trim()
+        try {
+          symlinkSync(target, path.join(farm, name))
+        } catch {
+          /* already linked */
+        }
+      }
+    }
+    return farm
+  }
+
   return {
     dir,
     run(phase, extra = {}) {
+      const lean = world.hideTimeout ? withoutTimeout() : null
       const result = spawnSync(
         'bash',
         [`${dir}/object-storage.sh`, phase, `${dir}/.env`, 'offwego.example.com'],
         {
           cwd: dir,
-          env: { ...process.env, PATH: `${dir}/stub:${process.env.PATH}`, ...world, ...extra },
+          env: {
+            ...process.env,
+            PATH: lean ? `${dir}/stub:${lean}` : `${dir}/stub:${process.env.PATH}`,
+            ...world,
+            ...extra,
+          },
           encoding: 'utf8',
         },
       )
@@ -342,6 +404,27 @@ test('a copy that lands, and an app that answers, switches the bucket on', () =>
   box.run('prepare')
   box.run('cutover')
   assert.equal(box.env(), settled)
+})
+
+test('it switches over on a machine with no timeout command', () => {
+  /* `timeout` is GNU coreutils: the box this deploys to has it and the macOS
+     runner that builds the iOS beta does not. Without this the copy command
+     failed before it began, the script took its "did not finish" branch, and
+     the cutover quietly declined to switch over — which is exactly what this
+     test found, three TestFlight builds after it started happening.
+
+     A bound on how long the copy may take is a courtesy to the deploy lock,
+     not a correctness requirement, so a machine without one runs it plainly. */
+  const box = objectStorage({
+    env: BARE_ENV,
+    MINIO_UP: '1',
+    MIGRATION_EXIT: '0',
+    HEALTH_EXIT: '0',
+    hideTimeout: true,
+  })
+  box.run('prepare')
+  box.run('cutover')
+  assert.equal(box.bucket(), 'offwego-media')
 })
 
 test('an app that will not come back puts itself on the volume again', () => {

@@ -37,6 +37,28 @@ copy_timeout=${OBJECT_STORE_COPY_TIMEOUT:-1200}
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# `timeout` is GNU coreutils. The box this deploys to has it and a Mac does
+# not, and the difference was not harmless: without it the copy command failed
+# before it began, the script took its "did not finish" branch, and the guard
+# below it read that as a cutover that declined to switch over. Falling back to
+# running the copy plainly is the right answer either way — a bound on how long
+# it may take is a courtesy to the deploy lock, not a correctness requirement.
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout "$@"; }
+else
+  bounded() { shift; "$@"; }
+fi
+
+# BSD sed wants an argument to -i and GNU sed refuses one. Neither portable
+# spelling is worth the confusion, so nothing is edited in place.
+rewrite() {
+  local file=$1 scratch
+  scratch="$(mktemp)"
+  cat > "$scratch"
+  cat "$scratch" > "$file"
+  rm -f -- "$scratch"
+}
+
 value_of() { sed -n "s/^$1=//p" "$env_file" | tail -n 1; }
 
 # One implementation of "set a key in .env", the same one the pipeline's own
@@ -99,7 +121,7 @@ EOF
     # this point. Nothing is deleted and nothing points anywhere new until
     # this has finished and said so.
     echo "Copying media into the bucket before anything reads from it."
-    if ! timeout "$copy_timeout" docker compose exec -T \
+    if ! bounded "$copy_timeout" docker compose exec -T \
       -e S3_BUCKET="$bucket_name" api \
       node server/scripts/migrate-media-to-bucket.mjs; then
       echo "The media copy did not finish. Media stays on the volume, what was copied stays copied, and the next deploy carries on from there." >&2
@@ -119,7 +141,7 @@ EOF
       --retry 6 --retry-delay 5 --retry-all-errors \
       "https://${domain}/api/health" >/dev/null; then
       echo "The app did not come back with the bucket configured; putting it back on the volume." >&2
-      sed -i 's/^S3_BUCKET=.*/S3_BUCKET=/' "$env_file"
+      sed 's/^S3_BUCKET=.*/S3_BUCKET=/' "$env_file" | rewrite "$env_file"
       docker compose up -d --wait --wait-timeout 120 api || true
       exit 0
     fi
