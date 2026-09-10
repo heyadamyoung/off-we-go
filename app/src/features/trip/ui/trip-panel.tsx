@@ -11,6 +11,7 @@ import type { Segment } from '../../../segments-core'
 import { legLabel } from '../../../legs-core'
 import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
+import { groupByDay, type DayRange } from '../../../trip-days-core'
 
 interface PanelProps {
   view: TripView
@@ -29,6 +30,8 @@ interface PanelProps {
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>
+  /** what gives a stored day label its year and a bare number its month */
+  range?: DayRange
   /** the family's room — see panel-chat */
   chat?: ChatProps
   /** the getting-there chain: the Travel view is its home */
@@ -194,22 +197,27 @@ function Travel({ transport }: PanelProps) {
   )
 }
 
-function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
-  const days = [...new Set(stops.map(stop => stop.day).filter(Boolean))]
+function Timeline({ stops, photos, selected, onSelect, legs, range }: PanelProps) {
+  /* Grouped the same way the day chips are, by date rather than by the text a
+     stop happens to hold — otherwise '4' and 'Fri 4 Sep' are two headings, and
+     a stop with no day at all belongs to no heading and is never drawn. */
+  const groups = groupByDay(stops, range)
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
   if (!stops.length)
     return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>
 
   return (
     <>
-      {days.map(day => {
-        const here = stops.filter(stop => stop.day === day)
+      {groups.map(group => {
+        const here = group.things
         return (
-          <div key={day}>
+          <div key={group.day?.iso ?? 'undated'}>
             <div
               className="flex items-baseline gap-2 px-3 pb-1.5 pt-3.5 text-[11px] font-bold
                             uppercase tracking-[.1em] text-faint">
-              <b className="text-ink">{day}</b>
+              <b className={group.day ? 'text-ink' : 'text-muted'}>
+                {group.day?.label ?? 'No date yet'}
+              </b>
               <span>
                 {here.length} stop{here.length === 1 ? '' : 's'}
               </span>

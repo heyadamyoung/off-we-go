@@ -10,9 +10,10 @@ import {
 import { createStop, deleteStop, replaceRoute, updateStop } from '../../../backend'
 import useEditorPlaces from './use-editor-places'
 import { enrichStops } from '../../sights'
-import { ALL_DAYS } from '../../../shared/constants/trip'
 import { appErrorMessage } from '../../../user-messages-core'
 import { nextSeq } from './stop-order'
+import type { TripDay } from '../../../trip-days-core'
+import { ALL_DAYS } from '../../../trip-search-core'
 import type { TripView } from '../../../trip-search-core'
 import type {
   Coordinates,
@@ -26,7 +27,7 @@ import type {
 
 interface UseItineraryEditorOptions {
   day: string
-  days: string[]
+  days: TripDay[]
   ordered: Stop[]
   stops: Stop[]
   setStops: Dispatch<SetStateAction<Stop[]>>
@@ -84,9 +85,13 @@ export default function useItineraryEditor({
     setDraft(null)
   }, [])
 
-  // Clicking bare map while editing drops a new stop there.
-  // The day filter's "all" is a sentinel, not a day — never write it to a stop.
-  const dayForNewStop = day === ALL_DAYS ? days[0] || '' : day || ''
+  /* Clicking bare map while editing drops a new stop there, on the day being
+     looked at. "All days" is a sentinel rather than a day and must never be
+     written to a stop — while two modules spelled that sentinel differently,
+     this wrote the sentinel itself onto every stop added from the whole-trip
+     view. A chosen day that is not a date is somebody's own text, and a stop
+     added under it belongs on it as written. */
+  const dayForNewStop = (day === ALL_DAYS ? days[0]?.iso : day) || ''
 
   const placesArm = useEditorPlaces({
     tripId,

@@ -34,6 +34,7 @@ import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
 import type { Coordinates, TripData } from '../../../shared/model/types'
+import { dayLabelOf } from '../../../day-label-core'
 
 export default function TripPage({ slug }: { slug: string }) {
   const busyEditing = useRef(false)
@@ -77,6 +78,7 @@ function Trip({
   const {
     theme, setTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
     setMapOverride, asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
+    dayRange,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, sun, mapTheme, markers, progressCopy,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
@@ -187,6 +189,7 @@ function Trip({
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           legs={legs}
+          range={dayRange}
           chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
@@ -230,8 +233,10 @@ function Trip({
         <ScopeToggle
           shifted={panelOpen}
           whole={day === ALL_DAYS}
-          here={liveDay && day !== ALL_DAYS ? day : 'Today'}
-          onHere={() => patch({ day: liveDay || days[0], sel: undefined })}
+          /* The label, not the date: the toggle says 'Fri 4 Sep', never
+             '2026-09-04'. The date is what everything compares by. */
+          here={liveDay && day !== ALL_DAYS ? dayLabelOf(day) || day : 'Today'}
+          onHere={() => patch({ day: liveDay || days[0]?.iso, sel: undefined })}
           onWhole={() => patch({ day: ALL_DAYS, sel: undefined })}
         />
         {/* A demo has no phone to wait for: the sample never shows the GPS
@@ -283,7 +288,7 @@ function Trip({
         items={items}
         days={days}
         day={day}
-        liveDay={liveDay}
+        liveDay={liveDay ?? undefined}
         selected={selected}
         behindPanel={panelOpen}
         onAddStop={

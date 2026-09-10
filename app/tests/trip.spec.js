@@ -1189,3 +1189,82 @@ test('the way to a stop survives closing its card', async ({ page }) => {
   await pill.getByRole('button', { name: 'Stop measuring' }).click()
   await expect(pill).toHaveCount(0)
 })
+
+/* What the report was: an itinerary item added under a day already on the bar
+   turned up under a heading of its own, below every real day, rather than with
+   the stops it was added alongside. Two causes, both of them the same mistake —
+   the day text was treated as the day. The seed for a new stop was run through
+   the label formatter, which read 'Fri 4 Sep' as the fourth of September 2001
+   and handed back 'Tue 4 Sep'; and the timeline then grouped on that raw text,
+   so a spelling nothing else used became a heading nothing else was under. */
+test('a stop added under a day joins that day in the timeline', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  const headings = () => page.locator('.sheet .flex.items-baseline b')
+  const before = await headings().allInnerTexts()
+
+  await page.getByRole('button', { name: 'Edit the itinerary' }).click()
+  const spot = await emptyMapPoint(page)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(page.locator('.editor')).toBeVisible()
+  // Left exactly as the day filter seeded it — the ordinary way a stop is added.
+  const seeded = await page.locator('.editor .dayfence').allInnerTexts()
+  await page.locator('.editor .f input').first().fill('Joined Stop')
+  await page.locator('.editor .btn.pri').click()
+
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  // In the panel, not on the map: the map pin was never the thing that vanished.
+  await expect(page.locator('.sheet').getByRole('button', { name: /Joined Stop/ })).toHaveCount(1)
+  // The day it was seeded with is a day the trip already had, so no new heading.
+  expect(await headings().allInnerTexts(), seeded.join()).toEqual(before)
+})
+
+/* The Day field is optional and always has been; the timeline was not. It
+   grouped stops by the day text it found and drew each group, so a stop with
+   no day belonged to no group and was rendered nowhere — added, saved, on the
+   map, and missing from the one screen that lists the itinerary. */
+test('a stop with no day still appears in the timeline', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Edit the itinerary' }).click()
+  const spot = await emptyMapPoint(page)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(page.locator('.editor')).toBeVisible()
+
+  await page.locator('.editor .f input').first().fill('Undated Stop')
+  // Whatever the day filter seeded it with, clear it: this is the stop
+  // somebody adds without touching the date.
+  /* The field is optional; this is the stop somebody saves without a date.
+     Set to a real day of the trip first, so that clearing it is a change the
+     field actually makes — it starts out showing blank whatever the stop
+     holds, and filling blank over blank does nothing. */
+  const picker = page.locator('.editor input[type="date"]')
+  await picker.fill(await picker.getAttribute('min'))
+  await expect(page.locator('.editor .dayfence')).toHaveCount(0)
+  await picker.fill('')
+  await expect(picker).toHaveValue('')
+  await page.locator('.editor .btn.pri').click()
+  await expect(page.locator('.mstop .lab').filter({ hasText: 'Undated Stop' })).toHaveCount(1)
+
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  // In the panel, not on the map: the map pin was never the thing that vanished.
+  await expect(page.locator('.sheet').getByRole('button', { name: /Undated Stop/ })).toHaveCount(1)
+})
+
+/* Two spellings of the same day made two headings, and sorting them as text
+   put Friday above Thursday. The chips and the timeline now share one answer
+   to what a day is. */
+test('the timeline heads its days the way the day bar does', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  // The headings are drawn uppercase by CSS; it is the day they name that has
+  // to match, not the casing the stylesheet gives it.
+  const flat = text => text.trim().toLowerCase()
+  const headings = await page.locator('.sheet .flex.items-baseline b').allInnerTexts()
+  const chips = await page.locator('.fdays .chip').allInnerTexts()
+  const named = chips.map(flat).filter(chip => chip !== 'all days')
+  expect(headings.length).toBeGreaterThan(0)
+  for (const heading of headings) {
+    if (flat(heading) === 'no date yet') continue
+    expect(named).toContain(flat(heading))
+  }
+})

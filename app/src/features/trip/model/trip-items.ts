@@ -1,4 +1,12 @@
 import { ALL_DAYS } from '../../../trip-search-core'
+import { dayLabelOf } from '../../../day-label-core'
+import {
+  dayIsoOf,
+  onDay as isOnDay,
+  photoDayIso,
+  tripDays,
+  type DayRange,
+} from '../../../trip-days-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
 /* The bottom strip and the timeline show one list, not two: what happened on a
@@ -10,7 +18,11 @@ export interface TripItem {
   kind: 'stop' | 'photo'
   title: string
   meta: string
+  /** For showing and for searching: the label, or the stored text when
+      nothing can place it. Never for comparing — that is what dayIso is. */
   day: string
+  /** The day this actually falls on. The identity and the sort key. */
+  dayIso: string | null
   time: string
   status: string
   /** the stop's place in the itinerary; a photograph inherits its stop's */
@@ -21,16 +33,24 @@ export interface TripItem {
 
 const text = (value?: string | null) => (value || '').toLowerCase()
 
+/* A day is stored as a date and shown as a label. Searching goes through the
+   label too — somebody looking for what they did on the Friday types 'Fri',
+   not '2026-09-04'. Text nothing can place is shown exactly as it was typed. */
+const dayFields = (stored: string | null | undefined, iso: string | null) => ({
+  day: (iso && dayLabelOf(iso)) || stored || '',
+  dayIso: iso,
+})
+
 /* Nothing on this trip is ever "Untitled": a stop without a name is at least
    its kind, and a photograph without a caption is at least its time and place.
    The fallback happens here, at render time — stored data stays honest. */
-export function stopItem(stop: Stop): TripItem {
+export function stopItem(stop: Stop, range: DayRange = {}): TripItem {
   return {
     id: stop.id,
     kind: 'stop',
     title: stop.name || stop.kind || 'Stop',
     meta: [stop.time, stop.kind].filter(Boolean).join(' · ') || 'No time set',
-    day: stop.day || '',
+    ...dayFields(stop.day, dayIsoOf(stop.day, range)),
     time: stop.time || '',
     status: stop.status || 'planned',
     seq: stop.seq ?? Number.MAX_SAFE_INTEGER,
@@ -38,7 +58,7 @@ export function stopItem(stop: Stop): TripItem {
   }
 }
 
-export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
+export function photoItem(photo: TripPhoto, stop?: Stop, range: DayRange = {}): TripItem {
   return {
     id: photo.id,
     kind: 'photo',
@@ -47,7 +67,10 @@ export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
       [photo.when, stop?.name].filter(Boolean).join(' · ') ||
       (photo.kind === 'video' ? 'Video' : 'Photo'),
     meta: [photo.when, photo.by].filter(Boolean).join(' · '),
-    day: stop?.day || '',
+    /* Its stop's day, or its own: a photograph filed nowhere still happened on
+       a day, and taking the day only from the stop meant it could never appear
+       under one. */
+    ...dayFields(stop?.day, photoDayIso(photo, stop?.day, range)),
     time: photo.when || stop?.time || '',
     status: 'photo',
     seq: stop?.seq ?? Number.MAX_SAFE_INTEGER,
@@ -60,6 +83,8 @@ interface ItemsInput {
   stops: Stop[]
   photos: TripPhoto[]
   day: string
+  /** What gives a label its year and a bare number its month. */
+  range?: DayRange
   query?: string
   /** photos take up a lot of a narrow strip; the timeline wants them, the map does not */
   withPhotos?: boolean
@@ -71,29 +96,42 @@ export function tripItems({
   stops,
   photos,
   day,
+  range = {},
   query = '',
   withPhotos = true,
 }: ItemsInput): TripItem[] {
   const needle = query.trim().toLowerCase()
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  const items: TripItem[] = stops.map(stopItem)
+  const items: TripItem[] = stops.map(stop => stopItem(stop, range))
   if (withPhotos) {
     for (const photo of photos) {
-      items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
+      items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined, range))
     }
   }
-  const onDay = needle || day === ALL_DAYS ? items : items.filter(item => item.day === day)
+  /* By date rather than by spelling. A chip holds a day; the rows hold
+     whatever anybody ever typed, and comparing those as text is how a chip
+     comes to select nothing. */
+  const chosen =
+    needle || day === ALL_DAYS ? items : items.filter(item => isOnDay(item.day, day, range))
   const matched = needle
-    ? onDay.filter(
+    ? chosen.filter(
         item =>
           text(item.title).includes(needle) ||
           text(item.meta).includes(needle) ||
           text(item.stop?.note).includes(needle) ||
           text(item.day).includes(needle),
       )
-    : onDay
+    : chosen
   return matched.sort((a, b) => {
-    if (a.day !== b.day) return a.day < b.day ? -1 : 1
+    /* By the date, never by the label. 'Fri 4 Sep' sorts before 'Thu 3 Sep' as
+       text, which put Friday ahead of Thursday in the strip and the timeline.
+       Anything undated goes last rather than to the top, where an empty string
+       would have put it. */
+    if (a.dayIso !== b.dayIso) {
+      if (!a.dayIso) return 1
+      if (!b.dayIso) return -1
+      return a.dayIso < b.dayIso ? -1 : 1
+    }
     // The itinerary's own order first: it is the one somebody chose.
     if (a.seq !== b.seq) return a.seq - b.seq
     if (a.time !== b.time) return a.time < b.time ? -1 : 1
@@ -102,8 +140,14 @@ export function tripItems({
   })
 }
 
-export const daysOf = (stops: Stop[]) =>
-  [...new Set(stops.map(stop => stop.day).filter(Boolean))] as string[]
+/* The days a trip has something on, oldest first, one per date however it was
+   spelled — and one at the end for whatever could not be placed at all. */
+export const daysOf = (stops: Stop[], range: DayRange = {}, photos: TripPhoto[] = []) =>
+  tripDays(
+    stops.map(stop => ({ day: stop.day })),
+    range,
+    photos.map(photo => photoDayIso(photo, undefined, range)),
+  )
 
 /* The line under a trip's name: who is on it, when, and how the party splits
    between the people travelling and the people following from home. A

@@ -133,10 +133,43 @@ test('a photograph borrows the day of the stop it was taken at', () => {
 })
 
 test('the day list is every day that has a stop, in order, without blanks', () => {
-  assert.deepEqual(daysOf([...STOPS, { id: 's4', name: 'Loose', day: '' }]), [
-    'Sat 5 Sep',
-    'Sun 6 Sep',
+  assert.deepEqual(
+    daysOf([...STOPS, { id: 's4', name: 'Loose', day: '' }]).map(day => day.label),
+    ['Sat 5 Sep', 'Sun 6 Sep'],
+  )
+})
+
+test('a day typed before there was a picker is the day it plainly means', () => {
+  /* What the bar was actually showing: THU 3 SEP, 4, 8, 5, FRI 4 SEP — five
+     chips for three days, because the raw text was de-duplicated and '4' and
+     'Fri 4 Sep' are different strings. Given the trip's own dates they are
+     one day, and they sort into it. */
+  const range = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
+  const days = daysOf(
+    [
+      { id: 'a', name: 'A', day: 'Thu 3 Sep' },
+      { id: 'b', name: 'B', day: '4' },
+      { id: 'c', name: 'C', day: '8' },
+      { id: 'd', name: 'D', day: '5' },
+      { id: 'e', name: 'E', day: 'Fri 4 Sep' },
+    ],
+    range,
+  )
+  assert.deepEqual(
+    days.map(day => day.label),
+    ['Thu 3 Sep', 'Fri 4 Sep', 'Sat 5 Sep', 'Tue 8 Sep'],
+  )
+})
+
+test('a day only a photograph was taken on is still a day of the trip', () => {
+  const range = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
+  const days = daysOf([{ id: 'a', name: 'A', day: 'Thu 3 Sep' }], range, [
+    { id: 'p', by: 'Maya', takenAt: '2026-09-06T11:00:00.000Z' },
   ])
+  assert.deepEqual(
+    days.map(day => day.label),
+    ['Thu 3 Sep', 'Sun 6 Sep'],
+  )
 })
 
 /* ------------------------------------------------------------- preferences */

@@ -47,3 +47,15 @@ test('outsideRange knows the fence, and an open side never excludes', () => {
   assert.equal(outsideRange('1999-01-01', null, '2026-09-06'), false)
   assert.equal(outsideRange(null, '2026-09-04', '2026-09-06'), false)
 })
+
+test('a label handed back in is not read as a date', () => {
+  /* A browser reads 'Fri 4 Sep' as the fourth of September 2001, which is a
+     Tuesday — so a stop added under the 'Fri 4 Sep' chip was filed on
+     'Tue 4 Sep', a day of the trip that does not exist, and the timeline grew
+     a second heading for it. Only an ISO date names a day. */
+  assert.equal(dayLabelOf('Fri 4 Sep'), '')
+  assert.equal(dayLabelOf('4'), '')
+  assert.equal(dayLabelOf('tbc'), '')
+  assert.equal(dayLabelOf(''), '')
+  assert.equal(dayLabelOf('2026-09-04'), 'Fri 4 Sep', 'and a real date still reads')
+})
