@@ -20,7 +20,20 @@ const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
    failing — but the deployment pipeline, which does have docker and is the
    place this guard exists for, sets REQUIRE_DOCKER=1 so a silent skip cannot
    pass for a green deployment check. */
+/* Two different needs, and conflating them cost this suite a permanent red.
+   Rendering a compose file is the client parsing YAML and never leaves the
+   machine; running Caddy to validate a Caddyfile needs a daemon to start a
+   container in. The binary being on the PATH says nothing about whether a
+   daemon will answer, so the test that needs one asked the wrong question and
+   reported "no daemon" as a failure — which is how a guard trains people to
+   ignore it. */
 const dockerAvailable = spawnSync('docker', ['--version'], { encoding: 'utf8' }).status === 0
+const dockerRuns =
+  dockerAvailable &&
+  spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], {
+    encoding: 'utf8',
+    timeout: 20_000,
+  }).status === 0
 
 /* Everything object-storage.sh and merge-env.sh reach for, so a PATH can be
    built that holds all of it and not `timeout`. */
@@ -53,6 +66,7 @@ test('docker is present wherever the deployment guard is required', {
   skip: !process.env.REQUIRE_DOCKER,
 }, () => {
   assert.equal(dockerAvailable, true, 'REQUIRE_DOCKER is set but docker is not installed')
+  assert.equal(dockerRuns, true, 'REQUIRE_DOCKER is set but no Docker daemon answered')
 })
 
 test('the deployment SSH entrypoint rejects arbitrary commands', () => {
@@ -212,7 +226,7 @@ test('production restore includes the Logto identity database', () => {
    the container refused to come up, and the pipeline rolled the release back.
    Caddy will say so in a second, given the chance. */
 test('the production Caddyfile is one Caddy will accept', {
-  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+  skip: dockerRuns ? false : 'no Docker daemon on this machine to run Caddy in',
 }, () => {
   const result = spawnSync(
     'docker',

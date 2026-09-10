@@ -55,7 +55,13 @@ export default function Toast({ notice }: { notice: ToastNotice | null }) {
   return (
     <div
       className={
-        'toast toast-rise fixed left-1/2 top-[calc(1.5rem+env(safe-area-inset-top,0px))] z-[300] flex ' +
+        /* An announcement, never a target. It sits above everything at z-300
+           and has nothing in it to click, so a toast that takes pointer events
+           is a toast that blocks whatever it happens to land on — the viewer's
+           edit and close buttons live exactly under it, and an error is on
+           screen for five seconds. Longer, if the thing that failed retries. */
+        'toast toast-rise pointer-events-none fixed left-1/2 z-[300] flex ' +
+        'top-[calc(1.5rem+env(safe-area-inset-top,0px))] ' +
         'max-w-[min(520px,calc(100vw-28px))] ' +
         (error ? 'error ' : 'success ') +
         'items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold shadow-panel ' +
