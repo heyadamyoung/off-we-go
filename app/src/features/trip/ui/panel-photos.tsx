@@ -219,6 +219,11 @@ export default function PanelPhotos({
                       item={photo}
                       w={480}
                       h={480}
+                      /* The window put this here, so there is nothing left for
+                         the browser to be lazy about. Being lazy twice is how
+                         a tile gets built and destroyed without ever loading,
+                         and shows its shimmer again on the way back. */
+                      now
                       className="size-full object-cover transition-transform duration-200
                                  group-hover:scale-[1.03]"
                     />

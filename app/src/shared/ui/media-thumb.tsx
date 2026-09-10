@@ -27,6 +27,8 @@ interface MediaThumbProps {
   style?: CSSProperties
   alt?: string
   eager?: boolean
+  /** A parent that windows its children has already decided this is visible. */
+  now?: boolean
   /** The badge is the whole point at grid size and noise at 30px in a row. */
   badge?: number | false
 }
@@ -45,11 +47,21 @@ export default function MediaThumb({
   style,
   alt = '',
   eager = false,
+  now = false,
   badge = 26,
 }: MediaThumbProps) {
   if (item.kind !== 'video')
     return (
-      <Img item={item} w={w} h={h} className={className} style={style} alt={alt} eager={eager} />
+      <Img
+        item={item}
+        w={w}
+        h={h}
+        className={className}
+        style={style}
+        alt={alt}
+        eager={eager}
+        now={now}
+      />
     )
 
   const converting = item.status === 'pending' || item.status === 'working'
@@ -64,6 +76,7 @@ export default function MediaThumb({
           className={className}
           alt={alt}
           eager={eager}
+          now={now}
         />
       ) : (
         <span className={'block size-full bg-ink/85 ' + (className || '')} />
