@@ -1471,19 +1471,18 @@ test('adding photos opens from the gallery, on a phone', async ({ page }) => {
 test('the photograph follows the finger, and comes back if the swipe is short', async ({
   page,
 }) => {
-  /* A swipe that moves nothing is a swipe you cannot tell is working: you push
-     the picture, it sits there, and either the next one arrives or it does
-     not. Moving under the finger says "yes, this is a page turn" while there
-     is still time to change your mind — and coming back says the change of
-     mind was heard.
+  /* Three gestures, and the difference between them is the whole design.
 
-     On a phone, so the distances mean something: 390px across asks for 156
-     before the page turns. A third of that moves the picture and nothing more,
-     which is the case that was wrong — it used to turn the page. */
+     A swipe that moves nothing is a swipe you cannot tell is working, so the
+     picture tracks the finger. Whether it PAGES is then either distance or
+     speed: a lazy drag has to cross about a fifth of the picture, and a flick
+     — which is how anybody actually pages through photographs — needs almost
+     none of that, because what makes a flick a decision is how fast it was.
+
+     On a phone, so the numbers mean something: 390px across asks for 86. */
   await page.setViewportSize({ width: 390, height: 844 })
   await openViewer(page)
   const at = () => page.locator('.vcap .ct').innerText()
-  const first = await at()
   const shifted = () =>
     page.locator('.vmaintap').evaluate(el => {
       const t = getComputedStyle(el).transform
@@ -1492,29 +1491,46 @@ test('the photograph follows the finger, and comes back if the swipe is short', 
 
   const stage = await page.locator('.vbody').boundingBox()
   const y = stage.y + stage.height / 2
-  /* Starting near the right edge, because a full swipe is most of the screen
-     and one begun in the middle runs off the left of it — the pointer leaves
-     the window and the release never lands. */
+  // Near the right edge: a long swipe begun in the middle runs off the left of
+  // a phone, and a pointer outside the window never delivers its release.
   const from = stage.x + stage.width - 12
 
-  const swipe = async distance => {
+  /* `pace` is what separates a drag from a flick. Playwright's moves land
+     back to back, so without waiting every gesture would look like a flick. */
+  const swipe = async (distance, pace) => {
     await page.mouse.move(from, y)
     await page.mouse.down()
-    for (let step = 1; step <= 8; step++) await page.mouse.move(from - (distance * step) / 8, y)
+    for (let step = 1; step <= 6; step++) {
+      await page.mouse.move(from - (distance * step) / 6, y)
+      if (pace) await page.waitForTimeout(pace)
+    }
   }
 
-  // Short of the threshold: it moves, and then it comes home.
-  await swipe(stage.width / 3)
+  // Slow and short of a fifth: it moves, and then it comes home.
+  const first = await at()
+  await swipe(60, 30)
   expect(await shifted(), 'the picture never moved under the finger').toBeLessThan(-10)
   await page.mouse.up()
   await expect.poll(shifted, { timeout: 3000 }).toBe(0)
-  expect(await at(), 'a short swipe turned the page anyway').toBe(first)
+  expect(await at(), 'a short slow swipe turned the page anyway').toBe(first)
 
-  // Carried most of the way across: the page turns, and it centres again.
-  await swipe(stage.width * 0.8)
+  /* A drag that does carry far enough turns the page — and does it WITHOUT
+     easing, because easing here walks the outgoing photograph back to the
+     middle in front of you and only then swaps it, which reads as the swipe
+     being refused a moment before it is obeyed. */
+  await swipe(140, 30)
   await page.mouse.up()
-  await expect.poll(at).not.toBe(first)
+  expect(
+    await page.locator('.vmaintap').evaluate(el => getComputedStyle(el).transitionProperty),
+    'the picture eased backwards on its way to the next one',
+  ).toBe('none')
+  await expect.poll(at, { timeout: 3000 }).not.toBe(first)
   await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+
+  /* The flick — a short, fast sweep, which is the everyday gesture — is held
+     to account in tests/swipe.test.js instead. A driver cannot move a mouse
+     faster than about 30ms a step, so every gesture it makes is a slow one:
+     the case simply cannot be staged here. */
 })
 
 test('the viewer pages through the gallery in the order the gallery shows it', async ({ page }) => {
@@ -1544,4 +1560,31 @@ test('the viewer pages through the gallery in the order the gallery shows it', a
   // The arrow goes to the tile that sits after it in the grid.
   await page.locator('.vnav.n').click()
   await expect(page.locator('.vcap .ct')).toContainText('3 of')
+})
+
+test('the arrows stay above the photograph while it is being swiped', async ({ page }) => {
+  /* A dragged picture is transformed, and a transform makes a stacking
+     context — which promotes it into the same paint layer as the arrows,
+     where order is DOM order. So the photograph slid OVER the arrow before it
+     in the markup and UNDER the one after it: the left arrow disappeared
+     under your thumb mid-swipe and the right one did not. */
+  await openViewer(page)
+  const stage = await page.locator('.vbody').boundingBox()
+  const y = stage.y + stage.height / 2
+  const from = stage.x + stage.width / 2
+
+  // Mid-drag, with the picture pushed well across and a finger still down.
+  await page.mouse.move(from, y)
+  await page.mouse.down()
+  for (let step = 1; step <= 5; step++) await page.mouse.move(from - step * 24, y)
+
+  for (const side of ['.vnav.p', '.vnav.n']) {
+    const onTop = await page.locator(side).evaluate(arrow => {
+      const box = arrow.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      return !!hit && (hit === arrow || arrow.contains(hit))
+    })
+    expect(onTop, `the photograph covers ${side} while it is being swiped`).toBe(true)
+  }
+  await page.mouse.up()
 })
