@@ -128,7 +128,7 @@ test('a film chosen in the app reaches the server, and comes back playable', asy
   await expect
     .poll(async () => (await onServer()).find(photo => photo.id === landed.id)?.status, {
       timeout: 120_000,
-      message: 'the film never finished converting',
+      message: 'the film never finished converting — the usual cause is no ffmpeg on this machine',
     })
     .toBe('ready')
 
