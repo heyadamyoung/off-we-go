@@ -27,8 +27,15 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
     // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; Escape is wired on window above
     // biome-ignore lint/a11y/useKeyWithClickEvents: the scrim is the pointer way out; Escape is wired on window above
     <div
-      className="scrim fixed inset-0 z-[200] grid place-items-center bg-black/60 p-5
-                    pb-[calc(1.25rem+var(--keyboard,0px))] backdrop-blur-[6px]"
+      /* The padding carries the bezel on every side. A dialog centred in the
+         whole viewport is a dialog whose title sits under the island and whose
+         buttons sit under the home bar — and on a tall phone this one is tall
+         enough to reach both at once. */
+      className="scrim fixed inset-0 z-[200] grid place-items-center bg-black/60 backdrop-blur-[6px]
+                    pl-[calc(1.25rem+env(safe-area-inset-left,0px))]
+                    pr-[calc(1.25rem+env(safe-area-inset-right,0px))]
+                    pt-[calc(1.25rem+env(safe-area-inset-top,0px))]
+                    pb-[calc(1.25rem+var(--keyboard,0px)+env(safe-area-inset-bottom,0px))]"
       onClick={onClose}>
       {/* A tabbed sheet keeps one height whichever tab is showing. Sized to its
           content it grew and shrank as you moved between them, and since it is

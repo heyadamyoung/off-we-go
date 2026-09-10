@@ -1397,3 +1397,37 @@ test('the arrow turns the page without opening the picture', async ({ page }) =>
   await page.waitForTimeout(600)
   await expect(page.locator('.vzoom')).toHaveCount(0)
 })
+
+test('the photo gallery never covers the trip header or its tabs', async ({ page }) => {
+  /* The gallery is a VIEW of the trip, not a place you leave it. The title and
+     the row of tabs are how anybody gets to the map, the timeline or anywhere
+     else, and a screen that covers them is a screen you are stuck in — with
+     the gallery's own controls sitting exactly where a phone's island is. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await expect(page.locator('aside.sheet')).toBeVisible()
+
+  const sheet = await page.locator('aside.sheet').boundingBox()
+  for (const name of ['Map', 'Timeline', 'Photos']) {
+    const tab = await page.getByRole('button', { name, exact: true }).boundingBox()
+    expect(tab, `the ${name} tab is missing`).not.toBeNull()
+    expect(tab.y + tab.height, `the gallery covers the ${name} tab`).toBeLessThanOrEqual(
+      sheet.y + 1,
+    )
+  }
+  // And the trip's own name is still up there with them.
+  await expect(page.getByRole('heading', { name: 'Amsterdam Weekend' })).toBeVisible()
+})
+
+test('adding photos opens from the gallery, on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await page
+    .locator('aside.sheet')
+    .getByRole('button', { name: 'Add photos or videos' })
+    .click({ timeout: 10_000 })
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('Add photos and videos')
+})

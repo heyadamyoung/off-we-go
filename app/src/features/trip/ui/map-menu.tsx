@@ -27,6 +27,9 @@ export function MapMenu({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; every action is a real button
     // biome-ignore lint/a11y/useKeyWithClickEvents: as above
+    /* no-safe-area: this layer catches clicks and holds nothing. The menu
+       inside it is anchored to --trip-1, and the trip bar that measures from
+       already carries the home bar's inset. */
     <div className="fixed inset-0 z-[60]" onClick={onClose}>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only fences clicks off the scrim */}
       <div
