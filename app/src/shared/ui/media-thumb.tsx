@@ -70,7 +70,7 @@ export default function MediaThumb({
     <span className="relative block size-full" style={style}>
       {item.posterSrc ? (
         <Img
-          item={{ id: item.id, src: item.posterSrc, mediaKind: 'video' }}
+          item={{ id: item.id, src: item.posterSrc, thumbSrc: item.thumbSrc, mediaKind: 'video' }}
           w={w}
           h={h}
           className={className}

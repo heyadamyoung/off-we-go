@@ -16,7 +16,15 @@
     </style>
 
 
+    <!-- Android 12 and up draws the launch screen itself and ignores the
+         window background, so a theme that names only a drawable gets the
+         system default there: the launcher icon on a colour nobody chose.
+         These three are what it reads instead, and androidx maps them back
+         to the drawable on everything older. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
         <item name="android:background">@drawable/splash</item>
     </style>
 </resources>

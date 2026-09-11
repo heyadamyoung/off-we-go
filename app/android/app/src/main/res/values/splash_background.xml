@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The webview's own background, so the launch screen does not flash a
+         different dark on its way out. -->
+    <color name="splash_background">#0B0D11</color>
+</resources>

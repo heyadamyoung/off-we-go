@@ -1,5 +1,6 @@
 *.png
 !app/android/app/src/main/res/**/*.png
+!app/ios/App/App/Assets.xcassets/**/*.png
 !app/public/apple-touch-icon.png
 !app/public/icon-192.png
 !app/public/icon-512.png

@@ -15,137 +15,112 @@ import {
 test('dragging across turns the page, and left goes forward', () => {
   /* The direction everything else on a phone uses: the picture follows the
      finger, so dragging it leftwards brings the next one in from the right. */
-  assert.equal(dragMeans({ dx: -90, dy: 4, ms: 180 }), 'next')
-  assert.equal(dragMeans({ dx: 90, dy: 4, ms: 180 }), 'previous')
+  assert.equal(dragMeans({ dx: -200, dy: 4, ms: 180 }, { travel: 195 }), 'next')
+  assert.equal(dragMeans({ dx: 200, dy: 4, ms: 180 }, { travel: 195 }), 'previous')
 })
 
-test('a slow short drag is not a page turn', () => {
-  /* A thumb never lands perfectly still, and a hesitant nudge is not a
-     decision. Slowly, so the flick below cannot answer for it. */
-  assert.equal(dragMeans({ dx: -20, dy: 2, ms: 600 }), null)
-  assert.equal(dragMeans({ dx: -47, dy: 2, ms: 600 }), null)
-  assert.equal(dragMeans({ dx: -48, dy: 2, ms: 600 }), 'next')
+/* A phone: 390 across, so half of it is 195. Everything below is written in
+   those numbers, because the whole argument is about how much of a screen a
+   person has to cross before the page turns. */
+const PHONE = { travel: carryDistance(390) }
+
+test('half the screen is the bar, and a swipe short of it goes back', () => {
+  /* A fifth was the first attempt and it was wrong in the way that matters:
+     a swipe somebody decided against halfway through turned the page anyway,
+     so the gesture could not be taken back once begun. */
+  assert.equal(carryDistance(390), 195)
+  assert.equal(dragMeans({ dx: -100, dy: 4, ms: 400, vx: 0 }, PHONE), null)
+  assert.equal(dragMeans({ dx: -194, dy: 4, ms: 700, vx: 0 }, PHONE), null, 'just short')
+  assert.equal(dragMeans({ dx: -195, dy: 4, ms: 700, vx: 0 }, PHONE), 'next', 'just past')
 })
 
-test('a flick turns the page however short it is', () => {
-  /* This is how anybody actually pages through photographs: a quick sweep of
-     the thumb, nowhere near the far side of the screen. Asking such a gesture
-     to cross a fixed distance is what made the viewer feel like hard work. */
-  assert.equal(dragMeans({ dx: -40, dy: 3, ms: 60 }), 'next', '0.67px per ms')
-  assert.equal(dragMeans({ dx: 36, dy: 0, ms: 50 }), 'previous')
-  // Same distance, taken at a stroll: not a flick, and not far enough either.
-  assert.equal(dragMeans({ dx: -40, dy: 3, ms: 500 }), null)
+test('a finger that stopped is treated as stopped, however fast it set off', () => {
+  /* This is the everyday case that was getting it backwards. Speed used to be
+     averaged over the whole gesture, so a swipe that set off quickly and then
+     slowed to a halt — which is exactly the shape of changing your mind —
+     still read as fast and turned the page. */
+  const quickThenStopped = { dx: -120, dy: 2, ms: 140, vx: 0 }
+  assert.equal(dragMeans(quickThenStopped, PHONE), null)
+
+  // And the same distance, still moving, is a decision.
+  assert.equal(dragMeans({ ...quickThenStopped, vx: -1.2 }, PHONE), 'next')
 })
 
-test('a flick still has to be a movement rather than a twitch', () => {
-  /* A tap is fast and tiny by definition; it must not read as a page turn. */
-  assert.equal(dragMeans({ dx: -8, dy: 1, ms: 10 }), 'tap')
-  assert.equal(dragMeans({ dx: -18, dy: 1, ms: 20 }), null, 'quick, but barely moved')
+test('a flick turns the page without covering the distance', () => {
+  /* What makes a flick a decision is its speed, and the rule says so by
+     asking where the picture would come to rest — not by a second, separate
+     test that can fire on its own. A real thumb flick runs well over one
+     pixel a millisecond. */
+  assert.equal(dragMeans({ dx: -40, dy: 3, ms: 40, vx: -2 }, PHONE), 'next')
+  assert.equal(dragMeans({ dx: 40, dy: 3, ms: 40, vx: 2 }, PHONE), 'previous')
+
+  // A dawdle at the same distance is not.
+  assert.equal(dragMeans({ dx: -40, dy: 3, ms: 600, vx: -0.05 }, PHONE), null)
 })
 
-test('a scroll is not a page turn, however far it wanders sideways', () => {
+test('speed pulling the other way can take a swipe back', () => {
+  /* A finger that went out and was on its way home when it lifted has changed
+     its mind, and the projection hears that — which a distance-only rule,
+     reading only where it ended up, cannot. */
+  assert.equal(dragMeans({ dx: -180, dy: 4, ms: 300, vx: 1.5 }, PHONE), null)
+})
+
+test('a drag going down the screen is a scroll, whatever else it did', () => {
   /* The comments sit under the photograph on a phone, so a finger going down
-     the thread passes right over the stage. It must not take the page with
-     it — and a thumb travelling down an arc covers real horizontal ground. */
-  assert.equal(dragMeans({ dx: -60, dy: 200, ms: 300 }), null)
-  assert.equal(dragMeans({ dx: 80, dy: 81, ms: 300 }), null, 'a diagonal is not a decision')
-  assert.equal(dragMeans({ dx: 80, dy: 79, ms: 300 }), 'previous', 'but mostly across is')
+     the thread passes right over the stage. */
+  assert.equal(dragMeans({ dx: -200, dy: -260, ms: 300, vx: -1 }, PHONE), null)
+  assert.equal(dragMeans({ dx: 30, dy: 200, ms: 300 }, PHONE), null)
 })
 
-test('a finger that hardly moves is a tap', () => {
-  assert.equal(dragMeans({ dx: 0, dy: 0, ms: 60 }), 'tap')
-  assert.equal(dragMeans({ dx: 6, dy: -5, ms: 200 }), 'tap', 'nobody taps perfectly still')
-  assert.equal(dragMeans({ dx: 14, dy: 0, ms: 200 }), null, 'but a smear is not a tap either')
-})
-
-test('a long press is not a tap', () => {
-  /* Holding is how a photograph is deleted elsewhere in this app. It must not
-     also be how one is liked. */
-  assert.equal(dragMeans({ dx: 0, dy: 0, ms: 900 }), null)
-})
-
-test('two quick taps in the same place are a double tap', () => {
-  const first = { at: 1000, x: 200, y: 300 }
-  assert.ok(isDoubleTap(first, { at: 1180, x: 205, y: 296 }))
-})
-
-test('two taps far apart in time or place are two taps', () => {
-  const first = { at: 1000, x: 200, y: 300 }
-  assert.ok(!isDoubleTap(first, { at: 1400, x: 200, y: 300 }), 'too slow')
-  assert.ok(!isDoubleTap(first, { at: 1100, x: 260, y: 300 }), 'too far')
-  assert.ok(!isDoubleTap(null, { at: 1100, x: 200, y: 300 }), 'and a first tap is not one')
-})
-
-test('paging wraps at both ends, the way the arrows already do', () => {
-  assert.equal(pageBy('next', 2, 3), 0)
-  assert.equal(pageBy('previous', 0, 3), 2)
-  assert.equal(pageBy('tap', 1, 3), 1, 'a tap does not move')
-  assert.equal(pageBy(null, 1, 3), 1)
-  assert.equal(pageBy('next', 0, 1), 0, 'one photograph stays put')
-})
-
-test('the picture follows the finger once it is going somewhere', () => {
-  /* A swipe that moves nothing is a swipe you cannot tell is working. */
-  assert.equal(followed({ dx: -80, dy: 4 }), -80)
-  assert.equal(followed({ dx: 120, dy: -10 }), 120)
-})
-
-test('it does not twitch under a finger that has barely moved', () => {
-  assert.equal(followed({ dx: 4, dy: 0 }), 0)
-  assert.equal(followed({ dx: -9, dy: 2 }), 0)
-})
-
-test('and it does not smear sideways while somebody is scrolling', () => {
-  /* The same across-beats-down rule the release uses, so what the picture does
-     under the finger and what happens when it lifts cannot disagree. */
-  assert.equal(followed({ dx: -40, dy: 160 }), 0)
-  assert.equal(followed({ dx: -100, dy: 99 }), -100)
-})
-
-test('what the picture does and what the release does agree', () => {
-  /* If one of these ever said "across" and the other "down", the photograph
-     would slide away and then snap back for no reason anybody could see. */
-  for (const drag of [
-    { dx: -80, dy: 4, ms: 200 },
-    { dx: 80, dy: 79, ms: 200 },
-    { dx: -40, dy: 160, ms: 300 },
-    { dx: 5, dy: 5, ms: 100 },
-  ]) {
-    const moved = followed(drag) !== 0
-    const paged = dragMeans(drag) === 'next' || dragMeans(drag) === 'previous'
-    if (paged) assert.ok(moved, `${JSON.stringify(drag)} paged without ever moving`)
-  }
-})
-
-test('a slow drag has to cross about a fifth of the picture', () => {
-  /* Two fifths was too much — a whole thumb's reach for one photograph, and it
-     made the viewer feel like hard work. About a fifth, with the flick above
-     carrying everything quicker than that. */
-  const phone = carryDistance(390)
-  assert.ok(phone > 80 && phone < 92, `about a fifth of a phone, got ${phone}`)
-  const slowly = dx => dragMeans({ dx, dy: 4, ms: 700 }, { travel: phone })
-  assert.equal(slowly(-60), null, 'a nudge holds')
-  assert.equal(slowly(-(phone - 1)), null, 'and just short')
-  assert.equal(slowly(-phone), 'next')
+test('a finger that went nowhere is a tap', () => {
+  assert.equal(dragMeans({ dx: 0, dy: 0, ms: 90 }, PHONE), 'tap')
+  assert.equal(dragMeans({ dx: 4, dy: -3, ms: 120 }, PHONE), 'tap', 'a thumb is not a pixel')
+  // Held, rather than tapped: a press is somebody thinking, not choosing.
+  assert.equal(dragMeans({ dx: 0, dy: 0, ms: 900 }, PHONE), null)
+  // And something indecisive is nothing at all, which cannot be wrong.
+  assert.equal(dragMeans({ dx: -40, dy: 6, ms: 500, vx: 0 }, PHONE), null)
 })
 
 test('a narrow stage still asks for a real push', () => {
-  /* A fifth of a very small stage is a twitch; there is a floor under it. */
-  assert.equal(carryDistance(120), 48)
-  assert.equal(carryDistance(0), 48, 'and an unmeasured stage does not ask for nothing')
+  /* Half of a watch is a few dozen pixels, which a resting thumb covers. */
+  assert.equal(carryDistance(80), 60)
+  assert.equal(carryDistance(0), 60, 'and an unmeasured stage is not a free page turn')
 })
 
 test('a wide one does not ask for half a metre of mouse', () => {
-  /* There are arrows and arrow keys on a desktop, and they are the better
-     tool: the cap is there so the swipe stays possible, not so it is easy. */
-  assert.equal(carryDistance(1600), 140)
+  /* There are arrows and arrow keys over there, and they are the better tool. */
+  assert.equal(carryDistance(1600), 260)
+  assert.equal(carryDistance(3000), 260)
 })
 
-test('a sweep that took no measurable time is the fastest thing there is', () => {
-  /* Some clocks are coarse enough that a real gesture reports zero
-     milliseconds. Reading that as "slow" refuses the swipe outright. */
-  assert.equal(dragMeans({ dx: -50, dy: 2, ms: 0 }), 'next')
-  assert.equal(dragMeans({ dx: -8, dy: 1, ms: 0 }), 'tap', 'but a twitch is still a tap')
+test('the projection window can be argued with', () => {
+  const slow = { dx: -100, dy: 2, ms: 200, vx: -0.5 }
+  assert.equal(dragMeans(slow, { travel: 195, project: 100 }), null, '100ms ahead: 150px')
+  assert.equal(dragMeans(slow, { travel: 195, project: 400 }), 'next', '400ms ahead: 300px')
+})
+
+test('the picture follows the finger, but not a scroll', () => {
+  assert.equal(followed({ dx: -60, dy: 5 }), -60)
+  assert.equal(followed({ dx: 60, dy: 5 }), 60)
+  // Straight down the comments: the photograph must not smear sideways.
+  assert.equal(followed({ dx: -20, dy: 90 }), 0)
+  // And a thumb resting is not a drag at all.
+  assert.equal(followed({ dx: 6, dy: 2 }), 0)
+})
+
+test('double tap is close in time and close in place', () => {
+  const first = { at: 1000, x: 100, y: 100 }
+  assert.equal(isDoubleTap(first, { at: 1120, x: 104, y: 98 }), true)
+  assert.equal(isDoubleTap(first, { at: 1500, x: 100, y: 100 }), false, 'too slow')
+  assert.equal(isDoubleTap(first, { at: 1120, x: 200, y: 100 }), false, 'too far')
+  assert.equal(isDoubleTap(null, { at: 1120, x: 100, y: 100 }), false, 'nothing to double')
+})
+
+test('paging wraps at both ends, the way the arrows do', () => {
+  assert.equal(pageBy('next', 2, 3), 0)
+  assert.equal(pageBy('previous', 0, 3), 2)
+  assert.equal(pageBy('tap', 1, 3), 1)
+  assert.equal(pageBy('next', 0, 0), 0)
 })
 
 /* ---- the filmstrip -------------------------------------------------------

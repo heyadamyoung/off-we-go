@@ -1468,29 +1468,195 @@ test('adding photos opens from the gallery, on a phone', async ({ page }) => {
   await expect(page.getByRole('dialog')).toContainText('Add photos and videos')
 })
 
+test('the photograph you are looking at is the one in the middle of the screen', async ({
+  page,
+}) => {
+  /* The strip was laid out from its first pane rather than from the one being
+     looked at, so the whole thing sat one photograph to the right: what filled
+     the screen was the PREVIOUS picture, the real one was off the right edge,
+     and about twenty pixels of it peeked in past the arrow. The caption said
+     one thing and the screen showed another.
+
+     Twenty pixels because the track was inset by the stage's own padding, so
+     a turn of one track-width was forty pixels short of a screen and never
+     quite cleared either neighbour. Both of those are geometry, which is why
+     every behavioural test passed straight through it. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openViewer(page)
+  await page.waitForTimeout(600)
+
+  const laid = await page.evaluate(() => {
+    const stage = document.querySelector('.vbody').getBoundingClientRect()
+    return {
+      stage: { x: stage.x, right: stage.right, width: stage.width },
+      panes: [...document.querySelectorAll('.vpane')].map(pane => {
+        const box = pane.getBoundingClientRect()
+        return { on: pane.classList.contains('on'), x: box.x, right: box.right }
+      }),
+    }
+  })
+
+  const middle = laid.panes.find(pane => pane.on)
+  expect(middle, 'nothing is marked as the photograph being looked at').toBeTruthy()
+  expect(Math.abs(middle.x - laid.stage.x), 'the photograph is not on the stage').toBeLessThan(1)
+  expect(Math.abs(middle.right - laid.stage.right)).toBeLessThan(1)
+
+  /* And nothing else is on the screen at all. A neighbour is there to be slid
+     to, not to be seen — a sliver of the next photograph at the edge reads as
+     the viewer being broken, which is how this was reported. */
+  for (const pane of laid.panes.filter(pane => !pane.on))
+    expect(
+      pane.right <= laid.stage.x + 1 || pane.x >= laid.stage.right - 1,
+      `a neighbour is showing on the stage: ${JSON.stringify(pane)}`,
+    ).toBe(true)
+
+  // The picture on the stage is the one the caption is about.
+  expect(await page.locator('.vpane.on img').getAttribute('alt')).toBe(
+    await page.locator('.vcap h2').innerText(),
+  )
+})
+
+test('the photograph you tap is the photograph you get, and the one you open full screen', async ({
+  page,
+}) => {
+  /* Reported as "clicking a photo seems to select the photo before it, so the
+     zoom picture is not the one you clicked".
+
+     Three separate things have to agree for that to be true, and until now
+     nothing held them to it: the tile you pressed, the picture the viewer puts
+     on the stage, and the one the full-screen view opens. Every test so far
+     asked the viewer what it thought it was showing, which is exactly the
+     question a viewer showing the wrong photograph answers correctly. */
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  const tiles = page.locator('.pgrid-photo')
+  await expect(tiles.first()).toBeVisible({ timeout: 8000 })
+  expect(
+    await tiles.count(),
+    'there are not enough photographs to tell one from another',
+  ).toBeGreaterThan(3)
+
+  // The third, so that an off-by-one in either direction has somewhere to go.
+  const third = tiles.nth(2)
+  const wanted = await third.getAttribute('aria-label')
+  await third.click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+
+  /* Third in the gallery, third in the viewer. The counter is the viewer's own
+     word for which photograph this is, and it is the thing that was right all
+     along while the screen showed something else. */
+  await expect(page.locator('.vcap .ct')).toHaveText(/^3 of /)
+
+  /* And the picture actually filling the screen is that one.
+
+     Asked by class — which pane is marked as the one being looked at — this
+     came back right all along, and that is precisely why the bug survived:
+     the viewer knew which photograph it was on and drew a different one. So
+     this asks the only question a person can ask, which is what is under the
+     middle of the stage. */
+  const shown = await page.evaluate(() => {
+    const stage = document.querySelector('.vbody').getBoundingClientRect()
+    const middle = stage.x + stage.width / 2
+    const image = [...document.querySelectorAll('.vpane img')].find(element => {
+      const box = element.getBoundingClientRect()
+      return box.width > 0 && box.x <= middle && box.right >= middle
+    })
+    return image?.getAttribute('alt') ?? null
+  })
+  expect(shown, 'the photograph filling the screen is not the one that was tapped').toBe(wanted)
+
+  /* Full screen, the same way a thumb does it: a tap on the picture, which
+     the stage reads as a tap only after it has waited out the double tap that
+     would have hearted it instead. */
+  await page.locator('.vpane.on .vmaintap').click()
+  const zoom = page.locator('.vzoom')
+  await expect(zoom).toBeVisible({ timeout: 8000 })
+  expect(
+    await zoom.locator('img').getAttribute('alt'),
+    'full screen opened a different photograph',
+  ).toBe(wanted)
+  expect(await zoom.getAttribute('aria-label')).toBe(wanted)
+})
+
+test('a swipe across the stage is never taken for a drag', async ({ page }) => {
+  /* The page turn failed intermittently and left nothing behind to say why.
+
+     A mouse swipe across the stage was selecting whatever text it crossed,
+     and the swipe after that dragged the selection — at which point the
+     browser sends pointercancel and keeps the rest of the gesture. No
+     pointerup ever arrives, so the viewer, which decides what a gesture meant
+     when the finger lifts, never hears that it did. The photograph eased back
+     to the middle and the page did not turn.
+
+     It needs a selection to exist first, which is why it bit on the second
+     swipe and not the first, and why it looked like a flake. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openViewer(page)
+  const stage = await page.locator('.vbody').boundingBox()
+  const y = stage.y + stage.height / 2
+  const from = stage.x + stage.width - 12
+
+  await page.evaluate(() => {
+    window.__taken = []
+    for (const kind of ['dragstart', 'selectstart', 'pointercancel'])
+      window.addEventListener(kind, event => window.__taken.push(kind), true)
+  })
+
+  // Twice, because once is what it takes to make the selection the second one
+  // would drag.
+  for (let go = 0; go < 2; go++) {
+    await page.mouse.move(from, y)
+    await page.mouse.down()
+    for (let step = 1; step <= 6; step++) {
+      await page.mouse.move(from - (stage.width * 0.62 * step) / 6, y)
+      await page.waitForTimeout(20)
+    }
+    await page.mouse.up()
+    await page.waitForTimeout(500)
+  }
+
+  expect(
+    await page.evaluate(() => window.__taken),
+    'the browser took the swipe for itself',
+  ).toEqual([])
+  // And both swipes landed: two page turns, not one and a cancelled one.
+  await expect(page.locator('.vcap .ct')).toHaveText(/^3 of /)
+})
+
 test('the strip follows the finger, and carries on to the next one when let go', async ({
   page,
 }) => {
   /* Three gestures, and the difference between them is the whole design.
 
      A swipe that moves nothing is a swipe you cannot tell is working, so the
-     strip tracks the finger. Whether it PAGES is then either distance or
-     speed: a lazy drag has to cross about a fifth of the picture, and a flick
-     — which is how anybody actually pages through photographs — needs almost
-     none of that, because what makes a flick a decision is how fast it was.
+     strip tracks the finger. Whether it PAGES is then one question, not two:
+     where the picture would come to rest if the finger's own speed carried
+     it on. Stop, and there is nothing to carry you — the distance is all you
+     have and it must be half the picture. Flick, and the distance hardly
+     matters, because what makes a flick a decision is how fast it was.
 
      And when it does page it goes ON, in one movement, to a photograph that
      is already on the screen. It used to snap back to the middle and swap the
      picture where it stood, which is the thing this rewrite is about.
 
-     On a phone, so the numbers mean something: 390px across asks for 86. */
+     On a phone, so the numbers mean something: 390px across asks for 195.
+
+     No explicit timeouts below. They used to be three seconds, which is an age
+     for a page turn and far too little for the machine this suite runs on:
+     four workers each holding a map can leave a browser a second behind on a
+     round trip alone, and the claim being made was never "within three
+     seconds" — it is that the strip turns, carries on, and re-centres. The
+     frame journey is what says how it moved. */
   await page.setViewportSize({ width: 390, height: 844 })
   await openViewer(page)
   const at = () => page.locator('.vcap .ct').innerText()
+  /* `|| 0` because a transform that interpolated down from a negative number
+     computes as -0, and -0 is not 0 to an identity comparison — a strip that
+     arrived perfectly, failing on the sign of nothing. */
   const shifted = () =>
     page.locator('.vtrack').evaluate(el => {
       const t = getComputedStyle(el).transform
-      return t === 'none' ? 0 : Number(t.split(',')[4] ?? 0)
+      return (t === 'none' ? 0 : Number(t.split(',')[4] ?? 0)) || 0
     })
 
   const stage = await page.locator('.vbody').boundingBox()
@@ -1515,7 +1681,7 @@ test('the strip follows the finger, and carries on to the next one when let go',
   await swipe(60, 30)
   expect(await shifted(), 'the strip never moved under the finger').toBeLessThan(-10)
   await page.mouse.up()
-  await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+  await expect.poll(shifted).toBe(0)
   expect(await at(), 'a short slow swipe turned the page anyway').toBe(first)
 
   /* The photograph about to arrive, marked so it can be recognised again. It
@@ -1550,11 +1716,16 @@ test('the strip follows the finger, and carries on to the next one when let go',
   /* A drag that carries far enough goes ON to the next one, easing as it
      goes: the strip is still moving at the moment the finger lifts, rather
      than snapping back to the middle and swapping the picture in place. */
-  const carried = 140
+  /* Past the halfway mark, which is the rule: a photograph carried more than
+     half way across goes on to the next one whatever the finger's speed. A
+     shorter swipe would page on projection alone — true of a real thumb, but
+     it makes this test a measurement of how fast the driver happened to move
+     the mouse, and under a loaded machine that is slower than any person. */
+  const carried = Math.round(stage.width * 0.62)
   await swipe(carried, 30)
   await page.mouse.up()
 
-  await expect.poll(at, { timeout: 3000 }).not.toBe(first)
+  await expect.poll(at).not.toBe(first)
 
   /* Up to the commit, which is the one moment the track is allowed to jump —
      it returns to nought with the arriving photograph already in the middle,
@@ -1568,13 +1739,13 @@ test('the strip follows the finger, and carries on to the next one when let go',
   expect(
     Math.min(...journey),
     'the strip stopped where the finger did instead of carrying on to the next photograph',
-  ).toBeLessThan(-carried * 1.5)
+  ).toBeLessThan(-carried - 60)
   expect(
     journey.every((x, i) => i === 0 || x <= journey[i - 1] + 1),
     `the strip went backwards on its way: ${journey.map(Math.round).join(' ')}`,
   ).toBe(true)
   // And having arrived, the strip is centred again on the new photograph.
-  await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+  await expect.poll(shifted).toBe(0)
 
   expect(
     await page.locator('.vpane.on img').getAttribute('data-was-already-here'),
