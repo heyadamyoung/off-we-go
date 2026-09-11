@@ -670,6 +670,15 @@
 }
 
 /* ------------------------------------------------------------------ motion */
+/* A bar that moves without claiming a number. Some browsers will not say how
+   big an upload is — no Content-Length on a streamed body, a proxy that
+   strips it — and a determinate bar stuck at nought for four minutes is a
+   worse lie than no number at all. */
+@keyframes slide {
+  0% { left: -35% }
+  100% { left: 100% }
+}
+
 @keyframes rise { from { transform: translateY(10px); opacity: 0 } to { transform: none; opacity: 1 } }
 .rise { animation: rise .22s ease }
 @keyframes toast-rise {

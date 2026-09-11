@@ -158,7 +158,7 @@ export default function useTripPhotos({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the queue keeps one sender; length covers the next sequence, and clashes reconcile by seq on the server
   const addPhoto = useCallback(
-    async (input: UploadInput) => {
+    async (input: UploadInput, onProgress?: (sent: number, total: number | null) => void) => {
       const saved = await uploadPhoto(
         tripId,
         input.file,
@@ -166,6 +166,7 @@ export default function useTripPhotos({
           by: me.name,
           nextSequence: Math.max(photos.length, ...photos.map(photo => (photo.seq ?? -1) + 1)),
         }),
+        onProgress,
       )
       setPhotos(list => [...list, saved])
       if (input.stopId) setSelected(input.stopId)

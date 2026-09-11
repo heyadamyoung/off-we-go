@@ -9,7 +9,7 @@ import { useToast } from '../../../shared/ui/toast'
 import { MapAskOverlays } from './map-menu'
 import TripMap from './trip-map'
 import { AssistantButton, AssistantChat } from '../../assistant'
-import { PhotoViewer, UploadModal, UploadTray } from '../../photos'
+import { PhotoViewer, UploadBar, UploadModal } from '../../photos'
 import { TripSettingsSheet } from '../../people'
 import useTripData from '../model/use-trip-data'
 import useTripLegs from '../model/use-trip-legs'
@@ -283,7 +283,7 @@ function Trip({
         />
       )}
 
-      <UploadTray uploads={uploads.uploads} onRetry={uploads.tryAgain} onDismiss={uploads.forget} />
+      <UploadBar queue={uploads} lowered={panelOpen} />
 
       <TripBar
         items={items}
@@ -365,8 +365,6 @@ function Trip({
           live={latestGpsPosition}
           stops={stops}
           toast={toast}
-          theme={mapTheme}
-          tint={sun}
         />
       )}
 

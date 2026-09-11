@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
+import MediaThumb from '../../../shared/ui/media-thumb'
 import { ALL_DAYS } from '../../../trip-search-core'
 import type { TripItem } from '../model/trip-items'
 import type { TripDay } from '../../../trip-days-core'
@@ -195,14 +196,21 @@ function Card({
           takes its extra line out of the photograph and cards in the same row
           end up with different sized pictures. */}
       <div className="relative h-[78px] flex-none overflow-hidden bg-raised2 max-sm:h-[52px]">
-        {item.kind === 'photo' || item.stop?.src ? (
-          <Img
-            item={(item.photo || item.stop)!}
+        {item.photo ? (
+          /* MediaThumb rather than Img: a film's row is its poster frame with
+             the play mark on it. An <img> pointed at an mp4 draws nothing, so
+             every video in this strip was a blank tile with no way to tell it
+             from a photograph that had failed to load. */
+          <MediaThumb
+            item={item.photo}
             w={420}
             h={220}
             eager={eager}
+            badge={18}
             className="size-full object-cover"
           />
+        ) : item.stop?.src ? (
+          <Img item={item.stop} w={420} h={220} eager={eager} className="size-full object-cover" />
         ) : (
           <span className="grid size-full place-items-center text-faint">
             <Icon n={item.stop?.icon || 'pin'} s={28} />

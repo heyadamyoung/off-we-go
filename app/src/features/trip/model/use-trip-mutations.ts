@@ -29,7 +29,10 @@ export default function useTripMutations({
   setTrip: Dispatch<SetStateAction<Trip>>
   tripId: string
   toast: Toast
-  addPhoto: (input: UploadInput) => Promise<TripPhoto>
+  addPhoto: (
+    input: UploadInput,
+    onProgress?: (sent: number, total: number | null) => void,
+  ) => Promise<TripPhoto>
   stops: Stop[]
   setFollowing: (value: boolean) => void
   setMapView: (view: MapView) => void
@@ -55,8 +58,8 @@ export default function useTripMutations({
   )
 
   const addPhotoToMap = useCallback(
-    async (input: UploadInput) => {
-      const saved = await addPhoto(input)
+    async (input: UploadInput, onProgress?: (sent: number, total: number | null) => void) => {
+      const saved = await addPhoto(input, onProgress)
       const stop = stops.find(value => value.id === saved.stopId)
       const lng = stop?.lng ?? saved.lng
       const lat = stop?.lat ?? saved.lat
@@ -74,8 +77,8 @@ export default function useTripMutations({
     [addPhoto, stops, setFollowing, setMapView, viewRef],
   )
 
-  /* Photographs go up in the background: the sheet hands them over and closes,
-     and the tray in the corner says what is still going. */
+  /* Photographs go up in the background, a few at a time: the sheet hands
+     them over and closes, and the bar says how far the batch has got. */
   const uploads = useUploadQueue({ send: addPhotoToMap, toast })
 
   return { saveTrip, uploads }

@@ -2,13 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { isNativeApp } from '../../../mobile'
 import { photoPlacement } from '../../../mobile-photos-core'
 import { durationLabel } from '../../../mobile-videos-core'
+import { placementSentence, summarise } from '../../../upload-summary-core'
 import useMediaPicker from '../model/use-media-picker'
-import { MapCanvas } from '../../map'
-import { coordinateLabel, validLngLat } from '../../../shared/lib/geo'
+import { validLngLat } from '../../../shared/lib/geo'
 import Icon from '../../../shared/ui/icon'
+import { PlayBadge } from '../../../shared/ui/media-thumb'
 import Sheet from '../../../shared/ui/sheet'
-import type { MapTint } from '../../map'
 import type { Coordinates, Stop, Toast, UploadInput } from '../../../shared/model/types'
+
+/* Choosing what to add.
+
+   It used to be a sheet you had to read. A grid of tiles that looked like a
+   selector but was an inspector — tapping one changed which photograph the map
+   underneath was describing, and nothing else — then a map of that one, then
+   three paragraphs about where its coordinates had come from, then two warning
+   boxes, then a paragraph of policy. All of it true, most of it about
+   photograph seven of twenty, and no way at all to take back the one you did
+   not mean to pick.
+
+   Now it is what a phone does: see what you chose, take out what you did not
+   mean, add more if you like, write one caption, send. The batch is described
+   in a sentence rather than sampled by a map, and the pictures that arrive
+   without a location are not an apology any more — they can be filed at a
+   place afterwards, in two taps, from the gallery. */
 
 const noop = () => {}
 
@@ -26,15 +42,11 @@ interface UploadModalProps {
   live: Coordinates | null
   stops: Stop[]
   toast: Toast
-  theme: string
-  tint?: MapTint | null
 }
 
-function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: UploadModalProps) {
-  const { files, preparing, accept, fileRef, pick, choosePhotos, chooseVideos } = useMediaPicker({
-    toast,
-  })
-  const [selected, setSelected] = useState(0)
+function UploadModal({ onClose, onAdd, live, stops, toast }: UploadModalProps) {
+  const { files, preparing, accept, fileRef, pick, choosePhotos, chooseVideos, drop } =
+    useMediaPicker({ toast })
   const [caption, setCaption] = useState('')
   const [devicePoint, setDevicePoint] = useState<Coordinates | null>(null)
   const mountedRef = useRef(true)
@@ -43,56 +55,27 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
   const placements = useMemo(
     () =>
       files.map(value =>
-        photoPlacement(value.file, {
-          live: fallbackPoint,
-          stops,
-          fallbackSource,
-        }),
+        photoPlacement(value.file, { live: fallbackPoint, stops, fallbackSource }),
       ),
     [files, fallbackPoint, stops, fallbackSource],
   )
-  // A fresh selection is shorter than the last one often enough to matter.
-  const at = Math.min(selected, Math.max(files.length - 1, 0))
-  const placement = placements[at]
-  const chosen = files[at]
-  const anyVideo = files.some(file => file.isVideo)
+  const sentence = placementSentence(summarise(placements))
+  const films = files.filter(file => file.isVideo).length
   const noun = !files.length
     ? 'photos and videos'
-    : anyVideo && files.some(file => !file.isVideo)
-      ? 'photos and videos'
-      : anyVideo
-        ? files.length === 1
+    : films && films < files.length
+      ? 'items'
+      : films
+        ? films === 1
           ? 'video'
           : 'videos'
         : files.length === 1
           ? 'photo'
           : 'photos'
-  const previewStop = placement?.stopId ? stops.find(stop => stop.id === placement.stopId) : null
-  const previewMapPoint: Coordinates | null = previewStop
-    ? [previewStop.lng, previewStop.lat]
-    : (placement?.previewPoint ?? null)
-  /* The map preview draws a picture, so a film stands in with its poster; one
-     that would not decode simply has no pin picture, not a broken one. */
-  const previewPhoto =
-    placement?.previewPoint && chosen && (!chosen.isVideo || chosen.posterUrl)
-      ? {
-          id: `upload-${at}`,
-          by: '',
-          src: chosen.isVideo ? chosen.posterUrl! : chosen.url,
-          lng: placement.previewPoint[0],
-          lat: placement.previewPoint[1],
-          stopId: placement.stopId,
-        }
-      : null
-  const previewView = useMemo(
-    () => (previewMapPoint ? { center: previewMapPoint, zoom: 15 } : null),
 
-    [previewMapPoint?.[0], previewMapPoint?.[1]],
-  )
-
-  /* Hand the files over and get out of the way. Sending them took as long as it
-     took while this sheet sat on top of the trip; the tray in the corner says
-     what is going up, and the map is usable while it does. */
+  /* Hand the files over and get out of the way. Sending them takes as long as
+     it takes; the bar says how far the batch has got, and the trip is usable
+     the whole time. */
   const submit = () => {
     if (!files.length || preparing) return
     onAdd(
@@ -105,8 +88,8 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
           kind: item.isVideo ? ('video' as const) : ('photo' as const),
           /* Its own URL, because this modal revokes every one it made when
              it closes — which it does in the same breath as handing these
-             over, leaving the tray showing broken images for the whole
-             upload. The tray revokes this one when the upload is done. A
+             over, leaving the bar showing broken images for the whole
+             upload. The queue revokes this one when the upload is done. A
              film's tile is its poster: an <img> of an mp4 draws nothing. */
           preview: item.isVideo
             ? item.poster
@@ -139,6 +122,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
     )
     onClose()
   }
+
   useEffect(() => {
     mountedRef.current = true
     navigator.geolocation?.getCurrentPosition(
@@ -162,7 +146,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
   return (
     <Sheet
       wide
-      title="Add photos and videos"
+      title={files.length ? `Add ${files.length} ${noun}` : 'Add photos and videos'}
       onClose={onClose}
       footer={
         <>
@@ -170,7 +154,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
             Cancel
           </button>
           <button className="btn btn-accent" disabled={!files.length || preparing} onClick={submit}>
-            {`Add ${files.length || ''} to the map`}
+            {files.length ? `Add ${files.length}` : 'Add'}
           </button>
         </>
       }>
@@ -178,8 +162,8 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
         <div className="flex flex-col gap-2">
           <button
             className="flex flex-col items-center gap-1.5 rounded-2xl border-[1.5px] border-dashed
-                             border-line2 px-5 py-7 text-center text-muted hover:border-accent
-                             hover:bg-accent-soft"
+                       border-line2 px-5 py-7 text-center text-muted hover:border-accent
+                       hover:bg-accent-soft"
             onClick={preparing ? undefined : choosePhotos}>
             <Icon n="upload" s={26} />
             <b className="text-sm text-ink">
@@ -192,7 +176,7 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
             <span className="text-xs">
               {preparing
                 ? 'HEIC photos are converted, and videos get their first frame, on this device.'
-                : 'Up to 20 at a time. Each one’s map position is shown before it uploads.'}
+                : 'They go up in the background — you can carry on using the trip.'}
             </span>
           </button>
           {/* The native photo picker hands over the EXIF a file input drops,
@@ -211,50 +195,61 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
         </div>
       ) : (
         <>
-          <div className="previews grid max-h-[260px] grid-cols-3 gap-2 overflow-auto">
+          <div className="previews grid max-h-[280px] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
             {files.map((file, i) => (
-              <button
+              <span
                 key={file.uploadKey}
-                onClick={() => setSelected(i)}
-                className={
-                  'relative overflow-hidden rounded-xl border-2 ' +
-                  (i === at ? 'on border-accent' : 'border-transparent')
-                }
-                aria-label={`Inspect selected ${file.isVideo ? 'video' : 'photo'} ${i + 1}`}>
+                className="group relative aspect-square overflow-hidden rounded-xl bg-raised">
                 {file.isVideo && !file.posterUrl ? (
-                  <span className="preview flex h-28 w-full items-center justify-center bg-ink/85">
+                  <span className="flex size-full items-center justify-center bg-ink/85">
                     <Icon n="video" s={20} c="#fff" />
                   </span>
                 ) : (
                   <img
-                    className="preview h-28 w-full object-cover"
+                    className="size-full object-cover"
                     src={file.isVideo ? file.posterUrl! : file.url}
-                    alt={`Selected ${i + 1}`}
+                    alt=""
                   />
                 )}
+                {/* A film reads as a film, with the mark every camera roll in
+                    the world uses and its length in the corner. */}
+                {file.isVideo && file.posterUrl && <PlayBadge size={22} />}
                 {file.isVideo && (
                   <span
-                    className="absolute left-1 top-1 flex items-center gap-1 rounded-full
-                                   bg-black/75 px-1.5 py-0.5 text-[10px] font-extrabold text-white">
-                    <Icon n="video" s={10} c="#fff" />
+                    className="pointer-events-none absolute bottom-1 right-1 rounded-md bg-black/70
+                               px-1 py-px text-[10px] font-bold tabular-nums text-white">
                     {durationLabel(file.durationMs) || 'Video'}
                   </span>
                 )}
-                <span
-                  className="absolute bottom-1 right-1 rounded-full bg-black/75 px-1.5 py-0.5
-                                 text-[10px] font-extrabold text-white">
-                  {placements[i]?.hasEmbeddedGps ? 'GPS' : 'No GPS'}
-                </span>
-              </button>
+                {/* Only the exceptions are marked. A "GPS" pip on eighteen
+                    tiles is eighteen pips nobody reads; the two without one
+                    are the two worth pointing at. */}
+                {!placements[i]?.previewPoint && (
+                  <span
+                    className="pointer-events-none absolute bottom-1 left-1 rounded-md bg-black/70
+                               px-1 py-px text-[10px] font-bold text-white">
+                    No place
+                  </span>
+                )}
+                <button
+                  className="absolute right-1 top-1 grid size-6 place-items-center rounded-full
+                             bg-black/60 text-white transition-opacity hover:bg-black/80
+                             sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                  onClick={() => drop(file.uploadKey)}
+                  title="Take this one out"
+                  aria-label={`Take out ${file.file.name || `item ${i + 1}`}`}>
+                  <Icon n="x" s={12} />
+                </button>
+              </span>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button className="mini" disabled={preparing} onClick={choosePhotos}>
-              Choose different {isNativeApp ? 'photos' : 'files'}
+              {preparing ? 'Reading…' : isNativeApp ? 'Add more photos' : 'Add more'}
             </button>
             {isNativeApp && (
               <button className="mini" disabled={preparing} onClick={chooseVideos}>
-                Choose videos
+                Add videos
               </button>
             )}
           </div>
@@ -262,89 +257,19 @@ function UploadModal({ onClose, onAdd, live, stops, toast, theme, tint }: Upload
       )}
       <input ref={fileRef} type="file" accept={accept} multiple hidden onChange={pick} />
       <label className="field">
-        Caption
+        {files.length > 1 ? 'Caption for all of them' : 'Caption'}
         <input
           value={caption}
           onChange={e => setCaption(e.target.value)}
           placeholder="What is happening here?"
         />
       </label>
-      {placement && previewView && previewPhoto && (
-        <div
-          className="grid overflow-hidden rounded-xl border border-line bg-raised
-                        sm:grid-cols-[minmax(0,1.35fr)_minmax(180px,.65fr)]">
-          <div className="relative h-[190px] overflow-hidden">
-            <MapCanvas
-              theme={theme}
-              tint={tint}
-              interactive={false}
-              view={previewView}
-              onView={noop}
-              route={[]}
-              stops={previewStop ? [previewStop] : []}
-              photos={[previewPhoto]}
-            />
-          </div>
-          <div className="flex flex-col justify-center gap-1.5 p-3.5">
-            <b className="flex items-center gap-1.5 text-xs text-accent">
-              <Icon n="pin" s={14} />{' '}
-              {placement.hasEmbeddedGps
-                ? 'Embedded photo GPS'
-                : chosen?.isVideo
-                  ? 'Videos carry no GPS'
-                  : 'No embedded GPS'}
-            </b>
-            <strong className="tnum text-sm">{coordinateLabel(placement.previewPoint!)}</strong>
-            {placement.source === 'history' ? (
-              <p className="hint">
-                Trip history will be checked first; the{' '}
-                {placement.fallbackSource === 'live' ? 'current phone position' : 'trip position'}{' '}
-                shown here is the fallback.
-              </p>
-            ) : (
-              <p className="hint">
-                {placement.stopName
-                  ? `This will be grouped at ${placement.stopName}.`
-                  : placement.source === 'exif'
-                    ? 'This is where the photo was taken.'
-                    : placement.source === 'live'
-                      ? 'This is the current phone position.'
-                      : 'This is the trip’s latest known position.'}
-              </p>
-            )}
-          </div>
-        </div>
+      {sentence && (
+        <p className="hint flex items-start gap-1.5">
+          <Icon n="pin" s={13} className="mt-px flex-none" />
+          <span>{sentence}</span>
+        </p>
       )}
-      {/* A film this device could not draw a frame from is a film it could not
-          decode, and the people on the trip are mostly holding the same kind
-          of phone. Better said now than discovered on the map. */}
-      {chosen?.isVideo && !chosen.posterUrl && (
-        <div className="rounded-xl border border-line bg-raised p-4">
-          <b className="flex items-center gap-1.5 text-xs text-muted">
-            <Icon n="video" s={14} /> No preview frame
-          </b>
-          <p className="hint mt-1">
-            This device could not decode a frame from this video, so it will have no picture on the
-            map and may not play for everyone. It uploads exactly as filmed either way.
-          </p>
-        </div>
-      )}
-      {files.length > 0 && placement && !placement.previewPoint && (
-        <div className="rounded-xl border border-line bg-raised p-4">
-          <b className="flex items-center gap-1.5 text-xs text-muted">
-            <Icon n="pin" s={14} /> No reliable location available
-          </b>
-          <p className="hint mt-1">
-            This {chosen?.isVideo ? 'video' : 'photo'} has no embedded GPS and no phone has shared a
-            fresh, accurate position. It will upload without a map location.
-          </p>
-        </div>
-      )}
-      <p className="hint">
-        {`Your ${noun} go on the map for everyone on the trip, under the day they were taken.`}{' '}
-        Followers can like and comment; only travellers can add or remove them. Videos are kept
-        exactly as filmed.
-      </p>
     </Sheet>
   )
 }

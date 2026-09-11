@@ -22,6 +22,14 @@ const newKey = (index: number) =>
   globalThis.crypto?.randomUUID?.() ||
   `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`
 
+/* What makes two chosen files the same file. A camera roll hands back the
+   whole selection every time it is opened, so choosing three and then
+   choosing those three plus two more must add two, not five. Name, size and
+   time are what a file system has to tell them apart with, and a collision
+   would mean two identical photographs taken in the same millisecond — which
+   is one photograph. */
+const sameFile = (file: File) => `${file.name}|${file.size}|${file.lastModified}`
+
 /* Reading a camera roll selection: HEIC photographs are converted, EXIF is
    read, and every film has its opening frame drawn — all of it on this
    device, so nothing leaves until the person has seen where it will land.
@@ -32,6 +40,11 @@ const newKey = (index: number) =>
    camera roll by another door. */
 export default function useMediaPicker({ toast }: { toast: Toast }) {
   const [files, setFiles] = useState<ChosenMedia[]>([])
+  /* What is chosen, readable without making `take` depend on it — a callback
+     rebuilt on every pick is a callback whose in-flight decode loop is looking
+     at a stale list. */
+  const current = useRef<ChosenMedia[]>([])
+  current.current = files
   const [preparing, setPreparing] = useState(false)
   const [accept, setAccept] = useState('image/*,video/*')
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -47,12 +60,19 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
     held.current = []
   }, [])
 
+  /* Adding to what is already chosen rather than replacing it, because
+     "choose more" is the thing people actually do and losing the first twelve
+     to get a thirteenth is not a feature. Duplicates are dropped by identity,
+     so re-picking the same selection is a no-op rather than a doubling. */
   const take = useCallback(
     async (chosen: MetadataFile[]) => {
       const round = ++selection.current
       setPreparing(true)
       try {
-        const prepared = await preparePhotoFilesForUpload(chosen.map(withVideoMime))
+        const already = new Set(current.current.map(item => sameFile(item.file)))
+        const fresh = chosen.filter(file => !already.has(sameFile(file)))
+        if (!fresh.length) return
+        const prepared = await preparePhotoFilesForUpload(fresh.map(withVideoMime))
         /* One decode at a time: a handful of 4K films seeked in parallel is how
          a phone's browser tab runs out of memory mid-selection. */
         const stills: ChosenMedia[] = []
@@ -70,11 +90,10 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
             uploadKey: newKey(index),
           })
         }
-        release()
-        held.current = stills.flatMap(
-          item => [item.url, item.posterUrl].filter(Boolean) as string[],
+        held.current.push(
+          ...stills.flatMap(item => [item.url, item.posterUrl].filter(Boolean) as string[]),
         )
-        setFiles(stills)
+        setFiles(list => [...list, ...stills])
       } finally {
         if (mounted.current && round === selection.current) setPreparing(false)
       }
@@ -117,6 +136,25 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
 
   const chooseVideos = useCallback(() => openFilePicker('video/*'), [openFilePicker])
 
+  /** One taken back out, with its preview bytes let go rather than held to
+      the end of the session. */
+  const drop = useCallback((uploadKey: string) => {
+    setFiles(list => {
+      const going = list.find(item => item.uploadKey === uploadKey)
+      for (const url of [going?.url, going?.posterUrl].filter(Boolean) as string[]) {
+        URL.revokeObjectURL(url)
+        held.current = held.current.filter(value => value !== url)
+      }
+      return list.filter(item => item.uploadKey !== uploadKey)
+    })
+  }, [])
+
+  /** Start again: everything back, and every preview let go with it. */
+  const clear = useCallback(() => {
+    release()
+    setFiles([])
+  }, [release])
+
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -126,5 +164,5 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
     }
   }, [release])
 
-  return { files, preparing, accept, fileRef, pick, choosePhotos, chooseVideos }
+  return { files, preparing, accept, fileRef, pick, choosePhotos, chooseVideos, drop, clear }
 }

@@ -63,18 +63,17 @@ test('a video is chosen, drawn from its own first frame, and plays in the viewer
 
   /* The chosen tile is the film's own frame, not a placeholder: a poster that
      failed to draw would leave the camcorder stand-in instead. */
-  const chosen = page.locator('.dlg .previews img.preview')
+  const chosen = page.locator('.dlg .previews img')
   await expect(chosen).toHaveCount(1, { timeout: 30_000 })
   await expect(chosen).toHaveJSProperty('naturalWidth', 320)
   /* The chip says how long it runs, or just "Video" when the file carries no
      seekable length — either way it marks the tile as one that moves. */
   await expect(page.locator('.dlg .previews').getByText(/^(Video|\d+:\d\d)$/)).toBeVisible()
+  /* And the play mark, which is what says "this one moves" at a glance rather
+     than on reading. The same mark the gallery draws, on the same tile. */
+  await expect(page.locator('.dlg .previews svg')).toHaveCount(2, { timeout: 15_000 })
 
-  // A film carries no EXIF, so it is placed from where the phone is now.
-  await expect(page.getByText('Videos carry no GPS')).toBeVisible()
-  await expect(page.locator('.dlg .mapcanvas canvas')).toBeVisible()
-
-  await page.getByRole('button', { name: 'Add 1 to the map' }).click()
+  await page.getByRole('button', { name: 'Add 1', exact: true }).click()
 
   /* In the grid it is a poster under a play mark, like every camera roll.
 

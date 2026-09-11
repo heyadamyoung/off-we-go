@@ -90,6 +90,117 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     return response
   }
 
+  /* One refusal, read the same way whichever transport carried it. A caller
+     deciding whether to retry looks at `status`; a caller writing a message to
+     a person reads the message; a support question reads `requestId` and finds
+     the exact server-side event. Shaped here so the upload path below cannot
+     drift into throwing something subtly different. */
+  const refusal = (status: number, raw: string, requestId: string | null) => {
+    let message = `Request failed (${status})`
+    let code = ''
+    try {
+      const payload = JSON.parse(raw) as { error?: string; code?: unknown }
+      message = payload.error || message
+      code = typeof payload.code === 'string' ? payload.code : ''
+    } catch {
+      if (raw) message = raw.slice(0, 300)
+    }
+    const error: Error & { status?: number; code?: string; requestId?: string } = new Error(message)
+    error.status = status
+    if (code) error.code = code
+    // The server's request id, so a client error event names the exact
+    // server-side wide event it belongs to — correlation, not guessing.
+    if (requestId) error.requestId = requestId
+    return error
+  }
+
+  /* Sending a file, with the bytes counted on the way out.
+     `fetch` cannot do that — there is no upload-progress event on it, and a
+     streamed request body needs HTTP/2 duplex that Safari has not got — so a
+     progress bar over fetch can only ever be a spinner that lies. XMLHttpRequest
+     has reported `upload.onprogress` since before any of this, and Faro's web
+     instrumentation traces it the same as fetch, so nothing is lost by using
+     the older thing for the one job it still does better.
+
+     Everything else matches `request`: the same bearer, the same
+     401-clears-the-session, the same refusal shape. */
+  const upload = async <T = unknown>(
+    path: string,
+    {
+      body,
+      method = 'POST',
+      onProgress,
+      signal,
+    }: {
+      body: FormData
+      method?: string
+      /** Fraction of the bytes handed to the socket, 0 to 1, or null when the
+          browser will not say — which is rarer than it used to be but is not
+          an error, and must draw as an indeterminate bar rather than as 0%. */
+      onProgress?: (sent: number, total: number | null) => void
+      signal?: AbortSignal
+    },
+  ): Promise<T> => {
+    await hydrate()
+    const token = session?.accessToken
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open(method, baseUrl.replace(/\/$/, '') + path, true)
+      xhr.withCredentials = true
+      if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`)
+      /* Never set content-type for FormData: the boundary is part of it and
+         only the browser knows what it chose. */
+      xhr.responseType = 'text'
+
+      if (onProgress)
+        xhr.upload.onprogress = event =>
+          onProgress(event.loaded, event.lengthComputable ? event.total : null)
+
+      const die = (message: string) => {
+        const error: Error & { status?: number } = new Error(message)
+        // No status at all, which is what marks it as the line rather than a
+        // refusal — and so as something worth trying again.
+        reject(error)
+      }
+      xhr.onerror = () => die('The upload could not reach the server')
+      xhr.ontimeout = () => die('The upload timed out')
+      xhr.onabort = () => die('The upload was stopped')
+
+      xhr.onload = () => {
+        const status = xhr.status
+        if (status === 401 && !path.startsWith('/auth/')) void save(null)
+        const raw = xhr.responseText || ''
+        if (status < 200 || status >= 300) {
+          reject(refusal(status, raw, xhr.getResponseHeader('x-request-id')))
+          return
+        }
+        /* The whole body arrived, so the progress bar ends where the work
+           ended. Without this a fast upload of a slow-to-process video sits
+           at 99% until the response lands. */
+        onProgress?.(1, 1)
+        if (status === 204 || !raw) {
+          resolve(null as T)
+          return
+        }
+        const contentType = xhr.getResponseHeader('content-type') || ''
+        try {
+          resolve((contentType.includes('json') ? JSON.parse(raw) : raw) as T)
+        } catch {
+          resolve(raw as T)
+        }
+      }
+
+      if (signal) {
+        if (signal.aborted) {
+          xhr.abort()
+          return
+        }
+        signal.addEventListener('abort', () => xhr.abort(), { once: true })
+      }
+      xhr.send(body)
+    })
+  }
+
   const request = async <T = unknown>(
     path: string,
     options: ApiRequestOptions = {},
@@ -117,30 +228,12 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     })
     if (response.status === 401 && !path.startsWith('/auth/')) await save(null)
     if (!response.ok) {
-      let message = `Request failed (${response.status})`
-      let code = ''
       /* Read the body once. Asking for JSON and then falling back to text on
          the same response throws "body stream already read" — a TypeError with
          no status, which every caller downstream reads as a lost connection
          rather than as the refusal it actually was. */
       const raw = await response.text().catch(() => '')
-      try {
-        const payload = JSON.parse(raw) as { error?: string; code?: unknown }
-        message = payload.error || message
-        code = typeof payload.code === 'string' ? payload.code : ''
-      } catch {
-        if (raw) message = raw.slice(0, 300)
-      }
-      const error: Error & { status?: number; code?: string; requestId?: string } = new Error(
-        message,
-      )
-      error.status = response.status
-      if (code) error.code = code
-      // The server's request id, so a client error event names the exact
-      // server-side wide event it belongs to — correlation, not guessing.
-      const requestId = response.headers.get('x-request-id')
-      if (requestId) error.requestId = requestId
-      throw error
+      throw refusal(response.status, raw, response.headers.get('x-request-id'))
     }
     if (response.status === 204) return null as T
     const contentType = response.headers.get('content-type') || ''
@@ -149,6 +242,7 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
 
   return {
     request,
+    upload,
     stream,
     getSession() {
       return session
