@@ -315,6 +315,17 @@ export default function useViewerGestures({
       onPointerMove,
       onPointerUp,
       onPointerCancel: forget,
+      /* The browser must not take this gesture for a drag.
+
+         A mouse swipe selects whatever it crosses, and the swipe after that
+         drags the selection — at which point the browser sends pointercancel
+         and keeps the rest for itself. No pointerup arrives, so this reader,
+         which decides what a gesture meant at the moment the finger lifts,
+         never hears that it did: the photograph eases back and the page does
+         not turn, with nothing on screen to say why. It needs a selection to
+         exist first, which is why it bit on the second swipe and read as a
+         flake. The stylesheet stops the selection; this stops the drag. */
+      onDragStart: (event: React.DragEvent) => event.preventDefault(),
     },
     /* What the stage draws. The slots to lay out, where the track sits, and
        whether it is easing there or tracking a finger. */

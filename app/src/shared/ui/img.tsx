@@ -165,6 +165,14 @@ const Img = memo(function Img({
         if (!src.startsWith('blob:')) void keepPhotoOffline(src)
       }}
       onError={() => {
+        /* A stand-in that will not load is not worth healing: the picture it
+           was standing in for is already on its way, and asking for a fresh
+           link to the small copy would leave the viewer on it for good. Hand
+           the element over to the one it was waiting for. */
+        if (src !== want) {
+          setShown({ src: want, want, phase: 'waiting' })
+          return
+        }
         const failed = src
         /* A signed link outlives neither the day nor a trip left open, and the
            payload carrying it is fetched once. Ask for a fresh one before

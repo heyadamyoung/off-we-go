@@ -1578,6 +1578,51 @@ test('the photograph you tap is the photograph you get, and the one you open ful
   expect(await zoom.getAttribute('aria-label')).toBe(wanted)
 })
 
+test('a swipe across the stage is never taken for a drag', async ({ page }) => {
+  /* The page turn failed intermittently and left nothing behind to say why.
+
+     A mouse swipe across the stage was selecting whatever text it crossed,
+     and the swipe after that dragged the selection — at which point the
+     browser sends pointercancel and keeps the rest of the gesture. No
+     pointerup ever arrives, so the viewer, which decides what a gesture meant
+     when the finger lifts, never hears that it did. The photograph eased back
+     to the middle and the page did not turn.
+
+     It needs a selection to exist first, which is why it bit on the second
+     swipe and not the first, and why it looked like a flake. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openViewer(page)
+  const stage = await page.locator('.vbody').boundingBox()
+  const y = stage.y + stage.height / 2
+  const from = stage.x + stage.width - 12
+
+  await page.evaluate(() => {
+    window.__taken = []
+    for (const kind of ['dragstart', 'selectstart', 'pointercancel'])
+      window.addEventListener(kind, event => window.__taken.push(kind), true)
+  })
+
+  // Twice, because once is what it takes to make the selection the second one
+  // would drag.
+  for (let go = 0; go < 2; go++) {
+    await page.mouse.move(from, y)
+    await page.mouse.down()
+    for (let step = 1; step <= 6; step++) {
+      await page.mouse.move(from - (stage.width * 0.62 * step) / 6, y)
+      await page.waitForTimeout(20)
+    }
+    await page.mouse.up()
+    await page.waitForTimeout(500)
+  }
+
+  expect(
+    await page.evaluate(() => window.__taken),
+    'the browser took the swipe for itself',
+  ).toEqual([])
+  // And both swipes landed: two page turns, not one and a cancelled one.
+  await expect(page.locator('.vcap .ct')).toHaveText(/^3 of /)
+})
+
 test('the strip follows the finger, and carries on to the next one when let go', async ({
   page,
 }) => {
@@ -1594,14 +1639,24 @@ test('the strip follows the finger, and carries on to the next one when let go',
      is already on the screen. It used to snap back to the middle and swap the
      picture where it stood, which is the thing this rewrite is about.
 
-     On a phone, so the numbers mean something: 390px across asks for 86. */
+     On a phone, so the numbers mean something: 390px across asks for 195.
+
+     No explicit timeouts below. They used to be three seconds, which is an age
+     for a page turn and far too little for the machine this suite runs on:
+     four workers each holding a map can leave a browser a second behind on a
+     round trip alone, and the claim being made was never "within three
+     seconds" — it is that the strip turns, carries on, and re-centres. The
+     frame journey is what says how it moved. */
   await page.setViewportSize({ width: 390, height: 844 })
   await openViewer(page)
   const at = () => page.locator('.vcap .ct').innerText()
+  /* `|| 0` because a transform that interpolated down from a negative number
+     computes as -0, and -0 is not 0 to an identity comparison — a strip that
+     arrived perfectly, failing on the sign of nothing. */
   const shifted = () =>
     page.locator('.vtrack').evaluate(el => {
       const t = getComputedStyle(el).transform
-      return t === 'none' ? 0 : Number(t.split(',')[4] ?? 0)
+      return (t === 'none' ? 0 : Number(t.split(',')[4] ?? 0)) || 0
     })
 
   const stage = await page.locator('.vbody').boundingBox()
@@ -1626,7 +1681,7 @@ test('the strip follows the finger, and carries on to the next one when let go',
   await swipe(60, 30)
   expect(await shifted(), 'the strip never moved under the finger').toBeLessThan(-10)
   await page.mouse.up()
-  await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+  await expect.poll(shifted).toBe(0)
   expect(await at(), 'a short slow swipe turned the page anyway').toBe(first)
 
   /* The photograph about to arrive, marked so it can be recognised again. It
@@ -1670,7 +1725,7 @@ test('the strip follows the finger, and carries on to the next one when let go',
   await swipe(carried, 30)
   await page.mouse.up()
 
-  await expect.poll(at, { timeout: 3000 }).not.toBe(first)
+  await expect.poll(at).not.toBe(first)
 
   /* Up to the commit, which is the one moment the track is allowed to jump —
      it returns to nought with the arriving photograph already in the middle,
@@ -1690,7 +1745,7 @@ test('the strip follows the finger, and carries on to the next one when let go',
     `the strip went backwards on its way: ${journey.map(Math.round).join(' ')}`,
   ).toBe(true)
   // And having arrived, the strip is centred again on the new photograph.
-  await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+  await expect.poll(shifted).toBe(0)
 
   expect(
     await page.locator('.vpane.on img').getAttribute('data-was-already-here'),

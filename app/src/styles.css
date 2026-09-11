@@ -821,6 +821,20 @@
    page turns nowhere. Vertical is left alone — the comments are down there. */
 .vbody { touch-action: pan-y }
 
+/* And it must not quietly take the gesture for a drag either.
+
+   A mouse swipe across the stage selects whatever text it crosses, and the
+   swipe after that drags the selection — at which point the browser sends
+   pointercancel and keeps the rest of the gesture for itself. No pointerup
+   ever arrives, so the page turn simply does not happen, with nothing on
+   screen to say why. It is intermittent because it needs a selection to
+   already exist, which is to say it bites on the second swipe. */
+.vbody {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vbody img, .vbody svg { -webkit-user-drag: none }
+
 /* The photograph on its own. Over everything, including the viewer's chrome,
    because the whole point is that there is nothing else on the screen. */
 .vzoom {
