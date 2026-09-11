@@ -82,6 +82,10 @@ export default function PlacePicker({
   const pinned = allPinned(moving)
   const count = moving.length
   const searchable = stops.length > WORTH_SEARCHING
+  /* One picture is "it", several are "them". Saying "them" about one reads
+     like the screen has lost count of what you chose. */
+  const them = count === 1 ? 'it' : 'them'
+  const were = count === 1 ? 'it was' : 'they were'
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; Escape is wired on window above
@@ -121,7 +125,7 @@ export default function PlacePicker({
               Move {count} {count === 1 ? 'item' : 'items'}
             </b>
             <span className="text-[11px] text-muted">
-              {pinned ? 'Filed by hand' : 'Filed by where they were taken'}
+              {pinned ? 'Filed by hand' : `Filed by where ${were} taken`}
             </span>
           </div>
           <button
@@ -180,15 +184,15 @@ export default function PlacePicker({
           <PlainRow
             icon="minus"
             title="Not at any place"
-            detail="Keep them out of the itinerary on purpose"
+            detail={`Keep ${them} out of the itinerary on purpose`}
             busy={busy}
             onPick={() => onPick({ stopId: null })}
           />
           {byLocation && (
             <PlainRow
               icon="locate"
-              title="Decide by where they were taken"
-              detail="Hand them back to the map, and let distance file them"
+              title={`Decide by where ${were} taken`}
+              detail={`Hand ${them} back to the map, and let distance file ${them}`}
               busy={busy}
               onPick={() => onPick({ stopPinned: false })}
             />

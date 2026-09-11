@@ -221,7 +221,9 @@ export default function useTripPhotos({
               return now ? { ...p, ...now } : p
             }),
           )
-        const many = ids.length === 1 ? 'Photo' : `${ids.length} photos`
+        /* Items, not photographs: a film lives in the same table and moves
+           the same way, and the gallery and the picker both count in items. */
+        const many = ids.length === 1 ? '1 item' : `${ids.length} items`
         toast(filing.stopPinned === false ? `${many} filed by location` : `${many} moved`)
         return true
       } catch (e) {
