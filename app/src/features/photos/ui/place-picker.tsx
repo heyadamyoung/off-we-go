@@ -207,7 +207,10 @@ function Stack({ photos }: { photos: TripPhoto[] }) {
   return (
     <span
       className="relative flex flex-none"
-      style={{ width: 28 + (few.length - 1) * 13, height: 40 }}
+      /* A 40px tile every 13px, so the box is as wide as the last one's far
+         edge. Guessed at 28 it was twelve pixels short and the title beside
+         it lost its first letter. */
+      style={{ width: 40 + (few.length - 1) * 13, height: 40 }}
       aria-hidden="true">
       {few.map((photo, index) => (
         <span

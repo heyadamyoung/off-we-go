@@ -146,7 +146,7 @@ export default function PanelPhotos({
                 className="group flex w-full items-center gap-2 pb-2 pt-4 text-left"
                 style={{ height: row.height }}>
                 <button
-                  className="pgrid-head flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
+                  className="pgrid-head flex min-w-0 shrink items-center gap-2 self-stretch text-left"
                   aria-expanded={!collapsed.has(row.group.key)}
                   onClick={() => toggle(row.group.key)}>
                   <Icon
@@ -163,7 +163,6 @@ export default function PanelPhotos({
                   <span className="text-[11px] tabular-nums text-muted">
                     {row.group.photos.length}
                   </span>
-                  <span className="ml-2 h-px flex-1 bg-line" aria-hidden="true" />
                 </button>
                 {choosing.on && onMovePhotos && (
                   /* A whole card in one tap, which is the case this feature
@@ -178,6 +177,10 @@ export default function PanelPhotos({
                     onClick={() => choosing.pressGroup(row.group.photos.map(photo => photo.id))}
                   />
                 )}
+                {/* Outside the heading, so the tick sits against the count it
+                    belongs to rather than being pushed to the far side of a
+                    desktop. The rule takes whatever is left. */}
+                <span className="ml-1 h-px flex-1 bg-line" aria-hidden="true" />
               </div>
             ) : (
               <div

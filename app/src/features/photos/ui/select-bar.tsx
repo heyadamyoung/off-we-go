@@ -27,8 +27,11 @@ export default function SelectBar({ count, total, onMove, onAll, onDone, busy }:
   return (
     <div className="pointer-events-none sticky bottom-0 z-[3] -mx-4 mt-2 px-4 pb-2 sm:-mx-6 sm:px-6">
       <div
-        className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-line
-                   bg-strong px-3 py-2.5 shadow-panel backdrop-blur-xl"
+        /* Capped and centred. Spread across a desktop the count sat at one
+           edge and the buttons at the other, a foot apart; on a phone it is
+           the full width either way, so this is the same control on both. */
+        className="pointer-events-auto mx-auto flex max-w-[520px] items-center gap-2 rounded-2xl
+                   border border-line bg-strong px-3 py-2.5 shadow-panel backdrop-blur-xl"
         role="toolbar"
         aria-label="What to do with the chosen photos">
         <span
