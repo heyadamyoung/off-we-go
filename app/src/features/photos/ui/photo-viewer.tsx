@@ -7,8 +7,13 @@ import PhotoSide from './photo-side'
 import PhotoZoom from './photo-zoom'
 import VideoFrame from './video-frame'
 import { durationLabel } from '../../../mobile-videos-core'
-import { pageBy } from '../../../swipe-core'
+import { pageBy, warmAround } from '../../../swipe-core'
 import useViewerGestures from '../model/use-viewer-gestures'
+
+/* How many photographs either side to have ready. Three covers a fast thumb
+   — the strip already holds one each way, so this is really about the ones
+   after that — and stops well short of a trip. */
+const WARM_REACH = 3
 import { validLngLat } from '../../../shared/lib/geo'
 import type { MapTint } from '../../map'
 import type {
@@ -95,10 +100,16 @@ function PhotoViewer({
     return () => window.removeEventListener('keydown', onKey)
   }, [index, list.length, setIndex])
 
-  // Warm the neighbours so arrow-key paging is instant instead of a blank beat.
+  /* A few either way, nearest first, on every page turn.
+
+     The two beside this one are already on the screen in the strip, so what
+     this buys is the one after that: somebody paging quickly through a day's
+     photographs is always one ahead of what the strip holds, and without this
+     they out-run it and watch each picture arrive. Not the whole trip —
+     that is a data allowance and a browser's memory spent on photographs
+     nobody has asked to see. */
   useEffect(() => {
-    if (list.length < 2) return
-    for (const i of [(index + 1) % list.length, (index - 1 + list.length) % list.length]) {
+    for (const i of warmAround(index, list.length, WARM_REACH)) {
       const p = list[i]
       /* Warming a film would pull tens of megabytes nobody has asked to
          watch; its poster is already in the strip. */
@@ -231,9 +242,7 @@ function PhotoViewer({
             that starts in the letterbox is still a swipe. */}
         <div className="vbody" {...gestures.handlers}>
           {list.length > 1 && (
-            <button
-              className="vnav p"
-              onClick={() => setIndex((index - 1 + list.length) % list.length)}>
+            <button className="vnav p" onClick={() => gestures.turn(-1)}>
               <Icon n="chevl" s={20} c="#fff" w={2} />
             </button>
           )}
@@ -252,30 +261,71 @@ function PhotoViewer({
               A film is not tappable at all: on a video the touch belongs to
               play, pause and the scrubber, so the heart in the chrome is its
               only way in. */}
-          {video ? (
-            <VideoFrame photo={photo} />
-          ) : (
-            <button
-              type="button"
-              className="vmaintap"
-              /* The photograph follows the finger, and eases home when it
-                 lifts — to the next one if the swipe carried, back to the
-                 middle if it did not. No easing while a finger is down, or the
-                 picture lags behind it and reads as the phone struggling. */
-              style={{
-                transform: gestures.dx ? `translate3d(${gestures.dx}px, 0, 0)` : undefined,
-                transition: gestures.sliding ? 'none' : 'transform .22s cubic-bezier(.2,.8,.3,1)',
-              }}
-              aria-label={liked ? 'Liked' : 'Like this photo'}
-              onDoubleClick={like}
-              onClick={event => {
-                // detail 0 is a click the keyboard made; a pointer's is 1 or more,
-                // and a pointer has already been read by the stage's handlers.
-                if (event.detail === 0) setZoomed(true)
-              }}>
-              <Img className="main" item={photo} w={1200} h={900} alt={photo.caption} eager />
-            </button>
-          )}
+          {/* The strip. Three photographs side by side — the one before, the
+              one you are on, the one after — and it is the strip that moves,
+              not the picture. Under the finger the next one comes in at the
+              edge; let go and the strip carries on to it in one movement.
+
+              Nothing is swapped and nothing reloads: the photograph that
+              arrives has been on the screen the whole time, just past the
+              edge of it. Each pane is keyed by its slot, which never wraps,
+              so a turn moves the panes rather than rebuilding them — a
+              rebuilt pane is a photograph fetched again. */}
+          <div
+            className="vtrack"
+            style={{
+              transform: `translate3d(${gestures.shift}, 0, 0)`,
+              transition: gestures.easing
+                ? `transform ${gestures.ms}ms cubic-bezier(.22,.61,.36,1)`
+                : 'none',
+            }}
+            onTransitionEnd={gestures.onTransitionEnd}>
+            {gestures.slots.map(at => {
+              const here = gestures.at(at)
+              const shown = list[here]
+              const middle = at === gestures.slots[Math.floor(gestures.slots.length / 2)]
+              if (!shown) return null
+              return (
+                <div
+                  key={at}
+                  className={middle ? 'vpane on' : 'vpane'}
+                  style={{ transform: `translate3d(${(at - gestures.slots[0]) * 100}%, 0, 0)` }}
+                  aria-hidden={middle ? undefined : true}>
+                  {/* Only the one you are on is a film. A neighbour mounted as
+                      a video would fetch a stream and hold a decoder for
+                      something nobody has asked to watch; its poster is the
+                      same picture the grid draws. */}
+                  {shown.kind === 'video' && middle ? (
+                    <VideoFrame photo={shown} />
+                  ) : shown.kind === 'video' ? (
+                    <MediaThumb item={shown} w={1200} h={900} badge={48} className="main" />
+                  ) : (
+                    <button
+                      type="button"
+                      className={middle ? 'vmaintap' : 'vmaintap vaside'}
+                      tabIndex={middle ? undefined : -1}
+                      aria-label={middle ? (liked ? 'Liked' : 'Like this photo') : ''}
+                      onDoubleClick={middle ? like : undefined}
+                      onClick={event => {
+                        // detail 0 is a click the keyboard made; a pointer's is 1
+                        // or more, and a pointer has already been read by the
+                        // stage's handlers.
+                        if (middle && event.detail === 0) setZoomed(true)
+                      }}>
+                      <Img
+                        className="main"
+                        item={shown}
+                        w={1200}
+                        h={900}
+                        alt={middle ? shown.caption : ''}
+                        eager
+                      />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
           {burst > 0 && (
             <span
               key={burst}
@@ -286,7 +336,7 @@ function PhotoViewer({
             </span>
           )}
           {list.length > 1 && (
-            <button className="vnav n" onClick={() => setIndex((index + 1) % list.length)}>
+            <button className="vnav n" onClick={() => gestures.turn(1)}>
               <Icon n="chev" s={20} c="#fff" w={2} />
             </button>
           )}

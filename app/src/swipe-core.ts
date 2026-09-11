@@ -150,3 +150,103 @@ export function pageBy(means: DragMeans, index: number, length: number): number 
   if (means === 'previous') return (index - 1 + length) % length
   return index
 }
+
+/* ---- the filmstrip -------------------------------------------------------
+
+   A viewer that draws one picture and puts its transform back to nought when
+   the page turns can only ever snap: there is no next photograph on the
+   screen to slide in, so the one you pushed walks back to the middle and is
+   replaced where it stands. Which is exactly what it looked like.
+
+   So three are drawn at once — the one before, the one you are on, the one
+   after — side by side in a track, and it is the track that moves. Under the
+   finger you see the next one coming in at the edge; let go and the track
+   carries on to it in one movement. Nothing is swapped, nothing reloads,
+   because the picture that arrives has been on the screen all along, just
+   past the edge of it.
+
+   The arithmetic is here; the browser part is in use-viewer-gestures. */
+
+/** How many are drawn either side of the one you are looking at. */
+export const PANES_EITHER_SIDE = 1
+
+/**
+ * Which photograph a slot of the strip holds, wrapping the way the arrows do.
+ *
+ * The strip is counted in a number that never wraps — it just goes up as you
+ * page forward and down as you page back — and the wrapping happens here, at
+ * the moment a slot is asked what it holds. That is what lets a slot keep its
+ * identity across a page turn: the pane holding slot 7 is still the pane
+ * holding slot 7 afterwards, so the browser moves it rather than rebuilding
+ * it, and the picture in it is not fetched again.
+ */
+export function atSlot(slot: number, length: number): number {
+  if (length < 1) return 0
+  return ((slot % length) + length) % length
+}
+
+/**
+ * The slots to draw, in order, around the one being looked at.
+ *
+ * Three of them, or one when there is only one photograph — a strip of three
+ * on a trip with a single picture would be the same picture three times, and
+ * a swipe that appears to move to a different copy of what you were already
+ * looking at is worse than one that does not move at all.
+ */
+export function strip(slot: number, length: number, eitherSide = PANES_EITHER_SIDE): number[] {
+  if (length < 2) return [slot]
+  const out: number[] = []
+  for (let at = slot - eitherSide; at <= slot + eitherSide; at++) out.push(at)
+  return out
+}
+
+/**
+ * Where the track sits, given the finger and the turn in progress.
+ *
+ * Nought is the picture you are on, centred. A finger dragging left gives a
+ * negative `dx` and the next photograph comes in from the right. A turn to
+ * the next one is `moving` of 1, which carries the track a full width so that
+ * next photograph ends up where this one was.
+ *
+ * A width, not a number of pixels: a percentage in a transform is of the
+ * element's own box, and the track is exactly one photograph wide. So nothing
+ * has to measure the stage, nothing has to watch it for resizes, and a phone
+ * turned on its side is right on the frame it turns rather than the frame
+ * after — all of which a measured width gets wrong at least once.
+ */
+export function trackShift(dx: number, moving: number): string {
+  if (!moving) return `${dx}px`
+  // A whole number of photographs, as a percentage of one of them.
+  const whole = `${Math.abs(moving) * 100}%`
+  if (!dx) return moving > 0 ? `-${whole}` : whole
+  /* The sign is written out rather than folded into the number: calc has no
+     opinion about `- -100%` except that it is a syntax error, and a transform
+     the browser cannot parse is a strip that does not move at all. */
+  return `calc(${dx}px ${moving > 0 ? '-' : '+'} ${whole})`
+}
+
+/**
+ * Which photographs to have ready, as indices, nearest first.
+ *
+ * Not the whole trip: a year of photographs warmed at once is a phone's data
+ * allowance and a browser's memory for something nobody has asked to look at.
+ * Not one, either — a single picture ahead is no help to somebody paging
+ * quickly, which is how anybody looks through a day's photographs.
+ *
+ * Nearest first because it is also the order they are wanted in, and a
+ * browser given six requests at once will start them in the order it got
+ * them.
+ */
+export function warmAround(index: number, length: number, reach = 3): number[] {
+  if (length < 2) return []
+  const out: number[] = []
+  const seen = new Set<number>([atSlot(index, length)])
+  for (let step = 1; step <= reach; step++) {
+    for (const at of [atSlot(index + step, length), atSlot(index - step, length)]) {
+      if (seen.has(at)) continue
+      seen.add(at)
+      out.push(at)
+    }
+  }
+  return out
+}
