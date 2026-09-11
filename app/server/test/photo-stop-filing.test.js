@@ -352,7 +352,8 @@ test('many photographs move to a stop in one request, and stay there', async t =
   const vanGogh = await place.stopAt('Van Gogh Museum', 4.8811, 52.3584)
 
   const wrong = []
-  for (let index = 0; index < 6; index++) wrong.push(await place.upload({ lng: 4.8852, lat: 52.36 }))
+  for (let index = 0; index < 6; index++)
+    wrong.push(await place.upload({ lng: 4.8852, lat: 52.36 }))
   const untouched = await place.upload({ lng: 4.8852, lat: 52.36 })
   assert.deepEqual(
     wrong.map(photo => photo.stopId),
@@ -448,7 +449,7 @@ test('a bulk move refuses what it cannot honestly do', async t => {
   assert.equal(
     (await send({ photoIds: ['not-an-id'], stopId: rijks.id })).status,
     400,
-    'a malformed id is the caller\'s mistake, not a server error',
+    "a malformed id is the caller's mistake, not a server error",
   )
   assert.equal(
     (await send({ photoIds: Array.from({ length: 501 }, () => photo.id), stopId: rijks.id }))
@@ -459,7 +460,7 @@ test('a bulk move refuses what it cannot honestly do', async t => {
   assert.equal(
     (await send({ photoIds: [photo.id], stopId: '00000000-0000-4000-8000-000000009999' })).status,
     404,
-    'a stop on somebody else\'s trip',
+    "a stop on somebody else's trip",
   )
 
   // And after all that, the photograph is exactly where it started.
@@ -481,7 +482,7 @@ test('a bulk move cannot reach photographs on another trip', async t => {
     { photoIds: [mine.id], stopId: null },
     place.accessToken,
   )
-  assert.equal(answer.moved, 0, 'named, but not this trip\'s to move')
+  assert.equal(answer.moved, 0, "named, but not this trip's to move")
   assert.equal((await place.photos()).find(item => item.id === mine.id).stopId, null)
   await jsonPatch(
     `${place.origin}/api/trips/${place.trip.id}/photos`,
