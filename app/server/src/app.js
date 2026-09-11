@@ -1690,21 +1690,93 @@ export async function buildServer({
     return { photos: page.photos.map(withMediaLinks), nextCursor: page.nextCursor }
   })
 
+  /* How many photographs one request may re-file. A person selecting a day's
+     worth of pictures is a few dozen; selecting a whole stop is a few
+     hundred. Above that it is not a person, and the cap is what keeps one
+     request from rewriting a whole trip. The client sends batches. */
+  const MOVE_AT_ONCE = 500
+
+  /* What a change to a photograph's filing amounts to, read the same way for
+     one picture or five hundred, so the two can never drift apart. */
+  const filingChanges = body => ({
+    ...(body && 'stopId' in body ? { stopId: body.stopId || null } : {}),
+    /* Only a stated boolean. `stopPinned: false` is a real instruction —
+       hand this filing back to the distance rule — so it cannot be read off
+       truthiness, and anything else present says nothing about the pin and
+       leaves `pinAfter` to decide from the stop. */
+    ...(typeof body?.stopPinned === 'boolean' ? { stopPinned: body.stopPinned } : {}),
+  })
+
+  const looksLikeId = value =>
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+
+  /* Filing many photographs at once: the picker sends what a person selected
+     and where they want it. It is one statement rather than one request per
+     picture, which is the difference between a bulk move feeling instant and
+     feeling like a progress bar — and between a half-applied move and none. */
+  app.patch('/api/trips/:tripId/photos', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const ids = Array.isArray(request.body?.photoIds) ? request.body.photoIds : []
+    if (!ids.length) return reply.code(400).send({ error: 'No photos were named' })
+    if (ids.length > MOVE_AT_ONCE)
+      return reply.code(400).send({ error: `No more than ${MOVE_AT_ONCE} photos at a time` })
+    /* Checked here rather than left to the database: one malformed id would
+       otherwise fail the whole statement as a server error, and the caller
+       would learn nothing about which of its ids was the bad one. */
+    if (!ids.every(looksLikeId)) return reply.code(400).send({ error: 'That is not a photo id' })
+    const changes = filingChanges(request.body)
+    if (changes.stopId === undefined && changes.stopPinned === undefined)
+      return reply.code(400).send({ error: 'Nothing to change' })
+
+    const moved = await repository.movePhotosToStop(
+      user,
+      request.params.tripId,
+      ids,
+      changes,
+    )
+    if (!moved) return reply.code(404).send({ error: 'Trip or stop not found' })
+    stamp({
+      'trip.id': request.params.tripId,
+      'photo.moved': moved.moved,
+      'photo.stop_pinned': changes.stopPinned !== false,
+    })
+    /* Handing filings back should show the rule's answers now, and there is
+       no way for a client to guess them. */
+    if (changes.stopPinned === false) {
+      await refileTrip(user, request.params.tripId)
+      const refiled = await repository.findPhotos?.(user, request.params.tripId, ids)
+      if (refiled) return { moved: moved.moved, photos: refiled.map(withMediaLinks) }
+    }
+    return { moved: moved.moved, photos: moved.photos.map(withMediaLinks) }
+  })
+
   app.patch('/api/trips/:tripId/photos/:photoId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
+    const changes = {
+      ...(request.body?.caption !== undefined ? { caption: String(request.body.caption) } : {}),
+      ...filingChanges(request.body),
+    }
     const photo = await repository.updatePhoto(
       user,
       request.params.tripId,
       request.params.photoId,
-      {
-        ...(request.body?.caption !== undefined ? { caption: String(request.body.caption) } : {}),
-        ...(request.body && 'stopId' in request.body
-          ? { stopId: request.body.stopId || null }
-          : {}),
-      },
+      changes,
     )
     if (!photo) return reply.code(404).send({ error: 'Photo not found' })
+    /* Handing a filing back should show the rule's answer now. Leaving it
+       until the next itinerary edit looks exactly like nothing happened. */
+    if (changes.stopPinned === false) {
+      await refileTrip(user, request.params.tripId)
+      const refiled = await repository.findPhoto?.(
+        user,
+        request.params.tripId,
+        request.params.photoId,
+      )
+      return refiled ?? photo
+    }
     return photo
   })
 

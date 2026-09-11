@@ -152,3 +152,28 @@ test('anything pinned to the edge of the screen accounts for the bezel', async (
 Handle it, or write "no-safe-area: <why not>" in the file:\n${shells.join('\n')}`,
   )
 })
+
+test('a bulk move is batched below the size the server will accept', async () => {
+  /* Two numbers in two languages in two directories, and nothing between them
+     but the hope that whoever changes one remembers the other. Raise the
+     client's batch above the server's ceiling and every "select all" on a
+     long trip fails with a 400 that reads like the feature is broken — and no
+     test would catch it, because a sample trip is never big enough.
+
+     So the relationship is asserted rather than remembered. */
+  const client = await readFile(
+    path.join(sourceRoot, 'features/photos/model/use-trip-photos.ts'),
+    'utf8',
+  )
+  const server = await readFile(path.join(appRoot, 'server/src/app.js'), 'utf8')
+
+  const batch = Number(/const MOVE_BATCH = (\d+)/.exec(client)?.[1])
+  const ceiling = Number(/const MOVE_AT_ONCE = (\d+)/.exec(server)?.[1])
+
+  assert.ok(Number.isFinite(batch), 'the client no longer names its batch size')
+  assert.ok(Number.isFinite(ceiling), 'the server no longer names its ceiling')
+  assert.ok(
+    batch <= ceiling,
+    `the client sends ${batch} photos at a time and the server accepts ${ceiling}`,
+  )
+})

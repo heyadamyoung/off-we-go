@@ -82,19 +82,46 @@ export const nearestStopId = (point, stops, options) =>
 /**
  * What a photograph's stop should be, given what is known about it.
  *
- * A row with a point is answered from the point, always — that is what makes
- * this the authority rather than a suggestion, and it is why two clients that
- * disagree still end up filed the same way.
+ * A pinned row keeps what it has, point or no point. Somebody looked at the
+ * picture and said where it goes, which is better information than four
+ * hundred metres of arithmetic, and re-deciding it at the next itinerary edit
+ * would quietly undo them.
+ *
+ * Otherwise a row with a point is answered from the point, always — that is
+ * what makes this the authority rather than a suggestion, and it is why two
+ * clients that disagree still end up filed the same way.
  *
  * A row without one keeps whatever it already had. There is nothing to
  * compute from, and throwing away a link somebody or something else
  * established would be destroying information to look decisive.
  *
- * @param {{lng?: number, lat?: number, stopId?: string|null}} photo
+ * @param {{lng?: number, lat?: number, stopId?: string|null, stopPinned?: boolean}} photo
  * @param {Array<{id: string, lng: number, lat: number}>} stops
  */
 export function stopForPhoto(photo, stops, options) {
+  if (photo?.stopPinned) return photo.stopId ?? null
   const point = pointOf(photo)
   if (!point) return photo?.stopId ?? null
   return nearestStopId(point, stops, options)
+}
+
+/**
+ * Whether a change to a photograph's filing leaves it pinned, and `undefined`
+ * when it says nothing either way.
+ *
+ * Naming a stop is pinning it. Nothing automatic goes through this path —
+ * uploads are filed by `stopForPhoto` and existing rows by a re-link — so a
+ * stop arriving as an edit is always a person, or something acting for one,
+ * saying where a picture belongs. Making that implicit is the point: a caller
+ * that had to remember the flag is a caller that will one day forget, and
+ * forgetting means the correction silently reverts.
+ *
+ * Passing the flag explicitly still wins, which is how a filing is handed
+ * back to the rule: `{ stopPinned: false }`.
+ *
+ * @param {{stopId?: string|null, stopPinned?: boolean}} changes
+ */
+export function pinAfter(changes) {
+  if (typeof changes?.stopPinned === 'boolean') return changes.stopPinned
+  return changes?.stopId !== undefined ? true : undefined
 }

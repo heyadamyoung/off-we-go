@@ -194,23 +194,11 @@ export default function useTripPage({
      it neither can be placed on a date at all. */
   const liveStops = useMemo(() => applyLiveStopStatuses(ordered, progress), [ordered, progress])
 
+  // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
-    photos,
-    setPhotos,
-    comments,
-    likes,
-    viewer,
-    viewerList,
-    viewerIndex,
-    openViewer,
-    closeViewer,
-    setIndex,
-    addComment,
-    toggleLike,
-    addPhoto,
-    changePhoto,
-    removePhoto,
-    removeComment,
+    photos, setPhotos, comments, likes,
+    viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
+    addComment, toggleLike, addPhoto, changePhoto, movePhotos, removePhoto, removeComment,
   } = useTripPhotos({ data, tripId, me, toast, setSelected: selectId })
 
   const {
@@ -386,7 +374,7 @@ export default function useTripPage({
     progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
     transport, segmentEditing, setSegmentEditing, clock, showGate,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, removePhoto, removeComment, indoor, editing,
+    addComment, toggleLike, changePhoto, movePhotos, removePhoto, removeComment, indoor, editing,
     draft, setDraft, saving, routeDraft, setRouteDraft,
     places, setPlaces, startEditing, searchPlaces, pickPlace, lookUpDraft, saveRoute,
     onStopMove, onDraftField, moveStop, saveDraft, removeDraft,

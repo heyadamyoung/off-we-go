@@ -235,3 +235,111 @@ test('the one-time backfill agrees with the rule that replaced it', {
     'nothing was left unfiled',
   )
 })
+
+test('a pinned photograph is untouched by the batched re-link', { skip: reachable }, async t => {
+  /* The pin is proved against the rule and against a running server next
+     door. This is the part only PostgreSQL can answer: the re-link reads its
+     rows straight out of the table, and a column named `stop_id` reaching a
+     rule that reads `stopId` would leave every pinned row looking like it
+     belonged nowhere — and rewrite it to nowhere. Aliasing is what stops
+     that, and aliasing is invisible to every test that does not run SQL. */
+  const admin = new pg.Client({ connectionString: databaseUrl })
+  await admin.connect()
+  await admin.query('drop schema public cascade; create schema public')
+  await admin.end()
+
+  const repository = await moduleUnderTest.createPostgresRepository({
+    databaseUrl,
+    adminEmail: 'owner@example.com',
+  })
+  t.after(() => repository.close())
+  await repository.migrate()
+
+  const user = await repository.ensureUser('owner@example.com')
+  const trip = await repository.createTrip(user, { title: 'Amsterdam' })
+  const stop = async (name, lng, lat, seq) =>
+    repository.createStop(user, trip.id, { name, icon: 'pin', lng, lat, status: 'planned', seq })
+  const rijks = await stop('Rijksmuseum', 4.8852, 52.36, 0)
+  const centraal = await stop('Centraal', 4.9003, 52.379, 1)
+
+  /* Three rows the rule would move if it were allowed to: one pinned at the
+     wrong stop, one pinned at nothing, and one left alone as the control. */
+  const atRijks = { lng: 4.8852, lat: 52.36, locationSource: 'exif' }
+  const made = []
+  for (let index = 0; index < 3; index++)
+    made.push(
+      await repository.createPhoto(user, trip.id, {
+        ...atRijks,
+        storagePath: `${trip.id}/pinned-${index}.jpg`,
+        kind: 'photo',
+        status: 'ready',
+        stopId: null,
+      }),
+    )
+
+  const [wrong, nowhere, control] = made
+  assert.equal(
+    (await repository.updatePhoto(user, trip.id, wrong.id, { stopId: centraal.id })).stopPinned,
+    true,
+  )
+  assert.equal(
+    (await repository.updatePhoto(user, trip.id, nowhere.id, { stopId: null })).stopPinned,
+    true,
+  )
+
+  const report = await repository.relinkTripPhotos(user, trip.id, {})
+  assert.equal(report.examined, 3)
+  assert.equal(report.changed, 1, 'only the unpinned one had anywhere to go')
+
+  const after = new Map(
+    (
+      await (async () => {
+        const client = new pg.Client({ connectionString: databaseUrl })
+        await client.connect()
+        const rows = await client.query('select id, stop_id, stop_pinned from photos')
+        await client.end()
+        return rows
+      })()
+    ).rows.map(row => [row.id, row]),
+  )
+  assert.equal(after.get(wrong.id).stop_id, centraal.id, 'the correction held')
+  assert.equal(after.get(nowhere.id).stop_id, null, 'filed at nothing on purpose')
+  assert.equal(after.get(control.id).stop_id, rijks.id, 'the rule still ran on the rest')
+  assert.equal(after.get(control.id).stop_pinned, false)
+
+  // Handed back, the rule takes it again.
+  await repository.updatePhoto(user, trip.id, wrong.id, { stopPinned: false })
+  assert.deepEqual(await repository.relinkTripPhotos(user, trip.id, {}), {
+    examined: 3,
+    changed: 1,
+  })
+  assert.equal((await repository.findPhoto(user, trip.id, wrong.id)).stopId, rijks.id)
+
+  /* And the same move made in bulk, which is one statement over an array of
+     ids — the piece with no equivalent in the memory repository, and the one
+     that would fail quietly by moving the wrong rows or none. */
+  const ids = made.map(photo => photo.id)
+  const bulk = await repository.movePhotosToStop(user, trip.id, ids, { stopId: centraal.id })
+  assert.equal(bulk.moved, 3)
+  assert.ok(bulk.photos.every(photo => photo.stopId === centraal.id && photo.stopPinned))
+
+  // Ids from elsewhere are named but not this trip's, so nothing happens.
+  const elsewhere = await repository.createTrip(user, { title: 'Elsewhere' })
+  assert.deepEqual(
+    await repository.movePhotosToStop(user, elsewhere.id, ids, { stopId: null }),
+    { moved: 0, photos: [] },
+  )
+  assert.ok(
+    (await repository.findPhotos(user, trip.id, ids)).every(
+      photo => photo.stopId === centraal.id,
+    ),
+    'a trip in the path is a boundary, not a hint',
+  )
+
+  // A stop that is not this trip's is refused outright rather than written.
+  assert.equal(
+    await repository.movePhotosToStop(user, trip.id, ids, { stopId: elsewhere.id }),
+    null,
+  )
+  assert.equal((await repository.relinkTripPhotos(user, trip.id, {})).changed, 0, 'all pinned')
+})

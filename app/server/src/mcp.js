@@ -661,19 +661,23 @@ function buildMcpServer({
   register(
     'update_photo',
     {
-      description: 'Update a photo caption or assign it to a stop.',
+      description:
+        'Update a photo caption or assign it to a stop. Naming a stop pins the ' +
+        'photo there, so the distance rule stops re-filing it; pass ' +
+        'stopPinned false to hand it back to that rule.',
       inputSchema: z.object({
         tripId: entityId,
         photoId: entityId,
         caption: z.string().max(2000).optional(),
         stopId: entityId.nullable().optional(),
+        stopPinned: z.boolean().optional(),
       }),
       annotations: { destructiveHint: false, openWorldHint: false },
     },
     write('photos', async ({ tripId, photoId, ...changes }) => {
       const photo = await repository.updatePhoto(user, tripId, photoId, changes)
       return photo
-        ? result({ id: photo.id, stopId: photo.stopId, caption: photo.caption })
+        ? result({ id: photo.id, stopId: photo.stopId, stopPinned: photo.stopPinned, caption: photo.caption })
         : toolFailure('The photo was not found or is not editable by this user.')
     }),
   )

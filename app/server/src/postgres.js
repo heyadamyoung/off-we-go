@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
-import { stopForPhoto } from './stop-placement.js'
+import { pinAfter, stopForPhoto } from './stop-placement.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -110,6 +110,10 @@ const photoRow = value => ({
   by: value.taken_by,
   when: value.taken_at?.toISOString?.() || value.taken_at,
   locationSource: value.location_source,
+  /* Whether a person chose this filing rather than the distance rule. The
+     app draws it, so a corrected picture can say so instead of looking
+     like every other one until the next stop edit fails to move it. */
+  stopPinned: value.stop_pinned === true,
   storagePath: value.storage_path,
   posterPath: value.poster_path || null,
   thumbPath: value.thumb_path,
@@ -1560,8 +1564,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         pool.query('select id, lng, lat from stops where trip_id=$1 order by seq,created_at', [
           tripId,
         ]),
+        /* Aliased into the shape stop-placement.js speaks, so the rule reads
+           the same row here as it does anywhere else. Column names would
+           leave `stopId` undefined, and a pinned row would then be re-filed
+           as belonging nowhere — the exact undoing this guards against. */
         pool.query(
-          'select id, lng, lat, stop_id from photos where trip_id=$1 and lng is not null and lat is not null',
+          `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
+           from photos where trip_id=$1 and lng is not null and lat is not null`,
           [tripId],
         ),
       ])
@@ -1569,7 +1578,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const next = []
       for (const photo of photos.rows) {
         const decided = stopForPhoto(photo, stops.rows, { radiusMetres })
-        if (decided !== photo.stop_id) {
+        if (decided !== photo.stopId) {
           ids.push(photo.id)
           next.push(decided)
         }
@@ -1978,6 +1987,48 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       )
       return result.rows[0] ? photoRow(result.rows[0]) : null
     },
+    /* Named rows, in the order the app draws them. Bounded by the ids asked
+       for, so this is a read-back after a write rather than a way to page. */
+    async findPhotos(user, tripId, photoIds) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      if (!photoIds?.length) return []
+      const result = await pool.query(
+        `select * from photos where trip_id=$1 and id = any($2::uuid[])
+         order by seq desc, created_at desc`,
+        [tripId, photoIds],
+      )
+      return result.rows.map(photoRow)
+    },
+    async findPhoto(user, tripId, photoId) {
+      return (await this.findPhotos(user, tripId, [photoId]))?.[0] ?? null
+    },
+    /* Filing many photographs at once, which is one statement rather than a
+       hundred round trips. It takes the same changes as `updatePhoto` and
+       means the same thing by them — naming a stop is a person choosing, so
+       it pins — because a bulk move is the single move done in quantity and
+       the two disagreeing would be a bug nobody could see. */
+    async movePhotosToStop(user, tripId, photoIds, changes = {}) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      if (changes.stopId != null) {
+        const stop = await pool.query('select 1 from stops where id=$1 and trip_id=$2', [
+          changes.stopId,
+          tripId,
+        ])
+        if (!stop.rows[0]) return null
+      }
+      const entries = []
+      if (changes.stopId !== undefined) entries.push(['stop_id', changes.stopId])
+      const pinned = pinAfter(changes)
+      if (pinned !== undefined) entries.push(['stop_pinned', pinned])
+      if (!entries.length || !photoIds?.length) return { moved: 0, photos: [] }
+      const set = entries.map(([column], index) => `${column}=$${index + 3}`).join(',')
+      const result = await pool.query(
+        `update photos set ${set} where trip_id=$1 and id = any($2::uuid[])
+         returning *`,
+        [tripId, photoIds, ...entries.map(([, value]) => value)],
+      )
+      return { moved: result.rowCount, photos: result.rows.map(photoRow) }
+    },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       if (changes.stopId != null) {
@@ -1990,6 +2041,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const entries = []
       if (changes.caption !== undefined) entries.push(['caption', changes.caption])
       if (changes.stopId !== undefined) entries.push(['stop_id', changes.stopId])
+      const pinned = pinAfter(changes)
+      if (pinned !== undefined) entries.push(['stop_pinned', pinned])
       if (entries.length) {
         const set = entries.map(([column], index) => `${column}=$${index + 3}`).join(',')
         await pool.query(`update photos set ${set} where id=$1 and trip_id=$2`, [

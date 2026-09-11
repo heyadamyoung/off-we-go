@@ -182,6 +182,29 @@ export async function updatePhoto(
     body: fields,
   })
 }
+/* Filing many pictures at once. One request rather than one per picture:
+   a person who has just selected forty wants one answer, and forty requests
+   that fail halfway leave a gallery half-corrected with nothing to say so.
+
+   `stopPinned: false` hands the selection back to the rule that files by
+   distance, and the pictures come back saying where that rule put them —
+   which is the one thing a client cannot work out for itself. */
+export async function movePhotosToStop(
+  tripId: Id,
+  photoIds: Id[],
+  filing: { stopId?: Id | null; stopPinned?: boolean },
+): Promise<{ moved: number; photos: TripPhoto[] }> {
+  if (isSample(tripId)) {
+    const wanted = new Set(photoIds)
+    const photos = sampleTrip().photos.filter(item => wanted.has(item.id))
+    for (const photo of photos) Object.assign(photo, filing)
+    return { moved: photos.length, photos }
+  }
+  return authClient.request(`${tripPath(tripId)}/photos`, {
+    method: 'PATCH',
+    body: { photoIds, ...filing },
+  })
+}
 export async function deletePhoto(tripId: Id, id: Id): Promise<unknown> {
   if (isSample(tripId)) {
     sampleTrip().photos = sampleTrip().photos.filter(item => item.id !== id)

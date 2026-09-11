@@ -84,7 +84,7 @@ function Trip({
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, removePhoto, removeComment, editing, startEditing,
+    addComment, toggleLike, changePhoto, movePhotos, removePhoto, removeComment, editing, startEditing,
     addSight, toggleAttractions, showSight, showAttractions, items, selectedItem, select, addStopAt,
     offlineAt, waitingEdits, barPeek, setBarPeek,
   } = page
@@ -188,6 +188,7 @@ function Trip({
           onClose={() => patch({ view: undefined })}
           onInvite={() => patch({ sheet: 'settings', tab: 'people' })}
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
+          onMovePhotos={canEdit ? movePhotos : undefined}
           legs={legs}
           range={dayRange}
           chat={{ ...chat, meId: me?.id }}

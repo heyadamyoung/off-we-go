@@ -15,7 +15,13 @@ import type { StopDraft } from '../../../shared/model/types'
    navigation included, and a screen like that has to answer the gesture every
    other full-screen thing answers.
 
-   Kept in one place so the order stays a decision, not an accident. */
+   Kept in one place so the order stays a decision, not an accident.
+
+   Things that open over this — a sheet, the place picker, a selection in the
+   gallery — are nearer the front than anything in the list, and they claim
+   the key by listening in the capture phase and calling preventDefault. So
+   the ladder runs only on an Escape nobody else wanted, and closing a dialog
+   over the gallery no longer also closes the gallery behind it. */
 export default function useTripEscape({
   viewerOpen,
   closeViewer,
@@ -47,6 +53,8 @@ export default function useTripEscape({
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      // Already answered by something in front of all this.
+      if (event.defaultPrevented) return
       if (viewerOpen) closeViewer()
       else if (placing) setPlacing(null)
       else if (draft) setDraft(null)

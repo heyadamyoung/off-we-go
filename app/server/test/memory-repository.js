@@ -1,6 +1,6 @@
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
 import { maskHomeZones } from '../src/home-zone.js'
-import { stopForPhoto } from '../src/stop-placement.js'
+import { pinAfter, stopForPhoto } from '../src/stop-placement.js'
 
 const profileShape = profile => ({
   profileId: profile.id,
@@ -523,6 +523,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         by: profiles.get(member.profileId).displayName,
         when: input.takenAt || null,
         locationSource: input.locationSource || null,
+        /* Always a boolean, as the real repository's column is. A row that
+           left this undefined would read as unpinned everywhere and still
+           differ from production in what it sends the app. */
+        stopPinned: input.stopPinned === true,
         storagePath: input.storagePath,
         posterPath: input.posterPath || null,
         thumbPath: input.thumbPath || null,
@@ -541,6 +545,30 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
           ?.photos.find(value => value.userId === user.id && value.clientKey === clientKey) || null
       )
     },
+    async findPhotos(user, tripId, photoIds) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const wanted = new Set(photoIds || [])
+      return (trips.get(tripId)?.photos || []).filter(value => wanted.has(value.id))
+    },
+    async findPhoto(user, tripId, photoId) {
+      return (await this.findPhotos(user, tripId, [photoId]))?.[0] ?? null
+    },
+    /* The same answer as the real repository, one row at a time. */
+    async movePhotosToStop(user, tripId, photoIds, changes = {}) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const trip = trips.get(tripId)
+      if (changes.stopId != null && !trip?.stops.some(value => value.id === changes.stopId))
+        return null
+      const pinned = pinAfter(changes)
+      if (changes.stopId === undefined && pinned === undefined) return { moved: 0, photos: [] }
+      const wanted = new Set(photoIds || [])
+      const moved = (trip?.photos || []).filter(value => wanted.has(value.id))
+      for (const photo of moved) {
+        if (changes.stopId !== undefined) photo.stopId = changes.stopId
+        if (pinned !== undefined) photo.stopPinned = pinned
+      }
+      return { moved: moved.length, photos: moved }
+    },
     async updatePhoto(user, tripId, photoId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
@@ -549,6 +577,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const photo = trip?.photos.find(value => value.id === photoId)
       if (!photo) return null
       Object.assign(photo, changes)
+      const pinned = pinAfter(changes)
+      if (pinned !== undefined) photo.stopPinned = pinned
       return photo
     },
     async deletePhoto(user, tripId, photoId) {
