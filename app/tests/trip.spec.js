@@ -847,9 +847,9 @@ test('photo upload previews multiple selections and lets them be replaced', asyn
     },
   ])
 
-  await expect(page.locator('.previews .preview')).toHaveCount(2)
-  await expect(page.getByRole('button', { name: 'Choose different files' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Add 2 to the map' })).toBeEnabled()
+  await expect(page.locator('.previews > span')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: 'Add more' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add 2', exact: true })).toBeEnabled()
 })
 
 test('uploading a geotagged photo brings its map pin into view', async ({ page }) => {
@@ -867,8 +867,8 @@ test('uploading a geotagged photo brings its map pin into view', async ({ page }
     input.files = transfer.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
-  await expect(page.getByRole('button', { name: /Add 1 to the map/ })).toBeEnabled()
-  await page.getByRole('button', { name: /Add 1 to the map/ }).click()
+  await expect(page.getByRole('button', { name: 'Add 1', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Add 1', exact: true }).click()
 
   await expect(page.locator('.dlg')).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)

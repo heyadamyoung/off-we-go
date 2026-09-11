@@ -87,9 +87,9 @@ test('a film chosen in the app reaches the server, and comes back playable', asy
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
 
-  const chosen = page.locator('.dlg .previews img.preview')
+  const chosen = page.locator('.dlg .previews > span')
   await expect(chosen).toHaveCount(1, { timeout: 60_000 })
-  await page.getByRole('button', { name: /^Add 1 to the map$/ }).click()
+  await page.getByRole('button', { name: 'Add 1', exact: true }).click()
 
   /* The request itself, before anything about what it produced: this is the
      assertion the sample-mode suite structurally cannot make. */

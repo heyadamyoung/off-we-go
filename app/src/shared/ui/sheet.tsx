@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import Icon from './icon'
 
 interface SheetProps {
@@ -13,6 +13,11 @@ interface SheetProps {
 /* The centred dialog the whole app uses. Escape and a click on the backdrop
    both close it, because one of them is always the one you reach for. */
 export default function Sheet({ title, onClose, children, tabs, footer, wide }: SheetProps) {
+  /* A dialog needs a name, and its name is the thing already written at the
+     top of it. Drawn as a bold line either way — but as a heading, pointed at
+     by the dialog, rather than as a <b> that a screen reader reads out as
+     part of the body of an unnamed box. */
+  const titleId = useId()
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -56,9 +61,12 @@ export default function Sheet({ title, onClose, children, tabs, footer, wide }: 
         }
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         onClick={event => event.stopPropagation()}>
         <div className="flex flex-none items-center justify-between border-b border-line px-[18px] pb-3 pt-4">
-          <b className="text-lg font-extrabold tracking-[-.01em]">{title}</b>
+          <h2 id={titleId} className="m-0 text-lg font-extrabold tracking-[-.01em]">
+            {title}
+          </h2>
           <button
             className="grid size-8 place-items-center rounded-lg text-muted hover:bg-raised2 hover:text-ink"
             onClick={onClose}

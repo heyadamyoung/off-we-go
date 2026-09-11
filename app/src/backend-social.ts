@@ -123,6 +123,9 @@ export async function uploadPhoto(
   tripId: Id,
   file: File,
   meta: Partial<TripPhoto & UploadInput> = {},
+  /* Bytes on their way out. Optional because most callers do not draw a bar,
+     and because the demo trip has no wire to count. */
+  onProgress?: (sent: number, total: number | null) => void,
 ): Promise<TripPhoto> {
   if (isSample(tripId)) {
     const nextSequence = Math.max(
@@ -142,6 +145,9 @@ export async function uploadPhoto(
       ...(poster ? { posterSrc: URL.createObjectURL(poster) } : {}),
     } as TripPhoto
     sampleTrip().photos.push(photo)
+    /* The bar still runs in the demo, because a bar that only exists against
+       a real server is a bar nobody can look at while building one. */
+    onProgress?.(file.size || 1, file.size || 1)
     return { ...photo }
   }
   const form = new FormData()
@@ -165,7 +171,9 @@ export async function uploadPhoto(
   }
   for (const [key, value] of Object.entries(values))
     if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
-  return authClient.request(`${tripPath(tripId)}/photos`, { method: 'POST', body: form })
+  /* Not `request`: fetch cannot say how far a file has got, and an upload is
+     the one thing here long enough that somebody needs telling. */
+  return authClient.upload(`${tripPath(tripId)}/photos`, { body: form, onProgress })
 }
 export async function updatePhoto(
   tripId: Id,
