@@ -15,10 +15,15 @@ interface SheetProps {
 export default function Sheet({ title, onClose, children, tabs, footer, wide }: SheetProps) {
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        /* Claimed, so the trip's Escape ladder behind this does not also step
+           back — closing this and the screen under it on one keypress. */
+        event.preventDefault()
+        onClose()
+      }
     }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
   }, [onClose])
 
   /* The bottom padding follows the keyboard: on iOS the page keeps its full

@@ -4,6 +4,7 @@ import {
   STOP_RADIUS_METRES,
   nearestStop,
   nearestStopId,
+  pinAfter,
   pointOf,
   stopForPhoto,
 } from '../src/stop-placement.js'
@@ -107,4 +108,46 @@ test('a photograph with no point keeps the link it came with', () => {
   assert.equal(stopForPhoto({ stopId: 'rijks' }, stops), 'rijks')
   assert.equal(stopForPhoto({ lng: null, lat: null, stopId: 'rijks' }, stops), 'rijks')
   assert.equal(stopForPhoto({}, stops), null)
+})
+
+test('a pinned photograph keeps where a person put it, however far away that is', () => {
+  /* The two cases people actually hit: a picture with no coordinates that
+     somebody filed by hand, and a picture whose coordinates put it firmly at
+     the wrong thing. Both are corrections, and a correction that the next
+     stop edit undoes is not a correction. */
+  assert.equal(stopForPhoto({ stopId: 'rijks', stopPinned: true }, stops), 'rijks')
+  assert.equal(
+    stopForPhoto({ lng: 4.8852, lat: 52.36, stopId: 'centraal', stopPinned: true }, stops),
+    'centraal',
+  )
+
+  // Including a person saying it belongs nowhere, which also has to stick.
+  assert.equal(
+    stopForPhoto({ lng: 4.8852, lat: 52.36, stopId: null, stopPinned: true }, stops),
+    null,
+  )
+
+  // Unpinned is the old behaviour exactly, so nothing already filed moves.
+  assert.equal(
+    stopForPhoto({ lng: 4.8852, lat: 52.36, stopId: 'centraal', stopPinned: false }, stops),
+    'rijks',
+  )
+})
+
+test('naming a stop is what pins it', () => {
+  /* Nothing automatic edits a photograph, so a stop arriving as a change is
+     always somebody saying where a picture goes. Callers do not have to
+     remember the flag, because the one that forgets is the one that quietly
+     reverts a correction. */
+  assert.equal(pinAfter({ stopId: 'rijks' }), true)
+  assert.equal(pinAfter({ stopId: null }), true)
+
+  // A caption is not a filing, and must not disturb one.
+  assert.equal(pinAfter({ caption: 'the night watch' }), undefined)
+  assert.equal(pinAfter({}), undefined)
+
+  // Saying it outright wins either way — this is how it is handed back.
+  assert.equal(pinAfter({ stopPinned: false }), false)
+  assert.equal(pinAfter({ stopId: 'rijks', stopPinned: false }), false)
+  assert.equal(pinAfter({ stopPinned: true }), true)
 })

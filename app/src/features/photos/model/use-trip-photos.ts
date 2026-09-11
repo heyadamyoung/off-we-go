@@ -4,6 +4,7 @@ import {
   deleteComment,
   deletePhoto,
   loadTripPhotoPage,
+  movePhotosToStop,
   setLike,
   updatePhoto,
   uploadPhoto,
@@ -29,6 +30,11 @@ interface UseTripPhotosOptions {
   toast: Toast
   setSelected: (id: Id | null) => void
 }
+
+/* How many photographs one move may name. The server's own ceiling is five
+   hundred; this stays clear of it so a batch that happens to include a retry
+   never lands on the boundary. */
+const MOVE_BATCH = 200
 
 export default function useTripPhotos({
   data,
@@ -183,6 +189,56 @@ export default function useTripPhotos({
     [tripId, photos, toast],
   )
 
+  /* Filing several at once. Optimistic like everything else here, and put
+     back as a whole if the server says no: a bulk move that half-applied in
+     the app and not at all on the server is worse than one that failed. */
+  const movePhotos = useCallback(
+    async (ids: Id[], filing: { stopId?: Id | null; stopPinned?: boolean }) => {
+      if (!ids.length) return false
+      const wanted = new Set(ids)
+      const before = photos.filter(photo => wanted.has(photo.id))
+      setPhotos(list => list.map(p => (wanted.has(p.id) ? { ...p, ...filing } : p)))
+      try {
+        /* In batches, because the server refuses more than five hundred in
+           one request and "select all" on a long trip is more than that. Kept
+           well under, and one after another rather than all at once: this is
+           somebody tidying up, not a race. */
+        const answer = { photos: [] as TripPhoto[] }
+        for (let at = 0; at < ids.length; at += MOVE_BATCH) {
+          const done = await movePhotosToStop(tripId, ids.slice(at, at + MOVE_BATCH), filing)
+          if (done?.photos) answer.photos.push(...done.photos)
+        }
+        /* What came back, not what was asked for. Handing pictures back to
+           the rule that files by distance is the one case where the answer is
+           something no client could have worked out for itself. */
+        const settled = new Map((answer?.photos || []).map(photo => [photo.id, photo]))
+        if (settled.size)
+          setPhotos(list =>
+            list.map(p => {
+              const now = settled.get(p.id)
+              /* Merged, not replaced: the row in hand carries the signed
+                 media links this page has already resolved. */
+              return now ? { ...p, ...now } : p
+            }),
+          )
+        /* Items, not photographs: a film lives in the same table and moves
+           the same way, and the gallery and the picker both count in items. */
+        const many = ids.length === 1 ? '1 item' : `${ids.length} items`
+        toast(filing.stopPinned === false ? `${many} filed by location` : `${many} moved`)
+        return true
+      } catch (e) {
+        const kept = new Map(before.map(photo => [photo.id, photo]))
+        setPhotos(list => list.map(p => kept.get(p.id) ?? p))
+        toast(appErrorMessage(e, 'save-photo'), 'error')
+        /* Said, not thrown: the caller wants to know whether to put its
+           screen away, and a rejected move should leave the picker where it
+           is so the choice can be made again. */
+        return false
+      }
+    },
+    [tripId, photos, toast],
+  )
+
   const removePhoto = useCallback(
     async (id: Id) => {
       const before = photos.find(p => p.id === id)
@@ -267,6 +323,7 @@ export default function useTripPhotos({
     toggleLike,
     addPhoto,
     changePhoto,
+    movePhotos,
     removePhoto,
     removeComment,
   }

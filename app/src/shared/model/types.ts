@@ -48,6 +48,10 @@ export interface Stop {
 export interface TripPhoto {
   id: Id
   stopId?: Id | null
+  /** Whether a person put it there, rather than the distance rule working it
+      out. Pinned pictures are left alone when the itinerary changes shape;
+      sending `stopPinned: false` hands one back to the rule. */
+  stopPinned?: boolean
   /** Photographs and films share a row, a place on the map, and a comment
       thread; this is the one thing the screen has to switch on. */
   kind?: 'photo' | 'video'

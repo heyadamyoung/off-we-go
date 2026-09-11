@@ -29,6 +29,11 @@ interface PanelProps {
   onInvite: () => void
   /** absent for read-only viewers — the button goes with it */
   onAddPhotos?: () => void
+  /** filing several photographs at once; absent for read-only viewers */
+  onMovePhotos?: (
+    ids: Id[],
+    filing: { stopId?: Id | null; stopPinned?: boolean },
+  ) => Promise<boolean | void> | boolean | void
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>

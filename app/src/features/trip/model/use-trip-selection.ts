@@ -62,10 +62,9 @@ export default function useTripSelection({
     if (selectedItem?.kind !== 'photo' || !selectedItem.photo) return
     const opened = within.current
     within.current = null
-    const strip =
-      opened && opened.some(photo => photo.id === selectedItem.photo!.id)
-        ? opened
-        : items.filter(item => item.kind === 'photo' && item.photo).map(item => item.photo!)
+    const strip = opened?.some(photo => photo.id === selectedItem.photo!.id)
+      ? opened
+      : items.filter(item => item.kind === 'photo' && item.photo).map(item => item.photo!)
     const at = strip.findIndex(photo => photo.id === selectedItem.photo!.id)
     openViewer(at >= 0 ? strip : [selectedItem.photo], Math.max(at, 0))
   }, [selected])

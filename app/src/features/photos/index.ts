@@ -1,3 +1,7 @@
+export { default as GalleryBar } from './ui/gallery-bar'
+export { default as PlacePicker, type Filing } from './ui/place-picker'
+export { default as SelectBar } from './ui/select-bar'
+export { default as usePhotoSelection } from './model/use-photo-selection'
 export { default as useTripPhotos } from './model/use-trip-photos'
 export { default as PhotoViewer } from './ui/photo-viewer'
 export { default as UploadModal } from './ui/upload-modal'
