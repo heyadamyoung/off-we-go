@@ -1,5 +1,5 @@
 import { ALL_DAYS } from '../../../trip-search-core'
-import { dayLabelOf } from '../../../day-label-core'
+import { clockLabel, dayLabelOf } from '../../../day-label-core'
 import { dayIsoOf, photoDayIso, tripDays, type DayRange } from '../../../trip-days-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
@@ -70,9 +70,9 @@ export function photoItem(photo: TripPhoto, stop?: Stop, range: DayRange = {}): 
     kind: 'photo',
     title:
       photo.caption ||
-      [photo.when, stop?.name].filter(Boolean).join(' · ') ||
+      [clockLabel(photo.when), stop?.name].filter(Boolean).join(' · ') ||
       (photo.kind === 'video' ? 'Video' : 'Photo'),
-    meta: [photo.when, photo.by].filter(Boolean).join(' · '),
+    meta: [clockLabel(photo.when), photo.by].filter(Boolean).join(' · '),
     /* Its stop's day, or its own: a photograph filed nowhere still happened on
        a day, and taking the day only from the stop meant it could never appear
        under one. */

@@ -66,3 +66,25 @@ export function outsideRange(
   // ISO dates order lexicographically; an open end never excludes anything.
   return !!(startsOn && iso < startsOn) || !!(endsOn && iso > endsOn)
 }
+
+/**
+ * The time of day a stored moment happened, for reading.
+ *
+ * A photograph's `when` is whatever the thing that made it wrote there. The
+ * server writes an ISO timestamp; the bundled sample writes "Today · 10:42",
+ * already formatted, which is why nobody noticed for so long that a real trip
+ * titled every uncaptioned photograph "2026-09-05T11:00:00.000Z".
+ *
+ * So: a timestamp becomes a clock, and anything else is handed back as it
+ * came. Never used for sorting — the raw value is the sort key, and a
+ * formatted one does not order.
+ */
+export function clockLabel(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  // An ISO moment, which is the only shape worth reformatting.
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(raw)) return raw
+  const at = new Date(raw)
+  if (!Number.isFinite(at.getTime())) return raw
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+}

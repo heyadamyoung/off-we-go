@@ -514,6 +514,13 @@
 }
 .mstack .sh img { width: 100%; height: 100%; object-fit: cover }
 .mstack.hi .sh { border-color: var(--c-accent) }
+/* Placed by the day it was taken rather than by where. A dashed edge and a
+   softer stack, because a picture put somewhere by inference must not look
+   like one that knows: the difference has to be legible before anybody taps
+   it and decides the map is lying. */
+.mstack.guess .sh { border-style: dashed; border-color: var(--c-line-2); opacity: .92 }
+.mstack.guess .ct { background: var(--c-raised-2); color: var(--c-muted) }
+.mstack.guess.hi .sh { border-color: var(--c-accent) }
 .mstack .ct {
   position: absolute; right: -7px; bottom: -6px; z-index: 9; min-width: 19px; height: 19px; padding: 0 5px;
   border-radius: 999px; background: var(--c-accent); color: var(--c-accent-ink);

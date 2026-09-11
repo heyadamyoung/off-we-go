@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import DocumentsSheet from '../../../shared/ui/documents-sheet'
+import { clockLabel } from '../../../day-label-core'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import type { RouteToStop } from '../model/use-route-to-stop'
@@ -115,7 +116,7 @@ export default function DetailCard(props: DetailCardProps) {
                         tracking-[.12em] text-accent">
           {status}
           <span className="font-semibold normal-case tracking-normal text-faint">
-            {[item.day, item.time].filter(Boolean).join(' · ')}
+            {[item.day, clockLabel(item.time)].filter(Boolean).join(' · ')}
           </span>
         </div>
         <h3 className="m-0 mt-1 text-lg font-extrabold leading-tight tracking-[-.02em]">

@@ -15,12 +15,19 @@
    nobody anything. */
 
 import type { Coordinates, Id, Stop, TripPhoto } from './shared/model/types'
+import { dayIsoOf, photoDayIso, type DayRange } from './trip-days-core'
 
 export interface PhotoGroup {
   key: string
   lng: number
   lat: number
   items: TripPhoto[]
+  /* Placed by the day it was taken rather than by where it was taken — see
+     `dayAnchors` below. Drawn differently, because a picture put somewhere by
+     inference must not look like one that knows where it was. */
+  approximate?: boolean
+  /** The day it was placed by, for what the marker says when you hold it. */
+  day?: string
 }
 
 /** Web-mercator degrees per pixel at a zoom, which is what sets the cell. */
@@ -58,6 +65,41 @@ interface ClusterOptions {
      stack. Sixty is a little over the width of the stack itself, so markers
      stop overlapping rather than merely stop colliding. */
   radiusPx?: number
+  /** What gives a stop's stored day its date, for the day anchors below. */
+  range?: DayRange
+}
+
+/**
+ * Where the trip was on each of its days, as one point per day: the middle of
+ * that day's stops.
+ *
+ * This exists because of the photographs that know nothing. A picture sent
+ * over WhatsApp, scanned, or taken with location off has no coordinates; if
+ * nobody has filed it at a stop it has no place either, and the map simply
+ * dropped it — for ever, silently, however many of them there were. On a trip
+ * where most pictures arrive that way, "photos on the map" is a feature that
+ * appears not to exist.
+ *
+ * It does know when it was taken, though, and the itinerary knows where the
+ * trip was that day. That is not where the photograph was taken and must
+ * never be drawn as though it were — but it is a great deal better than
+ * nowhere, and it is the place from which somebody can file it properly.
+ */
+export function dayAnchors(stops: Stop[], range: DayRange = {}): Map<string, Coordinates> {
+  const sums = new Map<string, { lng: number; lat: number; count: number }>()
+  for (const stop of stops) {
+    const day = dayIsoOf(stop.day, range)
+    if (!day || !placed(stop)) continue
+    const held = sums.get(day)
+    if (held) {
+      held.lng += stop.lng
+      held.lat += stop.lat
+      held.count += 1
+    } else sums.set(day, { lng: stop.lng, lat: stop.lat, count: 1 })
+  }
+  const anchors = new Map<string, Coordinates>()
+  for (const [day, sum] of sums) anchors.set(day, [sum.lng / sum.count, sum.lat / sum.count])
+  return anchors
 }
 
 /**
@@ -67,16 +109,26 @@ interface ClusterOptions {
 export function clusterPhotos(
   photos: TripPhoto[],
   stops: Stop[],
-  { zoom, bounds = null, radiusPx = 60 }: ClusterOptions,
+  { zoom, bounds = null, radiusPx = 60, range = {} }: ClusterOptions,
 ): PhotoGroup[] {
   const byStop = new Map<Id, TripPhoto[]>()
   const loose: TripPhoto[] = []
+  /* Nothing to place them by except when they were taken. */
+  const byDay = new Map<string, TripPhoto[]>()
+  const anchors = dayAnchors(stops, range)
   for (const photo of photos) {
     if (photo.stopId) {
       const held = byStop.get(photo.stopId)
       if (held) held.push(photo)
       else byStop.set(photo.stopId, [photo])
     } else if (placed(photo)) loose.push(photo)
+    else {
+      const day = photoDayIso(photo, null, range)
+      if (!day || !anchors.has(day)) continue
+      const held = byDay.get(day)
+      if (held) held.push(photo)
+      else byDay.set(day, [photo])
+    }
   }
 
   const out: PhotoGroup[] = []
@@ -122,6 +174,23 @@ export function clusterPhotos(
     /* Anchored on the newest rather than the cell's centre: a stack that
        jumps to a grid intersection reads as being somewhere nobody stood. */
     out.push({ key: `c${key}`, lng: items[0].lng as number, lat: items[0].lat as number, items })
+  }
+
+  /* One stack per day, last, so a day's worth of unplaced pictures draws over
+     the stops it was inferred from rather than under them — it is the thing
+     with something to say. */
+  for (const [day, items] of byDay) {
+    const anchor = anchors.get(day) as Coordinates
+    if (!within(bounds, anchor[0], anchor[1], margin)) continue
+    items.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
+    out.push({
+      key: `d${day}`,
+      lng: anchor[0],
+      lat: anchor[1],
+      items,
+      approximate: true,
+      day,
+    })
   }
   return out
 }

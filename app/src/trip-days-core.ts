@@ -96,7 +96,12 @@ export function photoDayIso(
 ): string | null {
   const fromStop = dayIsoOf(stopDay, range)
   if (fromStop) return fromStop
-  const taken = photo?.takenAt
+  /* Either spelling. The server sends `when`; an upload on its way up carries
+     `takenAt`. This read only the second of those, which is the field a
+     photograph loaded from the server has never had — so every picture
+     without a stop came back with no day at all, and fell out of the
+     timeline, out of the by-date grouping, and off the map. */
+  const taken = photo?.takenAt || photo?.when
   if (!taken) return null
   const at = new Date(taken)
   if (!Number.isFinite(at.getTime())) return null
