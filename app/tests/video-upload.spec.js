@@ -97,6 +97,13 @@ test('a video is chosen, drawn from its own first frame, and plays in the viewer
   }).toPass({ timeout: 15_000 })
   expect(await player.evaluate(video => video.videoWidth)).toBe(320)
 
-  // The photograph's tap-to-like button must not sit over a film's scrubber.
-  await expect(page.locator('.viewer .vmaintap')).toHaveCount(0)
+  /* The photograph's tap-to-like button must not sit over a film's scrubber.
+     The pane being looked at, specifically: the strip holds the neighbours
+     either side as well, and those are photographs with buttons of their own
+     — off the stage, out of the tab order, and deaf to a pointer. */
+  await expect(page.locator('.viewer .vpane.on .vmaintap')).toHaveCount(0)
+  await expect(page.locator('.viewer .vpane:not(.on) .vmaintap').first()).toHaveCSS(
+    'pointer-events',
+    'none',
+  )
 })

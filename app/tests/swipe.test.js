@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { carryDistance, dragMeans, followed, isDoubleTap, pageBy } from '../src/swipe-core.ts'
+import {
+  atSlot,
+  carryDistance,
+  dragMeans,
+  followed,
+  isDoubleTap,
+  pageBy,
+  strip,
+  trackShift,
+  warmAround,
+} from '../src/swipe-core.ts'
 
 test('dragging across turns the page, and left goes forward', () => {
   /* The direction everything else on a phone uses: the picture follows the
@@ -136,4 +146,83 @@ test('a sweep that took no measurable time is the fastest thing there is', () =>
      milliseconds. Reading that as "slow" refuses the swipe outright. */
   assert.equal(dragMeans({ dx: -50, dy: 2, ms: 0 }), 'next')
   assert.equal(dragMeans({ dx: -8, dy: 1, ms: 0 }), 'tap', 'but a twitch is still a tap')
+})
+
+/* ---- the filmstrip -------------------------------------------------------
+
+   A viewer that draws one picture and puts its transform back to nought when
+   the page turns can only snap: there is no next photograph on the screen to
+   slide in, so the one you pushed walks back to the middle and is replaced
+   where it stands. Three are drawn now, and it is the strip that moves. */
+
+test('a slot knows which photograph it holds, and wraps like the arrows', () => {
+  assert.equal(atSlot(0, 4), 0)
+  assert.equal(atSlot(4, 4), 0, 'a whole turn round')
+  assert.equal(atSlot(-1, 4), 3, 'and backwards past the start')
+  assert.equal(atSlot(-5, 4), 3)
+  assert.equal(atSlot(7, 3), 1)
+  assert.equal(atSlot(3, 0), 0, 'nothing to hold')
+})
+
+test('the strip is the one you are on and its neighbours', () => {
+  assert.deepEqual(strip(5, 10), [4, 5, 6])
+  // Counted in slots that never wrap, which is what keeps a pane's identity
+  // across a turn — a rebuilt pane is a photograph fetched again.
+  assert.deepEqual(strip(0, 10), [-1, 0, 1])
+  assert.deepEqual(strip(-3, 10), [-4, -3, -2])
+})
+
+test('one photograph is one pane', () => {
+  /* Three panes of the same picture would mean swiping from a photograph to
+     a copy of itself, which is worse than not moving at all. */
+  assert.deepEqual(strip(0, 1), [0])
+  assert.deepEqual(strip(4, 0), [4])
+  // Two is enough for a strip, even though both neighbours are the other one.
+  assert.deepEqual(strip(0, 2), [-1, 0, 1])
+})
+
+test('the track is moved in widths, not pixels', () => {
+  /* A percentage in a transform is of the element's own box, and the track is
+     exactly one photograph wide — so nothing measures the stage, and a phone
+     turned on its side is right on the frame it turns. */
+  assert.equal(trackShift(0, 0), '0px')
+  assert.equal(trackShift(-40, 0), '-40px', 'under the finger, exactly the finger')
+  assert.equal(trackShift(0, 1), '-100%', 'a whole photograph to the next one')
+  assert.equal(trackShift(0, -1), '100%')
+})
+
+test('a turn carries on from wherever the finger left it', () => {
+  /* The distance still to travel is whatever the swipe had not covered, so
+     the movement is one continuous thing rather than a jump and a slide. */
+  assert.equal(trackShift(-40, 1), 'calc(-40px - 100%)')
+  assert.equal(trackShift(25, -1), 'calc(25px + 100%)')
+})
+
+test('the track transform is always something a browser will parse', () => {
+  /* calc has no opinion about `- -100%` except that it is a syntax error, and
+     a transform the browser cannot parse is a strip that does not move. */
+  for (const dx of [-120, -1, 0, 1, 120])
+    for (const moving of [-1, 0, 1]) {
+      const shift = trackShift(dx, moving)
+      assert.doesNotMatch(shift, /[-+]\s*[-+]/, `${shift} has two signs in a row`)
+      assert.doesNotMatch(shift, /calc\([^)]*[-+]\)/, `${shift} ends on an operator`)
+      if (shift.startsWith('calc('))
+        assert.match(shift, /^calc\(-?\d+px [-+] \d+%\)$/, `${shift} is not a sum of two terms`)
+    }
+})
+
+test('a few either way are warmed, nearest first, and never the whole trip', () => {
+  /* The two beside this one are already on the screen; what this buys is the
+     one after that, for somebody paging quickly. */
+  assert.deepEqual(warmAround(5, 20, 2), [6, 4, 7, 3])
+  assert.deepEqual(warmAround(0, 20, 2), [1, 19, 2, 18], 'and it wraps, as paging does')
+})
+
+test('warming never asks for the same photograph twice', () => {
+  /* On a short trip the reach runs all the way round and meets itself. */
+  const warmed = warmAround(0, 3, 5)
+  assert.equal(new Set(warmed).size, warmed.length, `${warmed} repeats itself`)
+  assert.ok(!warmed.includes(0), 'and never the one already on the screen')
+  assert.deepEqual(warmAround(0, 1, 3), [], 'nothing to warm on a single photograph')
+  assert.deepEqual(warmAround(0, 0, 3), [])
 })

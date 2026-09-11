@@ -277,13 +277,13 @@ test('double-tapping the photograph hearts it, and never un-hearts it', async ({
      hearted the picture instead of turning the page. */
   await openViewer(page)
 
-  await page.locator('.vmaintap').dblclick()
+  await page.locator('.vpane.on .vmaintap').dblclick()
   await expect(page.locator('.vheart')).toBeVisible()
   await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
 
   // Again pops the heart but the like survives — un-liking is the chrome
   // heart's deliberate job.
-  await page.locator('.vmaintap').dblclick()
+  await page.locator('.vpane.on .vmaintap').dblclick()
   await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
 })
 
@@ -329,7 +329,7 @@ test('a swipe that is really a scroll leaves the page alone', async ({ page }) =
 
 test('tapping the photograph opens it full screen, where it zooms', async ({ page }) => {
   await openViewer(page)
-  await page.locator('.vmaintap').click()
+  await page.locator('.vpane.on .vmaintap').click()
   await expect(page.locator('.vzoom')).toBeVisible()
 
   const scale = async () => {
@@ -1468,23 +1468,27 @@ test('adding photos opens from the gallery, on a phone', async ({ page }) => {
   await expect(page.getByRole('dialog')).toContainText('Add photos and videos')
 })
 
-test('the photograph follows the finger, and comes back if the swipe is short', async ({
+test('the strip follows the finger, and carries on to the next one when let go', async ({
   page,
 }) => {
   /* Three gestures, and the difference between them is the whole design.
 
      A swipe that moves nothing is a swipe you cannot tell is working, so the
-     picture tracks the finger. Whether it PAGES is then either distance or
+     strip tracks the finger. Whether it PAGES is then either distance or
      speed: a lazy drag has to cross about a fifth of the picture, and a flick
      — which is how anybody actually pages through photographs — needs almost
      none of that, because what makes a flick a decision is how fast it was.
+
+     And when it does page it goes ON, in one movement, to a photograph that
+     is already on the screen. It used to snap back to the middle and swap the
+     picture where it stood, which is the thing this rewrite is about.
 
      On a phone, so the numbers mean something: 390px across asks for 86. */
   await page.setViewportSize({ width: 390, height: 844 })
   await openViewer(page)
   const at = () => page.locator('.vcap .ct').innerText()
   const shifted = () =>
-    page.locator('.vmaintap').evaluate(el => {
+    page.locator('.vtrack').evaluate(el => {
       const t = getComputedStyle(el).transform
       return t === 'none' ? 0 : Number(t.split(',')[4] ?? 0)
     })
@@ -1509,23 +1513,73 @@ test('the photograph follows the finger, and comes back if the swipe is short', 
   // Slow and short of a fifth: it moves, and then it comes home.
   const first = await at()
   await swipe(60, 30)
-  expect(await shifted(), 'the picture never moved under the finger').toBeLessThan(-10)
+  expect(await shifted(), 'the strip never moved under the finger').toBeLessThan(-10)
   await page.mouse.up()
   await expect.poll(shifted, { timeout: 3000 }).toBe(0)
   expect(await at(), 'a short slow swipe turned the page anyway').toBe(first)
 
-  /* A drag that does carry far enough turns the page — and does it WITHOUT
-     easing, because easing here walks the outgoing photograph back to the
-     middle in front of you and only then swaps it, which reads as the swipe
-     being refused a moment before it is obeyed. */
-  await swipe(140, 30)
+  /* The photograph about to arrive, marked so it can be recognised again. It
+     is already on the screen — that is the point of a strip — and if the turn
+     rebuilt it rather than moving it, the mark would be gone and the picture
+     would be fetched a second time. */
+  await page
+    .locator('.vpane')
+    .last()
+    .locator('img')
+    .evaluate(el => {
+      el.dataset.wasAlreadyHere = 'yes'
+    })
+
+  /* Every frame the track passes through, recorded in the page.
+
+     Reading a CSS property once, afterwards, is a race the test loses under a
+     loaded machine — by the time it looks, the turn has finished and the
+     transition is gone. What is actually being claimed is about the movement,
+     so the movement is what gets recorded. */
+  await page.evaluate(() => {
+    window.__frames = []
+    const track = document.querySelector('.vtrack')
+    const tick = () => {
+      const t = getComputedStyle(track).transform
+      window.__frames.push(t === 'none' ? 0 : Number(t.split(',')[4] ?? 0))
+      if (window.__frames.length < 150) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+
+  /* A drag that carries far enough goes ON to the next one, easing as it
+     goes: the strip is still moving at the moment the finger lifts, rather
+     than snapping back to the middle and swapping the picture in place. */
+  const carried = 140
+  await swipe(carried, 30)
   await page.mouse.up()
-  expect(
-    await page.locator('.vmaintap').evaluate(el => getComputedStyle(el).transitionProperty),
-    'the picture eased backwards on its way to the next one',
-  ).toBe('none')
+
   await expect.poll(at, { timeout: 3000 }).not.toBe(first)
+
+  /* Up to the commit, which is the one moment the track is allowed to jump —
+     it returns to nought with the arriving photograph already in the middle,
+     so nothing moves on the screen. */
+  const frames = await page.evaluate(() => window.__frames)
+  const moved = frames.findIndex(x => x < -4)
+  const back = frames.findIndex((x, i) => i > moved && moved >= 0 && x === 0)
+  const journey = frames.slice(moved, back > 0 ? back : undefined)
+
+  expect(journey.length, 'the track never moved at all').toBeGreaterThan(2)
+  expect(
+    Math.min(...journey),
+    'the strip stopped where the finger did instead of carrying on to the next photograph',
+  ).toBeLessThan(-carried * 1.5)
+  expect(
+    journey.every((x, i) => i === 0 || x <= journey[i - 1] + 1),
+    `the strip went backwards on its way: ${journey.map(Math.round).join(' ')}`,
+  ).toBe(true)
+  // And having arrived, the strip is centred again on the new photograph.
   await expect.poll(shifted, { timeout: 3000 }).toBe(0)
+
+  expect(
+    await page.locator('.vpane.on img').getAttribute('data-was-already-here'),
+    'the arriving photograph was rebuilt rather than moved, so it loads again',
+  ).toBe('yes')
 
   /* The flick — a short, fast sweep, which is the everyday gesture — is held
      to account in tests/swipe.test.js instead. A driver cannot move a mouse
