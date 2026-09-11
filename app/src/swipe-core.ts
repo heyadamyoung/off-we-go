@@ -18,22 +18,27 @@ export interface Drag {
   dy: number
   /** How long the finger was down, in milliseconds. */
   ms: number
+  /* How fast it was going when it lifted, in pixels a millisecond, measured
+     over the last moment of the gesture rather than averaged over all of it.
+     Positive rightwards, as `dx` is. */
+  vx?: number
 }
 
 export type DragMeans = 'previous' | 'next' | 'tap' | null
 
 export interface DragLimits {
-  /** How far a finger must travel before it is paging rather than resting. */
+  /** How far the picture must end up carried before the page turns. */
   travel?: number
   /** How far a tap may drift and still be a tap. */
   slop?: number
   /** How long a tap may linger before it is a press, not a tap. */
   restMs?: number
-  /** Pixels per millisecond at which a short gesture is a flick, not a nudge.
-   A real thumb flick runs well over 1; the bar sits low because being
-   generous here costs a page turn somebody can undo, and being strict costs
-   the gesture everybody actually uses. */
-  flick?: number
+  /** How far ahead a finger's speed is taken to carry it, in milliseconds.
+   This is what lets a flick count without asking it to cover the distance: a
+   sweep at two pixels a millisecond is plainly going somewhere, and saying so
+   as "where it would be a fifth of a second from now" is one rule rather than
+   a second, independent one that can fire on its own. */
+  project?: number
 }
 
 /**
@@ -45,11 +50,18 @@ export interface DragLimits {
  * turned the page anyway. It has to be most of a swipe, so it is measured as a
  * share of the picture being swiped.
  *
+ * Half of it. A fifth was the first attempt and it was wrong in the way that
+ * matters: a swipe somebody decided against halfway through still turned the
+ * page, so the gesture could not be taken back once begun. Half is the share
+ * every phone gallery uses, and it means exactly what a person means by
+ * carrying a photograph across — if it has not got past the middle, it goes
+ * back.
+ *
  * Floored so a narrow stage still needs a deliberate push, and capped so a
  * wide desktop one does not ask for half a metre of mouse: there are arrows
  * and arrow keys over there, and they are the better tool anyway.
  */
-export function carryDistance(width: number, share = 0.22, least = 48, most = 140): number {
+export function carryDistance(width: number, share = 0.5, least = 60, most = 260): number {
   if (!(width > 0)) return least
   return Math.min(Math.max(width * share, least), most)
 }
@@ -61,8 +73,8 @@ export function carryDistance(width: number, share = 0.22, least = 48, most = 14
  * every gallery on a phone already behaves.
  */
 export function dragMeans(drag: Drag, limits: DragLimits = {}): DragMeans {
-  const { travel = 48, slop = 10, restMs = 700, flick = 0.35 } = limits
-  const { dx, dy, ms } = drag
+  const { travel = 60, slop = 10, restMs = 700, project = 200 } = limits
+  const { dx, dy, vx = 0 } = drag
   const across = Math.abs(dx)
   const down = Math.abs(dy)
   const sideways = across > down
@@ -72,16 +84,21 @@ export function dragMeans(drag: Drag, limits: DragLimits = {}): DragMeans {
      further vertically was going vertically, however far it also wandered. */
   if (!sideways) return tapOrNothing(drag, slop, restMs)
 
-  /* Far enough, OR fast enough. Distance alone is the wrong test on its own:
-     make it long enough that a hesitant nudge does not count and a quick flick
-     — which is how anybody actually pages through photographs — stops counting
-     too. A flick is short by nature; what makes it a decision is its speed. */
-  if (across >= travel) return dx < 0 ? 'next' : 'previous'
-  /* A gesture that took no measurable time is not slow — it is the fastest
-     thing there is. Treating an unmeasured duration as "no flick" is how a
-     genuine sweep gets refused on a device whose clock is coarse. */
-  const speed = ms > 0 ? across / ms : Number.POSITIVE_INFINITY
-  if (across > slop * 2 && speed >= flick) return dx < 0 ? 'next' : 'previous'
+  /* Where the photograph would come to rest if you let the finger's own speed
+     carry it. One rule, not two.
+     
+     It used to be distance OR speed, each able to fire on its own, and the
+     speed was the AVERAGE over the whole gesture. Between them those two got
+     the everyday case exactly backwards: a swipe that set off quickly and then
+     slowed to a stop — which is precisely how somebody changes their mind —
+     still had a high average and turned the page, while a deliberate slow
+     carry needed a fifth of the screen and no more.
+     
+     Projection reads what the finger was doing when it left instead. Stop, and
+     there is nothing to carry you: the distance is all you have, and it has to
+     be half the picture. Flick, and the distance barely matters. */
+  const carried = dx + vx * project
+  if (Math.abs(carried) >= travel) return carried < 0 ? 'next' : 'previous'
 
   return tapOrNothing(drag, slop, restMs)
 }

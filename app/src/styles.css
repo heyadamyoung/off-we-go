@@ -664,16 +664,21 @@
 }
 .im.rdy {
   background-image: none;
-  /* The picture fades up over the space its own shimmer was holding. */
-  animation: media-arrived .3s ease
+  animation: none
 }
+/* The picture fades up over the space its own shimmer was holding — but only
+   when there was a wait to cover. A photograph already in hand, or one
+   sharpening from the small copy that stood in for it, simply appears: that
+   is what preloaded is supposed to look like, and fading it was what made
+   paging through a strip that had already loaded look like loading. */
+.im.rdy.up { animation: media-arrived .3s ease }
 @keyframes media-loading {
   from { background-position: 120% 0 }
   to { background-position: -120% 0 }
 }
 @keyframes media-arrived { from { opacity: 0 } to { opacity: 1 } }
 @media (prefers-reduced-motion: reduce) {
-  .im, .im.rdy { animation: none }
+  .im, .im.rdy, .im.rdy.up { animation: none }
 }
 
 /* ------------------------------------------------------------------ motion */
@@ -743,7 +748,7 @@
 /* Liked is the heart itself turning rose and staying filled — the button
    never becomes an orange block; amber belongs to the journey, not to love. */
 .vtop .acts button.liked { background: rgb(255 255 255 / .08) }
-.vbody { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 0 20px; min-height: 0 }
+.vbody { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0 }
 /* The filmstrip. Exactly one photograph wide, which is what lets the track be
    moved in percentages — a percentage in a transform is of the element's own
    box — so nothing measures the stage and a phone turned on its side is right
@@ -752,8 +757,16 @@
    overflow is the stage's, not the track's: the neighbours have to be clipped
    at the edge of the screen, and a track that clipped them itself would also
    clip the photograph in the middle. */
-.vtrack { position: absolute; inset: 0 20px; will-change: transform }
-.vpane { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center }
+/* The track is the WHOLE stage wide, gutters included, because a turn moves
+   it by exactly one of its own widths — and a track inset by the stage's
+   padding is forty pixels short of the screen, which leaves both neighbours
+   peeking in at the edges and never quite clears either one. The photograph
+   keeps its breathing room; that lives on the pane now. */
+.vtrack { position: absolute; inset: 0; will-change: transform }
+.vpane {
+  position: absolute; inset: 0; padding: 0 20px;
+  display: flex; align-items: center; justify-content: center;
+}
 .vbody { overflow: hidden }
 /* A neighbour is scenery: it is on the screen so that it does not have to be
    fetched when it becomes the photograph, and it must not answer a tap

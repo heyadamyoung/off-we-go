@@ -283,13 +283,13 @@ function PhotoViewer({
             {gestures.slots.map(at => {
               const here = gestures.at(at)
               const shown = list[here]
-              const middle = at === gestures.slots[Math.floor(gestures.slots.length / 2)]
+              const middle = at === gestures.slot
               if (!shown) return null
               return (
                 <div
                   key={at}
                   className={middle ? 'vpane on' : 'vpane'}
-                  style={{ transform: `translate3d(${(at - gestures.slots[0]) * 100}%, 0, 0)` }}
+                  style={{ transform: `translate3d(${(at - gestures.slot) * 100}%, 0, 0)` }}
                   aria-hidden={middle ? undefined : true}>
                   {/* Only the one you are on is a film. A neighbour mounted as
                       a video would fetch a stream and hold a decoder for
