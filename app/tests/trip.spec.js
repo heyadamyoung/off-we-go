@@ -1516,6 +1516,68 @@ test('the photograph you are looking at is the one in the middle of the screen',
   )
 })
 
+test('the photograph you tap is the photograph you get, and the one you open full screen', async ({
+  page,
+}) => {
+  /* Reported as "clicking a photo seems to select the photo before it, so the
+     zoom picture is not the one you clicked".
+
+     Three separate things have to agree for that to be true, and until now
+     nothing held them to it: the tile you pressed, the picture the viewer puts
+     on the stage, and the one the full-screen view opens. Every test so far
+     asked the viewer what it thought it was showing, which is exactly the
+     question a viewer showing the wrong photograph answers correctly. */
+  await open(page)
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  const tiles = page.locator('.pgrid-photo')
+  await expect(tiles.first()).toBeVisible({ timeout: 8000 })
+  expect(
+    await tiles.count(),
+    'there are not enough photographs to tell one from another',
+  ).toBeGreaterThan(3)
+
+  // The third, so that an off-by-one in either direction has somewhere to go.
+  const third = tiles.nth(2)
+  const wanted = await third.getAttribute('aria-label')
+  await third.click()
+  await expect(page.locator('.viewer')).toBeVisible({ timeout: 8000 })
+
+  /* Third in the gallery, third in the viewer. The counter is the viewer's own
+     word for which photograph this is, and it is the thing that was right all
+     along while the screen showed something else. */
+  await expect(page.locator('.vcap .ct')).toHaveText(/^3 of /)
+
+  /* And the picture actually filling the screen is that one.
+
+     Asked by class — which pane is marked as the one being looked at — this
+     came back right all along, and that is precisely why the bug survived:
+     the viewer knew which photograph it was on and drew a different one. So
+     this asks the only question a person can ask, which is what is under the
+     middle of the stage. */
+  const shown = await page.evaluate(() => {
+    const stage = document.querySelector('.vbody').getBoundingClientRect()
+    const middle = stage.x + stage.width / 2
+    const image = [...document.querySelectorAll('.vpane img')].find(element => {
+      const box = element.getBoundingClientRect()
+      return box.width > 0 && box.x <= middle && box.right >= middle
+    })
+    return image?.getAttribute('alt') ?? null
+  })
+  expect(shown, 'the photograph filling the screen is not the one that was tapped').toBe(wanted)
+
+  /* Full screen, the same way a thumb does it: a tap on the picture, which
+     the stage reads as a tap only after it has waited out the double tap that
+     would have hearted it instead. */
+  await page.locator('.vpane.on .vmaintap').click()
+  const zoom = page.locator('.vzoom')
+  await expect(zoom).toBeVisible({ timeout: 8000 })
+  expect(
+    await zoom.locator('img').getAttribute('alt'),
+    'full screen opened a different photograph',
+  ).toBe(wanted)
+  expect(await zoom.getAttribute('aria-label')).toBe(wanted)
+})
+
 test('the strip follows the finger, and carries on to the next one when let go', async ({
   page,
 }) => {
