@@ -677,7 +677,12 @@ function buildMcpServer({
     write('photos', async ({ tripId, photoId, ...changes }) => {
       const photo = await repository.updatePhoto(user, tripId, photoId, changes)
       return photo
-        ? result({ id: photo.id, stopId: photo.stopId, stopPinned: photo.stopPinned, caption: photo.caption })
+        ? result({
+            id: photo.id,
+            stopId: photo.stopId,
+            stopPinned: photo.stopPinned,
+            caption: photo.caption,
+          })
         : toolFailure('The photo was not found or is not editable by this user.')
     }),
   )

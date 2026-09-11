@@ -1730,12 +1730,7 @@ export async function buildServer({
     if (changes.stopId === undefined && changes.stopPinned === undefined)
       return reply.code(400).send({ error: 'Nothing to change' })
 
-    const moved = await repository.movePhotosToStop(
-      user,
-      request.params.tripId,
-      ids,
-      changes,
-    )
+    const moved = await repository.movePhotosToStop(user, request.params.tripId, ids, changes)
     if (!moved) return reply.code(404).send({ error: 'Trip or stop not found' })
     stamp({
       'trip.id': request.params.tripId,

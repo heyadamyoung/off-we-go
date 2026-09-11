@@ -325,14 +325,12 @@ test('a pinned photograph is untouched by the batched re-link', { skip: reachabl
 
   // Ids from elsewhere are named but not this trip's, so nothing happens.
   const elsewhere = await repository.createTrip(user, { title: 'Elsewhere' })
-  assert.deepEqual(
-    await repository.movePhotosToStop(user, elsewhere.id, ids, { stopId: null }),
-    { moved: 0, photos: [] },
-  )
+  assert.deepEqual(await repository.movePhotosToStop(user, elsewhere.id, ids, { stopId: null }), {
+    moved: 0,
+    photos: [],
+  })
   assert.ok(
-    (await repository.findPhotos(user, trip.id, ids)).every(
-      photo => photo.stopId === centraal.id,
-    ),
+    (await repository.findPhotos(user, trip.id, ids)).every(photo => photo.stopId === centraal.id),
     'a trip in the path is a boundary, not a hint',
   )
 
