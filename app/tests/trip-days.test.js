@@ -124,6 +124,28 @@ test('a photograph with no stop still has a day of its own', () => {
   assert.equal(photoDayIso({ takenAt: 'not a date' }, null, trip), null)
 })
 
+test('the day is read from the field a photograph actually arrives with', () => {
+  /* And this is the field. The server calls it `when`; only an upload on its
+     way up carries `takenAt`. Every case above asks about the spelling the
+     server never sends, which is how this went unnoticed: a photograph loaded
+     from the API and filed nowhere had no day at all, so it fell out of the
+     timeline, out of the by-date grouping, and off the map. */
+  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, null, trip), '2026-09-06')
+  assert.equal(photoDayIso({ when: null }, null, trip), null)
+  assert.equal(photoDayIso({ when: 'not a date' }, null, trip), null)
+
+  // A stop still outranks both, and takenAt still outranks when.
+  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, 'Fri 4 Sep', trip), '2026-09-04')
+  assert.equal(
+    photoDayIso(
+      { takenAt: '2026-09-05T10:00:00.000Z', when: '2026-09-06T10:00:00.000Z' },
+      null,
+      trip,
+    ),
+    '2026-09-05',
+  )
+})
+
 test('a chosen day matches by date rather than by spelling', () => {
   /* The chip holds an ISO date; the rows hold whatever they hold. Comparing
      the two as text is how a chip could select nothing. */

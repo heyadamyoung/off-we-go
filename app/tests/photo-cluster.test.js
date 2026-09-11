@@ -103,3 +103,103 @@ test('a window straddling the date line still contains what is inside it', () =>
   assert.equal(within(wrapped, 0, 0), false, 'the other side of the world is not in view')
   assert.equal(within(null, 0, 0), true, 'no window means no culling')
 })
+
+/* ---- photographs with nothing to place them by ---------------------------
+
+   The case that made "photos on the map" look like a feature that does not
+   exist. A picture sent over WhatsApp, scanned, or taken with location off
+   has no coordinates; unless somebody has filed it at a stop it has no place
+   either, and the clusterer used to drop it — silently, for ever, however
+   many of them there were. On a trip where most pictures arrive that way the
+   map shows stops and nothing else. */
+
+const TRIP = { startsOn: '2026-09-04', endsOn: '2026-09-06' }
+const stopAt = (id, name, lng, lat, day) => ({ id, name, lng, lat, day })
+const ITINERARY = [
+  stopAt('rijks', 'Rijksmuseum', 4.8852, 52.36, '2026-09-05'),
+  stopAt('vangogh', 'Van Gogh Museum', 4.8811, 52.3584, '2026-09-05'),
+  stopAt('centraal', 'Centraal', 4.9003, 52.379, '2026-09-06'),
+]
+const unplaced = (id, when) => ({ id, by: '', seq: id, when, lng: null, lat: null })
+
+test('a photograph with no location is placed at where the trip was that day', () => {
+  const groups = clusterPhotos(
+    [unplaced(1, '2026-09-05T11:00:00.000Z'), unplaced(2, '2026-09-05T15:00:00.000Z')],
+    ITINERARY,
+    { zoom: 13, range: TRIP },
+  )
+  assert.equal(groups.length, 1, 'one stack for the day, not one per picture')
+  assert.deepEqual(groups[0].items.map(item => item.id).sort(), [1, 2])
+  /* Between that day's two stops, not at one of them: the trip was at both,
+     and picking either would put the pictures at a place it can name. */
+  assert.ok(Math.abs(groups[0].lng - (4.8852 + 4.8811) / 2) < 1e-9)
+  assert.ok(Math.abs(groups[0].lat - (52.36 + 52.3584) / 2) < 1e-9)
+})
+
+test('a stack placed by inference says that it was', () => {
+  /* It must not look like a picture that knows where it was taken. */
+  const [group] = clusterPhotos([unplaced(1, '2026-09-06T09:00:00.000Z')], ITINERARY, {
+    zoom: 13,
+    range: TRIP,
+  })
+  assert.equal(group.approximate, true)
+  assert.equal(group.day, '2026-09-06')
+
+  // Whereas one that does know says nothing of the kind.
+  const [known] = clusterPhotos([photo(9, 4.8852, 52.36)], [], { zoom: 13, range: TRIP })
+  assert.equal(known.approximate, undefined)
+})
+
+test('one stack per day, not one for the lot', () => {
+  const groups = clusterPhotos(
+    [
+      unplaced(1, '2026-09-05T11:00:00.000Z'),
+      unplaced(2, '2026-09-06T11:00:00.000Z'),
+      unplaced(3, '2026-09-06T12:00:00.000Z'),
+    ],
+    ITINERARY,
+    { zoom: 13, range: TRIP },
+  )
+  assert.equal(groups.length, 2)
+  assert.deepEqual(groups.map(group => group.day).sort(), ['2026-09-05', '2026-09-06'])
+})
+
+test('a photograph already filed at a stop is placed there, not by its day', () => {
+  /* Filing one is the exact answer, and it has to beat the guess — which is
+     also what makes the guess worth drawing: it is the thing you tap to fix. */
+  const groups = clusterPhotos(
+    [{ id: 1, by: '', seq: 1, stopId: 'centraal', when: '2026-09-05T11:00:00.000Z' }],
+    ITINERARY,
+    { zoom: 13, range: TRIP },
+  )
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].approximate, undefined)
+  assert.equal(groups[0].lng, 4.9003)
+})
+
+test('a day the trip never went anywhere places nothing', () => {
+  /* Better off the map than at the middle of a trip it was not on. */
+  assert.deepEqual(
+    clusterPhotos([unplaced(1, '2026-10-30T11:00:00.000Z')], ITINERARY, {
+      zoom: 13,
+      range: TRIP,
+    }),
+    [],
+  )
+  // And a photograph that does not even know when it was taken.
+  assert.deepEqual(clusterPhotos([unplaced(2, null)], ITINERARY, { zoom: 13, range: TRIP }), [])
+})
+
+test('an inferred stack is windowed like any other', () => {
+  /* A marker outside the viewport costs the same as one inside it and shows
+     nobody anything. */
+  const elsewhere = { west: -1, south: 50, east: 0, north: 51 }
+  assert.deepEqual(
+    clusterPhotos([unplaced(1, '2026-09-05T11:00:00.000Z')], ITINERARY, {
+      zoom: 13,
+      range: TRIP,
+      bounds: elsewhere,
+    }),
+    [],
+  )
+})

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { leaveNoTrace } from './leave-no-trace.js'
 
 /* A film, uploaded by the app, to a server.
 
@@ -13,6 +14,9 @@ import { expect, test } from '@playwright/test'
 const stack = JSON.parse(
   readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
 )
+
+/* This spec plants photographs in a trip every other spec also reads. */
+leaveNoTrace(test, stack)
 
 test.beforeEach(async ({ page }) => {
   /* Signed in before the first script runs. On the web the session store is

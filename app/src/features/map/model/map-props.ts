@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { FeatureCollection } from 'geojson'
 import type { MapPadding } from '../../../live-map-view-core'
 import type { PhoneMarker } from '../../../live-markers-core'
+import type { DayRange } from '../../../trip-days-core'
 import type {
   Attraction,
   Coordinates,
@@ -34,6 +35,10 @@ export interface MapCanvasProps {
   onContextMenu?: (point: Coordinates) => void
   stops?: Stop[]
   photos?: TripPhoto[]
+  /* What gives a stop's stored day its date. Without it a photograph that
+     knows only when it was taken cannot be placed at that day's stops, which
+     is the one thing left to place it by. */
+  range?: DayRange
   markers?: PhoneMarker[]
   /** this device's own compass dot, when no marker is this device */
   you?: { at: Coordinates; facing: number | null } | null

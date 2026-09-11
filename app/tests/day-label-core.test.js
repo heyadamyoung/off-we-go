@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { dayLabelOf, isoOfDayLabel, outsideRange, tripDayIsos } from '../src/day-label-core.ts'
+import {
+  clockLabel,
+  dayLabelOf,
+  isoOfDayLabel,
+  outsideRange,
+  tripDayIsos,
+} from '../src/day-label-core.ts'
 
 test('an ISO date wears the label the app has always spoken', () => {
   assert.equal(dayLabelOf('2026-09-04'), 'Fri 4 Sep')
@@ -58,4 +64,24 @@ test('a label handed back in is not read as a date', () => {
   assert.equal(dayLabelOf('tbc'), '')
   assert.equal(dayLabelOf(''), '')
   assert.equal(dayLabelOf('2026-09-04'), 'Fri 4 Sep', 'and a real date still reads')
+})
+
+test('a stored moment is read as a clock, whatever shape it arrived in', () => {
+  /* A photograph's `when` is whatever wrote it. The server writes an ISO
+     timestamp; the bundled sample writes "Today · 10:42", already formatted —
+     which is why a real trip titled every uncaptioned photograph
+     "2026-09-05T11:00:00.000Z" and nobody saw it in the demo. */
+  assert.equal(
+    clockLabel('2026-09-05T11:24:00.000Z'),
+    new Date('2026-09-05T11:24:00.000Z').getHours().toString().padStart(2, '0') + ':24',
+  )
+
+  // Anything already written for a person is handed straight back.
+  assert.equal(clockLabel('Today · 10:42'), 'Today · 10:42')
+  assert.equal(clockLabel('09:30 – 12:30'), '09:30 – 12:30')
+  assert.equal(clockLabel(''), '')
+  assert.equal(clockLabel(null), '')
+  assert.equal(clockLabel(undefined), '')
+  // A timestamp shaped right but meaning nothing is not worth mangling.
+  assert.equal(clockLabel('2026-13-45T99:99'), '2026-13-45T99:99')
 })

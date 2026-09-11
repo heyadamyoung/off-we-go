@@ -10,6 +10,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { paddingOffset } from '../../../live-map-view-core'
+import { dayLabelOf } from '../../../day-label-core'
 import { clusterPhotos } from '../../../photo-cluster-core'
 import useHeadingCamera from '../model/use-heading-camera'
 import useViewport from '../model/use-viewport'
@@ -40,6 +41,7 @@ const MapCanvas = memo(function MapCanvas({
   onContextMenu,
   stops = [],
   photos = [],
+  range,
   markers = [],
   you = null,
   headingUp = null,
@@ -278,8 +280,9 @@ const MapCanvas = memo(function MapCanvas({
       clusterPhotos(photos, stops, {
         zoom: viewport.zoom,
         bounds: viewport.bounds,
+        range,
       }),
-    [photos, stops, viewport],
+    [photos, stops, viewport, range],
   )
 
   return (
@@ -328,12 +331,26 @@ const MapCanvas = memo(function MapCanvas({
             {/* biome-ignore lint/a11y/noStaticElementInteractions: photo stacks are the pointer route; the photo rail is the keyboard route */}
             {/* biome-ignore lint/a11y/useKeyWithClickEvents: photo stacks are the pointer route; the photo rail is the keyboard route */}
             <div
-              className={'mstack' + (g.items.some(p => p.id === highlight) ? ' hi' : '')}
+              className={
+                'mstack' +
+                (g.items.some(p => p.id === highlight) ? ' hi' : '') +
+                (g.approximate ? ' guess' : '')
+              }
               onClick={e => {
                 e.stopPropagation()
                 if (!moved.current) onPhoto?.(g.items, 0)
               }}
-              title={`${g.items.length} photo${g.items.length === 1 ? '' : 's'}`}>
+              /* A stack placed by inference says so on the way in. It is a
+                 real answer to "where was this day" and a guess about any one
+                 of these pictures, and the difference has to be legible
+                 before somebody taps it. */
+              title={
+                g.approximate
+                  ? `${g.items.length} photo${g.items.length === 1 ? '' : 's'} from ${
+                      dayLabelOf(g.day || '') || g.day
+                    } — no location of their own, shown where the trip was that day`
+                  : `${g.items.length} photo${g.items.length === 1 ? '' : 's'}`
+              }>
               <span className="in">
                 {g.items.slice(0, 3).map((p, i) => (
                   <span
