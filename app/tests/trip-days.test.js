@@ -2,107 +2,75 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { dayIsoOf, groupByDay, onDay, photoDayIso, tripDays } from '../src/trip-days-core.ts'
 
-/* The trip in the screenshot: Netherlands & Scotland, the first week of
-   September, with day chips reading THU 3 SEP, 4, 8, 5, FRI 4 SEP. */
-const trip = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
+/* A day is a date. That is the whole contract now.
 
-test('the label the app writes reads back as its date', () => {
-  assert.equal(dayIsoOf('Thu 3 Sep', trip), '2026-09-03')
-  assert.equal(dayIsoOf('Fri 4 Sep', trip), '2026-09-04')
-})
-
-test('a bare number is the same day as the label that spells it out', () => {
-  /* The actual bug. Before there was a date picker people typed '4', and
-     de-duplicating the raw text made '4' and 'Fri 4 Sep' two separate days of
-     a trip that only has one of them. */
-  assert.equal(dayIsoOf('4', trip), dayIsoOf('Fri 4 Sep', trip))
-  assert.equal(dayIsoOf('8', trip), '2026-09-08')
-  assert.equal(dayIsoOf('5', trip), '2026-09-05')
-})
-
-test('a number the trip covers twice is not guessed at', () => {
-  /* A month boundary: '4' could be either. Two answers is no answer, and a
-     stop put on the wrong day is worse than one left undated. */
-  const across = { startsOn: '2026-08-28', endsOn: '2026-09-10' }
-  assert.equal(dayIsoOf('4', across), '2026-09-04', 'only September has a 4th here')
-  assert.equal(dayIsoOf('30', across), '2026-08-30')
-  const twoMonths = { startsOn: '2026-08-01', endsOn: '2026-09-30' }
-  assert.equal(dayIsoOf('4', twoMonths), null, 'August the 4th or September the 4th?')
-})
-
-test('a number outside the trip is not a day of it', () => {
-  assert.equal(dayIsoOf('20', trip), null)
-  assert.equal(dayIsoOf('99', trip), null)
-})
+   It used to be whatever somebody had typed — 'Fri 4 Sep', '4', 'Sep 4', 'tbc'
+   — and this file was mostly about reading each of those back against the
+   trip's own range. Migrations 025, 026 and 029 converted what was stored, the
+   API refuses anything else, and the reader is gone. What is left here is the
+   one rule, and a guard against the readings creeping back. */
 
 test('a date is taken as itself, picker or import', () => {
-  assert.equal(dayIsoOf('2026-09-04', trip), '2026-09-04')
-  assert.equal(dayIsoOf('2026-09-04T09:30:00.000Z', trip), '2026-09-04')
-  // And without a trip to measure against, which a half-filled trip has.
-  assert.equal(dayIsoOf('2026-09-04', {}), '2026-09-04')
+  assert.equal(dayIsoOf('2026-09-04'), '2026-09-04')
+  // A photograph's capture time arrives as an instant; the day is its date.
+  assert.equal(dayIsoOf('2026-09-04T09:30:00.000Z'), '2026-09-04')
+  assert.equal(dayIsoOf(' 2026-09-04 '), '2026-09-04')
 })
 
-test('the ways somebody might write a date out are read too', () => {
-  assert.equal(dayIsoOf('Sep 4', trip), '2026-09-04')
-  assert.equal(dayIsoOf('4 September', trip), '2026-09-04')
+test('a date that is not a date is not a day', () => {
+  /* The shape alone is not enough, and a Date that rolls February over into
+     March would file a stop on a day the trip does not have. */
+  assert.equal(dayIsoOf('2026-02-30'), null)
+  assert.equal(dayIsoOf('2026-13-01'), null)
 })
 
-test('nothing is invented from a word that is not a day', () => {
-  for (const junk of ['', '   ', 'later', 'Day one', 'tbc', null, undefined]) {
-    assert.equal(dayIsoOf(junk, trip), null, JSON.stringify(junk))
+test('none of the old spellings are read any more', () => {
+  /* The point of the removal, kept honest.
+
+     Every one of these used to resolve, against the trip's dates, into the day
+     it plainly meant — and that reader is exactly why the same stop could be
+     two chips: two screens asking the question got two answers. They are all
+     no day now, which is visible and fixable in a tap, rather than a value
+     that means something slightly different everywhere it is read. */
+  for (const was of ['Thu 3 Sep', 'Fri 4 Sep', '4', '8', 'Sep 4', '4 September', '2026/09/04']) {
+    assert.equal(dayIsoOf(was), null, was)
   }
 })
 
-test('without a trip range, only a real date can be placed', () => {
-  /* A label carries no year and a number carries nothing at all; the range is
-     what gives either of them a meaning. */
-  assert.equal(dayIsoOf('Fri 4 Sep', {}), null)
-  assert.equal(dayIsoOf('4', {}), null)
-  assert.equal(dayIsoOf('2026-09-04', {}), '2026-09-04')
+test('nothing is invented from a word that is not a day', () => {
+  for (const junk of ['', '   ', 'later', 'Day one', 'tbc', 'all', 'all-days', null, undefined]) {
+    assert.equal(dayIsoOf(junk), null, JSON.stringify(junk))
+  }
 })
 
 test('days come out oldest first, however the rows arrived', () => {
   /* Sorting labels as strings put Friday before Thursday, which is what the
-     itinerary and the chips were both doing. */
-  const days = tripDays([{ day: 'Fri 4 Sep' }, { day: 'Thu 3 Sep' }, { day: '8' }], trip)
+     itinerary and the chips were both doing before a date was the identity. */
+  const days = tripDays([{ day: '2026-09-04' }, { day: '2026-09-03' }, { day: '2026-09-08' }])
   assert.deepEqual(
     days.map(day => day.iso),
     ['2026-09-03', '2026-09-04', '2026-09-08'],
   )
+  assert.equal(days[1].label, 'Fri 4 Sep', 'and each is drawn the way the app writes it')
 })
 
-test('two spellings of one day are one chip', () => {
-  const days = tripDays([{ day: '4' }, { day: 'Fri 4 Sep' }, { day: '2026-09-04' }], trip)
+test('one date is one chip, however many rows are on it', () => {
+  const days = tripDays([{ day: '2026-09-04' }, { day: '2026-09-04T18:00:00.000Z' }])
   assert.equal(days.length, 1)
-  assert.equal(days[0].label, 'Fri 4 Sep', 'and it is drawn the way the app writes it')
-})
-
-test('a day nothing can date is shown as written, after the real ones', () => {
-  /* Not swept into a single bucket: losing a day is worse than showing an odd
-     one, and somebody who typed "tbc" still wants to find what is on it. The
-     numbers that started all this do not land here — they resolve. */
-  const days = tripDays([{ day: 'tbc' }, { day: 'Thu 3 Sep' }, { day: '4' }], trip)
-  assert.deepEqual(
-    days.map(day => day.iso),
-    ['2026-09-03', '2026-09-04', 'tbc'],
-  )
-  assert.equal(days.at(-1).label, 'tbc')
-})
-
-test('the same odd text twice is still one day', () => {
-  const days = tripDays([{ day: 'tbc' }, { day: 'tbc' }], trip)
-  assert.equal(days.length, 1)
+  assert.equal(days[0].label, 'Fri 4 Sep')
 })
 
 test('a trip with nothing dated has no chips at all', () => {
-  assert.deepEqual(tripDays([], trip), [])
-  assert.deepEqual(tripDays([{ day: '' }, { day: null }], trip), [])
+  assert.deepEqual(tripDays([]), [])
+  assert.deepEqual(tripDays([{ day: '' }, { day: null }]), [])
+  // And a leftover that is not a date is not a chip either.
+  assert.deepEqual(tripDays([{ day: 'tbc' }]), [])
 })
 
 test('days something else knows about are counted too', () => {
   /* Photographs carry their own date, and a day that only has photographs on
      it is still a day of the trip. */
-  const days = tripDays([{ day: 'Thu 3 Sep' }], trip, ['2026-09-06', '2026-09-06', null])
+  const days = tripDays([{ day: '2026-09-03' }], ['2026-09-06', '2026-09-06', null])
   assert.deepEqual(
     days.map(day => day.iso),
     ['2026-09-03', '2026-09-06'],
@@ -112,63 +80,55 @@ test('days something else knows about are counted too', () => {
 test('a photograph takes its day from its stop', () => {
   /* Where the camera's clock and the itinerary disagree, the itinerary wins:
      a picture taken at a place belongs with that place. */
-  const photo = { takenAt: '2026-09-07T22:00:00.000Z' }
-  assert.equal(photoDayIso(photo, 'Fri 4 Sep', trip), '2026-09-04')
+  assert.equal(photoDayIso({ takenAt: '2026-09-07T22:00:00.000Z' }, '2026-09-04'), '2026-09-04')
 })
 
 test('a photograph with no stop still has a day of its own', () => {
   /* Before this it took its day from its stop and nothing else, so anything
      filed nowhere could never appear under any day at all. */
-  assert.equal(photoDayIso({ takenAt: '2026-09-06T10:00:00.000Z' }, null, trip), '2026-09-06')
-  assert.equal(photoDayIso({ takenAt: null }, null, trip), null)
-  assert.equal(photoDayIso({ takenAt: 'not a date' }, null, trip), null)
+  assert.equal(photoDayIso({ takenAt: '2026-09-06T10:00:00.000Z' }, null), '2026-09-06')
+  assert.equal(photoDayIso({ takenAt: null }, null), null)
+  assert.equal(photoDayIso({ takenAt: 'not a date' }, null), null)
 })
 
 test('the day is read from the field a photograph actually arrives with', () => {
-  /* And this is the field. The server calls it `when`; only an upload on its
-     way up carries `takenAt`. Every case above asks about the spelling the
-     server never sends, which is how this went unnoticed: a photograph loaded
-     from the API and filed nowhere had no day at all, so it fell out of the
-     timeline, out of the by-date grouping, and off the map. */
-  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, null, trip), '2026-09-06')
-  assert.equal(photoDayIso({ when: null }, null, trip), null)
-  assert.equal(photoDayIso({ when: 'not a date' }, null, trip), null)
+  /* The server calls it `when`; only an upload on its way up carries
+     `takenAt`. Asking only about the spelling the server never sends is how
+     this went unnoticed: a photograph loaded from the API and filed nowhere
+     had no day at all, so it fell out of the timeline, out of the by-date
+     grouping, and off the map. */
+  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, null), '2026-09-06')
+  assert.equal(photoDayIso({ when: null }, null), null)
+  assert.equal(photoDayIso({ when: 'not a date' }, null), null)
 
   // A stop still outranks both, and takenAt still outranks when.
-  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, 'Fri 4 Sep', trip), '2026-09-04')
+  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, '2026-09-04'), '2026-09-04')
   assert.equal(
-    photoDayIso(
-      { takenAt: '2026-09-05T10:00:00.000Z', when: '2026-09-06T10:00:00.000Z' },
-      null,
-      trip,
-    ),
+    photoDayIso({ takenAt: '2026-09-05T10:00:00.000Z', when: '2026-09-06T10:00:00.000Z' }, null),
     '2026-09-05',
   )
 })
 
-test('a chosen day matches by date rather than by spelling', () => {
-  /* The chip holds an ISO date; the rows hold whatever they hold. Comparing
-     the two as text is how a chip could select nothing. */
-  assert.ok(onDay('4', '2026-09-04', trip))
-  assert.ok(onDay('Fri 4 Sep', '2026-09-04', trip))
-  assert.ok(onDay('2026-09-04', '2026-09-04', trip))
-  assert.ok(!onDay('Thu 3 Sep', '2026-09-04', trip))
+test('a stop whose day is a leftover falls back to its own dateless self', () => {
+  /* A row written before the door was shut. It does not take the photograph's
+     day with it and it does not invent one. */
+  assert.equal(photoDayIso({ when: '2026-09-06T10:00:00.000Z' }, 'tbc'), '2026-09-06')
 })
 
-test('a day nothing can date still selects its own rows', () => {
-  /* Comparing as written is the fallback when either side cannot be placed —
-     without it, choosing such a chip would select nothing at all. */
-  assert.ok(onDay('tbc', 'tbc', trip))
-  assert.ok(!onDay('tbc', 'later', trip))
-  assert.ok(!onDay('Fri 4 Sep', 'tbc', trip))
+test('a chosen day matches by date', () => {
+  assert.ok(onDay('2026-09-04', '2026-09-04'))
+  assert.ok(onDay('2026-09-04T08:00:00.000Z', '2026-09-04'), 'an instant is its date')
+  assert.ok(!onDay('2026-09-03', '2026-09-04'))
 })
 
-test('a trip with no dates of its own still places its labels', () => {
-  /* Guessed from the photographs, which know when they were taken. A trip
-     whose range was never filled in is exactly the sort with hand-typed days,
-     and without this every one of them would show as raw text. */
-  const days = tripDays([{ day: 'Fri 4 Sep' }, { day: '4' }], {}, ['2026-09-05T10:00:00.000Z'])
-  assert.equal(days.filter(day => day.label === 'Fri 4 Sep').length, 1, 'both spellings, one day')
+test('a leftover day selects nothing, including itself', () => {
+  /* It used to compare as written when either side could not be placed, so a
+     'tbc' chip still found its 'tbc' rows. There is no such chip to click now
+     — tripDays does not offer one — so the fallback only served to make a
+     value that is not a date behave as though it were. */
+  assert.ok(!onDay('tbc', 'tbc'))
+  assert.ok(!onDay('tbc', '2026-09-04'))
+  assert.ok(!onDay('2026-09-04', 'tbc'))
 })
 
 test('a stop with no day still appears, at the end', () => {
@@ -176,13 +136,10 @@ test('a stop with no day still appears, at the end', () => {
      stops, so a stop with no day was in no group and rendered nowhere. An
      itinerary item you just added and cannot see is worse than one under an
      awkward heading. */
-  const groups = groupByDay(
-    [
-      { id: 'a', day: 'Thu 3 Sep' },
-      { id: 'b', day: '' },
-    ],
-    trip,
-  )
+  const groups = groupByDay([
+    { id: 'a', day: '2026-09-03' },
+    { id: 'b', day: '' },
+  ])
   assert.deepEqual(
     groups.map(group => group.day?.iso ?? null),
     ['2026-09-03', null],
@@ -193,83 +150,47 @@ test('a stop with no day still appears, at the end', () => {
   )
 })
 
-test('two spellings of a day are one heading, in date order', () => {
-  /* Grouping on the raw text made 'Fri 4 Sep' and '4' two headings, and
-     ordering on it put Friday above Thursday. */
-  const groups = groupByDay(
-    [
-      { id: 'a', day: 'Fri 4 Sep' },
-      { id: 'b', day: 'Thu 3 Sep' },
-      { id: 'c', day: '4' },
-    ],
-    trip,
+test('a leftover day is drawn with the undated, not as a day of its own', () => {
+  /* It used to get a heading of its own, labelled with the text, because the
+     text was somebody's typing and worth keeping. Nothing can type one now, so
+     a heading reading 'tbc' beside the real days is a heading for a value that
+     should not exist — and it is still drawn, which is what matters. */
+  const groups = groupByDay([
+    { id: 'a', day: 'tbc' },
+    { id: 'b', day: null },
+    { id: 'c', day: '2026-09-03' },
+  ])
+  assert.deepEqual(
+    groups.map(group => group.day?.label ?? null),
+    ['Thu 3 Sep', null],
   )
   assert.deepEqual(
-    groups.map(group => group.day?.label),
-    ['Thu 3 Sep', 'Fri 4 Sep'],
-  )
-  assert.deepEqual(
-    groups[1].things.map(thing => thing.id),
-    ['a', 'c'],
+    groups.at(-1).things.map(thing => thing.id),
+    ['a', 'b'],
   )
 })
 
 test('grouping keeps the order things arrived in within a day', () => {
   /* The itinerary is already sorted by time before it gets here; regrouping
      must not shuffle it. */
-  const groups = groupByDay(
-    [
-      { id: 'a', day: '3' },
-      { id: 'b', day: '3' },
-      { id: 'c', day: '3' },
-    ],
-    trip,
-  )
+  const groups = groupByDay([
+    { id: 'a', day: '2026-09-03' },
+    { id: 'b', day: '2026-09-03' },
+    { id: 'c', day: '2026-09-03' },
+  ])
   assert.deepEqual(
     groups[0].things.map(thing => thing.id),
     ['a', 'b', 'c'],
   )
 })
 
-test('a day nothing can date gets its own heading, before the undated', () => {
-  const groups = groupByDay(
-    [
-      { id: 'a', day: 'tbc' },
-      { id: 'b', day: null },
-      { id: 'c', day: 'Thu 3 Sep' },
-    ],
-    trip,
-  )
-  assert.deepEqual(
-    groups.map(group => group.day?.label ?? null),
-    ['Thu 3 Sep', 'tbc', null],
-  )
-})
-
 test('grouping and the chips agree on which days there are', () => {
   /* Two places deciding what a day is, is how they came to disagree. */
-  const rows = [{ day: 'Fri 4 Sep' }, { day: '4' }, { day: 'Thu 3 Sep' }, { day: 'tbc' }]
+  const rows = [{ day: '2026-09-04' }, { day: '2026-09-03' }, { day: 'tbc' }]
   assert.deepEqual(
-    groupByDay(rows, trip)
+    groupByDay(rows)
       .filter(group => group.day)
       .map(group => group.day.iso),
-    tripDays(rows, trip).map(day => day.iso),
+    tripDays(rows).map(day => day.iso),
   )
-})
-
-test('a live day nothing can date still selects its own chip', () => {
-  /* The screen opens on the day the journey is on. Resolving that to a date
-     and taking nothing when it would not resolve meant a trip whose labels
-     fall outside its declared range opened on the whole trip instead of on
-     today — the wrong strip, the wrong first card. A day nothing can place is
-     still a chip on the bar, so it is still an answer. */
-  const outside = { startsOn: '2026-09-09', endsOn: '2026-09-11' }
-  const days = tripDays([{ day: 'Fri 4 Sep' }, { day: 'Sat 5 Sep' }], outside)
-  assert.deepEqual(
-    days.map(day => day.iso),
-    ['Fri 4 Sep', 'Sat 5 Sep'],
-    'kept as written, because the range cannot place them',
-  )
-  assert.equal(dayIsoOf('Sat 5 Sep', outside), null)
-  assert.ok(onDay('Sat 5 Sep', 'Sat 5 Sep', outside), 'and the chip still selects its rows')
 })

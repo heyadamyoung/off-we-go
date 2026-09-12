@@ -45,13 +45,13 @@ const STOPS = [
   {
     id: 's1',
     name: 'Rijksmuseum',
-    day: 'Sat 5 Sep',
+    day: '2026-09-05',
     time: '09:30',
     status: 'done',
     note: 'The Night Watch',
   },
-  { id: 's2', name: 'Foodhallen', day: 'Sat 5 Sep', time: '13:00', status: 'now' },
-  { id: 's3', name: 'Anne Frank House', day: 'Sun 6 Sep', time: '15:45', status: 'planned' },
+  { id: 's2', name: 'Foodhallen', day: '2026-09-05', time: '13:00', status: 'now' },
+  { id: 's3', name: 'Anne Frank House', day: '2026-09-06', time: '15:45', status: 'planned' },
 ]
 const PHOTOS = [
   { id: 'p1', stopId: 's1', by: 'Maya', when: '10:42', caption: 'In front of The Night Watch' },
@@ -59,7 +59,7 @@ const PHOTOS = [
 ]
 
 test('a day shows its own stops and the photographs taken at them, in order', () => {
-  const items = tripItems({ stops: STOPS, photos: PHOTOS, day: 'Sat 5 Sep' })
+  const items = tripItems({ stops: STOPS, photos: PHOTOS, day: '2026-09-05' })
   assert.deepEqual(
     items.map(item => item.id),
     ['s1', 'p1', 's2'],
@@ -69,9 +69,9 @@ test('a day shows its own stops and the photographs taken at them, in order', ()
 
 test('a stop comes before the photographs taken at it, even at the same time', () => {
   const together = tripItems({
-    stops: [{ id: 's', name: 'Stop', day: 'Mon', time: '10:00' }],
+    stops: [{ id: 's', name: 'Stop', day: '2026-09-07', time: '10:00' }],
     photos: [{ id: 'p', stopId: 's', by: 'A', when: '10:00' }],
-    day: 'Mon',
+    day: '2026-09-07',
   })
   assert.deepEqual(
     together.map(item => item.kind),
@@ -88,7 +88,7 @@ test('all days shows the whole trip in day then time order', () => {
 })
 
 test('a search looks across the whole trip, not only the chosen day', () => {
-  const found = tripItems({ stops: STOPS, photos: PHOTOS, day: 'Sat 5 Sep', query: 'anne' })
+  const found = tripItems({ stops: STOPS, photos: PHOTOS, day: '2026-09-05', query: 'anne' })
   assert.deepEqual(
     found.map(item => item.id),
     ['s3'],
@@ -142,19 +142,15 @@ test('the day list is every day that has a stop, in order, without blanks', () =
 test('a day typed before there was a picker is the day it plainly means', () => {
   /* What the bar was actually showing: THU 3 SEP, 4, 8, 5, FRI 4 SEP — five
      chips for three days, because the raw text was de-duplicated and '4' and
-     'Fri 4 Sep' are different strings. Given the trip's own dates they are
-     one day, and they sort into it. */
-  const range = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
-  const days = daysOf(
-    [
-      { id: 'a', name: 'A', day: 'Thu 3 Sep' },
-      { id: 'b', name: 'B', day: '4' },
-      { id: 'c', name: 'C', day: '8' },
-      { id: 'd', name: 'D', day: '5' },
-      { id: 'e', name: 'E', day: 'Fri 4 Sep' },
-    ],
-    range,
-  )
+     'Fri 4 Sep' are different strings. They are all dates now, so they are one
+     day when they are one day, and they sort into it. */
+  const days = daysOf([
+    { id: 'a', name: 'A', day: '2026-09-03' },
+    { id: 'b', name: 'B', day: '2026-09-04' },
+    { id: 'c', name: 'C', day: '2026-09-08' },
+    { id: 'd', name: 'D', day: '2026-09-05' },
+    { id: 'e', name: 'E', day: '2026-09-04T18:00:00.000Z' },
+  ])
   assert.deepEqual(
     days.map(day => day.label),
     ['Thu 3 Sep', 'Fri 4 Sep', 'Sat 5 Sep', 'Tue 8 Sep'],
@@ -162,10 +158,10 @@ test('a day typed before there was a picker is the day it plainly means', () => 
 })
 
 test('a day only a photograph was taken on is still a day of the trip', () => {
-  const range = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
-  const days = daysOf([{ id: 'a', name: 'A', day: 'Thu 3 Sep' }], range, [
-    { id: 'p', by: 'Maya', takenAt: '2026-09-06T11:00:00.000Z' },
-  ])
+  const days = daysOf(
+    [{ id: 'a', name: 'A', day: '2026-09-03' }],
+    [{ id: 'p', by: 'Maya', takenAt: '2026-09-06T11:00:00.000Z' }],
+  )
   assert.deepEqual(
     days.map(day => day.label),
     ['Thu 3 Sep', 'Sun 6 Sep'],
@@ -236,39 +232,43 @@ test('a chip selects its rows on a trip that never declared its dates', () => {
 
      Only a title is needed to start a trip, so a trip with no dates of its own
      is not an edge case. Compare the dates both sides already hold. */
-  const range = {}
   const stops = [
     { id: 'a', name: 'Edinburgh', day: '2026-09-10', seq: 0, lng: 0, lat: 0 },
     { id: 'b', name: 'Glasgow', day: '2026-09-09', seq: 1, lng: 0, lat: 0 },
   ]
-  for (const day of daysOf(stops, range)) {
-    const items = tripItems({ stops, photos: [], day: day.iso, range })
+  for (const day of daysOf(stops)) {
+    const items = tripItems({ stops, photos: [], day: day.iso })
     assert.equal(items.length, 1, `the ${day.label} chip selects its own stop`)
   }
 })
 
-test('a chip selects its rows however each one spells its day', () => {
-  /* And with a range, the whole point of storing the date: one chip, whatever
-     anybody ever typed into the rows under it. */
-  const range = { startsOn: '2026-09-03', endsOn: '2026-09-14' }
+test('one chip holds every row on its date, however the date arrived', () => {
+  /* The whole point of storing a date: an instant and a plain date are the
+     same day, and land under the same chip. */
   const stops = [
     { id: 'a', name: 'Picked', day: '2026-09-04', seq: 0, lng: 0, lat: 0 },
-    { id: 'b', name: 'Labelled', day: 'Fri 4 Sep', seq: 1, lng: 0, lat: 0 },
-    { id: 'c', name: 'Typed', day: '4', seq: 2, lng: 0, lat: 0 },
-    { id: 'd', name: 'Elsewhere', day: '2026-09-09', seq: 3, lng: 0, lat: 0 },
+    { id: 'b', name: 'Stamped', day: '2026-09-04T18:30:00.000Z', seq: 1, lng: 0, lat: 0 },
+    { id: 'c', name: 'Elsewhere', day: '2026-09-09', seq: 2, lng: 0, lat: 0 },
   ]
-  assert.equal(tripItems({ stops, photos: [], day: '2026-09-04', range }).length, 3)
-  assert.equal(tripItems({ stops, photos: [], day: '2026-09-09', range }).length, 1)
+  assert.equal(tripItems({ stops, photos: [], day: '2026-09-04' }).length, 2)
+  assert.equal(tripItems({ stops, photos: [], day: '2026-09-09' }).length, 1)
 })
 
-test('a day nothing could date still selects its own rows', () => {
+test('a leftover day is offered no chip and selects nothing', () => {
+  /* It used to get a chip of its own and select its own rows. Nothing can
+     write one now, so a row still holding text is a leftover: it is drawn with
+     the undated, under "All days", rather than given a heading that implies
+     somebody chose it. */
   const stops = [
     { id: 'a', name: 'Sometime', day: 'tbc', seq: 0, lng: 0, lat: 0 },
     { id: 'b', name: 'Dated', day: '2026-09-09', seq: 1, lng: 0, lat: 0 },
   ]
-  const items = tripItems({ stops, photos: [], day: 'tbc', range: {} })
   assert.deepEqual(
-    items.map(item => item.title),
-    ['Sometime'],
+    daysOf(stops).map(day => day.iso),
+    ['2026-09-09'],
+    'no chip for it',
   )
+  assert.equal(tripItems({ stops, photos: [], day: 'tbc' }).length, 0)
+  /* And it is still reachable, which is what stops this being data loss. */
+  assert.equal(tripItems({ stops, photos: [], day: ALL_DAYS }).length, 2)
 })

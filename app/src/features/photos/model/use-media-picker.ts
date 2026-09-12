@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { isNativeApp, pickNativePhotos } from '../../../mobile'
+import { isNativeApp } from '../../../mobile'
 import { preparePhotoFilesForUpload, type MetadataFile } from '../../../mobile-photos-core'
 import { isVideoFile, videoStill, withVideoMime } from '../../../mobile-videos-core'
 import { appErrorMessage } from '../../../user-messages-core'
-import { errorMessage, type Toast } from '../../../shared/model/types'
+import type { Toast } from '../../../shared/model/types'
 
 /** One thing chosen from the camera roll, ready to look at and to send. */
 export interface ChosenMedia {
@@ -120,19 +120,23 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
     queueMicrotask(() => fileRef.current?.click())
   }, [])
 
-  const choosePhotos = useCallback(async () => {
-    try {
-      const chosen = await pickNativePhotos()
-      if (chosen) {
-        if (chosen.length) await take(chosen)
-        return
-      }
-      openFilePicker(isNativeApp ? 'image/*' : 'image/*,video/*')
-    } catch (error) {
-      if (!/cancel/i.test(errorMessage(error, '')))
-        toast(appErrorMessage(error, 'open-photos'), 'error')
-    }
-  }, [take, toast, openFilePicker])
+  /* The system file picker, on the phone as well as the web.
+   *
+   * It used to be Capacitor's photo picker here, which looked better and quietly
+   * destroyed the thing this screen exists to collect. That plugin re-encodes
+   * every image from a UIImage, so the EXIF block — where the picture was taken,
+   * and when — is gone by the time we see it; it puts the metadata back
+   * afterwards from a PHAsset lookup, and a photo library shared as "Selected
+   * Photos" answers that lookup for nothing. Neither half fails loudly. What
+   * arrived was a picture with no position and no capture time, which the app
+   * then filed at wherever the phone happened to be when it was uploaded.
+   *
+   * A file input hands over the original bytes. No re-encode, no asset lookup,
+   * no photo-library permission to get wrong — and `preparePhotoFilesForUpload`
+   * reads the block before converting anything, so it survives HEIC too. */
+  const choosePhotos = useCallback(() => {
+    openFilePicker(isNativeApp ? 'image/*' : 'image/*,video/*')
+  }, [openFilePicker])
 
   const chooseVideos = useCallback(() => openFilePicker('video/*'), [openFilePicker])
 

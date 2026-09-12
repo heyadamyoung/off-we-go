@@ -281,8 +281,18 @@ export function photoPlacement(
     Math.abs(metadataLat) <= 90
   const exifPoint: Coordinates | null = hasEmbeddedGps ? [metadataLng!, metadataLat!] : null
   const needsHistory = !exifPoint && !!metadata?.takenAt
-  const point = exifPoint || (needsHistory ? null : live)
-  const fallbackPoint = needsHistory ? live : null
+  /* Only the picture's own GPS is a position. Anything else is where the phone
+     happens to be while uploading, which on a trip is a different place on a
+     different day — and a picker that strips EXIF looks exactly like a picture
+     that never had any, so this is the common case rather than the odd one.
+
+     It still travels, as a labelled fallback, so a photograph is not lost off
+     the map entirely. But offering it rather than asserting it is what lets
+     the server reach for the things it knows and this does not: the file's own
+     block, read from the bytes, and where the trail says they actually were
+     when it was taken. */
+  const point = exifPoint
+  const fallbackPoint = exifPoint ? null : live
   const previewPoint = point || fallbackPoint
   let stop: Stop | null = null,
     best = 400
@@ -302,7 +312,9 @@ export function photoPlacement(
     stopId: stop?.id || null,
     stopName: stop?.name || null,
     source: exifPoint ? ('exif' as const) : needsHistory ? ('history' as const) : fallbackSource,
-    ...(needsHistory ? { fallbackSource } : {}),
+    /* Named whenever there is one to name, so the server knows what the
+       fallback it is being handed actually is. */
+    ...(fallbackPoint ? { fallbackSource } : {}),
     hasEmbeddedGps,
   }
 }

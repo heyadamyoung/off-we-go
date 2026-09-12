@@ -146,7 +146,7 @@ test('the archive carries the trips, their stops and a GPX trail, and links the 
     method: 'POST',
     url: `/api/trips/${trip.json().id}/stops`,
     headers: { authorization },
-    payload: { name: 'Edinburgh Castle', lng: -3.2, lat: 55.95, day: 'Mon', status: 'done' },
+    payload: { name: 'Edinburgh Castle', lng: -3.2, lat: 55.95, day: '2026-09-07', status: 'done' },
   })
   await app.inject({
     method: 'PUT',

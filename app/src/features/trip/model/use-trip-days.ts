@@ -24,27 +24,20 @@ export default function useTripDays({
   searchDay?: string
   liveStop?: Stop | null
 }) {
-  /* What gives a stored label its year and a bare number its month. Without it
-     neither can be placed on a date at all. */
+  /* The trip's declared range. Nothing needs it to read a day any more — a day
+     is a date — but the calendar in the stop editor is fenced to it, so a date
+     outside the trip is refused rather than quietly saved. */
   const range: DayRange = useMemo(
     () => ({ startsOn: trip.startsOn, endsOn: trip.endsOn }),
     [trip.startsOn, trip.endsOn],
   )
 
-  const days = useMemo(() => daysOf(stops, range, photos), [stops, range, photos])
+  const days = useMemo(() => daysOf(stops, photos), [stops, photos])
   /* The journey's own day, as a date, so the chip it lights up is the chip
-     that holds it however that stop happens to spell its day.
-
-     As written when nothing can date it, because a day nothing can place is
-     still a chip on the bar and still the day the trip is on. Taking only the
-     date meant a trip whose labels fall outside its declared range had no live
-     day at all, so the screen opened on the whole trip instead of on today —
-     which is the wrong day, a strip of the wrong stops, and every one of those
-     is a real trip whose dates moved after it was planned. */
-  const liveDay = useMemo(
-    () => dayIsoOf(liveStop?.day, range) || String(liveStop?.day ?? '').trim() || undefined,
-    [liveStop?.day, range],
-  )
+     that holds it. It used to fall back to the stop's day as written, because
+     a day nothing could place was still a chip on the bar. Nothing can hold an
+     unplaceable day now, so there is no such chip to light. */
+  const liveDay = useMemo(() => dayIsoOf(liveStop?.day) || undefined, [liveStop?.day])
   const day = searchDay || liveDay || ALL_DAYS
 
   return { range, days, day, liveDay }

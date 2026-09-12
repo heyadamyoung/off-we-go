@@ -15,7 +15,7 @@
    nobody anything. */
 
 import type { Coordinates, Id, Stop, TripPhoto } from './shared/model/types'
-import { dayIsoOf, photoDayIso, type DayRange } from './trip-days-core'
+import { dayIsoOf, photoDayIso } from './trip-days-core'
 
 export interface PhotoGroup {
   key: string
@@ -65,8 +65,6 @@ interface ClusterOptions {
      stack. Sixty is a little over the width of the stack itself, so markers
      stop overlapping rather than merely stop colliding. */
   radiusPx?: number
-  /** What gives a stop's stored day its date, for the day anchors below. */
-  range?: DayRange
 }
 
 /**
@@ -85,10 +83,10 @@ interface ClusterOptions {
  * never be drawn as though it were — but it is a great deal better than
  * nowhere, and it is the place from which somebody can file it properly.
  */
-export function dayAnchors(stops: Stop[], range: DayRange = {}): Map<string, Coordinates> {
+export function dayAnchors(stops: Stop[]): Map<string, Coordinates> {
   const sums = new Map<string, { lng: number; lat: number; count: number }>()
   for (const stop of stops) {
-    const day = dayIsoOf(stop.day, range)
+    const day = dayIsoOf(stop.day)
     if (!day || !placed(stop)) continue
     const held = sums.get(day)
     if (held) {
@@ -109,13 +107,13 @@ export function dayAnchors(stops: Stop[], range: DayRange = {}): Map<string, Coo
 export function clusterPhotos(
   photos: TripPhoto[],
   stops: Stop[],
-  { zoom, bounds = null, radiusPx = 60, range = {} }: ClusterOptions,
+  { zoom, bounds = null, radiusPx = 60 }: ClusterOptions,
 ): PhotoGroup[] {
   const byStop = new Map<Id, TripPhoto[]>()
   const loose: TripPhoto[] = []
   /* Nothing to place them by except when they were taken. */
   const byDay = new Map<string, TripPhoto[]>()
-  const anchors = dayAnchors(stops, range)
+  const anchors = dayAnchors(stops)
   for (const photo of photos) {
     if (photo.stopId) {
       const held = byStop.get(photo.stopId)
@@ -123,7 +121,7 @@ export function clusterPhotos(
       else byStop.set(photo.stopId, [photo])
     } else if (placed(photo)) loose.push(photo)
     else {
-      const day = photoDayIso(photo, null, range)
+      const day = photoDayIso(photo, null)
       if (!day || !anchors.has(day)) continue
       const held = byDay.get(day)
       if (held) held.push(photo)

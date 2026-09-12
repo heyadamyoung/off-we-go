@@ -293,7 +293,6 @@ export default function useTripPage({
     setMapView,
     viewRef,
     openViewer,
-    range: dayRange,
   })
 
   const onMapView = useCallback(

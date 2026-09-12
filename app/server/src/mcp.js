@@ -4,6 +4,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import { z } from 'zod'
 import { AGENT_TOKEN_PREFIX, AGENT_TOKEN_TTL_MS, readAgentToken } from './agent-token.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
+import { isTripDay } from './trip-day.js'
 import { recordFailure, span, stamp } from './tracing.js'
 
 const SCOPES = ['trips:read', 'trips:write']
@@ -208,6 +209,21 @@ const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value,
 const toolFailure = message => ({ isError: true, content: [{ type: 'text', text: message }] })
 const entityId = z.uuid()
 const pgInteger = z.number().int().min(0).max(2_147_483_647)
+/* A stop's day is a date and nothing else.
+ *
+ * This was `pgInteger` — a number — which is how an assistant asked for
+ * today's date came to set a stop's day to 10. That is the shape the app used
+ * to accept from a text box, and migration 025 spent a whole file converting
+ * the last of it; a tool that keeps writing it puts the mess straight back.
+ * The calendar picker writes this format and every screen reads it. */
+const tripDay = z
+  .string()
+  .refine(isTripDay, { message: 'Use a calendar date, like 2026-09-04' })
+  .describe(
+    'The calendar date the stop is on, as YYYY-MM-DD — for example 2026-09-04. ' +
+      'Not a day number, not a weekday, not a label. Null for a stop with no day yet.',
+  )
+
 const externalUrl = z
   .url()
   .max(2048)
@@ -564,7 +580,7 @@ function buildMcpServer({
         lat: z.number().min(-90).max(90),
         kind: z.string().max(80).nullable().optional(),
         icon: z.string().max(80).optional(),
-        day: pgInteger.max(10_000).nullable().optional(),
+        day: tripDay.nullable().optional(),
         time: z.string().max(80).nullable().optional(),
         status: z.enum(['done', 'now', 'next', 'planned']).optional(),
         note: z.string().max(5000).nullable().optional(),
@@ -605,7 +621,7 @@ function buildMcpServer({
         lat: z.number().min(-90).max(90).optional(),
         kind: z.string().max(80).nullable().optional(),
         icon: z.string().max(80).optional(),
-        day: pgInteger.max(10_000).nullable().optional(),
+        day: tripDay.nullable().optional(),
         time: z.string().max(80).nullable().optional(),
         status: z.enum(['done', 'now', 'next', 'planned']).optional(),
         note: z.string().max(5000).nullable().optional(),

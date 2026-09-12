@@ -40,7 +40,7 @@ test('a stop takes a document, shows it on the trip, and gives it up on delete',
     method: 'POST',
     url: `/api/trips/${trip.id}/stops`,
     headers: { authorization: owner },
-    payload: { name: 'Rijksmuseum', day: 'Day 1', lng: 4.88, lat: 52.36 },
+    payload: { name: 'Rijksmuseum', day: '2026-09-04', lng: 4.88, lat: 52.36 },
   })
   const stop = created.json()
 

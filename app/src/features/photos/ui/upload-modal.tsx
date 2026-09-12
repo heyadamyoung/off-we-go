@@ -179,9 +179,13 @@ function UploadModal({ onClose, onAdd, live, stops, toast }: UploadModalProps) {
                 : 'They go up in the background — you can carry on using the trip.'}
             </span>
           </button>
-          {/* The native photo picker hands over the EXIF a file input drops,
-              which is why photographs still go through it — but it cannot
-              offer films at all, so those get their own way in. */}
+          {/* This said, until it was measured, that the native picker handed
+              over the EXIF a file input drops. It is the other way round: the
+              plugin re-encodes the image and loses the block, then restores it
+              from a photo-library lookup that "Selected Photos" refuses. The
+              file input gives the original bytes and keeps it.
+              Photographs are asked for as images, so films get their own way
+              in rather than sitting unmentioned behind the same button. */}
           {isNativeApp && (
             <button
               className="flex items-center justify-center gap-2 rounded-2xl border-[1.5px]

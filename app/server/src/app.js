@@ -40,6 +40,8 @@ import {
   isVideoPath,
   mediaContentType,
 } from './media-types.js'
+import { exifFromImage } from './photo-exif.js'
+import { tripDayOrNull } from './trip-day.js'
 import { signPlaylist } from './hls.js'
 import {
   DEFAULT_BUCKET_SECONDS,
@@ -961,12 +963,31 @@ export async function buildServer({
     return { trips, invites }
   })
 
+  /* A trip's own dates, held to the same rule as a stop's day. Unvalidated,
+     they reached a formatter that went straight to getDate() and printed
+     "NaN September" on the home card — and the new-trip screen stores what
+     that formatter returns, so the nonsense outlived the render. */
+  const tripDatesOr400 = (body, reply) => {
+    for (const key of ['startsOn', 'endsOn']) {
+      if (body[key] === undefined) continue
+      const day = tripDayOrNull(body[key])
+      if (day === undefined) {
+        reply.code(400).send({ error: 'A trip’s dates must be dates, like 2026-09-04' })
+        return false
+      }
+      body[key] = day
+    }
+    return true
+  }
+
   app.post('/api/trips', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     const title = String(request.body?.title || '').trim()
     if (!title) return reply.code(400).send({ error: 'A trip needs a title' })
-    const trip = await repository.createTrip(user, { ...request.body, title })
+    const body = { ...(request.body || {}) }
+    if (!tripDatesOr400(body, reply)) return
+    const trip = await repository.createTrip(user, { ...body, title })
     return reply.code(201).send(trip)
   })
 
@@ -1230,7 +1251,9 @@ export async function buildServer({
   app.patch('/api/trips/:tripId', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const trip = await repository.updateTrip(user, request.params.tripId, request.body || {})
+    const body = { ...(request.body || {}) }
+    if (!tripDatesOr400(body, reply)) return
+    const trip = await repository.updateTrip(user, request.params.tripId, body)
     if (!trip) return reply.code(403).send({ error: 'You cannot edit this trip' })
     return trip
   })
@@ -1561,11 +1584,36 @@ export async function buildServer({
 
         let lng = supplied.lng,
           lat = supplied.lat
-        const takenAt = dateFrom(fields.takenAt)
+        let takenAt = dateFrom(fields.takenAt)
         if (fields.takenAt && !takenAt) {
           return reply.code(400).send({ error: 'The photo capture time is invalid' })
         }
         let locationSource = requestedLocationSource
+
+        /* What the photograph says about itself, which outranks anything a
+           client worked out.
+
+           A picker that strips EXIF cannot be told apart, from the client's
+           side, from a picture that never carried any — and the difference is
+           a holiday filed where it was uploaded rather than where it was
+           taken. iOS does exactly that whenever the photo library is shared as
+           "Selected Photos": the picker still browses everything, the metadata
+           lookup behind it answers for nothing, and the phone's current
+           position quietly becomes the answer.
+
+           Read here it holds for every client, including the ones nobody has
+           written yet. It must run before the image is resized, because
+           resizing is what destroys the block. Never fatal: an unreadable
+           block leaves everything exactly as it arrived. */
+        const own = isVideo ? null : await exifFromImage(bytes)
+        if (own?.lng != null && own?.lat != null) {
+          lng = own.lng
+          lat = own.lat
+          locationSource = 'exif'
+        }
+        /* And its capture time, which is what the trail lookup below needs to
+           work out where somebody was when they took it. */
+        if (!takenAt && own?.takenAt) takenAt = dateFrom(own.takenAt)
         if ((lng == null || lat == null) && takenAt && repository.findPositionNearCapture) {
           const matched = await repository.findPositionNearCapture(
             user,
@@ -2861,11 +2909,17 @@ export async function buildServer({
     if (!name || lng == null || lat == null || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
       return reply.code(400).send({ error: 'A stop needs a name and valid coordinates' })
     }
+    /* A date or no day. Anything else is refused rather than stored: the whole
+       point of a stored date is that nothing downstream has to guess. */
+    const day = tripDayOrNull(body.day)
+    if (day === undefined) {
+      return reply.code(400).send({ error: 'A stop’s day must be a date, like 2026-09-04' })
+    }
     const stop = await repository.createStop(user, request.params.tripId, {
       name,
       kind: body.kind || null,
       icon: body.icon || 'pin',
-      day: body.day || null,
+      day,
       time: body.time || null,
       lng,
       lat,
@@ -2899,6 +2953,13 @@ export async function buildServer({
     }
     if (fields.status !== undefined && !STOP_STATUSES.has(String(fields.status))) {
       return reply.code(400).send({ error: 'That is not a stop status' })
+    }
+    if (fields.day !== undefined) {
+      const day = tripDayOrNull(fields.day)
+      if (day === undefined) {
+        return reply.code(400).send({ error: 'A stop’s day must be a date, like 2026-09-04' })
+      }
+      fields.day = day
     }
     if (fields.seq !== undefined && !Number.isInteger(fields.seq)) {
       return reply.code(400).send({ error: 'A stop order must be a whole number' })

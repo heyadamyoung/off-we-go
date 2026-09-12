@@ -18,7 +18,7 @@ export default function TripMap({
 }) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
-    mapTheme, sun, mapView, onMapView, mapPadding, routeDraft, track, liveStops, photos, dayRange,
+    mapTheme, sun, mapView, onMapView, mapPadding, routeDraft, track, liveStops, photos,
     markers, trail, trailFaded, selected, pickStop, openViewer, liveStop, editing, placing,
     onMapClicked, onStopMove, places, pickPlace, attractions, setAttractionCard, indoor,
   } = page
@@ -42,7 +42,6 @@ export default function TripMap({
       route={routeDraft || track}
       stops={liveStops}
       photos={photos}
-      range={dayRange}
       markers={beamed}
       you={
         compass.on && !selfLive && compass.at ? { at: compass.at, facing: compass.facing } : null

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { ALL_DAYS } from '../../../trip-search-core'
 import { tripItems, type TripItem } from './trip-items'
 import type { MapView, Stop, TripPhoto } from '../../../shared/model/types'
-import type { DayRange } from '../../../trip-days-core'
 
 /* The strip, the timeline and the map all select from one list. This owns that
    list, which item is chosen, and what choosing does — including the rule that
@@ -18,7 +17,6 @@ export default function useTripSelection({
   setMapView,
   viewRef,
   openViewer,
-  range,
 }: {
   liveStops: Stop[]
   photos: TripPhoto[]
@@ -30,12 +28,10 @@ export default function useTripSelection({
   setMapView: (view: MapView) => void
   viewRef: { current: MapView }
   openViewer: (list: TripPhoto[], index: number) => void
-  /** What gives a stored label its year and a bare number its month. */
-  range?: DayRange
 }) {
   const items = useMemo(
-    () => tripItems({ stops: liveStops, photos, day, range, query }),
-    [liveStops, photos, day, range, query],
+    () => tripItems({ stops: liveStops, photos, day, query }),
+    [liveStops, photos, day, query],
   )
   /* The list the viewer should page through, put here by whoever opened it.
      Without this the viewer always paged through the bottom strip — so a
@@ -48,10 +44,8 @@ export default function useTripSelection({
   const selectedItem = useMemo(
     () =>
       items.find(item => item.id === selected) ||
-      tripItems({ stops: liveStops, photos, day: ALL_DAYS, range }).find(
-        item => item.id === selected,
-      ),
-    [items, liveStops, photos, selected, range],
+      tripItems({ stops: liveStops, photos, day: ALL_DAYS }).find(item => item.id === selected),
+    [items, liveStops, photos, selected],
   )
 
   /* Clicking a photograph anywhere — strip, panel, timeline — brings up the
@@ -89,9 +83,17 @@ export default function useTripSelection({
           focus: true,
         })
       }
+      /* Its date, not its label. `item.day` is what gets drawn — 'Sat 5 Sep' —
+         and the chosen day is a date, so they never matched and this rewrote
+         the URL to a label on every pick. The filter then found nothing under
+         it and the whole list emptied: choosing a stop made the trip vanish.
+
+         It only ever looked fine because the reader used to decode a label
+         back into a date. The URL is a stored value like any other, and a
+         value that has to be decoded is one somebody will store wrong. */
       patch({
         sel: item.id,
-        ...(day !== ALL_DAYS && item.day && item.day !== day ? { day: item.day } : {}),
+        ...(day !== ALL_DAYS && item.dayIso && item.dayIso !== day ? { day: item.dayIso } : {}),
       })
     },
     [patch, day, setFollowing, setMapView, viewRef],
