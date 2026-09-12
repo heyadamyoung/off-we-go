@@ -6,7 +6,7 @@ include ':aparajita-capacitor-secure-storage'
 project(':aparajita-capacitor-secure-storage').projectDir = new File('../node_modules/.pnpm/@aparajita+capacitor-secure-storage@7.1.6/node_modules/@aparajita/capacitor-secure-storage/android')
 
 include ':capacitor-community-background-geolocation'
-project(':capacitor-community-background-geolocation').projectDir = new File('../node_modules/.pnpm/@capacitor-community+backgr_f337b17035ddcc398d963e47db7facc5/node_modules/@capacitor-community/background-geolocation/android')
+project(':capacitor-community-background-geolocation').projectDir = new File('../node_modules/.pnpm/@capacitor-community+background-geolocation@1.2.26_@capacitor+core@7.6.8/node_modules/@capacitor-community/background-geolocation/android')
 
 include ':capacitor-app'
 project(':capacitor-app').projectDir = new File('../node_modules/.pnpm/@capacitor+app@7.1.0_@capacitor+core@7.6.8/node_modules/@capacitor/app/android')
@@ -16,6 +16,12 @@ project(':capacitor-browser').projectDir = new File('../node_modules/.pnpm/@capa
 
 include ':capacitor-camera'
 project(':capacitor-camera').projectDir = new File('../node_modules/.pnpm/@capacitor+camera@7.0.2_@capacitor+core@7.6.8/node_modules/@capacitor/camera/android')
+
+include ':capacitor-filesystem'
+project(':capacitor-filesystem').projectDir = new File('../node_modules/.pnpm/@capacitor+filesystem@7.1.8_@capacitor+core@7.6.8/node_modules/@capacitor/filesystem/android')
+
+include ':capacitor-keyboard'
+project(':capacitor-keyboard').projectDir = new File('../node_modules/.pnpm/@capacitor+keyboard@7.0.6_@capacitor+core@7.6.8/node_modules/@capacitor/keyboard/android')
 
 include ':capacitor-local-notifications'
 project(':capacitor-local-notifications').projectDir = new File('../node_modules/.pnpm/@capacitor+local-notifications@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/local-notifications/android')

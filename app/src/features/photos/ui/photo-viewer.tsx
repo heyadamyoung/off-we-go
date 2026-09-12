@@ -11,6 +11,7 @@ import PhotoZoom from './photo-zoom'
 import VideoFrame from './video-frame'
 import { durationLabel } from '../../../mobile-videos-core'
 import { pageBy, warmAround } from '../../../swipe-core'
+import usePhotoDownload from '../model/use-photo-download'
 import usePhotoShare from '../model/use-photo-share'
 import useViewerGestures from '../model/use-viewer-gestures'
 
@@ -140,6 +141,7 @@ function PhotoViewer({
 
   const notify = useToast()
   const { share, sharing } = usePhotoShare(tripId, photo, notify)
+  const { download, saving } = usePhotoDownload(photo, notify)
 
   const openZoom = useCallback(() => setZoomed(true), [])
   const gestures = useViewerGestures({
@@ -201,12 +203,14 @@ function PhotoViewer({
           liked={liked}
           canEdit={canEdit}
           sharing={sharing}
+          saving={saving}
           onDetails={() => setDetails(true)}
           onLike={() => {
             if (!liked) setBurst(value => value + 1)
             toggleLike(photo.id)
           }}
           onShare={share}
+          onDownload={download}
           onClose={onClose}
         />
 
