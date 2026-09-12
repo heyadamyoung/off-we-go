@@ -75,8 +75,17 @@ export default function DetailCard(props: DetailCardProps) {
   const stop = item.stop
   const [papers, setPapers] = useState(false)
   const paperCount = stop?.documents?.length || 0
+  /* All four the editor offers, not three. 'next' fell through to 'Planned',
+     so setting a stop to Up next changed the card not at all — the same
+     complaint as the status being painted over, from the other end. */
   const status =
-    item.status === 'done' ? 'Done' : item.status === 'now' ? 'Happening now' : 'Planned'
+    item.status === 'done'
+      ? 'Done'
+      : item.status === 'now'
+        ? 'Happening now'
+        : item.status === 'next'
+          ? 'Up next'
+          : 'Planned'
 
   return (
     <div
