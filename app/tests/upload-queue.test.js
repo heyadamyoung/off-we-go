@@ -165,7 +165,7 @@ test('a retrying upload is neither a failure nor something to prod', () => {
 const many = (count, kind) =>
   enqueue(
     [],
-    Array.from({ length: count }, (unused, index) => ({
+    Array.from({ length: count }, (_unused, index) => ({
       key: `${kind || 'p'}${index}`,
       name: `${index}.jpg`,
       ...(kind ? { kind } : {}),
@@ -360,7 +360,7 @@ test('a whole batch of uploads never draws backwards', () => {
      late, and finished ones leaving the queue underneath the bar. */
   let queue = enqueue(
     [],
-    Array.from({ length: 6 }, (unused, index) => ({ key: `p${index}`, name: `${index}.jpg` })),
+    Array.from({ length: 6 }, (_unused, index) => ({ key: `p${index}`, name: `${index}.jpg` })),
   )
   let finished = 0
   let drawn = 0

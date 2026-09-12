@@ -33,7 +33,7 @@ interface PanelProps {
   onMovePhotos?: (
     ids: Id[],
     filing: { stopId?: Id | null; stopPinned?: boolean },
-  ) => Promise<boolean | void> | boolean | void
+  ) => Promise<boolean | undefined> | boolean | undefined
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>

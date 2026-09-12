@@ -3,6 +3,7 @@ import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import PhotoDetails from './photo-details'
+import PhotoFilm from './photo-film'
 import PhotoSide from './photo-side'
 import PhotoZoom from './photo-zoom'
 import VideoFrame from './video-frame'
@@ -363,13 +364,7 @@ function PhotoViewer({
           />
         )}
 
-        <div className="vfilm">
-          {list.map((p, i) => (
-            <button key={p.id} className={i === index ? 'on' : ''} onClick={() => setIndex(i)}>
-              <MediaThumb item={p} w={300} h={200} badge={20} />
-            </button>
-          ))}
-        </div>
+        <PhotoFilm list={list} index={index} setIndex={setIndex} />
       </div>
 
       <PhotoSide
