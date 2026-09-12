@@ -43,34 +43,37 @@ export const byName = (n: string) => FAMILY.find(f => f.name === n) || FAMILY[0]
 export const TRIP = {
   title: 'Amsterdam Weekend',
   crew: 'Sample Family',
-  // A weekend is three days — the dates say what the title says.
+  // A weekend is three days — the dates say what the title says. The stops
+  // hold the dates themselves; a day is a date everywhere now, so the sample
+  // trip has to be written the way a real one is stored.
   dates: '4 – 6 September',
+  startsOn: '2026-09-04', endsOn: '2026-09-06',
   dayIndex: 2, dayCount: 3,
 };
 
 export const STOPS = [
-  { id:'s1', name:'Schiphol Airport', kind:'Transport', icon:'plane', day:'Fri 4 Sep', time:'08:30 – 10:00',
+  { id:'s1', name:'Schiphol Airport', kind:'Transport', icon:'plane', day:'2026-09-04', time:'08:30 – 10:00',
     lng:4.7639, lat:52.3105, status:'done', kw:'airport,terminal', lock:41,
     note:'Wheels down. The train to Centraal takes seventeen minutes and she slept through all of it.' },
-  { id:'s2', name:'Hotel Jakarta', kind:'Stay', icon:'bed', day:'Fri 4 Sep', time:'Check-in 14:00',
+  { id:'s2', name:'Hotel Jakarta', kind:'Stay', icon:'bed', day:'2026-09-04', time:'Check-in 14:00',
     lng:4.9350, lat:52.3793, status:'done', kw:'hotel,lobby,plants', lock:12,
     note:'Our base for three nights. An indoor jungle in the atrium and harbour views from the top floor.' },
-  { id:'s3', name:'Canal cruise', kind:'Activity', icon:'boat', day:'Fri 4 Sep', time:'18:30 – 20:00',
+  { id:'s3', name:'Canal cruise', kind:'Activity', icon:'boat', day:'2026-09-04', time:'18:30 – 20:00',
     lng:4.8840, lat:52.3740, status:'done', kw:'amsterdam,canal,boat', lock:7,
     note:'An open boat through the Jordaan at golden hour. Best hour of the trip so far, by a distance.' },
-  { id:'s4', name:'Rijksmuseum', kind:'Sight', icon:'museum', day:'Sat 5 Sep', time:'09:30 – 12:30',
+  { id:'s4', name:'Rijksmuseum', kind:'Sight', icon:'museum', day:'2026-09-05', time:'09:30 – 12:30',
     lng:4.8852, lat:52.3600, status:'done', kw:'rijksmuseum,amsterdam', lock:23,
     note:'The Night Watch, the Cuypers Library, and roughly nine hundred stairs. Worth every one.' },
-  { id:'s5', name:'Foodhallen', kind:'Food', icon:'food', day:'Sat 5 Sep', time:'13:00 – 14:30',
+  { id:'s5', name:'Foodhallen', kind:'Food', icon:'food', day:'2026-09-05', time:'13:00 – 14:30',
     lng:4.8686, lat:52.3664, status:'now', kw:'food,market,hall', lock:55,
     note:'Indoor food market in an old tram depot. Bitterballen for the kiddo, natural wine for the grown-ups.' },
-  { id:'s6', name:'Anne Frank House', kind:'Sight', icon:'museum', day:'Sat 5 Sep', time:'15:45 – 17:00',
+  { id:'s6', name:'Anne Frank House', kind:'Sight', icon:'museum', day:'2026-09-05', time:'15:45 – 17:00',
     lng:4.8840, lat:52.3752, status:'next', kw:'amsterdam,house,canal', lock:31,
     note:'Timed entry at 15:45. A quiet visit — we talked with her about it beforehand.' },
-  { id:'s7', name:'NEMO Science Museum', kind:'Sight', icon:'museum', day:'Sun 6 Sep', time:'10:00 – 13:00',
+  { id:'s7', name:'NEMO Science Museum', kind:'Sight', icon:'museum', day:'2026-09-06', time:'10:00 – 13:00',
     lng:4.9124, lat:52.3742, status:'planned', kw:'science,museum', lock:18,
     note:'Hands-on everything, plus the best free rooftop view in the city.' },
-  { id:'s8', name:'Bikes in Vondelpark', kind:'Activity', icon:'walk', day:'Sun 6 Sep', time:'15:00 – 18:00',
+  { id:'s8', name:'Bikes in Vondelpark', kind:'Activity', icon:'walk', day:'2026-09-06', time:'15:00 – 18:00',
     lng:4.8687, lat:52.3579, status:'planned', kw:'park,bicycle', lock:9,
     note:'Rent three bikes, picnic by the pond, attempt not to be flattened by a Dutch commuter.' },
 ];

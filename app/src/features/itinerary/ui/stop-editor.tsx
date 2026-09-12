@@ -39,13 +39,8 @@ function StopEditor({
 }) {
   /* A refused pick stays visible as words, never as silently mangled data. */
   const [dayError, setDayError] = useState('')
-  /* Whatever the stop holds, read as a date: a stored date, the label the app
-     used to write, or the bare number somebody typed before there was a picker
-     — so the calendar opens on the day the stop is actually on. It used to
-     match the stored label against the trip's own, which meant a stop whose
-     label was from another year showed a blank calendar and a note saying it
-     was keeping text the picker could not see. */
-  const dayIso = dayIsoOf(draft.day, { startsOn, endsOn })
+  /* The stop's day, which is a date or it is nothing. */
+  const dayIso = dayIsoOf(draft.day)
   const pickDay = (iso: string) => {
     if (!iso) {
       onField('day', '')
@@ -56,9 +51,9 @@ function StopEditor({
       setDayError(`Outside the trip: ${formatRange(startsOn || undefined, endsOn || undefined)}`)
       return
     }
-    /* The date, not a label of it. The label carries no year, so it only means
-       a day against this trip's range — and a stop outliving that range, or
-       moving to another trip, took its day's meaning with it. */
+    /* The date, not a label of it. A label carries no year, so it would only
+       mean a day against this trip's range — and a stop outliving that range,
+       or moving to another trip, would take its day's meaning with it. */
     onField('day', iso)
     setDayError('')
   }
@@ -112,13 +107,10 @@ function StopEditor({
               max={endsOn || undefined}
               onChange={e => pickDay(e.target.value)}
             />
-            {dayError ? (
+            {dayError && (
               <em className="dayfence" role="alert">
                 {dayError}
               </em>
-            ) : (
-              draft.day &&
-              !dayIso && <em className="dayfence quiet">Keeps “{draft.day}” until you pick</em>
             )}
           </label>
           <label className="f">

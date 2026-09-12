@@ -1,6 +1,6 @@
 import { ALL_DAYS } from '../../../trip-search-core'
 import { clockLabel, dayLabelOf } from '../../../day-label-core'
-import { dayIsoOf, photoDayIso, tripDays, type DayRange } from '../../../trip-days-core'
+import { dayIsoOf, photoDayIso, tripDays } from '../../../trip-days-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
 /* The bottom strip and the timeline show one list, not two: what happened on a
@@ -27,36 +27,31 @@ export interface TripItem {
 
 const text = (value?: string | null) => (value || '').toLowerCase()
 
-/** Whether a row belongs under the chosen chip. */
-export function itemOnDay(item: TripItem, day: string, range: DayRange = {}): boolean {
-  const wanted = dayIsoOf(day, range)
-  /* Two dates: the whole point of storing one. Neither side needs the trip to
-     have declared a range for this to be right. */
-  if (item.dayIso && wanted) return item.dayIso === wanted
-  /* Either side unplaceable — 'tbc', 'later', somebody's own word. It is still
-     a chip somebody chose, and it should still select its own rows. Those rows
-     kept their text exactly as written, which is what makes this work. */
-  return String(item.day ?? '').trim() === String(day ?? '').trim()
+/** Whether a row belongs under the chosen chip. Two dates, compared as dates. */
+export function itemOnDay(item: TripItem, day: string): boolean {
+  const wanted = dayIsoOf(day)
+  return !!item.dayIso && !!wanted && item.dayIso === wanted
 }
 
 /* A day is stored as a date and shown as a label. Searching goes through the
    label too — somebody looking for what they did on the Friday types 'Fri',
-   not '2026-09-04'. Text nothing can place is shown exactly as it was typed. */
-const dayFields = (stored: string | null | undefined, iso: string | null) => ({
-  day: (iso && dayLabelOf(iso)) || stored || '',
+   not '2026-09-04'. A stored value that is not a date is not a day, so it is
+   shown as no day rather than as itself: it can only be a leftover now. */
+const dayFields = (iso: string | null) => ({
+  day: iso ? dayLabelOf(iso) : '',
   dayIso: iso,
 })
 
 /* Nothing on this trip is ever "Untitled": a stop without a name is at least
    its kind, and a photograph without a caption is at least its time and place.
    The fallback happens here, at render time — stored data stays honest. */
-export function stopItem(stop: Stop, range: DayRange = {}): TripItem {
+export function stopItem(stop: Stop): TripItem {
   return {
     id: stop.id,
     kind: 'stop',
     title: stop.name || stop.kind || 'Stop',
     meta: [stop.time, stop.kind].filter(Boolean).join(' · ') || 'No time set',
-    ...dayFields(stop.day, dayIsoOf(stop.day, range)),
+    ...dayFields(dayIsoOf(stop.day)),
     time: stop.time || '',
     status: stop.status || 'planned',
     seq: stop.seq ?? Number.MAX_SAFE_INTEGER,
@@ -64,7 +59,7 @@ export function stopItem(stop: Stop, range: DayRange = {}): TripItem {
   }
 }
 
-export function photoItem(photo: TripPhoto, stop?: Stop, range: DayRange = {}): TripItem {
+export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
   return {
     id: photo.id,
     kind: 'photo',
@@ -76,7 +71,7 @@ export function photoItem(photo: TripPhoto, stop?: Stop, range: DayRange = {}): 
     /* Its stop's day, or its own: a photograph filed nowhere still happened on
        a day, and taking the day only from the stop meant it could never appear
        under one. */
-    ...dayFields(stop?.day, photoDayIso(photo, stop?.day, range)),
+    ...dayFields(photoDayIso(photo, stop?.day)),
     time: photo.when || stop?.time || '',
     status: 'photo',
     seq: stop?.seq ?? Number.MAX_SAFE_INTEGER,
@@ -89,8 +84,6 @@ interface ItemsInput {
   stops: Stop[]
   photos: TripPhoto[]
   day: string
-  /** What gives a label its year and a bare number its month. */
-  range?: DayRange
   query?: string
   /** photos take up a lot of a narrow strip; the timeline wants them, the map does not */
   withPhotos?: boolean
@@ -102,16 +95,15 @@ export function tripItems({
   stops,
   photos,
   day,
-  range = {},
   query = '',
   withPhotos = true,
 }: ItemsInput): TripItem[] {
   const needle = query.trim().toLowerCase()
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  const items: TripItem[] = stops.map(stop => stopItem(stop, range))
+  const items: TripItem[] = stops.map(stop => stopItem(stop))
   if (withPhotos) {
     for (const photo of photos) {
-      items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined, range))
+      items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
     }
   }
   /* Both sides already hold a date, so compare those. Comparing the chip
@@ -121,8 +113,7 @@ export function tripItems({
      every row on the bar. Only a title is needed to start a trip, so that is
      not an edge case — it is a map full of pins under the words "Nothing
      planned for this day yet". */
-  const chosen =
-    needle || day === ALL_DAYS ? items : items.filter(item => itemOnDay(item, day, range))
+  const chosen = needle || day === ALL_DAYS ? items : items.filter(item => itemOnDay(item, day))
   const matched = needle
     ? chosen.filter(
         item =>
@@ -152,11 +143,10 @@ export function tripItems({
 
 /* The days a trip has something on, oldest first, one per date however it was
    spelled — and one at the end for whatever could not be placed at all. */
-export const daysOf = (stops: Stop[], range: DayRange = {}, photos: TripPhoto[] = []) =>
+export const daysOf = (stops: Stop[], photos: TripPhoto[] = []) =>
   tripDays(
     stops.map(stop => ({ day: stop.day })),
-    range,
-    photos.map(photo => photoDayIso(photo, undefined, range)),
+    photos.map(photo => photoDayIso(photo, undefined)),
   )
 
 /* The line under a trip's name: who is on it, when, and how the party splits

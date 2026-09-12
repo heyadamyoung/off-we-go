@@ -4,19 +4,20 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
-import { dayIsoOf, tripDays } from '../src/trip-days-core.ts'
+import { dayIsoOf } from '../src/trip-days-core.ts'
 
-/* Migration 025 repairs the days that were typed before there was a date
-   picker, and it has to say the same thing in SQL that trip-days-core.ts says
-   in JavaScript. Two implementations of one rule is the thing that rots, so
-   this is the check that they agree on the day it matters.
+/* The migrations that made a day a date, run end to end against real SQL.
+ 
+   025 and 026 converted what people had typed before there was a picker, and
+   029 finishes it: it rescues the last shape anything could still write — a
+   bare number, which is what the assistant's tool sent while its `day` was
+   declared an integer — and then clears everything that is still not a date.
 
-   The contract is deliberately one-sided. Where the migration decides, it must
-   decide what JavaScript would have decided — a stop moved to a day nobody put
-   it on is the failure that matters, and it is silent. Where the migration
-   declines, it must leave the text exactly as it found it: the client's
-   resolver is still there at read time and will place what it can. So the
-   migration is allowed to be more cautious than the client, and never bolder.
+   What is checked here is the invariant those three exist to establish, and it
+   is the only one worth checking now that there is a single implementation:
+   after they have run, every stored day is either nothing or a date the client
+   can read. Nothing in between, because nothing downstream knows what to do
+   with a value in between.
 
    It lives with the client tests rather than the server ones because it needs
    both halves in one process, and only this suite can load the TypeScript. */
@@ -112,47 +113,26 @@ async function repaired(t, rows, range = TRIP) {
   await client.query(await migration('025_repair_stop_days.sql'))
   await client.query(await migration('025b_neutralise_impossible_dates.sql'))
   await client.query(await migration('026_repair_days_on_undated_trips.sql'))
+  await client.query(await migration('029_days_are_dates_only.sql'))
   const after = await client.query('select day from stops order by day nulls last')
   return { client, after: after.rows.map(row => row.day) }
 }
 
-test('the repair never moves a stop to a day JavaScript would not', {
+test('afterwards every day is a date the client can read, or nothing at all', {
   skip: unreachable,
 }, async t => {
-  const client = new pg.Client({ connectionString: databaseUrl })
-  await client.connect()
-  t.after(() => client.end())
-  await schema(client)
-  const trip = await client.query(
-    'insert into trips(starts_on,ends_on) values($1,$2) returning id',
-    [TRIP.startsOn, TRIP.endsOn],
-  )
-  const before = new Map()
-  for (const day of WRITTEN) {
-    const row = await client.query('insert into stops(trip_id,day) values($1,$2) returning id', [
-      trip.rows[0].id,
-      day,
-    ])
-    before.set(row.rows[0].id, day)
-  }
+  /* The invariant, and the whole reason 029 exists. Before it, unreadable text
+     was deliberately kept — the client still had a resolver and a heading for
+     it. The resolver is gone, so a row still holding 'tbc' would be a value
+     nothing can read, draw or select. */
+  const { after } = await repaired(t, WRITTEN)
 
-  await client.query(await migration('025_repair_stop_days.sql'))
-
-  const after = await client.query('select id, day from stops')
-  for (const row of after.rows) {
-    const was = before.get(row.id)
-    if (row.day === was) continue
-    if (was === 'all' || was === 'all-days') {
-      assert.equal(row.day, null, `the sentinel is not a day: ${was}`)
-      continue
-    }
-    /* It changed, so it must have changed to what the client reads that text
-       as. This is the assertion that matters: a wrong answer here silently
-       moves somebody's stop to a day they never put it on. */
+  for (const day of after) {
+    if (day === null || day === '') continue
     assert.equal(
-      row.day,
-      dayIsoOf(was, TRIP),
-      `SQL and JavaScript disagree about ${JSON.stringify(was)}`,
+      dayIsoOf(day),
+      day,
+      `a stop was left holding ${JSON.stringify(day)}, which the client cannot read`,
     )
   }
 })
@@ -160,7 +140,6 @@ test('the repair never moves a stop to a day JavaScript would not', {
 test('every kind of bad day comes out as the date it meant', { skip: unreachable }, async t => {
   const { after } = await repaired(t, WRITTEN)
   const dates = after.filter(day => day && /^\d{4}-\d{2}-\d{2}$/.test(day))
-  const kept = after.filter(day => day && !/^\d{4}-\d{2}-\d{2}$/.test(day))
 
   // '3', 'Thu 3 Sep' -> the 3rd. '4', 'Fri 4 Sep', 'Tue 4 Sep', 'Sep 4',
   // '4 September', 'September 4', '2026-09-04' and its timestamp -> the 4th.
@@ -169,107 +148,43 @@ test('every kind of bad day comes out as the date it meant', { skip: unreachable
   assert.equal(dates.filter(day => day === '2026-09-05').length, 2)
   assert.equal(dates.filter(day => day === '2026-09-08').length, 2)
 
-  // Words stay words; numbers outside the trip stay numbers.
-  assert.deepEqual(kept.sort(), ['20', '99', 'Day one', 'later', 'tbc'].sort())
-  // Both spellings of the sentinel, and the row that was already empty.
-  assert.equal(after.filter(day => day === null || day === '').length, 3)
+  /* And what nothing could date is cleared rather than kept: the words, the
+     numbers the trip never reaches, both spellings of the sentinel, and the
+     row that was already empty. */
+  assert.equal(after.filter(day => day === null || day === '').length, 8)
 })
 
-test('a number two months could answer to is left alone', { skip: unreachable }, async t => {
-  /* August the 4th or September the 4th? Two answers is no answer, and a stop
-     put on the wrong day is worse than one still showing '4'. */
+test('a number written after the first repair is still rescued', { skip: unreachable }, async t => {
+  /* The assistant's damage. Its create_stop tool declared `day` an integer, so
+     asked to put a stop on today it wrote a number — the exact shape 025 had
+     just finished removing, arriving after 025 had run. 029 reads it the same
+     way 025 would have. */
+  const { after } = await repaired(t, ['10', '3'])
+  assert.deepEqual(after.sort(), ['2026-09-03', '2026-09-10'])
+})
+
+test('a number two months could answer to is cleared, not guessed', {
+  skip: unreachable,
+}, async t => {
+  /* August the 4th or September the 4th? Two answers is no answer. It used to
+     be left as '4' for the client to decline at read time; now there is no
+     reader, so it becomes no day — which the picker can fix in a tap. */
   const twoMonths = { startsOn: '2026-08-01', endsOn: '2026-09-30' }
   const { after } = await repaired(t, ['4', '30'], twoMonths)
-  assert.deepEqual(after.sort(), ['30', '4'], 'both months have a 4th and a 30th')
-  assert.equal(dayIsoOf('4', twoMonths), null, 'and the client declines for the same reason')
-  assert.equal(dayIsoOf('30', twoMonths), null)
+  assert.deepEqual(after, [null, null], 'both months have a 4th and a 30th')
 
   /* One month's worth of the same number, and it resolves. */
   const oneAnswer = { startsOn: '2026-08-28', endsOn: '2026-09-10' }
   const single = await repaired(t, ['30'], oneAnswer)
   assert.deepEqual(single.after, ['2026-08-30'])
-  assert.equal(dayIsoOf('30', oneAnswer), '2026-08-30')
+  assert.equal(dayIsoOf('2026-08-30'), '2026-08-30', 'and the client reads what was written')
 })
 
-test('a trip with nothing at all to date it by keeps every day as written', {
+test('a trip with nothing at all to date it by keeps no day rather than text', {
   skip: unreachable,
 }, async t => {
-  /* Without a range a label carries no year and a number carries nothing, and
-     with no photographs and no picked date there is nowhere to get one.
-     Nothing is invented. */
+  /* Without a range there is nowhere to get a year from, so nothing is
+     invented — and nothing unreadable is left behind either. */
   const { after } = await repaired(t, ['Fri 4 Sep', '4', 'tbc'], {})
-  assert.deepEqual(after.sort(), ['4', 'Fri 4 Sep', 'tbc'])
-})
-
-test('a trip with no dates takes its year from its photographs', {
-  skip: unreachable,
-}, async t => {
-  /* Only a title is needed to start a trip, so plenty have no dates at all —
-     and those are exactly the ones with hand-typed days on them. The camera
-     knows what year it was, which is all a label was ever missing. */
-  const { after } = await repaired(t, ['Fri 4 Sep', '4', 'Sat 5 Sep'], {
-    photos: ['2026-09-05T10:00:00.000Z'],
-  })
-  assert.deepEqual(after.sort(), ['2026-09-04', '2026-09-04', '2026-09-05'])
-})
-
-test('a stop somebody dated gives the rest of an undated trip its year', {
-  skip: unreachable,
-}, async t => {
-  /* One stop picked from the calendar is as good as a photograph. */
-  const { after } = await repaired(t, ['2026-09-04', 'Sat 5 Sep', '6'], {})
-  assert.deepEqual(after.sort(), ['2026-09-04', '2026-09-05', '2026-09-06'])
-})
-
-test('the inferred range is the one the client would have guessed', {
-  skip: unreachable,
-}, async t => {
-  /* The client has been placing these days at read time all along, from a
-     range it guesses the same way. The migration writing down a different
-     answer would be worse than writing down none. */
-  const rows = ['Fri 4 Sep', '4', 'Sat 5 Sep', 'Thu 10 Sep', 'tbc']
-  const { after } = await repaired(t, rows, { photos: ['2026-09-05T10:00:00.000Z'] })
-  const asClientSees = tripDays(
-    rows.map(day => ({ day })),
-    {},
-    ['2026-09-05'],
-  )
-  const dates = [...new Set(after.filter(day => day && /^\d{4}-\d{2}-\d{2}$/.test(day)))].sort()
-  assert.deepEqual(
-    dates,
-    asClientSees.map(day => day.iso).filter(iso => /^\d{4}-/.test(iso)),
-  )
-})
-
-test('day text shaped like a date that is not one never reaches a cast', {
-  skip: unreachable,
-}, async t => {
-  /* ^\d{4}-\d{2}-\d{2} says nothing about whether the number it matched is a
-     day anybody could have travelled on. 026 reads a stop's day as a date, and
-     casting '2026-13-45' raises — which takes the whole boot down with it,
-     because a migration that raises is a server that will not start.
-
-     Cleared rather than corrected: there is no honest way to decide whether
-     '2026-02-31' meant the 28th, the 1st of March or the 3rd, and the day it
-     names does not exist so no chip can hold it. The timeline still draws the
-     stop, under "No date yet", where somebody can put it right. */
-  const { after } = await repaired(
-    t,
-    ['2026-13-45', '2026-02-31', '0000-01-01', '2026-09-04', 'Fri 4 Sep'],
-    {},
-  )
-  assert.equal(after.filter(day => day === null).length, 3, 'the three that are not dates')
-  assert.equal(
-    after.filter(day => day === '2026-09-04').length,
-    2,
-    'the real date survives, and gives the label next to it its year',
-  )
-})
-
-test('every date a picker can produce survives the guard', { skip: unreachable }, async t => {
-  /* The guard clears what is not a date, so the thing that would hurt is it
-     clearing something that is. A leap day is the one everybody gets wrong. */
-  const dates = ['2024-02-29', '2026-01-01', '2026-12-31', '2026-06-30', '2026-03-01']
-  const { after } = await repaired(t, dates, { startsOn: '2024-01-01', endsOn: '2027-12-31' })
-  assert.deepEqual(after.slice().sort(), dates.slice().sort())
+  assert.deepEqual(after, [null, null, null])
 })

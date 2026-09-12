@@ -113,7 +113,7 @@ test('the server asks for coverage at boot and again when stops change', async (
     method: 'POST',
     url: `/api/trips/${trip.id}/stops`,
     headers: { authorization: owner },
-    payload: { name: 'A stop', day: 'Day 1', lng: 4.9, lat: 52.37 },
+    payload: { name: 'A stop', day: '2026-09-04', lng: 4.9, lat: 52.37 },
   })
   assert.ok(calls.includes('soon'), 'creating a stop should nudge coverage')
   await app.close()

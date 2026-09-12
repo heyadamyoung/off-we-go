@@ -131,7 +131,13 @@ test('the assistant gets the conversation and a scoped token, never a data dump'
     method: 'POST',
     url: `/api/trips/${trip.id}/stops`,
     headers: { authorization: owner },
-    payload: { name: 'Skógafoss', day: 'Day 2', lng: -19.51, lat: 63.53, note: 'Bring the drone' },
+    payload: {
+      name: 'Skógafoss',
+      day: '2026-09-05',
+      lng: -19.51,
+      lat: 63.53,
+      note: 'Bring the drone',
+    },
   })
 
   const response = await app.inject({

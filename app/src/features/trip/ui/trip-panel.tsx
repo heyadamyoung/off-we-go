@@ -205,11 +205,10 @@ function Travel({ transport }: PanelProps) {
   )
 }
 
-function Timeline({ stops, photos, selected, onSelect, legs, range }: PanelProps) {
-  /* Grouped the same way the day chips are, by date rather than by the text a
-     stop happens to hold — otherwise '4' and 'Fri 4 Sep' are two headings, and
-     a stop with no day at all belongs to no heading and is never drawn. */
-  const groups = groupByDay(stops, range)
+function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
+  /* Grouped the same way the day chips are, by date — so a stop with no day at
+     all still belongs to a heading and is still drawn. */
+  const groups = groupByDay(stops)
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
   if (!stops.length)
     return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>

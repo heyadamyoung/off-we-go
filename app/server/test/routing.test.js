@@ -11,12 +11,12 @@ const SECRET = 'test-secret-that-is-long-enough'
 
 test('legs pair consecutive stops of one day, in order, and skip the unroutable', () => {
   const stops = [
-    { id: 'c', day: 'Day 1', lng: 3, lat: 3, seq: 2 },
-    { id: 'a', day: 'Day 1', lng: 1, lat: 1, seq: 0 },
-    { id: 'b', day: 'Day 1', lng: 2, lat: 2, seq: 1 },
-    { id: 'd', day: 'Day 2', lng: 4, lat: 4, seq: 3 },
-    { id: 'e', day: 'Day 2', lng: null, lat: 5, seq: 4 },
-    { id: 'f', day: 'Day 2', lng: 6, lat: 6, seq: 5 },
+    { id: 'c', day: '2026-09-04', lng: 3, lat: 3, seq: 2 },
+    { id: 'a', day: '2026-09-04', lng: 1, lat: 1, seq: 0 },
+    { id: 'b', day: '2026-09-04', lng: 2, lat: 2, seq: 1 },
+    { id: 'd', day: '2026-09-05', lng: 4, lat: 4, seq: 3 },
+    { id: 'e', day: '2026-09-05', lng: null, lat: 5, seq: 4 },
+    { id: 'f', day: '2026-09-05', lng: 6, lat: 6, seq: 5 },
   ]
   const pairs = consecutiveDayLegs(stops).map(({ from, to }) => `${from.id}>${to.id}`)
   // a>b>c within day 1; d>e and e>f dropped for the coordinate-less e; no c>d across days.
@@ -92,11 +92,13 @@ test('the valhalla client answers, caches answers, and never caches refusals', a
     },
   })
   const stops = [
-    { id: 'a', day: 'Day 1', lng: 6.1319, lat: 49.6116, seq: 0 },
-    { id: 'b', day: 'Day 1', lng: 6.1052, lat: 49.5764, seq: 1 },
+    { id: 'a', day: '2026-09-04', lng: 6.1319, lat: 49.6116, seq: 0 },
+    { id: 'b', day: '2026-09-04', lng: 6.1052, lat: 49.5764, seq: 1 },
   ]
   const legs = await routing.legsFor(stops, 'auto')
-  assert.deepEqual(legs, [{ fromId: 'a', toId: 'b', day: 'Day 1', seconds: 840, meters: 5200 }])
+  assert.deepEqual(legs, [
+    { fromId: 'a', toId: 'b', day: '2026-09-04', seconds: 840, meters: 5200 },
+  ])
   assert.equal(calls[0].url, 'http://127.0.0.1:8002/route')
   assert.equal(calls[0].body.costing, 'auto')
   assert.deepEqual(calls[0].body.locations[0], { lat: 49.6116, lon: 6.1319 })
@@ -176,7 +178,7 @@ async function routedServer({ valhallaUrl = 'http://valhalla:8002', routingFetch
       method: 'POST',
       url: `/api/trips/${trip.id}/stops`,
       headers: { authorization: owner },
-      payload: { name, day: 'Day 1', lng, lat, seq },
+      payload: { name, day: '2026-09-04', lng, lat, seq },
     })
   }
   return { app, repository, owner, trip }

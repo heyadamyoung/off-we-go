@@ -78,7 +78,6 @@ function Trip({
   const {
     theme, setTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
     setMapOverride, asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
-    dayRange,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, sun, mapTheme, markers, progressCopy,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
@@ -190,7 +189,6 @@ function Trip({
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           onMovePhotos={canEdit ? movePhotos : undefined}
           legs={legs}
-          range={dayRange}
           chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{

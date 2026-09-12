@@ -45,17 +45,6 @@ export function tripDayIsos(startsOn?: string | null, endsOn?: string | null): s
   return days
 }
 
-/** The one date inside the trip that wears this label, or null. */
-export function isoOfDayLabel(
-  label?: string | null,
-  startsOn?: string | null,
-  endsOn?: string | null,
-): string | null {
-  const wanted = (label || '').trim()
-  if (!wanted) return null
-  return tripDayIsos(startsOn, endsOn).find(iso => dayLabelOf(iso) === wanted) ?? null
-}
-
 /** True when a picked date falls outside the trip's declared range. */
 export function outsideRange(
   iso?: string | null,

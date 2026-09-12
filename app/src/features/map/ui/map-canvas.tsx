@@ -41,7 +41,6 @@ const MapCanvas = memo(function MapCanvas({
   onContextMenu,
   stops = [],
   photos = [],
-  range,
   markers = [],
   you = null,
   headingUp = null,
@@ -280,9 +279,8 @@ const MapCanvas = memo(function MapCanvas({
       clusterPhotos(photos, stops, {
         zoom: viewport.zoom,
         bounds: viewport.bounds,
-        range,
       }),
-    [photos, stops, viewport, range],
+    [photos, stops, viewport],
   )
 
   return (
