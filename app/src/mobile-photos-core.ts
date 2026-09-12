@@ -1,7 +1,6 @@
-import { metres } from './shared/lib/geo'
 import { isVideoFile, videoMetadata } from './mobile-videos-core'
 import exifr from 'exifr'
-import type { Coordinates, Id, Stop, UploadInput } from './shared/model/types'
+import type { Coordinates, Id, UploadInput } from './shared/model/types'
 
 const parseExifFile = exifr.parse
 
@@ -263,11 +262,9 @@ export function photoPlacement(
   file: MetadataFile | null | undefined,
   {
     live,
-    stops,
     fallbackSource = 'live',
   }: {
     live: Coordinates | null
-    stops: Stop[]
     fallbackSource?: 'live' | 'approximate'
   },
 ) {
@@ -294,23 +291,16 @@ export function photoPlacement(
   const point = exifPoint
   const fallbackPoint = exifPoint ? null : live
   const previewPoint = point || fallbackPoint
-  let stop: Stop | null = null,
-    best = 400
-  if (point) {
-    for (const candidate of stops) {
-      const distance = metres([candidate.lng, candidate.lat], point)
-      if (distance < best) {
-        best = distance
-        stop = candidate
-      }
-    }
-  }
+  /* No itinerary item is named. This used to find the nearest stop within four
+     hundred metres, and the sheet drew "will be grouped at the Rijksmuseum"
+     from it — which the server then did, and the map drew the picture at the
+     museum's pin instead of where it was taken. A photograph that knows where
+     it was belongs there; filing one at a stop is something a person does
+     afterwards, on purpose. */
   return {
     point,
     fallbackPoint,
     previewPoint,
-    stopId: stop?.id || null,
-    stopName: stop?.name || null,
     source: exifPoint ? ('exif' as const) : needsHistory ? ('history' as const) : fallbackSource,
     /* Named whenever there is one to name, so the server knows what the
        fallback it is being handed actually is. */

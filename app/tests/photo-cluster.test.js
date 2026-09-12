@@ -60,11 +60,32 @@ test('what is off the screen is not drawn at all', () => {
   )
 })
 
-test('photographs at a stop stay one tidy stack on the stop, at every zoom', () => {
+test('a photograph filed at a stop is still drawn where it was taken', () => {
+  /* The reported bug. A stop's photographs are gathered into one stack at the
+     stop's own point, which is right for pictures that have no point of their
+     own and wrong for every picture that has one: stand outside the museum and
+     photograph the street, the bikes, your family, the sky, and all of it
+     collapses onto the museum's pin.
+
+     Nothing files a located photograph automatically any more, but a person
+     still can, and pinning one says which itinerary item it belongs to — not
+     where on earth it was. Its own coordinates are the most precise thing
+     anybody has about it and they win here, always. */
   const stops = [{ id: 's1', name: 'Museum', lng: -0.1276, lat: 51.5194, day: '', seq: 0 }]
-  const atStop = Array.from({ length: 300 }, (_, i) =>
-    photo(i + 1, -0.1276 + i * 0.00001, 51.5194, { stopId: 's1' }),
-  )
+  const nearby = photo(1, -0.13, 51.52, { stopId: 's1', stopPinned: true })
+
+  const [group] = clusterPhotos([nearby], stops, { zoom: 17 })
+  assert.equal(group.lng, nearby.lng, 'drawn where it was taken, not at the stop')
+  assert.equal(group.lat, nearby.lat)
+  assert.ok(!group.approximate, 'and not marked as a guess, because it is not one')
+})
+
+test('photographs with nothing to place them stack on their stop, at every zoom', () => {
+  /* What the stop stack is for now: the pictures that have no idea where they
+     were. The stop is the only notion of place anybody has for them, so it is
+     where they are drawn — one tidy stack rather than three hundred markers. */
+  const stops = [{ id: 's1', name: 'Museum', lng: -0.1276, lat: 51.5194, day: '', seq: 0 }]
+  const atStop = Array.from({ length: 300 }, (_, i) => photo(i + 1, null, null, { stopId: 's1' }))
 
   for (const zoom of [10, 14, 18]) {
     const groups = clusterPhotos(atStop, stops, { zoom })

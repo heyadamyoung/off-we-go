@@ -2,70 +2,44 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { placementSentence, summarise } from '../src/upload-summary-core.ts'
 
-const at = (stopId, stopName) => ({
-  previewPoint: [4.88, 52.36],
-  hasEmbeddedGps: true,
-  stopId,
-  stopName,
-})
-const nowhere = () => ({ previewPoint: null, hasEmbeddedGps: false, stopId: null })
+const located = () => ({ previewPoint: [4.88, 52.36], hasEmbeddedGps: true })
+const nowhere = () => ({ previewPoint: null, hasEmbeddedGps: false })
 
 test('a batch is counted, not sampled', () => {
   /* The sheet used to answer "where will these go" with a map of one of them.
      That is the truth about photograph seven and silence about the rest. */
-  const summary = summarise([at('r', 'Rijksmuseum'), at('r', 'Rijksmuseum'), nowhere()])
-  assert.deepEqual(summary, {
+  assert.deepEqual(summarise([located(), located(), nowhere()]), {
     total: 3,
     located: 2,
     unplaced: 1,
-    stopName: 'Rijksmuseum',
-    atStop: 2,
   })
 })
 
-test('the place named is the one most of them land at', () => {
-  const summary = summarise([at('r', 'Rijksmuseum'), at('r', 'Rijksmuseum'), at('c', 'Centraal')])
-  assert.equal(summary.stopName, 'Rijksmuseum')
-  assert.equal(summary.atStop, 2)
-})
-
-test('a picture near nothing is located but not grouped', () => {
-  const loose = { previewPoint: [2.35, 48.85], hasEmbeddedGps: true, stopId: null }
-  const summary = summarise([loose])
-  assert.equal(summary.located, 1)
-  assert.equal(summary.unplaced, 0)
-  assert.equal(summary.stopName, null)
-})
-
-test('nothing chosen says nothing', () => {
-  assert.deepEqual(summarise([]), {
-    total: 0,
-    located: 0,
-    unplaced: 0,
-    stopName: null,
-    atStop: 0,
-  })
-  assert.equal(placementSentence(summarise([])), '')
-})
-
-test('the sentence says what will happen and what to do about the rest', () => {
-  const sentence = placementSentence(
-    summarise([at('r', 'Rijksmuseum'), at('r', 'Rijksmuseum'), nowhere()]),
-  )
+test('nothing is promised about itinerary items any more', () => {
+  /* It used to say "2 will be grouped at the Rijksmuseum", counted from the
+     nearest stop each photograph was about to be filed at. Nothing files a
+     located photograph now — it goes on the map where it was taken, which is
+     the whole of what the first sentence already says — so the clause would
+     be a promise the app no longer keeps. */
+  const sentence = placementSentence(summarise([located(), located(), nowhere()]))
+  assert.doesNotMatch(sentence, /grouped/)
   assert.match(sentence, /2 go on the map where they were taken/)
-  assert.match(sentence, /2 will be grouped at Rijksmuseum/)
   assert.match(sentence, /1 has no location, and can be filed at a place afterwards/)
 })
 
+test('nothing chosen says nothing', () => {
+  assert.deepEqual(summarise([]), { total: 0, located: 0, unplaced: 0 })
+  assert.equal(placementSentence(summarise([])), '')
+})
+
 test('all of them placed reads as all of them', () => {
-  const sentence = placementSentence(summarise([at('r', 'Rijks'), at('r', 'Rijks')]))
+  const sentence = placementSentence(summarise([located(), located()]))
   assert.match(sentence, /^All go on the map/)
   assert.doesNotMatch(sentence, /no location/, 'nothing to apologise for')
 })
 
 test('one photograph is spoken to as one photograph', () => {
-  assert.match(placementSentence(summarise([at('r', 'Rijks')])), /^It goes on the map/)
-  assert.match(placementSentence(summarise([at('r', 'Rijks')])), /One will be grouped at Rijks/)
+  assert.match(placementSentence(summarise([located()])), /^It goes on the map/)
 })
 
 test('a picture with nothing to go on is told the truth, not the opposite of it', () => {

@@ -8,7 +8,7 @@ import { validLngLat } from '../../../shared/lib/geo'
 import Icon from '../../../shared/ui/icon'
 import { PlayBadge } from '../../../shared/ui/media-thumb'
 import Sheet from '../../../shared/ui/sheet'
-import type { Coordinates, Stop, Toast, UploadInput } from '../../../shared/model/types'
+import type { Coordinates, Toast, UploadInput } from '../../../shared/model/types'
 
 /* Choosing what to add.
 
@@ -40,11 +40,10 @@ interface UploadModalProps {
   onClose: () => void
   onAdd: (uploads: QueuedUpload[]) => void
   live: Coordinates | null
-  stops: Stop[]
   toast: Toast
 }
 
-function UploadModal({ onClose, onAdd, live, stops, toast }: UploadModalProps) {
+function UploadModal({ onClose, onAdd, live, toast }: UploadModalProps) {
   const { files, preparing, accept, fileRef, pick, choosePhotos, chooseVideos, drop } =
     useMediaPicker({ toast })
   const [caption, setCaption] = useState('')
@@ -53,11 +52,8 @@ function UploadModal({ onClose, onAdd, live, stops, toast }: UploadModalProps) {
   const fallbackPoint = devicePoint || live
   const fallbackSource = devicePoint ? ('live' as const) : ('approximate' as const)
   const placements = useMemo(
-    () =>
-      files.map(value =>
-        photoPlacement(value.file, { live: fallbackPoint, stops, fallbackSource }),
-      ),
-    [files, fallbackPoint, stops, fallbackSource],
+    () => files.map(value => photoPlacement(value.file, { live: fallbackPoint, fallbackSource })),
+    [files, fallbackPoint, fallbackSource],
   )
   const sentence = placementSentence(summarise(placements))
   const films = files.filter(file => file.isVideo).length
@@ -105,7 +101,11 @@ function UploadModal({ onClose, onAdd, live, stops, toast }: UploadModalProps) {
             durationMs: item.durationMs,
             caption: caption.trim(),
             uploadKey: item.uploadKey,
-            stopId: resolved.stopId,
+            /* No stop. One was sent — the nearest within four hundred metres,
+               guessed here while the preview drew — and the server filed the
+               picture there, which put it on the map at the stop's pin instead
+               of where it was taken. A photograph that knows where it was goes
+               there; filing is a thing a person does afterwards. */
             lng: resolved.point?.[0],
             lat: resolved.point?.[1],
             fallbackLng: resolved.fallbackPoint?.[0],

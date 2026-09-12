@@ -114,13 +114,21 @@ export function clusterPhotos(
   /* Nothing to place them by except when they were taken. */
   const byDay = new Map<string, TripPhoto[]>()
   const anchors = dayAnchors(stops)
+  /* Its own coordinates first, and only then its stop. This was the other way
+     round, and a picture filed at an itinerary item was drawn at the item: a
+     stop's photographs are gathered into one stack on the stop's own point, so
+     the street outside the museum, the bikes, the family and the sky all
+     collapsed onto the museum's pin. Where a photograph was taken is the most
+     precise thing anybody has about it, read out of the file's own EXIF, and a
+     filing is not a position. The stack is for the pictures with no idea where
+     they were — for them the stop is the only notion of place there is. */
   for (const photo of photos) {
-    if (photo.stopId) {
+    if (placed(photo)) loose.push(photo)
+    else if (photo.stopId) {
       const held = byStop.get(photo.stopId)
       if (held) held.push(photo)
       else byStop.set(photo.stopId, [photo])
-    } else if (placed(photo)) loose.push(photo)
-    else {
+    } else {
       const day = photoDayIso(photo, null)
       if (!day || !anchors.has(day)) continue
       const held = byDay.get(day)
@@ -132,7 +140,10 @@ export function clusterPhotos(
   const out: PhotoGroup[] = []
   const stopById = new Map(stops.map(stop => [stop.id, stop]))
   for (const [stopId, items] of byStop) {
-    const anchor = stopById.get(stopId) || items.find(placed)
+    /* Only the stop itself can anchor the stack now. It used to fall back to
+       whichever member had a point of its own, which cannot happen any more —
+       a photograph with a point is never in here. */
+    const anchor = stopById.get(stopId)
     if (!anchor || !placed(anchor)) continue
     items.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
     if (

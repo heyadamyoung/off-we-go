@@ -622,7 +622,6 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
 
 test('photo placement distinguishes embedded GPS from a displayed fallback position', () => {
   assert.ok(mobilePhotos.photoPlacement, 'photo placement inspection has not been implemented')
-  const stops = [{ id: 'edinburgh', name: 'Edinburgh', lng: -3.188, lat: 55.953 }]
 
   assert.deepEqual(
     mobilePhotos.photoPlacement(
@@ -633,14 +632,12 @@ test('photo placement distinguishes embedded GPS from a displayed fallback posit
           takenAt: '2026-08-31T12:00:00.000Z',
         },
       },
-      { live: [4.8686, 52.3664], stops },
+      { live: [4.8686, 52.3664] },
     ),
     {
       point: [-3.1883, 55.9533],
       fallbackPoint: null,
       previewPoint: [-3.1883, 55.9533],
-      stopId: 'edinburgh',
-      stopName: 'Edinburgh',
       source: 'exif',
       hasEmbeddedGps: true,
     },
@@ -653,14 +650,12 @@ test('photo placement distinguishes embedded GPS from a displayed fallback posit
           takenAt: '2026-08-31T12:00:00.000Z',
         },
       },
-      { live: [4.8686, 52.3664], stops, fallbackSource: 'approximate' },
+      { live: [4.8686, 52.3664], fallbackSource: 'approximate' },
     ),
     {
       point: null,
       fallbackPoint: [4.8686, 52.3664],
       previewPoint: [4.8686, 52.3664],
-      stopId: null,
-      stopName: null,
       source: 'history',
       fallbackSource: 'approximate',
       hasEmbeddedGps: false,
@@ -668,15 +663,30 @@ test('photo placement distinguishes embedded GPS from a displayed fallback posit
   )
 })
 
-test('photo placement never substitutes an itinerary coordinate for missing GPS', () => {
-  const stops = [{ id: 'planned', name: 'Planned stop', lng: 4.9, lat: 52.4 }]
+test('a photograph that knows where it was taken is not offered an itinerary item', () => {
+  /* It used to name the nearest stop within four hundred metres, and the sheet
+     drew "will be grouped at the Rijksmuseum" from it. The server filed it
+     there to match, and the map then drew the picture at the museum's pin
+     rather than where it was taken — the street outside, the bikes, the sky,
+     all on one marker.
 
-  assert.deepEqual(mobilePhotos.photoPlacement({}, { live: null, stops }), {
+     So there is no stop in this answer at all. A picture that knows where it
+     was goes there; filing one at an itinerary item is a thing a person does,
+     deliberately, afterwards. */
+  const near = mobilePhotos.photoPlacement(
+    { offwegoMetadata: { lng: 4.8852, lat: 52.36, takenAt: '2026-09-05T10:00:00.000Z' } },
+    { live: null },
+  )
+  assert.equal(near.stopId, undefined)
+  assert.equal(near.stopName, undefined)
+  assert.deepEqual(near.point, [4.8852, 52.36], 'and its own position is untouched')
+})
+
+test('photo placement never substitutes an itinerary coordinate for missing GPS', () => {
+  assert.deepEqual(mobilePhotos.photoPlacement({}, { live: null }), {
     point: null,
     fallbackPoint: null,
     previewPoint: null,
-    stopId: null,
-    stopName: null,
     source: 'live',
     hasEmbeddedGps: false,
   })
@@ -690,14 +700,10 @@ test('a photograph that says nothing does not borrow the position it was uploade
      It is a fallback, offered and labelled as one, which also lets the server
      try the things it knows and this does not: the file's own block, and where
      the trail says they actually were. */
-  const stops = [{ id: 'rijks', name: 'Rijksmuseum', lng: 4.8852, lat: 52.36 }]
-
-  assert.deepEqual(mobilePhotos.photoPlacement({}, { live: [4.8852, 52.36], stops }), {
+  assert.deepEqual(mobilePhotos.photoPlacement({}, { live: [4.8852, 52.36] }), {
     point: null,
     fallbackPoint: [4.8852, 52.36],
     previewPoint: [4.8852, 52.36],
-    stopId: null,
-    stopName: null,
     source: 'live',
     fallbackSource: 'live',
     hasEmbeddedGps: false,

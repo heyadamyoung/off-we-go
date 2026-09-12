@@ -15,39 +15,24 @@ export interface ChosenPlacement {
   previewPoint?: [number, number] | null
   /** Its own, rather than borrowed from where the phone happens to be. */
   hasEmbeddedGps?: boolean
-  /** The itinerary item it will be grouped at, if it is near one. */
-  stopId?: string | null
-  stopName?: string | null
 }
 
 export interface ChosenSummary {
   total: number
   located: number
   unplaced: number
-  /** The place most of them will land at, when there is one. */
-  stopName: string | null
-  atStop: number
 }
 
+/* No itinerary item is counted. There used to be a third number here — how
+   many would be grouped at the nearest stop, and which stop — and the sheet
+   said so before you pressed Add. Nothing files a located photograph any more:
+   it goes on the map where it was taken, which is what the first sentence
+   already promises, and the clause was the app promising to do the thing that
+   was moving people's pictures off the spot they were taken. */
 export function summarise(placements: readonly ChosenPlacement[]): ChosenSummary {
   const total = placements.length
   const located = placements.filter(item => !!item.previewPoint).length
-  const byStop = new Map<string, { name: string; count: number }>()
-  for (const item of placements) {
-    if (!item.stopId) continue
-    const seen = byStop.get(item.stopId)
-    if (seen) seen.count += 1
-    else byStop.set(item.stopId, { name: item.stopName || 'a stop', count: 1 })
-  }
-  let best: { name: string; count: number } | null = null
-  for (const entry of byStop.values()) if (!best || entry.count > best.count) best = entry
-  return {
-    total,
-    located,
-    unplaced: total - located,
-    stopName: best?.name ?? null,
-    atStop: best?.count ?? 0,
-  }
+  return { total, located, unplaced: total - located }
 }
 
 const these = (count: number, of: number) => (count === of ? (of === 1 ? 'It' : 'All') : `${count}`)
@@ -59,7 +44,7 @@ const these = (count: number, of: number) => (count === of ? (of === 1 ? 'It' : 
  * stop afterwards in a couple of taps.
  */
 export function placementSentence(summary: ChosenSummary): string {
-  const { total, located, unplaced, stopName, atStop } = summary
+  const { total, located, unplaced } = summary
   if (!total) return ''
   const parts: string[] = []
   if (located)
@@ -67,12 +52,6 @@ export function placementSentence(summary: ChosenSummary): string {
       `${these(located, total)} ${located === 1 && total === 1 ? 'goes' : 'go'} on the map where ${
         located === 1 ? 'it was' : 'they were'
       } taken.`,
-    )
-  if (stopName && atStop)
-    parts.push(
-      atStop === 1
-        ? `One will be grouped at ${stopName}.`
-        : `${atStop} will be grouped at ${stopName}.`,
     )
   if (unplaced)
     parts.push(

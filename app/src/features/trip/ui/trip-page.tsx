@@ -362,7 +362,6 @@ function Trip({
           onClose={() => patch({ sheet: undefined })}
           onAdd={uploads.add}
           live={latestGpsPosition}
-          stops={stops}
           toast={toast}
         />
       )}

@@ -4,9 +4,16 @@ import { buildServer } from '../src/app.js'
 import { authenticate } from './auth-helper.js'
 import { createMemoryRepository } from './memory-repository.js'
 
-/* The rule is unit-tested next door, against points and arrays. This is the
-   part that only a running server can answer: that an upload arriving over
-   HTTP comes back filed, whatever the thing that sent it believed. */
+/* The rule is unit-tested next door, against rows. This is the part that only
+   a running server can answer: that an upload arriving over HTTP comes back
+   filed the way the server says, whatever the thing that sent it believed.
+
+   The rule inverted here. A photograph taken within four hundred metres of an
+   itinerary item used to be filed at it — and the map draws a stop's
+   photographs as one stack on the stop's own point, so being filed there
+   replaced where a picture was actually taken with the museum's pin. It is
+   filed nowhere now. The link is for the pictures that have no idea where they
+   were, and for the ones a person has filed by hand. */
 
 const jsonPost = (url, body, token) =>
   fetch(url, {
@@ -86,24 +93,32 @@ async function world(t, options = {}) {
   return { origin, accessToken, trip, stopAt, upload, photos, repository, user }
 }
 
-test('a photograph taken at a stop is filed there without being told', async t => {
+test('a photograph taken at a stop is filed nowhere, and keeps its own position', async t => {
+  /* The reported bug, at the door it comes in by. Standing at the Rijksmuseum
+     taking pictures of the street, the bikes and the sky used to file every
+     one of them at the museum, and the map then drew all of them on the
+     museum's pin rather than where they were taken. */
   const place = await world(t)
-  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+  await place.stopAt('Rijksmuseum', 4.8852, 52.36)
   await place.stopAt('Centraal', 4.9003, 52.379)
 
-  /* No stopId in the request at all: this is the native picker, a queued
-     upload replayed later, anything talking to the API on its own terms. */
   const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
-  assert.equal(photo.stopId, rijks.id)
+  assert.equal(photo.stopId, null)
+  assert.equal(photo.lng, 4.8852, 'and its coordinates are its own, untouched')
+  assert.equal(photo.lat, 52.36)
 })
 
-test('within range of two, it is filed at the nearer', async t => {
+test('standing between two stops files it at neither', async t => {
+  /* There used to be a whole rule about which of them won. A photograph taken
+     in the courtyard between the Anne Frank House and the Westerkerk was
+     filed at the nearer of the two — which is a coin toss about a picture that
+     already knows exactly where it was. */
   const place = await world(t)
-  const anne = await place.stopAt('Anne Frank House', 4.8839, 52.3752)
-  const wester = await place.stopAt('Westerkerk', 4.8836, 52.3747)
+  await place.stopAt('Anne Frank House', 4.8839, 52.3752)
+  await place.stopAt('Westerkerk', 4.8836, 52.3747)
 
-  assert.equal((await place.upload({ lng: 4.8839, lat: 52.3752 })).stopId, anne.id)
-  assert.equal((await place.upload({ lng: 4.8836, lat: 52.3747 })).stopId, wester.id)
+  assert.equal((await place.upload({ lng: 4.8839, lat: 52.3752 })).stopId, null)
+  assert.equal((await place.upload({ lng: 4.88375, lat: 52.37505 })).stopId, null)
 })
 
 test('a photograph taken nowhere near the itinerary is filed at nothing', async t => {
@@ -120,10 +135,10 @@ test('a client that says otherwise is overruled', async t => {
   const centraal = await place.stopAt('Centraal', 4.9003, 52.379)
 
   const wrong = await place.upload({ lng: 4.8852, lat: 52.36, stopId: centraal.id })
-  assert.equal(wrong.stopId, rijks.id, 'the coordinates win')
+  assert.equal(wrong.stopId, null, 'a guess sent with the upload is still a guess')
 
   const claimed = await place.upload({ lng: 2.3522, lat: 48.8566, stopId: rijks.id })
-  assert.equal(claimed.stopId, null, 'and they win when the answer is nothing')
+  assert.equal(claimed.stopId, null)
 })
 
 test('a photograph with no coordinates keeps what it arrived with', async t => {
@@ -139,14 +154,6 @@ test('a trip with no itinerary yet still takes photographs', async t => {
   assert.equal((await place.upload({ lng: 4.8852, lat: 52.36 })).stopId, null)
 })
 
-test('the radius a deployment chose is the one that is used', async t => {
-  const place = await world(t, { stopRadiusMetres: 50 })
-  await place.stopAt('Rijksmuseum', 4.8852, 52.36)
-  // 300m north: inside the default 400, outside the 50 this server was given.
-  const photo = await place.upload({ lng: 4.8852, lat: 52.36 + 300 / 111_320 })
-  assert.equal(photo.stopId, null)
-})
-
 /* Re-filing: the half that upload-time placement can never do. */
 
 const patchStop = (origin, tripId, stopId, body, token) =>
@@ -156,28 +163,31 @@ const patchStop = (origin, tripId, stopId, body, token) =>
     body: JSON.stringify(body),
   })
 
-test('a stop added after the photographs collects them', async t => {
-  /* The ordinary way a trip is written up: shoot first, name the places
-     later. Before this, every one of these stayed filed under nothing. */
+test('a stop added later leaves the photographs where they were taken', async t => {
+  /* The ordinary way a trip is written up: shoot first, name the places later.
+     Naming the place used to gather every picture taken near it onto its pin,
+     which is how a photograph could appear where it was taken and be somewhere
+     else after a reload — the reported symptom exactly. */
   const place = await world(t)
   const early = await place.upload({ lng: 4.8852, lat: 52.36 })
   const elsewhere = await place.upload({ lng: 2.3522, lat: 48.8566 })
-  assert.equal(early.stopId, null, 'nothing to file against yet')
 
-  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+  await place.stopAt('Rijksmuseum', 4.8852, 52.36)
 
   const photos = await place.photos()
-  assert.equal(photos.find(photo => photo.id === early.id).stopId, rijks.id)
-  assert.equal(photos.find(photo => photo.id === elsewhere.id).stopId, null, 'Paris is still Paris')
+  assert.equal(photos.find(photo => photo.id === early.id).stopId, null)
+  assert.equal(photos.find(photo => photo.id === early.id).lng, 4.8852, 'still its own point')
+  assert.equal(photos.find(photo => photo.id === elsewhere.id).stopId, null)
 })
 
-test('a stop moved takes the right photographs with it', async t => {
+test('moving a stop does not move anybody’s photographs', async t => {
+  /* There is nothing to move them by. A picture that knows where it was taken
+     has no opinion about the itinerary, and the itinerary has none about it. */
   const place = await world(t)
   const stop = await place.stopAt('Somewhere', 4.8852, 52.36)
   const atTheRijks = await place.upload({ lng: 4.8852, lat: 52.36 })
-  assert.equal(atTheRijks.stopId, stop.id)
+  assert.equal(atTheRijks.stopId, null)
 
-  // Moved to Centraal: the photograph by the museum is no longer near it.
   const moved = await patchStop(
     place.origin,
     place.trip.id,
@@ -188,16 +198,19 @@ test('a stop moved takes the right photographs with it', async t => {
   assert.equal(moved.status, 200)
 
   const after = await place.photos()
+  assert.equal(after.find(photo => photo.id === atTheRijks.id).lng, 4.8852)
   assert.equal(after.find(photo => photo.id === atTheRijks.id).stopId, null)
 })
 
-test('a stop deleted hands its photographs to the next nearest, not to nothing', async t => {
-  /* Two stops a courtyard apart. Deleting one should not orphan pictures that
-     are plainly still at the other. */
+test('a stop deleted lets go of the photographs somebody filed at it', async t => {
+  /* These are the ones with nothing else to place them, so the stop was the
+     only notion of where they were. It is going, and inventing a replacement
+     out of whichever stop is least far away is how the whole mess started —
+     they go back to being unfiled, where a person can file them again. */
   const place = await world(t)
   const anne = await place.stopAt('Anne Frank House', 4.8839, 52.3752)
-  const wester = await place.stopAt('Westerkerk', 4.8836, 52.3747)
-  const photo = await place.upload({ lng: 4.8839, lat: 52.3752 })
+  await place.stopAt('Westerkerk', 4.8836, 52.3747)
+  const photo = await place.upload({ stopId: anne.id })
   assert.equal(photo.stopId, anne.id)
 
   const gone = await fetch(`${place.origin}/api/trips/${place.trip.id}/stops/${anne.id}`, {
@@ -207,7 +220,7 @@ test('a stop deleted hands its photographs to the next nearest, not to nothing',
   assert.equal(gone.status, 204)
 
   const after = await place.photos()
-  assert.equal(after.find(item => item.id === photo.id).stopId, wester.id)
+  assert.equal(after.find(item => item.id === photo.id).stopId, null)
 })
 
 test('re-filing only touches what actually moved', async t => {
@@ -219,7 +232,7 @@ test('re-filing only touches what actually moved', async t => {
   await place.upload({ lng: 2.3522, lat: 48.8566 })
   await place.stopAt('Rijksmuseum', 4.8852, 52.36)
 
-  const again = await place.repository.relinkTripPhotos(place.user, place.trip.id, {})
+  const again = await place.repository.relinkTripPhotos(place.user, place.trip.id)
   assert.deepEqual(again, { examined: 3, changed: 0 }, 'already settled')
 })
 
@@ -240,9 +253,9 @@ test('a stop chosen by hand survives the itinerary changing under it', async t =
      pin the correction lasted until that moment and then vanished, with
      nothing said. */
   const place = await world(t)
-  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+  await place.stopAt('Rijksmuseum', 4.8852, 52.36)
   const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
-  assert.equal(photo.stopId, rijks.id, 'filed by distance to begin with')
+  assert.equal(photo.stopId, null, 'filed nowhere to begin with')
 
   const vanGogh = await place.stopAt('Van Gogh Museum', 4.8811, 52.3584)
   const corrected = await jsonPatch(
@@ -259,7 +272,7 @@ test('a stop chosen by hand survives the itinerary changing under it', async t =
   assert.equal(after.find(item => item.id === photo.id).stopId, vanGogh.id)
 
   // And re-filing directly, which is the same rule with nothing in the way.
-  const report = await place.repository.relinkTripPhotos(place.user, place.trip.id, {})
+  const report = await place.repository.relinkTripPhotos(place.user, place.trip.id)
   assert.deepEqual(report, { examined: 1, changed: 0 })
 })
 
@@ -284,9 +297,12 @@ test('a photograph with no coordinates can be filed by hand and stays filed', as
 
 test('a pin can be handed back to the rule, and the rule answers straight away', async t => {
   /* An undo for a mis-tap. It has to show the rule's answer now: waiting for
-     the next itinerary edit is indistinguishable from having done nothing. */
+     the next itinerary edit is indistinguishable from having done nothing.
+
+     For a photograph that knows where it was taken, the rule's answer is that
+     it belongs nowhere — so handing it back unfiles it, and the picture is
+     drawn where it was taken again. */
   const place = await world(t)
-  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
   const vanGogh = await place.stopAt('Van Gogh Museum', 4.8811, 52.3584)
   const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
 
@@ -303,7 +319,7 @@ test('a pin can be handed back to the rule, and the rule answers straight away',
     place.accessToken,
   )
   assert.equal(released.stopPinned, false)
-  assert.equal(released.stopId, rijks.id, 'the rule has already had its say')
+  assert.equal(released.stopId, null, 'the rule has already had its say')
 })
 
 test('a person saying a photograph belongs nowhere is also a decision', async t => {
@@ -311,7 +327,7 @@ test('a person saying a photograph belongs nowhere is also a decision', async t 
      distance rule must not treat it as an invitation to have another go. */
   const place = await world(t)
   const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
-  const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
+  const photo = await place.upload({ stopId: rijks.id })
   assert.equal(photo.stopId, rijks.id)
 
   const loosed = await jsonPatch(
@@ -331,7 +347,7 @@ test('a caption does not disturb where a photograph is filed', async t => {
      was — neither pinning an automatic filing nor releasing a chosen one. */
   const place = await world(t)
   const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
-  const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
+  const photo = await place.upload({ stopId: rijks.id })
 
   const captioned = await jsonPatch(
     `${place.origin}/api/trips/${place.trip.id}/photos/${photo.id}`,
@@ -352,9 +368,8 @@ test('many photographs move to a stop in one request, and stay there', async t =
   const vanGogh = await place.stopAt('Van Gogh Museum', 4.8811, 52.3584)
 
   const wrong = []
-  for (let index = 0; index < 6; index++)
-    wrong.push(await place.upload({ lng: 4.8852, lat: 52.36 }))
-  const untouched = await place.upload({ lng: 4.8852, lat: 52.36 })
+  for (let index = 0; index < 6; index++) wrong.push(await place.upload({ stopId: rijks.id }))
+  const untouched = await place.upload({ stopId: rijks.id })
   assert.deepEqual(
     wrong.map(photo => photo.stopId),
     wrong.map(() => rijks.id),
@@ -404,7 +419,6 @@ test('photographs with nothing to go on can be filed together', async t => {
 
 test('many pins can be handed back to the rule at once', async t => {
   const place = await world(t)
-  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
   const vanGogh = await place.stopAt('Van Gogh Museum', 4.8811, 52.3584)
   const photos = []
   for (let index = 0; index < 3; index++)
@@ -423,7 +437,7 @@ test('many pins can be handed back to the rule at once', async t => {
   )
   assert.equal(released.moved, 3)
   assert.ok(
-    released.photos.every(photo => photo.stopId === rijks.id && photo.stopPinned === false),
+    released.photos.every(photo => photo.stopId === null && photo.stopPinned === false),
     'the rule has already had its say, and the answer shows it',
   )
 })
@@ -431,7 +445,7 @@ test('many pins can be handed back to the rule at once', async t => {
 test('a bulk move refuses what it cannot honestly do', async t => {
   const place = await world(t)
   const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
-  const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
+  const photo = await place.upload({ stopId: rijks.id })
   const url = `${place.origin}/api/trips/${place.trip.id}/photos`
   const send = body =>
     fetch(url, {

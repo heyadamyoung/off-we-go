@@ -223,7 +223,12 @@ test('the basemap credit is visible, clear of the bottom bar', async ({ page }) 
 test('loads the trip with map, markers and the day strip', async ({ page }) => {
   await open(page)
   await expect(page.locator('.mstop')).toHaveCount(8)
-  await expect(page.locator('.mstack')).toHaveCount(5)
+  /* Four, not five. The stacks used to be one per itinerary item with
+     photographs on it, because a picture taken near a stop was filed there and
+     drawn on its pin. They are grouped by where the pictures were actually
+     taken now, so the shape follows the photographs rather than the itinerary:
+     seven in one cell, two in another, and two standing alone. */
+  await expect(page.locator('.mstack')).toHaveCount(4)
   await expect(page.locator('.fcard').first()).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Amsterdam Weekend' })).toBeVisible()
   await expect(page.getByText(/travelling/)).toBeVisible()
