@@ -83,9 +83,17 @@ export default function useTripSelection({
           focus: true,
         })
       }
+      /* Its date, not its label. `item.day` is what gets drawn — 'Sat 5 Sep' —
+         and the chosen day is a date, so they never matched and this rewrote
+         the URL to a label on every pick. The filter then found nothing under
+         it and the whole list emptied: choosing a stop made the trip vanish.
+
+         It only ever looked fine because the reader used to decode a label
+         back into a date. The URL is a stored value like any other, and a
+         value that has to be decoded is one somebody will store wrong. */
       patch({
         sel: item.id,
-        ...(day !== ALL_DAYS && item.day && item.day !== day ? { day: item.day } : {}),
+        ...(day !== ALL_DAYS && item.dayIso && item.dayIso !== day ? { day: item.dayIso } : {}),
       })
     },
     [patch, day, setFollowing, setMapView, viewRef],
