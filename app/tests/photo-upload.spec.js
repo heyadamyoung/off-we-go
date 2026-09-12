@@ -72,7 +72,10 @@ test('the sheet says what will happen to the batch, not to one of it', async ({
   /* One sentence about all of them, in place of a map of the first one. */
   const hint = page.locator('.dlg p.hint')
   await expect(hint).toContainText('All go on the map where they were taken')
-  await expect(hint).toContainText('grouped at Rijksmuseum')
+  /* And nothing about an itinerary item. It used to promise "2 will be grouped
+     at Rijksmuseum" — which the server then did, and the map drew both of them
+     on the museum's pin instead of where they were taken. */
+  await expect(hint).not.toContainText('grouped')
   await expect(page.locator('.dlg .previews').getByText('No place')).toHaveCount(0)
 })
 

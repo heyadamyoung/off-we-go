@@ -1521,9 +1521,11 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const client = await pool.connect()
       try {
         await client.query('begin')
-        /* Cleared here so the foreign key has nothing to complain about; the
-           re-link below decides where they actually belong now, which is
-           usually the next-nearest stop rather than nowhere. */
+        /* Cleared here so the foreign key has nothing to complain about.
+           Nothing refiles them afterwards: a photograph that knows where it
+           was taken belongs nowhere on the itinerary, and one that does not
+           has lost the only notion of place it had — which is a thing to file
+           by hand, not to guess at. */
         await client.query('update photos set stop_id=null where trip_id=$1 and stop_id=$2', [
           tripId,
           stopId,
@@ -1558,26 +1560,23 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
 
        What comes back is bounded by one trip's photographs, and only the three
        columns needed to decide: less than the trip read already sends. */
-    async relinkTripPhotos(user, tripId, { radiusMetres } = {}) {
+    async relinkTripPhotos(user, tripId) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
-      const [stops, photos] = await Promise.all([
-        pool.query('select id, lng, lat from stops where trip_id=$1 order by seq,created_at', [
-          tripId,
-        ]),
-        /* Aliased into the shape stop-placement.js speaks, so the rule reads
-           the same row here as it does anywhere else. Column names would
-           leave `stopId` undefined, and a pinned row would then be re-filed
-           as belonging nowhere — the exact undoing this guards against. */
-        pool.query(
-          `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
-           from photos where trip_id=$1 and lng is not null and lat is not null`,
-          [tripId],
-        ),
-      ])
+      /* The trip's stops are not read. They used to be, to measure every
+         photograph's distance against them; the rule needs nothing but the row
+         now. Aliased into the shape stop-placement.js speaks, so it reads the
+         same row here as it does anywhere else — column names would leave
+         `stopId` undefined, and a pinned row would then be unfiled, the exact
+         undoing this guards against. */
+      const photos = await pool.query(
+        `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
+         from photos where trip_id=$1 and lng is not null and lat is not null`,
+        [tripId],
+      )
       const ids = []
       const next = []
       for (const photo of photos.rows) {
-        const decided = stopForPhoto(photo, stops.rows, { radiusMetres })
+        const decided = stopForPhoto(photo)
         if (decided !== photo.stopId) {
           ids.push(photo.id)
           next.push(decided)
