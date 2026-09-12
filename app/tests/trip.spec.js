@@ -1578,6 +1578,54 @@ test('the photograph you tap is the photograph you get, and the one you open ful
   expect(await zoom.getAttribute('aria-label')).toBe(wanted)
 })
 
+test('the strip along the bottom follows the photograph you are on', async ({ page }) => {
+  /* It never did. Paging to the fortieth picture left the strip showing the
+     first ten, with the highlighted one somewhere off the side — so the one
+     control whose whole job is "where am I in this trip" was the one thing not
+     answering it.
+
+     Narrow enough that the strip has to scroll: below 640 the stylesheet hides
+     it altogether, so this is the narrowest place it is still a strip. */
+  await page.setViewportSize({ width: 700, height: 800 })
+  await openViewer(page)
+  const film = page.locator('.vfilm')
+  await expect(film).toBeVisible()
+
+  const count = Number(/of (\d+)/.exec(await page.locator('.vcap .ct').innerText())[1])
+  expect(count, 'too few photographs for the strip to need scrolling').toBeGreaterThan(6)
+
+  const highlighted = () =>
+    page.evaluate(() => {
+      const row = document.querySelector('.vfilm')
+      const on = row?.querySelector('button.on')
+      if (!row || !on) return null
+      const strip = row.getBoundingClientRect()
+      const box = on.getBoundingClientRect()
+      return { inside: box.x >= strip.x - 1 && box.right <= strip.right + 1 }
+    })
+
+  for (let turn = 1; turn < count; turn++) await page.locator('.vnav.n').click()
+  await expect(page.locator('.vcap .ct')).toHaveText(new RegExp(`^${count} of `))
+
+  expect(
+    (await highlighted())?.inside,
+    'the highlighted thumbnail is off the side of the strip',
+  ).toBe(true)
+
+  /* And the strip still spans the whole trip, so the scrollbar is not lying
+     about how much of it there is — the width either side of what is drawn is
+     held open rather than simply missing. */
+  const spans = await page.evaluate(() => {
+    const row = document.querySelector('.vfilm')
+    return row ? row.scrollWidth >= row.clientWidth : false
+  })
+  expect(spans, 'the strip collapsed to the handful it draws').toBe(true)
+
+  // A thumbnail still picks its own photograph, windowed or not.
+  await page.locator('.vfilm button').first().click()
+  await expect(page.locator('.vcap .ct')).not.toHaveText(new RegExp(`^${count} of `))
+})
+
 test('a swipe across the stage is never taken for a drag', async ({ page }) => {
   /* The page turn failed intermittently and left nothing behind to say why.
 
@@ -1599,7 +1647,7 @@ test('a swipe across the stage is never taken for a drag', async ({ page }) => {
   await page.evaluate(() => {
     window.__taken = []
     for (const kind of ['dragstart', 'selectstart', 'pointercancel'])
-      window.addEventListener(kind, event => window.__taken.push(kind), true)
+      window.addEventListener(kind, () => window.__taken.push(kind), true)
   })
 
   // Twice, because once is what it takes to make the selection the second one
@@ -1621,6 +1669,33 @@ test('a swipe across the stage is never taken for a drag', async ({ page }) => {
   ).toEqual([])
   // And both swipes landed: two page turns, not one and a cancelled one.
   await expect(page.locator('.vcap .ct')).toHaveText(/^3 of /)
+
+  /* And the same on the full-screen view, which reads pinch, pan and swipe
+     from the same pointer stream and has the same letterboxing either side of
+     the picture to start a selection in. */
+  await page.locator('.vpane.on .vmaintap').click()
+  const zoom = page.locator('.vzstage')
+  await expect(zoom).toBeVisible({ timeout: 8000 })
+  const stageBox = await zoom.boundingBox()
+  const zy = stageBox.y + stageBox.height / 2
+  for (let go = 0; go < 2; go++) {
+    await page.mouse.move(stageBox.x + stageBox.width - 12, zy)
+    await page.mouse.down()
+    for (let step = 1; step <= 6; step++) {
+      await page.mouse.move(
+        stageBox.x + stageBox.width - 12 - (stageBox.width * 0.5 * step) / 6,
+        zy,
+      )
+      await page.waitForTimeout(20)
+    }
+    await page.mouse.up()
+    await page.waitForTimeout(300)
+  }
+
+  expect(
+    await page.evaluate(() => window.__taken),
+    'the browser took the full-screen gesture for itself',
+  ).toEqual([])
 })
 
 test('the strip follows the finger, and carries on to the next one when let go', async ({

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type React from 'react'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import { dragMeans, isDoubleTap, type Tap } from '../../../swipe-core'
@@ -27,6 +28,13 @@ import type { TripPhoto } from '../../../shared/model/types'
  * is what it means in every other full-screen photograph on a phone — and the
  * heart lives in the viewer this came from, one tap away.
  */
+/* A native drag cancels the pointer stream, and everything here — pinch, pan,
+   the swipe to the next photograph — is read by hand from that stream. The
+   stylesheet stops a selection from starting; this stops anything else the
+   browser might decide to drag. The long version is in use-viewer-gestures,
+   where the same guard sits on the viewer's own stage. */
+const preventDrag = (event: React.DragEvent) => event.preventDefault()
+
 export default function PhotoZoom({
   photo,
   onClose,
@@ -201,15 +209,19 @@ export default function PhotoZoom({
     return () => window.removeEventListener('keydown', onKey)
   }, [onPage, siblings])
 
+  /* Every gesture this stage reads, in one place — including the one that says
+     the browser may not take the gesture for itself. */
+  const stageHandlers = {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel: onPointerUp,
+    onDragStart: preventDrag,
+  }
+
   return (
     <div className="vzoom" role="dialog" aria-modal="true" aria-label={photo.caption || 'Photo'}>
-      <div
-        className="vzstage"
-        ref={stage}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}>
+      <div className="vzstage" ref={stage} {...stageHandlers}>
         <Img
           className="vzimg"
           item={photo}

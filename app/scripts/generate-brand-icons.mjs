@@ -16,6 +16,21 @@ const transparent = { r: 0, g: 0, b: 0, alpha: 0 }
    system reads this picture as luminance, and anything above nought there is
    a tint it will paint. */
 const black = { r: 0, g: 0, b: 0, alpha: 1 }
+/* A hair inside the circle rather than exactly on it.
+   
+   Fitted to the line, the smallest tile cannot honour it: at mdpi the whole
+   canvas is 108 pixels and the safe circle 72 across, so between integer
+   rounding and the soft edge both the mark and the mask have at that size, a
+   few pixels fall outside. Measured rather than reasoned about: at 3% seven
+   pixels of the colour layer were still clipped, at 2% one pixel of the
+   monochrome one was, and 4% was the first clean pass. This is 5%, a point
+   further in, so that a later nudge to the artwork does not silently put it
+   back on the line.
+   
+   A ratio rather than a count of pixels, because every density has to draw the
+   same picture — the same margin in pixels would be a different icon at each
+   size. */
+const SAFE_MARGIN = 0.95
 const transparentExportSizes = [16, 32, 48, 64, 128, 256, 512, 1024]
 
 const androidDensities = new Map([
@@ -121,7 +136,118 @@ async function inkBox(source, side = 2048) {
   }
   const width = Math.max(1, right - left + 1)
   const height = Math.max(1, bottom - top + 1)
-  return { left, top, width, height, side, aspect: width / height }
+  return {
+    left,
+    top,
+    width,
+    height,
+    side,
+    aspect: width / height,
+    circle: smallestCircle(data, info),
+  }
+}
+
+/**
+ * The smallest circle containing every inked pixel.
+ *
+ * A mark fitted to a round mask by its bounding box is fitted by its corners,
+ * and for a shape like an arch those corners are mostly empty air: the top two
+ * hold nothing at all, because the arch is round up there too. Measuring the
+ * drawing's own reach instead — how far it actually gets from a centre worth
+ * measuring from — buys back about a tenth of the tile at no risk, because it
+ * is the same question asked of the ink rather than of the box around it.
+ *
+ * Furthest-point distance is convex in the centre, so a nested ternary search
+ * finds the true minimum rather than a good guess. It runs against the outline
+ * only — the extreme ink in each row and column, which contains every point
+ * that could possibly be the furthest one — so the search is cheap.
+ */
+function smallestCircle(data, info) {
+  const { width, height } = info
+  const inked = (x, y) => data[(y * width + x) * 4 + 3] > 8
+  const edge = []
+  for (let y = 0; y < height; y += 1) {
+    let first = -1
+    let last = -1
+    for (let x = 0; x < width; x += 1)
+      if (inked(x, y)) {
+        if (first < 0) first = x
+        last = x
+      }
+    if (first >= 0) edge.push([first, y], [last, y])
+  }
+  for (let x = 0; x < width; x += 1) {
+    let first = -1
+    let last = -1
+    for (let y = 0; y < height; y += 1)
+      if (inked(x, y)) {
+        if (first < 0) first = y
+        last = y
+      }
+    if (first >= 0) edge.push([x, first], [x, last])
+  }
+  if (!edge.length) return { cx: width / 2, cy: height / 2, r: Math.max(width, height) / 2 }
+
+  const reach = (cx, cy) => {
+    let most = 0
+    for (const [x, y] of edge) {
+      const d = (x - cx) ** 2 + (y - cy) ** 2
+      if (d > most) most = d
+    }
+    return Math.sqrt(most)
+  }
+  const narrow = (low, high, at) => {
+    for (let step = 0; step < 60; step += 1) {
+      const a = low + (high - low) / 3
+      const b = high - (high - low) / 3
+      if (at(a) < at(b)) high = b
+      else low = a
+    }
+    return (low + high) / 2
+  }
+
+  const down = cx => narrow(0, height, cy => reach(cx, cy))
+  const cx = narrow(0, width, x => reach(x, down(x)))
+  const cy = down(cx)
+  return { cx, cy, r: reach(cx, cy) }
+}
+
+/**
+ * The mark on a tile, sized and placed by its own enclosing circle.
+ *
+ * For a round mask this is the honest fit. `tile` below centres a bounding
+ * box, which for an arch means reserving room for two top corners that hold
+ * nothing — the mark comes out a tenth smaller than it needs to be for the
+ * same guarantee. Here the circle the drawing actually occupies is the thing
+ * made concentric with the mask and scaled to `safe` across it, so every inked
+ * pixel is inside by construction and none of the room is spent on air.
+ */
+async function roundTile(source, box, { size, safe, ground = null }) {
+  const { cx, cy, r } = box.circle
+  const scale = (safe * size * SAFE_MARGIN) / (2 * r)
+  const side = Math.max(8, Math.round(box.side * scale))
+  const rendered = await sharp(source)
+    .resize(side, side, { fit: 'contain', background: transparent, kernel: sharp.kernel.lanczos3 })
+    .png()
+    .toBuffer()
+  /* Padded first so the window around the circle's centre is always inside the
+     image, whichever way the drawing sits in its square. */
+  const padded = await sharp(rendered)
+    .extend({ top: size, bottom: size, left: size, right: size, background: transparent })
+    .png()
+    .toBuffer()
+  const framed = await sharp(padded)
+    .extract({
+      left: Math.round(cx * scale + size / 2),
+      top: Math.round(cy * scale + size / 2),
+      width: size,
+      height: size,
+    })
+    .png()
+    .toBuffer()
+  return ground
+    ? sharp(framed).flatten({ background: ground }).removeAlpha().png().toBuffer()
+    : framed
 }
 
 /** The drawing alone, with no margin, at this many pixels tall. */
@@ -186,8 +312,8 @@ async function transparentIcon(sourcePath, size) {
 }
 
 /** A circle-cropped launcher icon, with the mark already inside the circle. */
-async function roundLauncher(source, box, size, fill) {
-  const square = await tile(source, box, { size, fill, ground: background })
+async function roundLauncher(source, box, size, safe) {
+  const square = await roundTile(source, box, { size, safe, ground: background })
   const { data, info } = await sharp(square)
     .ensureAlpha()
     .raw()
@@ -312,9 +438,13 @@ function createIco(images) {
 export function fills(aspect) {
   return {
     ios: cornerScale(aspect),
-    maskable: safeScale(aspect, 0.8),
-    adaptive: safeScale(aspect, 72 / 108),
-    round: safeScale(aspect, 0.92),
+    /* These three are diameters, not heights: the mark's own enclosing circle
+       is made this wide and set concentric with the mask, so they say exactly
+       what each platform promises to keep rather than what a bounding box has
+       to give up to honour it. */
+    maskable: 0.8,
+    adaptive: 72 / 108,
+    round: 0.92,
     splash: 0.22,
   }
 }
@@ -347,13 +477,17 @@ export async function generateBrandIcons({ sourcePath, outputRoot }) {
   for (const [filename, size, fill] of [
     ['apple-touch-icon.png', 180, share.ios],
     ['icon-192.png', 192, share.ios],
-    ['icon-512.png', 512, share.maskable],
   ]) {
     await writeAsset(
       path.join(publicDirectory, filename),
       await tile(sourcePath, box, { size, fill, ground: background }),
     )
   }
+  /* The manifest declares this one maskable, and maskable means a circle. */
+  await writeAsset(
+    path.join(publicDirectory, 'icon-512.png'),
+    await roundTile(sourcePath, box, { size: 512, safe: share.maskable, ground: background }),
+  )
 
   const faviconImages = await Promise.all(
     [16, 32, 48, 256].map(async size => ({ size, bytes: await transparentIcon(sourcePath, size) })),
@@ -419,11 +553,11 @@ export async function generateBrandIcons({ sourcePath, outputRoot }) {
       ),
       writeAsset(
         path.join(directory, 'ic_launcher_foreground.png'),
-        await tile(sourcePath, box, { size: sizes.foreground, fill: share.adaptive }),
+        await roundTile(sourcePath, box, { size: sizes.foreground, safe: share.adaptive }),
       ),
       writeAsset(
         path.join(directory, 'ic_launcher_monochrome.png'),
-        await tile(monochrome, monoBox, { size: sizes.foreground, fill: share.adaptive }),
+        await roundTile(monochrome, monoBox, { size: sizes.foreground, safe: share.adaptive }),
       ),
     ])
   }

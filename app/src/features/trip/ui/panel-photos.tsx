@@ -26,7 +26,7 @@ export interface PhotosPanelProps {
   /* Filing several at once. Absent for anybody who cannot edit the trip, and
      the way in goes with it — there is no point offering a selection whose
      only action is one you are not allowed to take. */
-  onMovePhotos?: (ids: Id[], filing: Filing) => Promise<boolean | void> | boolean | void
+  onMovePhotos?: (ids: Id[], filing: Filing) => Promise<boolean | undefined> | boolean | undefined
 }
 
 export default function PanelPhotos({
