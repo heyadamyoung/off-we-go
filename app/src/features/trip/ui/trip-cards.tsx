@@ -27,7 +27,7 @@ export default function TripCards({ page, canEdit, patch, stopDocs, stats }: Tri
     setPlacing, removeDraft, indoor, trip, onDraftField, saveDraft, moveStop,
     lookUpDraft, saving, placing, editing, routeDraft, setRouteDraft, saveRoute,
     searchPlaces, places, setPlaces, route, attraction, stops, addAttraction,
-    setAttractionCard, showAttractions, attrFilling, attrCount,
+    setAttractionCard, showAttractions, attrFilling, attrCount, photos,
   } = page
   return (
     <>
@@ -66,6 +66,7 @@ export default function TripCards({ page, canEdit, patch, stopDocs, stats }: Tri
       {draft && (
         <StopEditor
           draft={draft}
+          photos={photos}
           startsOn={trip.startsOn}
           endsOn={trip.endsOn}
           onField={onDraftField}

@@ -128,8 +128,21 @@ export function deriveLiveStopProgress({
        stop happens to be closest. A later stop cannot skip earlier stops, and a
        co-located return stop is not visited until the phone has first been
        confidently outside its geofence and then comes back. */
+    /* A stop somebody has marked Visited is behind us, whether or not a phone
+       was there to see it — they were there before location sharing was on, or
+       with the phone away. Without this the cursor waits at a stop nobody is
+       going back to: it can never arrive, so it never advances, and every stop
+       after it stays "planned" for the rest of the trip. Marking somewhere
+       Visited would leave it drawn as Up next, which is the reported bug in
+       its live form. The itinerary is still never skipped by GPS — only by
+       the person, who is allowed to. */
+    const advancePast = (from: number) => {
+      let at = from
+      while (at < orderedStops.length && orderedStops[at].status === 'done') at += 1
+      return at
+    }
     const visitEvents: Array<{ stop: Stop; at: Date }> = []
-    let targetIndex = 0
+    let targetIndex = advancePast(0)
     let targetArmed = true
     for (let index = 0; index < sameDevice.length && targetIndex < orderedStops.length; index++) {
       const fix = sameDevice[index]
@@ -143,7 +156,7 @@ export function deriveLiveStopProgress({
       const distance = metres([fix.lng, fix.lat], [target.lng, target.lat])
       if (!canArrive(fix, distance, index)) continue
       visitEvents.push({ stop: target, at: fix.at })
-      targetIndex += 1
+      targetIndex = advancePast(targetIndex + 1)
       const next = orderedStops[targetIndex]
       targetArmed = !!next && confidentlyOutside(fix, next)
     }
@@ -240,141 +253,44 @@ export function deriveLiveStopProgress({
   }
 }
 
-export function describeLiveStopProgress(
-  progress: ReturnType<typeof deriveLiveStopProgress>,
-  now = new Date(),
-) {
-  const distance =
-    progress.distanceMetres == null
-      ? null
-      : progress.distanceMetres < 1_000
-        ? `${Math.max(10, Math.round(progress.distanceMetres / 10) * 10)} m`
-        : `${(progress.distanceMetres / 1_000).toFixed(1)} km`
-  if (progress.state === 'approaching' && progress.destination && progress.distanceMetres != null) {
-    return {
-      text: `Approaching ${progress.destination.name}`,
-      meta: `${distance} away`,
-      tone: 'approaching' as const,
-    }
-  }
-  if (progress.state === 'heading' && progress.destination && distance) {
-    return {
-      text: `Heading to ${progress.destination.name}`,
-      meta: `${distance} away`,
-      tone: 'heading' as const,
-    }
-  }
-  if (progress.state === 'arrived' && progress.currentStop) {
-    return {
-      text: `At ${progress.currentStop.name}`,
-      meta:
-        progress.destination && distance
-          ? `next: ${progress.destination.name} · ${distance} away`
-          : 'Final stop',
-      tone: 'arrived' as const,
-    }
-  }
-  if (progress.state === 'complete') {
-    const count = progress.visitedStopIds.length
-    return {
-      text: 'Route complete',
-      meta: `${count} stop${count === 1 ? '' : 's'} visited`,
-      tone: 'complete' as const,
-    }
-  }
-  if (progress.reason === 'paused') {
-    const minutes = progress.lastFix
-      ? Math.max(1, Math.round((now.getTime() - progress.lastFix.at.getTime()) / 60_000))
-      : null
-    const age =
-      minutes == null ? null : minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`
-    return {
-      text: 'Sharing paused',
-      meta: age ? `Last update ${age} ago` : 'Paused on the phone',
-      tone: 'waiting' as const,
-    }
-  }
-  /* Honesty over reassurance: with no reported pause, an old fix means we do
-     not know why the phone is quiet — a tunnel, a dead battery, airplane mode.
-     Never claim "paused" here; that word asserts a decision nobody reported. */
-  if (progress.reason === 'stale-fix' && progress.lastFix) {
-    const minutes = Math.max(
-      1,
-      Math.round((now.getTime() - progress.lastFix.at.getTime()) / 60_000),
-    )
-    const age = minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`
-    return {
-      text: `No update for ${age}`,
-      /* The commonest cause of a long silence in practice is a phone whose
-         token belongs to another trip — it posts faithfully, elsewhere. Point
-         at the one screen that shows which trip each phone reports to. */
-      meta:
-        minutes >= 12 * 60
-          ? 'Last known position · check the phone under Trip settings → Phones'
-          : 'Showing the last known position',
-      tone: 'waiting' as const,
-    }
-  }
-  if (progress.reason === 'loading') {
-    return {
-      text: 'Finding live location…',
-      meta: 'Checking connected phones',
-      tone: 'waiting' as const,
-    }
-  }
-  if (progress.reason === 'service-error') {
-    return {
-      text: 'Live location unavailable',
-      meta: 'Could not reach the location service',
-      tone: 'waiting' as const,
-    }
-  }
-  if (
-    progress.reason === 'poor-accuracy' &&
-    progress.lastFix &&
-    typeof progress.lastFix.accuracy === 'number'
-  ) {
-    return {
-      text: 'Improving GPS signal',
-      meta: `Last fix had ${Math.round(progress.lastFix.accuracy)} m accuracy`,
-      tone: 'waiting' as const,
-    }
-  }
-  if (progress.reason === 'poor-accuracy') {
-    return {
-      text: 'Improving GPS signal',
-      meta: 'Waiting for an accuracy estimate',
-      tone: 'waiting' as const,
-    }
-  }
-  if (progress.reason === 'no-stops') {
-    return {
-      text: 'Live location',
-      meta: 'Add a stop to see trip progress',
-      tone: 'waiting' as const,
-    }
-  }
-  return {
-    text: 'Waiting for GPS',
-    meta: 'Enable location sharing on a phone',
-    tone: 'waiting' as const,
-  }
-}
+/* The words for the banner live next door — see live-progress-copy-core.
+   Re-exported here because this is the module the whole app asks about the
+   journey, and where a caller gets an answer from is not its business. */
+export { describeLiveStopProgress } from './live-progress-copy-core'
 
+/**
+ * The itinerary with what the phones know written over it.
+ *
+ * It knows three things and no more: which stop somebody is at, which one they
+ * are heading to, and which ones a phone has actually been at. Everything else
+ * keeps the status a person gave it.
+ *
+ * It used to say 'planned' about everything else instead — a claim, not an
+ * absence. With nobody sharing a location, which is most of a trip, that was
+ * every stop: you could open a stop, tap Visited, watch it save, and see it
+ * come back Planned. The write was never the problem. This list is what the
+ * map, the timeline, the strip and the detail card all draw, so the status
+ * went to the server intact and was painted over on the way to the screen.
+ */
 export function applyLiveStopStatuses(
   stops: Stop[],
   progress: ReturnType<typeof deriveLiveStopProgress>,
 ) {
   const visited = new Set(progress.visitedStopIds)
-  return stops.map(stop => ({
-    ...stop,
-    status:
-      progress.currentStop?.id === stop.id
-        ? 'now'
-        : progress.destination?.id === stop.id
-          ? 'next'
-          : visited.has(stop.id)
-            ? 'done'
-            : 'planned',
-  }))
+  /* Whether the phones have anything to say at all. Without this there is
+     nothing to contradict, and a stored status is the only thing there is. */
+  const live = !!(progress.currentStop || progress.destination)
+  return stops.map(stop => {
+    if (progress.currentStop?.id === stop.id) return { ...stop, status: 'now' }
+    if (progress.destination?.id === stop.id) return { ...stop, status: 'next' }
+    if (visited.has(stop.id)) return { ...stop, status: 'done' }
+    /* Somewhere else is where you are, so this is not — two stops both saying
+       "Happening now" is worse than one out-of-date chip. 'done' is never
+       taken away: a phone that was off, or was not being shared, is not
+       evidence that somebody was not somewhere. They were there; they said so. */
+    if (live && (stop.status === 'now' || stop.status === 'next')) {
+      return { ...stop, status: 'planned' }
+    }
+    return stop
+  })
 }

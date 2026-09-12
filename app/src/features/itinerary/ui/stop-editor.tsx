@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { outsideRange } from '../../../day-label-core'
 import { dayIsoOf } from '../../../trip-days-core'
+import { chosenPicture } from '../../../stop-picture-core'
 import { formatRange } from '../../../shared/lib/trip-dates'
 import Icon from '../../../shared/ui/icon'
-import type { StopDraft } from '../../../shared/model/types'
+import StopPicturePicker from './stop-picture-picker'
+import type { StopDraft, TripPhoto } from '../../../shared/model/types'
 
 const STOP_ICONS = ['pin', 'plane', 'bed', 'boat', 'museum', 'food', 'walk', 'camera']
 const STOP_STATES = [
@@ -15,6 +17,7 @@ const STOP_STATES = [
 
 function StopEditor({
   draft,
+  photos,
   startsOn,
   endsOn,
   onField,
@@ -26,6 +29,8 @@ function StopEditor({
   busy,
 }: {
   draft: StopDraft
+  /** the trip's own pictures, any of which may stand for this stop */
+  photos: TripPhoto[]
   /** the trip's declared range; the calendar is fenced to it */
   startsOn?: string | null
   endsOn?: string | null
@@ -39,6 +44,7 @@ function StopEditor({
 }) {
   /* A refused pick stays visible as words, never as silently mangled data. */
   const [dayError, setDayError] = useState('')
+  const [picking, setPicking] = useState(false)
   /* The stop's day, which is a date or it is nothing. */
   const dayIso = dayIsoOf(draft.day)
   const pickDay = (iso: string) => {
@@ -57,9 +63,31 @@ function StopEditor({
     onField('day', iso)
     setDayError('')
   }
+  const takePicture = (src: string) => {
+    const picked = chosenPicture(src)
+    if (!picked) return
+    onField('src', picked.src)
+    /* With it, not after it: the stop may be wearing a Wikipedia picture, and
+       the credit drawn beside it belongs to that one and not to this. */
+    onField('sourceUrl', picked.sourceUrl)
+    setPicking(false)
+  }
   const isNew = !draft.id
   return (
     <div className="editor">
+      {/* Over the card rather than inside its scrolling body: opened down
+          there it sat under the Save button, below the fold, on a laptop as
+          much as on a phone — a chooser nobody could see. Choosing a picture
+          is the whole of what the card is doing while it is open, so it takes
+          the card. */}
+      {picking && (
+        <StopPicturePicker
+          photos={photos}
+          stopId={draft.id}
+          onPick={takePicture}
+          onClose={() => setPicking(false)}
+        />
+      )}
       <div className="eh">
         <b>{isNew ? 'New stop' : 'Edit stop'}</b>
         <button onClick={onClose} title="Close">
@@ -181,6 +209,11 @@ function StopEditor({
           {draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}
           <em>{isNew ? 'click the map to move it' : 'drag the pin to move it'}</em>
         </p>
+
+        <button className="usepic" onClick={() => setPicking(true)} disabled={busy}>
+          <Icon n="camera" s={14} />
+          {draft.src ? 'Change picture' : 'Use a picture from this trip'}
+        </button>
 
         <button className="lookup" onClick={onLookUp} disabled={busy}>
           <Icon n="search" s={14} />

@@ -1056,9 +1056,35 @@
 .editor .epic img { width: 100%; height: 132px; object-fit: cover; background: var(--c-raised-2) }
 .editor .epic button { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%; background: rgb(6 9 14 / .65); color: #fff; display: grid; place-items: center }
 .editor .epic a { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 700; color: #fff; background: rgb(6 9 14 / .6); padding: 3px 8px; border-radius: 999px }
-.editor .lookup { display: flex; align-items: center; justify-content: center; gap: 7px; height: 34px; border-radius: 8px; border: 1px dashed var(--c-line-2); font-size: 13px; font-weight: 700; color: var(--c-muted) }
-.editor .lookup:hover { border-color: var(--c-accent); border-style: solid; color: var(--c-ink) }
-.editor .lookup:disabled { opacity: .5; cursor: default }
+.editor .lookup, .editor .usepic { display: flex; align-items: center; justify-content: center; gap: 7px; height: 34px; border-radius: 8px; border: 1px dashed var(--c-line-2); font-size: 13px; font-weight: 700; color: var(--c-muted) }
+.editor .lookup:hover, .editor .usepic:hover { border-color: var(--c-accent); border-style: solid; color: var(--c-ink) }
+.editor .lookup:disabled, .editor .usepic:disabled { opacity: .5; cursor: default }
+
+/* Choosing a stop's picture out of the trip's own photographs. Bounded and
+   scrolling: the editor is a 384px card and the trip may hold thousands, so
+   the grid gets a fixed band of it rather than pushing the Save button off
+   the bottom of the screen. */
+.editor .epick {
+  position: absolute; inset: 0; z-index: 2; border-radius: 16px;
+  background: var(--c-panel-solid); display: flex; flex-direction: column; overflow: hidden;
+}
+.editor .epickh {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none;
+  padding: 13px 12px 13px 16px; font-size: 12px; font-weight: 700; color: var(--c-muted);
+  border-bottom: 1px solid var(--c-line);
+}
+.editor .epickh button { color: var(--c-muted); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px }
+.editor .epickh button:hover { background: var(--c-raised); color: var(--c-ink) }
+.editor .epickg {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 3px;
+  min-height: 0; overflow-y: auto; align-content: start;
+}
+.editor .epickg button { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: var(--c-raised-2) }
+.editor .epickg button img { width: 100%; height: 100%; object-fit: cover }
+/* The ones already filed here are the likely answer, and say so. */
+.editor .epickg button.on { outline: 2px solid var(--c-accent); outline-offset: -2px }
+.editor .epickg button:hover { outline: 2px solid var(--c-ink); outline-offset: -2px }
+.editor .epicknone { padding: 11px; font-size: 12px; color: var(--c-faint) }
 
 @media (max-width: 900px) {
   /* Above the keyboard, not behind it, and never taller than what is left of
