@@ -32,6 +32,13 @@
     reverse_proxy api:3000
   }
 
+  # A shared photograph. Server-rendered, because the thing that fetches a
+  # pasted link is a crawler building a preview card, and a crawler does not
+  # run the app.
+  handle /s/* {
+    reverse_proxy api:3000
+  }
+
   # The browser's telemetry (Faro) lands on our own domain and is handed to
   # the alloy agent — first-party, so nothing for a blocker to eat.
   handle /collect* {

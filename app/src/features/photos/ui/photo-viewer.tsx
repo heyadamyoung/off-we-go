@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Icon from '../../../shared/ui/icon'
 import Img, { SEEN, srcFor } from '../../../shared/ui/img'
+import { useToast } from '../../../shared/ui/toast'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import PhotoDetails from './photo-details'
 import PhotoFilm from './photo-film'
+import PhotoTop, { FilledHeart } from './photo-top'
 import PhotoSide from './photo-side'
 import PhotoZoom from './photo-zoom'
 import VideoFrame from './video-frame'
 import { durationLabel } from '../../../mobile-videos-core'
 import { pageBy, warmAround } from '../../../swipe-core'
+import usePhotoShare from '../model/use-photo-share'
 import useViewerGestures from '../model/use-viewer-gestures'
 
 /* How many photographs either side to have ready. Three covers a fast thumb
@@ -26,20 +29,8 @@ import type {
   TripPhoto,
 } from '../../../shared/model/types'
 
-/* One heart, drawn filled: rose in the chrome when liked, white in the burst
-   over the photograph — the modern like, never an orange block. */
-const HEART_PATH =
-  'M12 21c-.4 0-.8-.15-1.1-.44C6.6 16.8 2.5 13.2 2.5 9.1 2.5 6.3 4.7 4 7.4 4c1.8 0 3.4 1 4.6 2.6C13.2 5 14.8 4 16.6 4c2.7 0 4.9 2.3 4.9 5.1 0 4.1-4.1 7.7-8.4 11.46-.3.29-.7.44-1.1.44Z'
-
-function FilledHeart({ size, color }: { size: number; color: string }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" role="presentation">
-      <path fill={color} d={HEART_PATH} />
-    </svg>
-  )
-}
-
 interface PhotoViewerProps {
+  tripId: Id
   list: TripPhoto[]
   index: number
   setIndex: (index: number) => void
@@ -60,6 +51,7 @@ interface PhotoViewerProps {
 }
 
 function PhotoViewer({
+  tripId,
   list,
   index,
   setIndex,
@@ -146,6 +138,9 @@ function PhotoViewer({
     setBurst(value => value + 1)
   }, [likes, toggleLike, photo?.id])
 
+  const notify = useToast()
+  const { share, sharing } = usePhotoShare(tripId, photo, notify)
+
   const openZoom = useCallback(() => setZoomed(true), [])
   const gestures = useViewerGestures({
     index,
@@ -197,46 +192,23 @@ function PhotoViewer({
         />
       )}
       <div className="vstage">
-        <div className="vtop">
-          <div className="who">
-            <img src={author.avatar} alt="" />
-            <div>
-              <b>{photo.by}</b>
-              <span>
-                {taken}
-                {stop ? ' · ' + stop.name : ''}
-              </span>
-            </div>
-          </div>
-          <div className="acts">
-            {canEdit && (
-              <button
-                onClick={() => setDetails(true)}
-                title={video ? 'Edit video details' : 'Edit photo details'}>
-                <Icon n="pencil" s={16} c="#f2f4f8" />
-              </button>
-            )}
-            <button
-              className={liked ? 'liked' : ''}
-              onClick={() => {
-                if (!liked) setBurst(value => value + 1)
-                toggleLike(photo.id)
-              }}
-              title={liked ? 'Unlike' : 'Like'}>
-              {liked ? (
-                <FilledHeart size={18} color="#ff4d6d" />
-              ) : (
-                <Icon n="heart" s={17} c="#f2f4f8" />
-              )}
-            </button>
-            <button title="Download">
-              <Icon n="download" s={17} c="#f2f4f8" />
-            </button>
-            <button onClick={onClose} title="Close (Esc)">
-              <Icon n="x" s={17} c="#f2f4f8" w={2} />
-            </button>
-          </div>
-        </div>
+        <PhotoTop
+          photo={photo}
+          author={author}
+          stop={stop}
+          taken={taken}
+          video={video}
+          liked={liked}
+          canEdit={canEdit}
+          sharing={sharing}
+          onDetails={() => setDetails(true)}
+          onLike={() => {
+            if (!liked) setBurst(value => value + 1)
+            toggleLike(photo.id)
+          }}
+          onShare={share}
+          onClose={onClose}
+        />
 
         {/* The stage reads the finger. On the whole stage rather than on the
             photograph, because a phone's picture rarely fills it and a swipe

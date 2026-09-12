@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
 import { maskHomeZones } from '../src/home-zone.js'
 import { pinAfter, stopForPhoto } from '../src/stop-placement.js'
@@ -34,6 +35,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const profiles = new Map()
   const profileHandleReservations = new Map()
   const trips = new Map()
+  const shares = new Map()
   const devices = new Map()
   const positions = new Map()
   const mcpClients = new Map()
@@ -552,6 +554,43 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async findPhoto(user, tripId, photoId) {
       return (await this.findPhotos(user, tripId, [photoId]))?.[0] ?? null
+    },
+
+    /* Sharing, kept in a map because that is all the real one is: a token, the
+       photograph it points at, and whether it has been taken back. */
+    async shareForPhoto(user, tripId, photoId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      for (const [token, share] of shares)
+        if (share.tripId === tripId && share.photoId === photoId && !share.revoked) return token
+      return null
+    },
+    async createShare(user, tripId, photoId) {
+      const live = await this.shareForPhoto(user, tripId, photoId)
+      if (live) return live
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const photo = (trips.get(tripId)?.photos || []).find(value => value.id === photoId)
+      if (!photo) return null
+      /* The same shape as the real one. A readable fixture here would have
+         let the test pass while the claim it is making — that this token is
+         unguessable — went unchecked. */
+      const token = randomBytes(24).toString('base64url')
+      shares.set(token, { tripId, photoId, revoked: false })
+      return token
+    },
+    async revokeShares(user, tripId, photoId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      let revoked = 0
+      for (const share of shares.values())
+        if (share.tripId === tripId && share.photoId === photoId && !share.revoked) {
+          share.revoked = true
+          revoked += 1
+        }
+      return revoked
+    },
+    async photoByShareToken(token) {
+      const share = shares.get(token)
+      if (!share || share.revoked) return null
+      return (trips.get(share.tripId)?.photos || []).find(v => v.id === share.photoId) || null
     },
     /* The same answer as the real repository, one row at a time. */
     async movePhotosToStop(user, tripId, photoIds, changes = {}) {

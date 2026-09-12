@@ -2,7 +2,7 @@ import pg from 'pg'
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
 import { pinAfter, stopForPhoto } from './stop-placement.js'
@@ -2001,6 +2001,79 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async findPhoto(user, tripId, photoId) {
       return (await this.findPhotos(user, tripId, [photoId]))?.[0] ?? null
+    },
+
+    /* ---- sharing one photograph outside the trip ----------------------
+    
+       A token stands in for the reader a signed media link would otherwise
+       require. Anybody who may read the trip may make one: on a family trip
+       everyone who can see a picture can already send it by other means, and
+       a feature that pretends otherwise just gets worked around. Revoking is
+       open to them all for the same reason. */
+
+    /** The live token for a photograph, if somebody has made one. */
+    async shareForPhoto(user, tripId, photoId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `select token from photo_shares
+          where trip_id=$1 and photo_id=$2 and revoked_at is null
+          order by created_at desc limit 1`,
+        [tripId, photoId],
+      )
+      return result.rows[0]?.token ?? null
+    },
+
+    /**
+     * A link for this photograph, making one only if there is not one already.
+     *
+     * Sharing the same picture twice hands back the same link rather than
+     * minting a second: two live tokens for one photograph would mean revoking
+     * felt like it had worked while the other one carried on serving.
+     */
+    async createShare(user, tripId, photoId) {
+      const live = await this.shareForPhoto(user, tripId, photoId)
+      if (live) return live
+      // shareForPhoto already refused a reader who may not read the trip.
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const photo = await pool.query('select 1 from photos where id=$1 and trip_id=$2', [
+        photoId,
+        tripId,
+      ])
+      if (!photo.rows[0]) return null
+      /* Unguessable rather than merely unique: this is the whole of the
+         authorisation, so a uuid — which is neither secret nor meant to be —
+         would be the wrong shape. */
+      const token = randomBytes(24).toString('base64url')
+      await pool.query(
+        'insert into photo_shares (token, trip_id, photo_id, created_by) values ($1,$2,$3,$4)',
+        [token, tripId, photoId, user.id],
+      )
+      return token
+    },
+
+    /** Take back every live link for a photograph. */
+    async revokeShares(user, tripId, photoId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `update photo_shares set revoked_at=now()
+          where trip_id=$1 and photo_id=$2 and revoked_at is null`,
+        [tripId, photoId],
+      )
+      return result.rowCount
+    },
+
+    /* The public read, and the only method here that takes no user: the token
+       IS the reader. A revoked one is not a 403 to be explained, it is simply
+       not a link. */
+    async photoByShareToken(token) {
+      if (!token) return null
+      const result = await pool.query(
+        `select p.* from photo_shares s
+           join photos p on p.id = s.photo_id
+          where s.token=$1 and s.revoked_at is null`,
+        [token],
+      )
+      return result.rows[0] ? photoRow(result.rows[0]) : null
     },
     /* Filing many photographs at once, which is one statement rather than a
        hundred round trips. It takes the same changes as `updatePhoto` and

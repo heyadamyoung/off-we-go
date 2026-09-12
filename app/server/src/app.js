@@ -10,6 +10,7 @@ import { registerMcpRoutes } from './mcp.js'
 import { clientAddress, createWindowRateLimiter } from './rateLimit.js'
 import { createLiveStream } from './live-stream.js'
 import { changeKind } from './change-kind.js'
+import { shareGone, sharePage } from './share-page.js'
 import { createSecretBox } from './secret-box.js'
 import {
   DEFAULT_SCOPES,
@@ -1715,6 +1716,98 @@ export async function buildServer({
      and where they want it. It is one statement rather than one request per
      picture, which is the difference between a bulk move feeling instant and
      feeling like a progress bar — and between a half-applied move and none. */
+  /* ---- sharing one photograph outside the trip ---------------------------
+
+     Everything else here is private by design: media sits behind a signed link
+     that expires, minted for a reader the server has already decided may read
+     that trip. Which leaves no way at all to show one picture to a grandparent
+     without an account — the thing people most want to do with a photograph.
+
+     A share token stands in for that reader. It is not a hole in the rule, it
+     is the same rule with a different holder: the link is the authorisation,
+     somebody on the trip made it deliberately, and they can take it back. */
+  const shareUrl = token => `${publicUrl.replace(/\/$/, '')}/s/${token}`
+
+  app.post('/api/trips/:tripId/photos/:photoId/share', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const { tripId, photoId } = request.params
+    if (!looksLikeId(photoId)) return reply.code(400).send({ error: 'That is not a photo id' })
+    const token = await repository.createShare(user, tripId, photoId)
+    if (!token) return reply.code(404).send({ error: 'No such photo' })
+    return reply.send({ url: shareUrl(token) })
+  })
+
+  /** Whether this photograph is already out there, so the viewer can say so. */
+  app.get('/api/trips/:tripId/photos/:photoId/share', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const { tripId, photoId } = request.params
+    if (!looksLikeId(photoId)) return reply.code(400).send({ error: 'That is not a photo id' })
+    const token = await repository.shareForPhoto(user, tripId, photoId)
+    return reply.send({ url: token ? shareUrl(token) : null })
+  })
+
+  app.delete('/api/trips/:tripId/photos/:photoId/share', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const { tripId, photoId } = request.params
+    if (!looksLikeId(photoId)) return reply.code(400).send({ error: 'That is not a photo id' })
+    const revoked = await repository.revokeShares(user, tripId, photoId)
+    if (revoked === null) return reply.code(404).send({ error: 'No such photo' })
+    return reply.send({ revoked })
+  })
+
+  /* The public pair. No session, no signature: the token in the path is the
+     whole of it, which is why it is twenty-four random bytes rather than an
+     id. A revoked link is gone rather than forbidden — there is nothing to
+     explain to somebody holding a link that used to work. */
+  app.get('/s/:token', async (request, reply) => {
+    const photo = await repository.photoByShareToken(request.params.token)
+    if (!photo) return reply.code(404).type('text/html; charset=utf-8').send(shareGone())
+    const base = `${publicUrl.replace(/\/$/, '')}/s/${encodeURIComponent(request.params.token)}`
+    const video = photo.kind === 'video'
+    return (
+      reply
+        .type('text/html; charset=utf-8')
+        /* A card is fetched by whatever the link was pasted into, often more
+         than once and rarely by the person who will read it. Let it be held
+         briefly; revoking still works, because the media behind it stops. */
+        .header('cache-control', 'public, max-age=300')
+        .send(
+          sharePage({
+            caption: photo.caption,
+            mediaUrl: `${base}/media`,
+            pageUrl: base,
+            video,
+            appUrl: `${publicUrl.replace(/\/$/, '')}/`,
+          }),
+        )
+    )
+  })
+
+  app.get('/s/:token/media', async (request, reply) => {
+    if (!fileStore) return reply.code(404).send()
+    const photo = await repository.photoByShareToken(request.params.token)
+    if (!photo) return reply.code(404).send()
+    /* A film previews and plays from two different files: the poster is what
+       a card can show, the film is what the page plays. `?film` asks for the
+       second; everything else gets something a browser will draw. */
+    const wantsFilm = request.query?.film !== undefined
+    const storagePath =
+      photo.kind === 'video' && !wantsFilm ? photo.posterPath || photo.thumbPath : photo.storagePath
+    if (!storagePath) return reply.code(404).send()
+    try {
+      const bytes = await fileStore.read(storagePath)
+      return reply
+        .type(mediaContentType(storagePath))
+        .header('cache-control', 'public, max-age=300')
+        .send(bytes)
+    } catch {
+      return reply.code(404).send()
+    }
+  })
+
   app.patch('/api/trips/:tripId/photos', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
