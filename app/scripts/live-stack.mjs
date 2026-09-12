@@ -161,7 +161,12 @@ const serving = spawn(
 )
 
 const front = createServer((incoming, outgoing) => {
-  const toApi = incoming.url.startsWith('/api/') || incoming.url === '/api'
+  /* The same two things Caddy hands to the API: everything under /api, and a
+     shared photograph's public page, which is server-rendered because the thing
+     fetching a pasted link is a crawler building a preview card. Without /s
+     here the live suite tests the app shell and calls it a share page. */
+  const toApi =
+    incoming.url.startsWith('/api/') || incoming.url === '/api' || incoming.url.startsWith('/s/')
   const relayed = httpRequest(
     {
       host: '127.0.0.1',

@@ -310,6 +310,7 @@ function Trip({
 
       {viewer && viewerList && viewerList.length > 0 && (
         <PhotoViewer
+          tripId={tripId}
           list={viewerList}
           index={viewerIndex}
           setIndex={setIndex}
