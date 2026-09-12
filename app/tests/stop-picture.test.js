@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { chosenPicture, pictureChoices, stillOf } from '../src/stop-picture-core.ts'
 
-const photo = (id, extra = {}) => ({ id, by: 'Adam', src: `/api/media/p/${id}.jpg`, ...extra })
+const photo = (id, extra = {}) => ({ id, by: '', src: `/api/media/p/${id}.jpg`, ...extra })
 
 test('a photograph offers itself and a film offers its poster', () => {
   /* A film is a perfectly good answer to "what does this place look like" —
