@@ -178,11 +178,26 @@ export function clusterPhotos(
     else cells.set(key, [photo])
   }
 
-  for (const [key, items] of cells) {
+  for (const items of cells.values()) {
     items.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
     /* Anchored on the newest rather than the cell's centre: a stack that
-       jumps to a grid intersection reads as being somewhere nobody stood. */
-    out.push({ key: `c${key}`, lng: items[0].lng as number, lat: items[0].lat as number, items })
+       jumps to a grid intersection reads as being somewhere nobody stood.
+
+       And named after it, rather than after the cell. The cell is a fixed
+       number of PIXELS, so it halves with every zoom level — which made every
+       key change on every zoom, for every stack, always. A marker is a real
+       DOM element on the map, and the key is what decides whether it survives
+       a re-render: a new key meant maplibre removing the old marker and
+       building a new one, with new <img> tags. On screen that was every
+       photograph on the trip blinking out and back in each time somebody
+       zoomed. The grid decides which photographs belong together; it has no
+       business deciding which stack a group of them IS. */
+    out.push({
+      key: `c${items[0].id}`,
+      lng: items[0].lng as number,
+      lat: items[0].lat as number,
+      items,
+    })
   }
 
   /* One stack per day, last, so a day's worth of unplaced pictures draws over

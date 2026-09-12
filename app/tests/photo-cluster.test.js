@@ -220,3 +220,70 @@ test('an inferred stack is windowed like any other', () => {
     [],
   )
 })
+
+/* ---- a stack is a thing, not a cell -------------------------------------
+
+   Reported as "photos on the map are flickering when I zoom out".
+
+   Every marker is a real DOM element, added to the map by maplibre and
+   rendered through a portal. React decides which of them survive a re-render
+   by their keys, so a key that changes means the old marker is removed from
+   the map and a new one built — the element, the portal, the <img> tags, all
+   of it. On screen that is every photograph on the trip blinking out and back
+   in, once per zoom.
+
+   The keys were the cell coordinates, and the cell is a fixed number of
+   PIXELS — so it halves with every zoom level and every key changed on every
+   zoom, for every stack, always. What the grid is for is deciding which
+   photographs belong together; which stack a group IS should not depend on
+   the grid that gathered it. */
+
+test('a lone photograph is the same marker at every zoom', () => {
+  const one = [photo(1, -0.1276, 51.5074)]
+  const keys = [10, 12, 14, 16, 18].map(zoom => clusterPhotos(one, [], { zoom })[0].key)
+  assert.equal(
+    new Set(keys).size,
+    1,
+    `one photograph that has not moved became ${new Set(keys).size} different markers`,
+  )
+})
+
+test('a stack whose photographs have not changed keeps its key when the map zooms', () => {
+  /* Three bursts, each shot from one spot, a long way from the others: one
+     stack each at any zoom, so the groups are genuinely the same groups at
+     both ends and the only thing being compared is what they are called.
+     Identical coordinates rather than merely close ones, so no cell boundary
+     can fall between them and make this about the grid instead. */
+  const pockets = [0, 1, 2].flatMap(pocket =>
+    Array.from({ length: 5 }, (_, i) => photo(pocket * 10 + i + 1, -0.5 + pocket * 0.5, 51)),
+  )
+  const membership = groups =>
+    new Map(
+      groups.map(group => [
+        group.items
+          .map(item => item.id)
+          .sort((a, b) => a - b)
+          .join(','),
+        group.key,
+      ]),
+    )
+
+  const wide = membership(clusterPhotos(pockets, [], { zoom: 10 }))
+  const close = membership(clusterPhotos(pockets, [], { zoom: 18 }))
+
+  let compared = 0
+  for (const [who, key] of wide) {
+    if (!close.has(who)) continue
+    compared += 1
+    assert.equal(close.get(who), key, 'the same photographs are the same stack')
+  }
+  assert.ok(compared > 0, 'no stack survived both zooms; this proves nothing')
+})
+
+test('two stacks never answer to the same key', () => {
+  /* The other half of a key: it has to tell them apart. Photographs spread
+     over a whole city at a zoom that separates all of them. */
+  const spread = Array.from({ length: 40 }, (_, i) => photo(i + 1, -0.5 + i * 0.05, 51 + i * 0.02))
+  const groups = clusterPhotos(spread, [], { zoom: 18 })
+  assert.equal(new Set(groups.map(group => group.key)).size, groups.length)
+})

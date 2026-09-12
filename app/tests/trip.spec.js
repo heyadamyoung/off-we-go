@@ -234,6 +234,47 @@ test('loads the trip with map, markers and the day strip', async ({ page }) => {
   await expect(page.getByText(/travelling/)).toBeVisible()
 })
 
+test('zooming does not rebuild every photograph on the map', async ({ page }) => {
+  /* Reported as "photos on the map are flickering when I zoom out".
+
+     Every stack is a real DOM element that maplibre holds and React decides
+     the life of, by its key. The keys were the coordinates of the screen-sized
+     cell that gathered the photographs — and the cell is a fixed number of
+     PIXELS, so it halves with every zoom level. Every key changed on every
+     zoom, for every stack, always: React removed each marker and built a new
+     one, with new <img> tags, which is a trip's worth of photographs blinking
+     out and back in.
+
+     Stamping the elements is the only way to tell a survivor from an
+     identical-looking replacement. Some stacks genuinely merge on the way out
+     and those are meant to go; what must not happen is all of them going. */
+  await open(page)
+  const stacks = page.locator('.mstack')
+  await expect(stacks.first()).toBeVisible()
+  const before = await page.evaluate(() => {
+    const found = [...document.querySelectorAll('.mstack')]
+    found.forEach((el, i) => {
+      el.setAttribute('data-was-here', String(i))
+    })
+    return found.length
+  })
+  expect(before).toBeGreaterThan(1)
+
+  const canvas = await page.locator('.mapcanvas canvas').boundingBox()
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2)
+  await page.mouse.wheel(0, 900)
+  // The clusterer only reruns once the movement has stopped, so wait it out.
+  await expect
+    .poll(async () => page.evaluate(() => document.querySelectorAll('.mstack').length), {
+      timeout: 10_000,
+    })
+    .toBeGreaterThan(0)
+  await page.waitForTimeout(1200)
+
+  const survived = await page.locator('.mstack[data-was-here]').count()
+  expect(survived).toBeGreaterThan(0)
+})
+
 test('a photo’s notes are readable and writable on a phone', async ({ page }) => {
   // The sidebar was simply display:none below 1080px — every comment and the
   // box for writing one, gone from every phone, reading as broken.
