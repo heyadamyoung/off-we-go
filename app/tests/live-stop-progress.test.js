@@ -229,8 +229,11 @@ test("one phone does not inherit another traveller's visited stops", () => {
   const fixes = [
     { deviceId: 'phone-a', lng: 0, lat: 0, accuracy: 8, at: new Date('2026-09-01T17:58:00.000Z') },
     {
+      /* Well clear of the first stop on its own account — at four hundred
+         metres it would now arrive there itself, which would prove nothing
+         about whose visits it inherits. */
       deviceId: 'phone-b',
-      lng: 0.004,
+      lng: 0.009,
       lat: 0,
       accuracy: 8,
       at: new Date('2026-09-01T17:59:50.000Z'),
@@ -419,12 +422,18 @@ test('passing a stop at driving speed does not mark the traveller as there', () 
   assert.deepEqual(progress.visitedStopIds, [])
 })
 
-test('GPS uncertainty must fit inside the arrival radius before claiming we are there', () => {
+test('a fix that is confidently outside cannot claim an arrival', () => {
+  /* This used to require the opposite — that distance PLUS accuracy fit inside
+     the radius, so a fix had to prove it was there. A vague fix can prove
+     nothing, which made uncertainty a bar to arriving and froze the itinerary
+     of anybody whose phone was indoors. The question is the other way round
+     now: could it be inside? Eight hundred metres out with sixty metres of
+     doubt could not be, whichever way the error falls. */
   const stops = [{ id: 'first', name: 'First', lng: 0, lat: 0, seq: 0 }]
   const fixes = [
     {
       deviceId: 'phone-1',
-      lng: 0.00072,
+      lng: 0.0072,
       lat: 0,
       accuracy: 60,
       speed: 0,
@@ -436,7 +445,35 @@ test('GPS uncertainty must fit inside the arrival radius before claiming we are 
 
   assert.equal(progress.state, 'approaching')
   assert.equal(progress.currentStop, null)
+  assert.deepEqual(progress.visitedStopIds, [])
   assert.equal(progress.destination?.id, 'first')
+})
+
+test('being somewhere now is a tighter question than having been there', () => {
+  /* Two questions that shared one number. Walk five minutes down the road from
+     the museum and you have certainly been to it — the itinerary must move on,
+     or every stop after it freezes — but you are no longer at it, and the
+     words under the live dot should not say you are. */
+  const stops = [
+    { id: 'museum', name: 'Museum', lng: 0, lat: 0, seq: 0 },
+    { id: 'later', name: 'Later', lng: 0.05, lat: 0, seq: 1 },
+  ]
+  const away = metres => ({
+    deviceId: 'phone-1',
+    lng: 0,
+    lat: metres / 111_320,
+    accuracy: 10,
+    speed: 0.4,
+    at: new Date('2026-09-01T17:59:00.000Z'),
+  })
+
+  const here = deriveLiveStopProgress({ stops, fixes: [away(100)], now: NOW })
+  assert.equal(here.currentStop?.id, 'museum', 'a hundred metres away is at it')
+
+  const gone = deriveLiveStopProgress({ stops, fixes: [away(420)], now: NOW })
+  assert.deepEqual(gone.visitedStopIds, ['museum'], 'four hundred is still a visit')
+  assert.equal(gone.currentStop, null, 'but not a place you still are')
+  assert.equal(gone.destination?.id, 'later')
 })
 
 test('missing accuracy and motion evidence cannot claim an arrival', () => {
@@ -961,4 +998,128 @@ test('a stop marked Visited by hand does not stall the itinerary behind it', () 
     applyLiveStopStatuses(stops, progress).map(stop => stop.status),
     ['done', 'now', 'next'],
   )
+})
+
+/* ---- arrival, as a phone on a real trip actually reports it --------------
+
+   Reported as the itinerary being stuck on the first stop — an early flight —
+   and never picking up anywhere visited since.
+
+   The cursor walks the itinerary in order and moves on only when the phone
+   arrives at the stop it is waiting for, so one arrival that fails to register
+   freezes every stop after it for the rest of the trip. Arrival demanded four
+   things at once: an accuracy, a speed, that speed under 18km/h, and the fix's
+   distance PLUS its accuracy inside 125 metres. Any one of them missing is a
+   permanent no.
+
+   Every fixture above this line reports a speed and an accuracy in single
+   figures, which is a phone held still in the open with the screen on. The
+   ones below are what a phone on a trip sends: minutes between fixes, tens of
+   metres of accuracy indoors, and often no speed at all. */
+
+const RIJKS = { id: 'rijks', name: 'Rijksmuseum', lng: 4.8852, lat: 52.36, seq: 0 }
+const VONDEL = { id: 'vondel', name: 'Vondelpark', lng: 4.8687, lat: 52.3579, seq: 1 }
+const CENTRAAL = { id: 'centraal', name: 'Centraal', lng: 4.9003, lat: 52.379, seq: 2 }
+const ITINERARY = [RIJKS, VONDEL, CENTRAAL]
+
+const METRE = 1 / 111_320
+const near = (stop, metresNorth) => ({ lng: stop.lng, lat: stop.lat + metresNorth * METRE })
+const fix = (point, at, extra = {}) => ({
+  deviceId: 'phone-1',
+  ...point,
+  accuracy: 20,
+  at: new Date(at),
+  ...extra,
+})
+
+test('a phone that reports every few minutes still arrives somewhere', () => {
+  /* The commonest shape of the bug. Nothing is wrong with these fixes: the
+     phone is standing at the museum, twenty metres of accuracy, reporting
+     every five minutes as a backgrounded app does. It reports no speed,
+     because it is not moving, and a speed worked out from a fix five minutes
+     old is refused as too old to mean anything.
+
+     That left `speed` unknown — and unknown was treated as disqualifying, so
+     this phone could never arrive anywhere, ever. A missing signal is not a
+     negative one. */
+  const progress = deriveLiveStopProgress({
+    stops: ITINERARY,
+    fixes: [
+      fix(near(RIJKS, 0), '2026-09-01T17:45:00.000Z'),
+      fix(near(RIJKS, 5), '2026-09-01T17:50:00.000Z'),
+      fix(near(RIJKS, 3), '2026-09-01T17:55:00.000Z'),
+    ],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['rijks'])
+  assert.equal(progress.destination?.id, 'vondel', 'and the trip has moved on to the next one')
+})
+
+test('a fix only has to be plausibly inside, not provably inside', () => {
+  /* Indoors, in a station, in a city of tall buildings, a phone reports tens
+     of metres of accuracy. The test was distance PLUS accuracy inside the
+     radius — which is asking the fix to prove it is inside, and a vague fix
+     can never prove anything. So the vaguer the reading the less likely it
+     was to count, exactly backwards: a fix that says "somewhere within ninety
+     metres of here" and is standing a hundred metres from the door is
+     plainly at the museum. */
+  const progress = deriveLiveStopProgress({
+    stops: ITINERARY,
+    fixes: [fix(near(RIJKS, 100), '2026-09-01T17:55:00.000Z', { accuracy: 90, speed: 0.5 })],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['rijks'])
+})
+
+test('an itinerary item is a place, not a pin', () => {
+  /* A stop is one point and the thing it names is a building, a park, an
+     airport, a square. A hundred and twenty-five metres is a radius sized for
+     GPS error rather than for anywhere anybody goes — it is narrower than the
+     Rijksmuseum is wide. Four hundred metres from the pin is still at it. */
+  const progress = deriveLiveStopProgress({
+    stops: ITINERARY,
+    fixes: [fix(near(RIJKS, 400), '2026-09-01T17:55:00.000Z', { accuracy: 10, speed: 0.5 })],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['rijks'])
+})
+
+test('a whole day of walking is picked up, not just the first stop', () => {
+  /* The report, end to end: three stops, a phone reporting the way a phone
+     does, and by the evening the trip should know all three have happened —
+     rather than sitting on the first one for the rest of the fortnight. */
+  const progress = deriveLiveStopProgress({
+    stops: ITINERARY,
+    fixes: [
+      fix(near(RIJKS, 60), '2026-09-01T10:00:00.000Z'),
+      fix(near(RIJKS, 20), '2026-09-01T10:30:00.000Z'),
+      fix(near(VONDEL, 120), '2026-09-01T13:00:00.000Z', { accuracy: 45 }),
+      fix(near(VONDEL, 80), '2026-09-01T13:40:00.000Z', { accuracy: 45 }),
+      fix(near(CENTRAAL, 200), '2026-09-01T17:50:00.000Z', { accuracy: 60 }),
+      fix(near(CENTRAAL, 150), '2026-09-01T17:56:00.000Z', { accuracy: 60 }),
+    ],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['rijks', 'vondel', 'centraal'])
+  assert.equal(progress.currentStop?.id, 'centraal', 'and it knows where they are now')
+})
+
+test('driving straight past is still not arriving', () => {
+  /* The gate the speed limit is actually for, and the one worth keeping. A
+     wider radius makes this matter more, not less: at sixty miles an hour a
+     five-hundred-metre circle is nineteen seconds of motorway. */
+  const progress = deriveLiveStopProgress({
+    stops: ITINERARY,
+    fixes: [
+      fix(near(RIJKS, 300), '2026-09-01T17:54:00.000Z', { speed: 28 }),
+      fix(near(RIJKS, 60), '2026-09-01T17:55:00.000Z', { speed: 28 }),
+    ],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, [], 'passing through is not being there')
 })

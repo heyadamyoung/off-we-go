@@ -17,9 +17,30 @@ export {
   type PausableDevice,
 } from './live-freshness-core'
 
+/* How near counts as being somewhere.
+
+   An itinerary item is one point and the thing it names is a building, a
+   park, an airport, a square. A hundred and twenty-five metres was a radius
+   sized for GPS error rather than for anywhere anybody goes — narrower than
+   the Rijksmuseum is wide — and because the cursor only moves on when the
+   phone arrives at the stop it is waiting for, one arrival that failed to
+   register froze every stop after it for the rest of the trip.
+
+   The cost of the two mistakes is not symmetrical. Too generous and a stop is
+   marked reached slightly early, which the next fix makes true anyway. Too
+   mean and the whole itinerary stops, silently, for a fortnight. */
 export const APPROACHING_RADIUS_METRES = 1_000
-export const ARRIVAL_RADIUS_METRES = 125
-export const ARRIVAL_MAX_SPEED_METRES_PER_SECOND = 5
+export const ARRIVAL_RADIUS_METRES = 500
+/* Being somewhere now is a stronger claim than having been there, and they
+   were one number. "Has this stop happened" wants to be generous, because
+   getting it wrong freezes the itinerary; "are they there at this moment"
+   wants to be tight, because it is the words under the live dot and a person
+   five minutes' walk down the road has left. */
+export const AT_STOP_RADIUS_METRES = 250
+/* Above this it is passing rather than arriving — thirty-six kilometres an
+   hour, so a bus pulling in counts and a motorway does not. It was eighteen,
+   which refused a taxi crawling up to the door. */
+export const ARRIVAL_MAX_SPEED_METRES_PER_SECOND = 10
 const ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS = 2 * 60_000
 
 interface LiveStopProgressInput {
@@ -100,16 +121,29 @@ export function deriveLiveStopProgress({
       if (!previous || elapsed <= 0 || elapsed > ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS) return null
       return metres([previous.lng, previous.lat], [fix.lng, fix.lat]) / (elapsed / 1_000)
     }
-    const canArrive = (fix: LiveFix, distance: number, index: number) => {
-      const accuracy = accuracyOf(fix)
+    const nearEnough = (fix: LiveFix, distance: number, index: number, radius: number) => {
       const speed = speedAt(fix, index)
-      return (
-        accuracy != null &&
-        speed != null &&
-        speed <= ARRIVAL_MAX_SPEED_METRES_PER_SECOND &&
-        distance + accuracy <= ARRIVAL_RADIUS_METRES
-      )
+      /* A speed nobody could work out is not a speed that disqualifies. It was
+         treated as one, and the commonest phone on a trip — backgrounded,
+         reporting every few minutes, standing still so reporting no speed at
+         all — could therefore never arrive anywhere. A speed is derived from
+         the previous fix only when that fix is under two minutes old, which is
+         most of the time not the case. Only a speed we actually know, and know
+         to be too fast, rules an arrival out. */
+      if (speed != null && speed > ARRIVAL_MAX_SPEED_METRES_PER_SECOND) return false
+      /* Could the phone be inside? It used to ask whether it must be —
+         distance PLUS accuracy within the radius — which demands that a fix
+         prove where it is, and a vague fix can prove nothing. So the vaguer
+         the reading the less likely it counted, exactly backwards: indoors, in
+         a station, among tall buildings, where a phone is least sure is
+         precisely where somebody is most likely to be at the thing. */
+      return distance - (accuracyOf(fix) ?? 0) <= radius
     }
+    const canArrive = (fix: LiveFix, distance: number, index: number) =>
+      nearEnough(fix, distance, index, ARRIVAL_RADIUS_METRES)
+    /** Still there, rather than having been there — see AT_STOP_RADIUS_METRES. */
+    const stillAt = (fix: LiveFix, distance: number, index: number) =>
+      nearEnough(fix, distance, index, AT_STOP_RADIUS_METRES)
     const confidentlyOutside = (fix: LiveFix, stop: Stop) => {
       const accuracy = accuracyOf(fix)
       if (accuracy == null) return false
@@ -166,7 +200,7 @@ export function deriveLiveStopProgress({
     const latestIndex = sameDevice.indexOf(latestFix)
     const atLastVisitedStop =
       !!lastVisit &&
-      canArrive(
+      stillAt(
         latestFix,
         metres([latestFix.lng, latestFix.lat], [lastVisit.stop.lng, lastVisit.stop.lat]),
         latestIndex,
