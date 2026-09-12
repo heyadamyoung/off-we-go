@@ -33,7 +33,13 @@ import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 import { validChunk } from './replay-store.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
-import { isPlaylistPath, isSupportedVideo, isVideoPath, mediaContentType } from './media-types.js'
+import {
+  contentDisposition,
+  isPlaylistPath,
+  isSupportedVideo,
+  isVideoPath,
+  mediaContentType,
+} from './media-types.js'
 import { signPlaylist } from './hls.js'
 import {
   DEFAULT_BUCKET_SECONDS,
@@ -1957,6 +1963,13 @@ export async function buildServer({
       bucketSeconds: mediaLinkBucketSeconds,
     })
     stamp({ 'media.cache_control': caching })
+    /* `?download=<name>` hands back the same bytes as a file to keep rather
+       than a picture to look at. The name comes from the client because only
+       the client knows the caption it was given — scrubbed on the way into
+       the header, since that is somebody else's text landing in one. Its own
+       URL, so the cached attachment and the cached picture never collide. */
+    const saveAs = request.query?.download
+    if (saveAs !== undefined) reply.header('content-disposition', contentDisposition(saveAs))
     try {
       /* A playlist is a list of links, and a player does not carry this
          request's signature down to the segments it names — neither hls.js

@@ -175,3 +175,16 @@ test('Ad Hoc device input accepts modern and legacy Apple UDIDs without acceptin
     /valid Apple UDID/i,
   )
 })
+
+test('a saved photograph is reachable in the Files app rather than stranded', async () => {
+  /* Downloading writes into the app's Documents directory. Without both of
+     these keys that directory is private to the app, so the file is written,
+     the person is told it was saved, and there is nowhere on the phone they
+     can go to find it — which is worse than refusing to save at all. */
+  const infoPlist = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, 'ios/App/App/Info.plist'), 'utf8'),
+  )
+
+  assert.match(infoPlist, /<key>UIFileSharingEnabled<\/key>\s*<true\/>/)
+  assert.match(infoPlist, /<key>LSSupportsOpeningDocumentsInPlace<\/key>\s*<true\/>/)
+})

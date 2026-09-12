@@ -3,6 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Saving a photograph into the shared Documents folder, on the releases
+         that still gate it. Android 11 restored plain file access to Documents
+         and Downloads with no permission at all, so these are capped rather
+         than left open — and both are named because the plugin asks for the
+         pair together, and a permission the manifest does not declare is
+         refused before the person is even asked. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:allowBackup="false"

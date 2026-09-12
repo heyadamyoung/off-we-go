@@ -28,9 +28,11 @@ export default function PhotoTop({
   liked,
   canEdit,
   sharing,
+  saving,
   onDetails,
   onLike,
   onShare,
+  onDownload,
   onClose,
 }: {
   photo: TripPhoto
@@ -44,9 +46,11 @@ export default function PhotoTop({
   liked: boolean
   canEdit: boolean
   sharing: boolean
+  saving: boolean
   onDetails: () => void
   onLike: () => void
   onShare: () => void
+  onDownload: () => void
   onClose: () => void
 }) {
   return (
@@ -80,6 +84,15 @@ export default function PhotoTop({
             the one link the server would hand back either way. */}
         <button onClick={onShare} disabled={sharing} title="Share">
           <Icon n="share" s={17} c="#f2f4f8" />
+        </button>
+        {/* Keeping a copy, which is a different thing from sending one: this
+            ends with a file on the device rather than in somebody's chat.
+            Disabled while it runs, because a second tap is a second copy. */}
+        <button
+          onClick={onDownload}
+          disabled={saving}
+          title={video ? 'Save this video' : 'Save this photo'}>
+          <Icon n="download" s={17} c="#f2f4f8" />
         </button>
         <button onClick={onClose} title="Close (Esc)">
           <Icon n="x" s={17} c="#f2f4f8" w={2} />

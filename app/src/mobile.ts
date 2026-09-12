@@ -9,6 +9,7 @@ import { App as NativeApp } from '@capacitor/app'
 import { Camera } from '@capacitor/camera'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Browser } from '@capacitor/browser'
+import { Directory, Filesystem } from '@capacitor/filesystem'
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage'
 import {
   createMobileTracker,
@@ -177,6 +178,40 @@ export async function pickNativePhotos() {
   if (!isNativeApp) return null
   const selected = await Camera.pickImages({ quality: 92, correctOrientation: true, limit: 20 })
   return galleryPhotosToFiles(selected.photos, { fetch: globalThis.fetch.bind(globalThis) })
+}
+
+/* Keeping a file on the phone.
+ *
+ * A browser saves by clicking a link at itself; a WKWebView ignores the
+ * download attribute completely — no file, no error, nothing for the person
+ * who tapped to notice. So inside the app the file is fetched by the native
+ * side and written straight to disk.
+ *
+ * `downloadFile` rather than reading the bytes and handing them over: the
+ * bridge to native is JSON, so a film would have to become a base64 string
+ * first — half again as large as a holiday video already is, built on the
+ * main thread, for a phone to hold entire in memory. This never enters the
+ * web view at all.
+ *
+ * Documents rather than the app's own private corner, because Documents is
+ * the directory iOS shows in Files and Android shows in a file manager. A
+ * download nobody can reach is not a download.
+ *
+ * One known gap: Android 10 exactly. Android 11 restored plain file access to
+ * Documents, and Android 9 and older simply ask for the storage permission the
+ * manifest declares — but 10 introduced scoped storage without the former and
+ * ignores the latter for anything targeting a modern SDK, so saving there
+ * fails and says so. Every other version is fine, and 10 is a shrinking sliver.
+ */
+export async function saveToDevice(name: string, url: string) {
+  if (!isNativeApp) return null
+  const { path } = await Filesystem.downloadFile({
+    url,
+    path: name,
+    directory: Directory.Documents,
+    recursive: true,
+  })
+  return path ?? null
 }
 
 let appUrlListener: Promise<PluginListenerHandle> | null = null

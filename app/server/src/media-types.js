@@ -60,3 +60,32 @@ export const isVideoPath = storagePath => mediaContentType(storagePath).startsWi
    as it goes out, so it is read whole and rewritten rather than streamed. */
 export const isPlaylistPath = storagePath =>
   mediaContentType(storagePath) === 'application/vnd.apple.mpegurl'
+
+/* The filename a download arrives under.
+ *
+ * This is the one value on the media route the caller chooses, and it is
+ * written straight into a response header — so it is scrubbed on the way out
+ * rather than trusted on the way in. A carriage return would end
+ * Content-Disposition and start a header of somebody else's choosing; a quote
+ * would escape the string it sits inside. Neither survives.
+ *
+ * What is left is deliberately dull: letters, digits, dot, dash, underscore.
+ * An accented caption comes out with dashes where the accents were, which is
+ * a worse filename and a fine one — the alternative is RFC 5987 encoding and
+ * a second, differently-parsed header, for a nicety nobody has asked for.
+ */
+export const attachmentName = raw => {
+  const last =
+    String(raw ?? '')
+      .split(/[/\\]/)
+      .pop() || ''
+  const safe = last
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[.-]+/, '')
+    .slice(0, 100)
+    .replace(/[.-]+$/, '')
+  return safe || 'off-we-go'
+}
+
+/** Ask the browser to save rather than display, under a name we control. */
+export const contentDisposition = name => `attachment; filename="${attachmentName(name)}"`
