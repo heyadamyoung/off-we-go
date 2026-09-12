@@ -104,18 +104,24 @@ const trip = await repository.createTrip(user, { title: 'Live stack', ...TRIP_DA
 /* Two stops, a kilometre or so apart: far enough that "nearest wins" has
    something to decide, and that somewhere between them belongs to neither.
 
-   Their days are spelled the four ways the database actually holds them — a
-   date from the picker, the label the app used to write, a label whose weekday
-   is stale, and the bare number somebody typed before there was anywhere to
-   pick. Three of these are the fourth of September and must come out as one
-   day, not four. */
+   Their days are dates, because a day is a date. This used to seed the four
+   spellings the database held before it was — a picked date, the label the app
+   wrote, a label with a stale weekday, and a bare number — to prove all four
+   collapsed into one chip. Nothing can write those any more: the API refuses
+   them, migration 029 cleared the last of them, and the reader that decoded
+   them is gone. Seeding them here would be testing a decoder that no longer
+   exists. What replaced that case lives with the migrations, which is where
+   the old shapes still legitimately turn up.
+
+   Several stops still share the fourth of September, because "many stops, one
+   chip" is the part that is still true. */
 const stops = []
 for (const stop of [
   { name: 'Anne Frank House', lng: 4.8839, lat: 52.3752, day: '2026-09-04' },
-  { name: 'Rijksmuseum', lng: 4.8852, lat: 52.36, day: 'Fri 4 Sep' },
-  { name: 'Westerkerk', lng: 4.8836, lat: 52.3747, day: 'Tue 4 Sep' },
-  { name: 'Vondelpark', lng: 4.8686, lat: 52.3579, day: '4' },
-  { name: 'Centraal', lng: 4.9003, lat: 52.379, day: 'Sat 5 Sep' },
+  { name: 'Rijksmuseum', lng: 4.8852, lat: 52.36, day: '2026-09-04' },
+  { name: 'Westerkerk', lng: 4.8836, lat: 52.3747, day: '2026-09-04' },
+  { name: 'Vondelpark', lng: 4.8686, lat: 52.3579, day: '2026-09-04' },
+  { name: 'Centraal', lng: 4.9003, lat: 52.379, day: '2026-09-05' },
   /* And a week of them, so the day bar has enough chips to scroll and enough
      dates to be in the wrong order if anything ever sorts them as text. The
      two-digit days are the ones that would give it away. */

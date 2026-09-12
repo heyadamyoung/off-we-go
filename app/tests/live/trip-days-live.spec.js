@@ -42,7 +42,7 @@ const open = async page => {
 
 const flat = text => text.trim().toLowerCase()
 
-test('four spellings of one day make one chip', async ({ page }) => {
+test('many stops on one date make one chip', async ({ page }) => {
   await open(page)
   const chips = (await page.locator('.fdays .chip').allInnerTexts())
     .map(flat)
@@ -74,7 +74,7 @@ test('the timeline heads those days the same way, in the same order', async ({ p
   expect(order.indexOf('centraal')).toBeGreaterThan(secondHeading)
 })
 
-test('choosing a day selects every stop on it, however each one spells it', async ({ page }) => {
+test('choosing a day selects every stop on it', async ({ page }) => {
   await open(page)
   await page.locator('.fdays .chip', { hasText: /Fri 4 Sep/i }).click()
   await expect(page.locator('.fcard')).toHaveCount(4)
@@ -100,8 +100,8 @@ test('a stop added on a day is stored as that date and joins it', async ({ page 
   await expect(page.locator('.fcard')).toHaveCount(2)
 
   /* Read back from the server rather than from the screen: what matters is
-     what was WRITTEN. A label would read back the same to a client that can
-     still parse labels, and would rot the moment the trip's dates moved. */
+     what was WRITTEN. A label used to read back the same to a client that
+     could still parse one, which is how a wrong value stayed invisible. */
   const stored = await page.evaluate(
     async ([base, token, slug]) => {
       const response = await fetch(`${base}/trips/current?t=${encodeURIComponent(slug)}`, {
