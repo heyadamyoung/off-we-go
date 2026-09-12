@@ -43,6 +43,20 @@ export const AT_STOP_RADIUS_METRES = 250
 export const ARRIVAL_MAX_SPEED_METRES_PER_SECOND = 10
 const ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS = 2 * 60_000
 
+/* A calendar day as a comparable number, from either an ISO date or a moment.
+   Local rather than UTC on purpose: the traveller's own midnight is the one
+   that decides whether their day is over. */
+function dayNumber(value?: string | Date | null): number | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? null
+      : value.getFullYear() * 10_000 + (value.getMonth() + 1) * 100 + value.getDate()
+  }
+  const shaped = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim())
+  if (!shaped) return null
+  return Number(shaped[1]) * 10_000 + Number(shaped[2]) * 100 + Number(shaped[3])
+}
+
 interface LiveStopProgressInput {
   stops: Stop[]
   fixes: LiveFix[]
@@ -60,9 +74,33 @@ export function deriveLiveStopProgress({
   sourceState = 'ready',
   devices = [],
 }: LiveStopProgressInput) {
-  const orderedStops = [...stops].sort(
-    (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER),
-  )
+  /* The itinerary in the order the trip happens, which is the order a
+     traveller reads it in — the timeline, the day bar and the strip along the
+     bottom all order by day, and the numbering only settles ties within one.
+
+     This used to go by the numbering alone, and the numbering is the order
+     stops were typed. Nobody plans a trip in order: the flight out gets
+     remembered halfway through writing up the museums and the flight home
+     gets typed last of all. So the cursor walked a different trip from the one
+     on the screen — parked on something three days out while the stop in front
+     of them was never considered, moving between them in an order that looks
+     like nothing at all. Anything undated goes last, as it does everywhere
+     else: it is not a point in the trip, so it cannot hold a place in it. */
+  const orderedStops = [...stops].sort((a, b) => {
+    const dayA = dayNumber(a.day)
+    const dayB = dayNumber(b.day)
+    if (dayA !== dayB) {
+      if (dayA === null) return 1
+      if (dayB === null) return -1
+      return dayA - dayB
+    }
+    const seqA = a.seq ?? Number.MAX_SAFE_INTEGER
+    const seqB = b.seq ?? Number.MAX_SAFE_INTEGER
+    if (seqA !== seqB) return seqA - seqB
+    const timeA = a.time || ''
+    const timeB = b.time || ''
+    return timeA < timeB ? -1 : timeA > timeB ? 1 : 0
+  })
   const coordinateFixes = fixes.filter(
     fix => validLngLat(fix.lng, fix.lat) && Number.isFinite(fix.at.getTime()),
   )
@@ -162,23 +200,63 @@ export function deriveLiveStopProgress({
        stop happens to be closest. A later stop cannot skip earlier stops, and a
        co-located return stop is not visited until the phone has first been
        confidently outside its geofence and then comes back. */
-    /* A stop somebody has marked Visited is behind us, whether or not a phone
-       was there to see it — they were there before location sharing was on, or
-       with the phone away. Without this the cursor waits at a stop nobody is
-       going back to: it can never arrive, so it never advances, and every stop
-       after it stays "planned" for the rest of the trip. Marking somewhere
-       Visited would leave it drawn as Up next, which is the reported bug in
-       its live form. The itinerary is still never skipped by GPS — only by
-       the person, who is allowed to. */
-    const advancePast = (from: number) => {
-      let at = from
-      while (at < orderedStops.length && orderedStops[at].status === 'done') at += 1
-      return at
+    /* Ways past a stop nobody's phone ever saw.
+
+       The cursor advances when the phone arrives at the stop it is waiting
+       for, and there was no other way forward — so one stop a phone never saw
+       stopped the trip dead for the rest of the trip. An airport on the first
+       morning, somewhere driven past, anywhere at all with location sharing
+       off, and every stop behind it stayed planned for a fortnight with
+       nothing anybody could do about it.
+
+       A wider radius makes that rarer. It cannot make it impossible, and a
+       thing that wedges permanently needs a way out rather than better odds.
+       Both of these are evidence that the trip has moved on rather than a
+       guess that it has: somebody marked the stop Visited, or its day is over.
+       What is deliberately NOT here is "no arrival was found, so assume one" —
+       that would let a trip starting and ending at the same hotel declare
+       itself complete on the first morning. */
+    const today = dayNumber(now)
+    const behindUs = (stop: Stop) => {
+      if (stop.status === 'done') return true
+      /* Dates only. A stop's time is free text, and running late is not the
+         same as not going. */
+      const day = dayNumber(stop.day)
+      return day !== null && today !== null && day < today
     }
+
+    /* The last fix that could ever reach each stop, so letting go of one is a
+       fact rather than a hunch: a stop whose day is over but which the phone
+       is about to walk into is still ahead, and its visit is still recorded.
+       Worked out once — asking it inside the walk would be every fix against
+       every fix. */
+    const lastArrivalAt = orderedStops.map(stop => {
+      for (let index = sameDevice.length - 1; index >= 0; index -= 1) {
+        const fix = sameDevice[index]
+        if (canArrive(fix, metres([fix.lng, fix.lat], [stop.lng, stop.lat]), index)) return index
+      }
+      return -1
+    })
+
     const visitEvents: Array<{ stop: Stop; at: Date }> = []
-    let targetIndex = advancePast(0)
+    let targetIndex = 0
     let targetArmed = true
+    /* Let go of anything behind us that nothing left in the timeline reaches.
+       `from` is how far the fixes have been walked, so this only ever gives up
+       on a stop the phone has no remaining chance of arriving at. */
+    const releaseBehind = (from: number) => {
+      while (
+        targetIndex < orderedStops.length &&
+        behindUs(orderedStops[targetIndex]) &&
+        lastArrivalAt[targetIndex] < from
+      ) {
+        targetIndex += 1
+        targetArmed = true
+      }
+    }
     for (let index = 0; index < sameDevice.length && targetIndex < orderedStops.length; index++) {
+      releaseBehind(index)
+      if (targetIndex >= orderedStops.length) break
       const fix = sameDevice[index]
       const target = orderedStops[targetIndex]
       if (!targetArmed) {
@@ -190,10 +268,12 @@ export function deriveLiveStopProgress({
       const distance = metres([fix.lng, fix.lat], [target.lng, target.lat])
       if (!canArrive(fix, distance, index)) continue
       visitEvents.push({ stop: target, at: fix.at })
-      targetIndex = advancePast(targetIndex + 1)
+      targetIndex += 1
       const next = orderedStops[targetIndex]
       targetArmed = !!next && confidentlyOutside(fix, next)
     }
+    // The timeline is spent, so nothing behind us can be reached any more.
+    releaseBehind(sameDevice.length)
     const visitedStopIds = visitEvents.map(event => event.stop.id)
     const destination = orderedStops[targetIndex] || null
     const lastVisit = visitEvents[visitEvents.length - 1] || null
@@ -292,39 +372,8 @@ export function deriveLiveStopProgress({
    journey, and where a caller gets an answer from is not its business. */
 export { describeLiveStopProgress } from './live-progress-copy-core'
 
-/**
- * The itinerary with what the phones know written over it.
- *
- * It knows three things and no more: which stop somebody is at, which one they
- * are heading to, and which ones a phone has actually been at. Everything else
- * keeps the status a person gave it.
- *
- * It used to say 'planned' about everything else instead — a claim, not an
- * absence. With nobody sharing a location, which is most of a trip, that was
- * every stop: you could open a stop, tap Visited, watch it save, and see it
- * come back Planned. The write was never the problem. This list is what the
- * map, the timeline, the strip and the detail card all draw, so the status
- * went to the server intact and was painted over on the way to the screen.
- */
-export function applyLiveStopStatuses(
-  stops: Stop[],
-  progress: ReturnType<typeof deriveLiveStopProgress>,
-) {
-  const visited = new Set(progress.visitedStopIds)
-  /* Whether the phones have anything to say at all. Without this there is
-     nothing to contradict, and a stored status is the only thing there is. */
-  const live = !!(progress.currentStop || progress.destination)
-  return stops.map(stop => {
-    if (progress.currentStop?.id === stop.id) return { ...stop, status: 'now' }
-    if (progress.destination?.id === stop.id) return { ...stop, status: 'next' }
-    if (visited.has(stop.id)) return { ...stop, status: 'done' }
-    /* Somewhere else is where you are, so this is not — two stops both saying
-       "Happening now" is worse than one out-of-date chip. 'done' is never
-       taken away: a phone that was off, or was not being shared, is not
-       evidence that somebody was not somewhere. They were there; they said so. */
-    if (live && (stop.status === 'now' || stop.status === 'next')) {
-      return { ...stop, status: 'planned' }
-    }
-    return stop
-  })
-}
+/* The itinerary with what the phones know written over it lives next door —
+   see live-stop-statuses-core. Re-exported here because this is the module
+   the whole app asks about the journey, and where a caller gets an answer
+   from is not its business. */
+export { applyLiveStopStatuses } from './live-stop-statuses-core'

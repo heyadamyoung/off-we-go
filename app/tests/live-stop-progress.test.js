@@ -1123,3 +1123,155 @@ test('driving straight past is still not arriving', () => {
 
   assert.deepEqual(progress.visitedStopIds, [], 'passing through is not being there')
 })
+
+/* ---- ways past a stop nobody's phone ever saw -----------------------------
+
+   The itinerary is a cursor: it advances when the phone arrives at the stop it
+   is waiting for, and there was no other way forward. So one stop a phone
+   never saw — an airport on the first morning, a place somebody drove past,
+   anywhere at all with location sharing off — stopped the trip dead, for the
+   rest of the trip. Every stop after it stayed planned for a fortnight and
+   nothing anybody did in the app could move it.
+
+   Widening the radius makes that rarer. It cannot make it impossible, and a
+   thing that wedges permanently needs a way out rather than better odds. There
+   are three, and they are all evidence that the trip has moved on rather than
+   guesses that it has:
+
+     - somebody marked the stop Visited
+     - its day is over
+     - the phone did in fact arrive there, which is the ordinary path
+
+   What there is NOT is "we could not find an arrival, so let us assume" — that
+   would let a trip that starts and ends at the same hotel mark itself complete
+   on the first morning. */
+
+const ON = (day, stop) => ({ ...stop, day })
+
+test('a stop from a day that is over does not hold the rest of the trip', () => {
+  /* The report. An early flight the phone never reported near — in the air, in
+     a terminal, location sharing not switched on yet — and behind it a trip
+     that never moved again. The day is over; the flight is behind us whether
+     or not anything saw it. */
+  const stops = [
+    ON('2026-08-30', { id: 'flight', name: 'Flight', lng: -104.66, lat: 50.43, seq: 0 }),
+    ON('2026-09-01', { id: 'museum', name: 'Museum', lng: 4.8852, lat: 52.36, seq: 1 }),
+    ON('2026-09-01', { id: 'park', name: 'Park', lng: 4.8687, lat: 52.3579, seq: 2 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [
+      fix(near(stops[1], 30), '2026-09-01T17:50:00.000Z'),
+      fix(near(stops[1], 10), '2026-09-01T17:56:00.000Z'),
+    ],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['museum'], 'the flight was never seen, not claimed')
+  assert.equal(progress.currentStop?.id, 'museum', 'but the trip is where it actually is')
+  assert.equal(progress.destination?.id, 'park')
+})
+
+test('a day that is over does not erase what the phone did see on it', () => {
+  /* The other half. Letting go of a stop nobody saw must not throw away the
+     ones they did: the trip's own history is the point of the thing. */
+  const stops = [
+    ON('2026-08-30', { id: 'first', name: 'First', lng: 4.8852, lat: 52.36, seq: 0 }),
+    ON('2026-08-30', { id: 'skipped', name: 'Skipped', lng: 2.3522, lat: 48.8566, seq: 1 }),
+    ON('2026-09-01', { id: 'today', name: 'Today', lng: 4.8687, lat: 52.3579, seq: 2 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [
+      fix(near(stops[0], 20), '2026-08-30T11:00:00.000Z'),
+      fix(near(stops[2], 20), '2026-09-01T17:55:00.000Z'),
+    ],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['first', 'today'])
+})
+
+test('a stop whose day has not come is still ahead', () => {
+  /* The hatch is "the day is over", not "the day is not now". Tomorrow's stop
+     is the destination, not something to be let go of. */
+  const stops = [
+    ON('2026-09-01', { id: 'today', name: 'Today', lng: 4.8852, lat: 52.36, seq: 0 }),
+    ON('2026-09-02', { id: 'tomorrow', name: 'Tomorrow', lng: 4.8687, lat: 52.3579, seq: 1 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[0], 3000), '2026-09-01T17:55:00.000Z')],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, [])
+  assert.equal(progress.destination?.id, 'today', "today's stop has not happened yet")
+})
+
+test('an undated itinerary still gets out of the way when somebody says so', () => {
+  /* No dates to go on, which is an ordinary trip to have. The remaining way
+     past is a person saying they were there — and it has to work on a stop the
+     phone has no opinion about at all, which is the case it exists for. */
+  const stops = [
+    { id: 'unseen', name: 'Unseen', lng: -104.66, lat: 50.43, seq: 0, status: 'done' },
+    { id: 'here', name: 'Here', lng: 4.8852, lat: 52.36, seq: 1 },
+    { id: 'next', name: 'Next', lng: 4.8687, lat: 52.3579, seq: 2 },
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[1], 20), '2026-09-01T17:55:00.000Z')],
+    now: NOW,
+  })
+
+  assert.equal(progress.currentStop?.id, 'here')
+  assert.equal(progress.destination?.id, 'next')
+})
+
+test('the itinerary is walked in the order the trip happens, not the order it was typed', () => {
+  /* Stops are numbered as they are added, and nobody plans a trip in order:
+     the flight out gets remembered halfway through writing up the museums,
+     and the flight home gets typed last of all. Everywhere a traveller reads
+     the itinerary — the timeline, the day bar, the strip along the bottom —
+     it is ordered by day. The live cursor read it by the numbers instead, so
+     it walked a different trip from the one on the screen: parked on
+     something three days out while the stop in front of them was never even
+     considered, and moving between them in an order that looks like nothing
+     at all. */
+  const stops = [
+    { id: 'wednesday', name: 'Wednesday', lng: 2.3522, lat: 48.8566, day: '2026-09-03', seq: 0 },
+    { id: 'monday', name: 'Monday', lng: 4.8852, lat: 52.36, day: '2026-09-01', seq: 1 },
+    { id: 'tuesday', name: 'Tuesday', lng: 4.8687, lat: 52.3579, day: '2026-09-02', seq: 2 },
+  ]
+
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[1], 20), '2026-09-01T17:55:00.000Z')],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['monday'], 'the day they are actually on')
+  assert.equal(progress.currentStop?.id, 'monday')
+  assert.equal(progress.destination?.id, 'tuesday', 'and the next day comes next')
+})
+
+test('stops on the same day keep the order somebody put them in', () => {
+  /* The day decides first and the itinerary's own numbering decides within
+     it, which is exactly what the timeline does. */
+  const stops = [
+    { id: 'afternoon', name: 'Afternoon', lng: 4.8687, lat: 52.3579, day: '2026-09-01', seq: 9 },
+    { id: 'morning', name: 'Morning', lng: 4.8852, lat: 52.36, day: '2026-09-01', seq: 2 },
+    { id: 'someday', name: 'Someday', lng: 2.3522, lat: 48.8566, seq: 1 },
+  ]
+
+  const walked = deriveLiveStopProgress({
+    stops,
+    fixes: [
+      fix(near(stops[1], 20), '2026-09-01T17:40:00.000Z'),
+      fix(near(stops[0], 20), '2026-09-01T17:55:00.000Z'),
+    ],
+    now: NOW,
+  })
+  assert.deepEqual(walked.visitedStopIds, ['morning', 'afternoon'])
+  assert.equal(walked.destination?.id, 'someday', 'and anything undated waits at the end')
+})
