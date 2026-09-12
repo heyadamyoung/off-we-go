@@ -141,8 +141,9 @@ export function tripItems({
   })
 }
 
-/* The days a trip has something on, oldest first, one per date however it was
-   spelled — and one at the end for whatever could not be placed at all. */
+/* The days a trip has something on, oldest first, one chip per date — counting
+   the days that only have photographs on them. A stop with no day gets no chip
+   of its own; 'All days' is where it is found. */
 export const daysOf = (stops: Stop[], photos: TripPhoto[] = []) =>
   tripDays(
     stops.map(stop => ({ day: stop.day })),

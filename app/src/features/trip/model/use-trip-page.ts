@@ -190,8 +190,8 @@ export default function useTripPage({
     [setFollowing, setMapView, patch],
   )
   const liveStop = progress.currentStop || progress.destination
-  /* What gives a stored label its year and a bare number its month. Without
-     it neither can be placed on a date at all. */
+  /* The itinerary with the journey's own progress written over it: what has
+     been reached, what is next. */
   const liveStops = useMemo(() => applyLiveStopStatuses(ordered, progress), [ordered, progress])
 
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
@@ -201,12 +201,12 @@ export default function useTripPage({
     addComment, toggleLike, addPhoto, changePhoto, movePhotos, removePhoto, removeComment,
   } = useTripPhotos({ data, tripId, me, toast, setSelected: selectId })
 
-  const {
-    range: dayRange,
-    days,
-    day,
-    liveDay,
-  } = useTripDays({ trip, stops: ordered, photos, searchDay: search.day, liveStop })
+  const { days, day, liveDay } = useTripDays({
+    stops: ordered,
+    photos,
+    searchDay: search.day,
+    liveStop,
+  })
 
   /* Inside the terminal: zooming into an airport or its card's button opens
      it, the level picker or zooming away closes it. */
@@ -367,7 +367,7 @@ export default function useTripPage({
     theme, setTheme, trip, route, stops, family, me, viewers,
     placing, setPlacing, photoBy, setPhotoBy, setMapOverride,
     attraction, setAttractionCard, asking, setAsking, assistant,
-    view, setView, selected, query, day, days, dayRange, toast,
+    view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
     progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,

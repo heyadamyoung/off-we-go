@@ -113,7 +113,6 @@ test('a window straddling the date line still contains what is inside it', () =>
    many of them there were. On a trip where most pictures arrive that way the
    map shows stops and nothing else. */
 
-const TRIP = { startsOn: '2026-09-04', endsOn: '2026-09-06' }
 const stopAt = (id, name, lng, lat, day) => ({ id, name, lng, lat, day })
 const ITINERARY = [
   stopAt('rijks', 'Rijksmuseum', 4.8852, 52.36, '2026-09-05'),
@@ -126,7 +125,7 @@ test('a photograph with no location is placed at where the trip was that day', (
   const groups = clusterPhotos(
     [unplaced(1, '2026-09-05T11:00:00.000Z'), unplaced(2, '2026-09-05T15:00:00.000Z')],
     ITINERARY,
-    { zoom: 13, range: TRIP },
+    { zoom: 13 },
   )
   assert.equal(groups.length, 1, 'one stack for the day, not one per picture')
   assert.deepEqual(groups[0].items.map(item => item.id).sort(), [1, 2])
@@ -140,13 +139,12 @@ test('a stack placed by inference says that it was', () => {
   /* It must not look like a picture that knows where it was taken. */
   const [group] = clusterPhotos([unplaced(1, '2026-09-06T09:00:00.000Z')], ITINERARY, {
     zoom: 13,
-    range: TRIP,
   })
   assert.equal(group.approximate, true)
   assert.equal(group.day, '2026-09-06')
 
   // Whereas one that does know says nothing of the kind.
-  const [known] = clusterPhotos([photo(9, 4.8852, 52.36)], [], { zoom: 13, range: TRIP })
+  const [known] = clusterPhotos([photo(9, 4.8852, 52.36)], [], { zoom: 13 })
   assert.equal(known.approximate, undefined)
 })
 
@@ -158,7 +156,7 @@ test('one stack per day, not one for the lot', () => {
       unplaced(3, '2026-09-06T12:00:00.000Z'),
     ],
     ITINERARY,
-    { zoom: 13, range: TRIP },
+    { zoom: 13 },
   )
   assert.equal(groups.length, 2)
   assert.deepEqual(groups.map(group => group.day).sort(), ['2026-09-05', '2026-09-06'])
@@ -170,7 +168,7 @@ test('a photograph already filed at a stop is placed there, not by its day', () 
   const groups = clusterPhotos(
     [{ id: 1, by: '', seq: 1, stopId: 'centraal', when: '2026-09-05T11:00:00.000Z' }],
     ITINERARY,
-    { zoom: 13, range: TRIP },
+    { zoom: 13 },
   )
   assert.equal(groups.length, 1)
   assert.equal(groups[0].approximate, undefined)
@@ -182,12 +180,11 @@ test('a day the trip never went anywhere places nothing', () => {
   assert.deepEqual(
     clusterPhotos([unplaced(1, '2026-10-30T11:00:00.000Z')], ITINERARY, {
       zoom: 13,
-      range: TRIP,
     }),
     [],
   )
   // And a photograph that does not even know when it was taken.
-  assert.deepEqual(clusterPhotos([unplaced(2, null)], ITINERARY, { zoom: 13, range: TRIP }), [])
+  assert.deepEqual(clusterPhotos([unplaced(2, null)], ITINERARY, { zoom: 13 }), [])
 })
 
 test('an inferred stack is windowed like any other', () => {
@@ -197,7 +194,6 @@ test('an inferred stack is windowed like any other', () => {
   assert.deepEqual(
     clusterPhotos([unplaced(1, '2026-09-05T11:00:00.000Z')], ITINERARY, {
       zoom: 13,
-      range: TRIP,
       bounds: elsewhere,
     }),
     [],

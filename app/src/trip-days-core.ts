@@ -20,11 +20,6 @@
 
 import { dayLabelOf } from './day-label-core'
 
-export interface DayRange {
-  startsOn?: string | null
-  endsOn?: string | null
-}
-
 const ISO = /^(\d{4})-(\d{2})-(\d{2})/
 /**
  * The ISO date a stored day is, or null when it is not one.

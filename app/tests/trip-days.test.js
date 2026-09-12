@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { dayIsoOf, groupByDay, onDay, photoDayIso, tripDays } from '../src/trip-days-core.ts'
+import { tripDayOrNull } from '../server/src/trip-day.js'
 
 /* A day is a date. That is the whole contract now.
 
@@ -193,4 +194,74 @@ test('grouping and the chips agree on which days there are', () => {
       .map(group => group.day.iso),
     tripDays(rows).map(day => day.iso),
   )
+})
+
+/* Two copies of one rule, in two languages, in two directories, with nothing
+   between them until now but a comment in each asking whoever reads it next to
+   keep them in step. The server's door decides what may be stored; the client
+   decides what may be drawn. Let them drift apart and a stop saved from the
+   calendar picker is a stop the timeline files under no day at all — accepted,
+   stored, and then invisible, which is the worst of the three answers. */
+const EVERY_SPELLING = [
+  '2026-09-04',
+  ' 2026-09-04 ',
+  '2026-01-01',
+  '2026-12-31',
+  '2024-02-29',
+  '2025-02-29',
+  '2026-02-30',
+  '2026-13-01',
+  '2026-00-10',
+  '2026-09-31',
+  '2026-9-4',
+  '2026/09/04',
+  'Fri 4 Sep',
+  'Thu 3 Sep',
+  'Sep 4',
+  '4 September',
+  '4',
+  '10',
+  'tbc',
+  'all',
+  'all-days',
+  'later',
+  '',
+  '   ',
+  null,
+  undefined,
+  10,
+  0,
+  {},
+  [],
+]
+
+test('the server and the client call the same values a day', () => {
+  for (const value of EVERY_SPELLING) {
+    const stored = tripDayOrNull(value)
+    assert.equal(
+      typeof stored === 'string',
+      dayIsoOf(value) !== null,
+      `the two rules disagree about ${JSON.stringify(value)}`,
+    )
+  }
+})
+
+test('a day the server stored is read back as itself, not as something near it', () => {
+  /* Agreeing that a value is a day is not enough — they have to agree on which
+     day it is. A reader that shifted a date by a timezone would pass the test
+     above and still draw every stop on the day before. */
+  for (const value of EVERY_SPELLING) {
+    const stored = tripDayOrNull(value)
+    if (typeof stored !== 'string') continue
+    assert.equal(dayIsoOf(stored), stored, `${JSON.stringify(value)} was stored as ${stored}`)
+  }
+})
+
+test('the one place they differ is the one place they are not asked the same thing', () => {
+  /* A photograph's capture time is an instant, and `dayIsoOf` cuts it back to
+     its date because that is the only day such a picture has. No stop ever
+     reaches the server that way — the door is for a stop's day, and a stop's
+     day is a date — so the door refuses it, and should. */
+  assert.equal(dayIsoOf('2026-09-04T09:30:00.000Z'), '2026-09-04')
+  assert.equal(tripDayOrNull('2026-09-04T09:30:00.000Z'), undefined)
 })
