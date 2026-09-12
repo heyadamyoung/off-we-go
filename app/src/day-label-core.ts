@@ -3,9 +3,10 @@
    calendar picker speaks ISO. This is the border crossing between the two,
    pure so the mapping is testable without a browser.
 
-   Labels carry no year on purpose (nobody's trip chip says 2026), which makes
-   them meaningful only against the trip's own date range: the same label
-   inside the range names exactly one date. */
+   Labels carry no year on purpose — nobody's trip chip says 2026 — so the
+   crossing only goes one way. Reading a label back into a date needed the
+   trip's own range to supply the year, and that reverse lookup is gone: a
+   label is drawn, never stored, never compared and never parsed. */
 
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

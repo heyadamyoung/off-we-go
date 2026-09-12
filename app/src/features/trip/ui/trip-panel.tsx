@@ -11,7 +11,7 @@ import type { Segment } from '../../../segments-core'
 import { legLabel } from '../../../legs-core'
 import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
-import { groupByDay, type DayRange } from '../../../trip-days-core'
+import { groupByDay } from '../../../trip-days-core'
 
 interface PanelProps {
   view: TripView
@@ -37,8 +37,6 @@ interface PanelProps {
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>
-  /** what gives a stored day label its year and a bare number its month */
-  range?: DayRange
   /** the family's room — see panel-chat */
   chat?: ChatProps
   /** the getting-there chain: the Travel view is its home */
