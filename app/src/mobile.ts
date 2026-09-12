@@ -6,7 +6,6 @@ import {
 } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { App as NativeApp } from '@capacitor/app'
-import { Camera } from '@capacitor/camera'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Browser } from '@capacitor/browser'
 import { Directory, Filesystem } from '@capacitor/filesystem'
@@ -18,7 +17,6 @@ import {
   type TrackerState,
   type TrackerStorage,
 } from './mobile-tracking-core'
-import { galleryPhotosToFiles } from './mobile-photos-core'
 import { completeNativeLogin, type NativeLoginState } from './mobile-auth-core'
 import { createNativeLocationDriver, createNativeTrackingFetch } from './mobile-platform-core'
 import { beginOidcLogin, beginOidcLogout, NATIVE_OIDC_VERIFIER_KEY } from './login-core'
@@ -173,12 +171,6 @@ export const mobileTracker: MobileTracker =
         fetch: trackingFetch,
       })
     : webTracker
-
-export async function pickNativePhotos() {
-  if (!isNativeApp) return null
-  const selected = await Camera.pickImages({ quality: 92, correctOrientation: true, limit: 20 })
-  return galleryPhotosToFiles(selected.photos, { fetch: globalThis.fetch.bind(globalThis) })
-}
 
 /* Keeping a file on the phone.
  *

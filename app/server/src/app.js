@@ -40,6 +40,7 @@ import {
   isVideoPath,
   mediaContentType,
 } from './media-types.js'
+import { exifFromImage } from './photo-exif.js'
 import { signPlaylist } from './hls.js'
 import {
   DEFAULT_BUCKET_SECONDS,
@@ -1561,11 +1562,36 @@ export async function buildServer({
 
         let lng = supplied.lng,
           lat = supplied.lat
-        const takenAt = dateFrom(fields.takenAt)
+        let takenAt = dateFrom(fields.takenAt)
         if (fields.takenAt && !takenAt) {
           return reply.code(400).send({ error: 'The photo capture time is invalid' })
         }
         let locationSource = requestedLocationSource
+
+        /* What the photograph says about itself, which outranks anything a
+           client worked out.
+
+           A picker that strips EXIF cannot be told apart, from the client's
+           side, from a picture that never carried any — and the difference is
+           a holiday filed where it was uploaded rather than where it was
+           taken. iOS does exactly that whenever the photo library is shared as
+           "Selected Photos": the picker still browses everything, the metadata
+           lookup behind it answers for nothing, and the phone's current
+           position quietly becomes the answer.
+
+           Read here it holds for every client, including the ones nobody has
+           written yet. It must run before the image is resized, because
+           resizing is what destroys the block. Never fatal: an unreadable
+           block leaves everything exactly as it arrived. */
+        const own = isVideo ? null : await exifFromImage(bytes)
+        if (own?.lng != null && own?.lat != null) {
+          lng = own.lng
+          lat = own.lat
+          locationSource = 'exif'
+        }
+        /* And its capture time, which is what the trail lookup below needs to
+           work out where somebody was when they took it. */
+        if (!takenAt && own?.takenAt) takenAt = dateFrom(own.takenAt)
         if ((lng == null || lat == null) && takenAt && repository.findPositionNearCapture) {
           const matched = await repository.findPositionNearCapture(
             user,

@@ -682,6 +682,28 @@ test('photo placement never substitutes an itinerary coordinate for missing GPS'
   })
 })
 
+test('a photograph that says nothing does not borrow the position it was uploaded from', () => {
+  /* The bug. A picker that strips EXIF is indistinguishable, from here, from a
+     picture that never carried any — so treating "no metadata" as "taken right
+     here, right now" files a whole holiday at whichever cafe had the wifi.
+
+     It is a fallback, offered and labelled as one, which also lets the server
+     try the things it knows and this does not: the file's own block, and where
+     the trail says they actually were. */
+  const stops = [{ id: 'rijks', name: 'Rijksmuseum', lng: 4.8852, lat: 52.36 }]
+
+  assert.deepEqual(mobilePhotos.photoPlacement({}, { live: [4.8852, 52.36], stops }), {
+    point: null,
+    fallbackPoint: [4.8852, 52.36],
+    previewPoint: [4.8852, 52.36],
+    stopId: null,
+    stopName: null,
+    source: 'live',
+    fallbackSource: 'live',
+    hasEmbeddedGps: false,
+  })
+})
+
 test('an Off We Go OIDC callback exposes the one-time login handoff', () => {
   const token = 'one-time-login-token-at-least-thirty-two-characters'
   assert.equal(
