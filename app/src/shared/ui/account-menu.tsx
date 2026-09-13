@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { hasBackend, signOut } from '../../backend'
+import { buildLabel, type AppBuild } from '../../build-identity-core'
+import { nativeBuild } from '../../mobile'
 import Icon from './icon'
 import type { Person } from '../model/types'
 
@@ -9,6 +11,9 @@ import type { Person } from '../model/types'
 export default function AccountMenu({ me }: { me?: Person | null }) {
   const [open, setOpen] = useState(false)
   const holder = useRef<HTMLDivElement>(null)
+  /* Which build this is. Asked for by the shell rather than known, because
+     only the shell has a version number, and only on a phone. */
+  const [shell, setShell] = useState<AppBuild | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -18,6 +23,7 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
     }
+    void nativeBuild().then(setShell)
     document.addEventListener('pointerdown', clickAway)
     document.addEventListener('keydown', onEscape)
     return () => {
@@ -27,6 +33,7 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
   }, [open])
 
   const name = me?.name || 'You'
+  const build = buildLabel(import.meta.env.VITE_APP_SHA, shell)
   const item =
     'flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-xs ' +
     'text-ink hover:bg-raised2'
@@ -71,6 +78,16 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
               <Icon n="logout" s={14} />
               Sign out
             </button>
+          )}
+          {build && (
+            /* Not chrome anybody needs, and exactly what somebody needs when
+               a fix is live on the site and their phone still has last
+               night's binary — the web assets are inside the app, so the two
+               are different things and nothing said which one you were
+               looking at. Selectable, because it gets read out. */
+            <div className="select-text border-t border-line px-2.5 pb-1 pt-2 text-[10px] text-muted">
+              {build}
+            </div>
           )}
         </div>
       )}
