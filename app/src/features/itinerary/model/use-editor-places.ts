@@ -5,6 +5,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react'
+import { applyRefilings } from '../../../photo-refile-core'
 import { createStop } from '../../../backend'
 import { useAttractions } from '../../map'
 import {
@@ -16,7 +17,15 @@ import {
 } from '../../sights'
 import { appErrorMessage } from '../../../user-messages-core'
 import { nextSeq } from './stop-order'
-import type { Attraction, Id, MapView, Stop, StopDraft, Toast } from '../../../shared/model/types'
+import type {
+  Attraction,
+  Id,
+  MapView,
+  Stop,
+  StopDraft,
+  Toast,
+  TripPhoto,
+} from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
 
 const ICON_FOR_KIND: Record<string, string> = {
@@ -37,6 +46,10 @@ interface UseEditorPlacesOptions {
   tripId: Id
   stops: Stop[]
   setStops: Dispatch<SetStateAction<Stop[]>>
+  /* A stop added near some photographs collects them, on the server. It says
+     which in its reply, and without applying that here the gallery goes on
+     drawing the old filing until the trip is loaded again. */
+  setPhotos: Dispatch<SetStateAction<TripPhoto[]>>
   dayForNewStop: string
   draft: StopDraft | null
   setDraft: Dispatch<SetStateAction<StopDraft | null>>
@@ -56,6 +69,7 @@ export default function useEditorPlaces({
   tripId,
   stops,
   setStops,
+  setPhotos,
   dayForNewStop,
   draft,
   setDraft,
@@ -203,6 +217,7 @@ export default function useEditorPlaces({
           seq: nextSeq(stops),
         })
         setStops(list => [...list, saved])
+        setPhotos(list => applyRefilings(list, saved.refiled))
         toast(`${pl.name} added to the trip`)
       } catch (e) {
         toast(appErrorMessage(e, 'add-place'), 'error')

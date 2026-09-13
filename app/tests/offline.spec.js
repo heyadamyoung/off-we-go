@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 import { serveBasemap } from './basemap-fixture.js'
 
 test.beforeEach(async ({ page, context }) => {
@@ -18,6 +19,11 @@ test.beforeEach(async ({ page, context }) => {
    app — the shell worker is not registered in development — which is what the
    e2e server serves. */
 test('the app opens and the map draws with the network cut', async ({ page, context }) => {
+  /* No pinned clock here, unlike everywhere else that opens the trip. This one
+     asserts the service worker holding the shell and the app booting from it,
+     and the worker keeps its own clock — telling the page it is a different
+     day than the thing caching for it is a difference with nothing to gain,
+     since nothing below reads a stop, a day or a destination. */
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 15000 })
   // Long enough for the worker to take over and be told what the page loaded.
@@ -57,6 +63,9 @@ test('a trip’s map can be saved to the device before the signal goes', async (
     return route.fallback()
   })
 
+  await atDemoTime(page)
+
+  await atDemoTime(page)
   await page.goto('/trips/sample?sheet=settings&tab=trip')
   await expect(page.getByText('Use this map without a signal')).toBeVisible({ timeout: 20000 })
   const before = asked

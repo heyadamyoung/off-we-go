@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 /* Choosing what to add.
 
@@ -50,6 +51,7 @@ const choose = (page, names = ['tagged.jpg', 'untagged.jpg']) =>
   }, names)
 
 const openSheet = async page => {
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await page.getByRole('button', { name: 'Add photos' }).click()

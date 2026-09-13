@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 test.beforeEach(async ({ page, context }) => {
   // Freeze the demo's walking traveller: layout and placement assertions need
@@ -60,6 +61,7 @@ const chooseFilm = async page => {
 test('a video is chosen, drawn from its own first frame, and plays in the viewer', async ({
   page,
 }) => {
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await chooseFilm(page)
@@ -119,6 +121,7 @@ test('the gallery can be narrowed to the films, or to everything but them', asyn
 
      The control only exists once the trip holds both kinds, so this has to
      make one before it can drive it. */
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await chooseFilm(page)

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 /* The grid only puts the rows somebody can see in the document, which is what
    let the two-thousand-photograph ceiling go. The arithmetic is covered in
@@ -25,6 +26,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 const openPhotos = async page => {
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await page.getByRole('button', { name: 'Photos', exact: true }).click()

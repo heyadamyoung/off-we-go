@@ -1419,6 +1419,19 @@ export async function buildServer({
     }
   }
 
+  /* What a re-file moved, in the shape a reply carries it: absent when nothing
+     moved, so an edit that changed a caption does not promise news.
+
+     Every route below has re-filed the trip since the server became the
+     authority on filing, and none of them said so. The screen that asked for
+     the edit went on drawing the old filing until the whole trip was loaded
+     again, which reads exactly like the re-filing never happening — and is
+     what was reported about moving a stop next to some photographs. */
+  const refiling = async (user, tripId) => {
+    const done = await refileTrip(user, tripId)
+    return done?.refiled?.length ? { refiled: done.refiled } : {}
+  }
+
   /* Which itinerary item an arriving photograph belongs to.
 
      The rule is in stop-placement.js; this is the part that has to touch a
@@ -3012,8 +3025,7 @@ export async function buildServer({
     if (!stop) return reply.code(403).send({ error: 'You cannot edit this trip' })
     /* A stop is usually added after the photographs it belongs to — that is
        how a trip gets written up — so this is the common case, not the edge. */
-    await refileTrip(user, request.params.tripId)
-    return reply.code(201).send(stop)
+    return reply.code(201).send({ ...stop, ...(await refiling(user, request.params.tripId)) })
   })
 
   app.patch('/api/trips/:tripId/stops/:stopId', async (request, reply) => {
@@ -3055,9 +3067,8 @@ export async function buildServer({
     )
     if (!stop) return reply.code(404).send({ error: 'Stop not found' })
     // Moved somewhere else: what was near it may not be, and what was not may be.
-    if (fields.lng !== undefined || fields.lat !== undefined)
-      await refileTrip(user, request.params.tripId)
-    return stop
+    if (fields.lng === undefined && fields.lat === undefined) return stop
+    return { ...stop, ...(await refiling(user, request.params.tripId)) }
   })
 
   app.delete('/api/trips/:tripId/stops/:stopId', async (request, reply) => {
@@ -3068,9 +3079,12 @@ export async function buildServer({
     /* Its photographs were unfiled to let the row go. Most of them are near
        something else — the next stop along, the one across the square — and
        leaving them orphaned because a different stop was deleted would be an
-       odd thing for the app to decide on their behalf. */
-    await refileTrip(user, request.params.tripId)
-    return reply.code(204).send()
+       odd thing for the app to decide on their behalf.
+
+       Which is why this answers with a body rather than the 204 it used to:
+       the client was guessing that they all came loose, and unfiling them on
+       its own screen while the server handed them to the next stop along. */
+    return reply.code(200).send(await refiling(user, request.params.tripId))
   })
 
   app.put('/api/trips/:tripId/route', async (request, reply) => {

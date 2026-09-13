@@ -1,11 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Map as MapGL,
-  prewarm,
-  setWorkerUrl,
-  type GeoJSONSource,
-  type MapMouseEvent,
-} from 'maplibre-gl'
+import { Map as MapGL, prewarm, setWorkerUrl, type GeoJSONSource } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
@@ -15,6 +9,7 @@ import { clusterPhotos } from '../../../photo-cluster-core'
 import useHeadingCamera from '../model/use-heading-camera'
 import useViewport from '../model/use-viewport'
 import useIndoorLayers from '../model/indoor-layers'
+import usePlaceTap from '../model/use-place-tap'
 import makeTrailSweep from '../model/trail-sweep'
 import useMapLayers from '../model/use-map-layers'
 import { creditControl, STYLE } from '../model/map-style'
@@ -141,8 +136,13 @@ const MapCanvas = memo(function MapCanvas({
     measure,
     onContextMenu,
     sweepIn,
-    // Placing or moving a stop, a tap means "here" — never "tell me about this".
-    onPickAttraction: editing || placing ? undefined : onPickAttraction,
+    /* Placing or moving a stop, a tap means "here" — never "tell me about
+       this". Editing is not that: it is a mode somebody turns on to work on the
+       itinerary, and a sight they tap while in it is the moment they are most
+       likely to want to add it. Switching these off for the whole of editing
+       meant a tap on a sight silently made a blank stop at that point instead,
+       which is what was reported. */
+    onPickAttraction: placing ? undefined : onPickAttraction,
   })
   useEffect(() => {
     if (!map || !attractions) return
@@ -150,7 +150,7 @@ const MapCanvas = memo(function MapCanvas({
     if (src) src.setData(attractions)
   }, [map, attractions])
   // The inside of an airport terminal, when a stop has asked for it.
-  useIndoorLayers(map, indoor, themeRef, editing || placing ? undefined : onPickGate)
+  useIndoorLayers(map, indoor, themeRef, placing ? undefined : onPickGate)
 
   useEffect(() => {
     if (!map || !tint || !map.getLayer('tod-tint')) return
@@ -252,19 +252,7 @@ const MapCanvas = memo(function MapCanvas({
     return () => ro.disconnect()
   }, [map])
 
-  // Placing a stop by clicking the map. Markers are DOM above the canvas, so a
-  // click on a pin never reaches this — which is what we want: clicking a pin
-  // edits it, clicking bare map creates one.
-  const clickRef = useRef(onMapClick)
-  clickRef.current = onMapClick
-  useEffect(() => {
-    if (!map || (!editing && !placing)) return
-    const h = (e: MapMouseEvent) => clickRef.current?.([e.lngLat.lng, e.lngLat.lat])
-    map.on('click', h)
-    return () => {
-      map.off('click', h)
-    }
-  }, [map, editing, placing])
+  usePlaceTap(map, { editing, placing, onMapClick })
 
   /* ---- overlays --------------------------------------------------------- */
   /* Every marker is a DOM element, so the number of them has to be a function

@@ -795,17 +795,17 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       let examined = 0
-      let changed = 0
+      const refiled = []
       for (const photo of trip.photos) {
         if (photo.lng == null || photo.lat == null) continue
         examined += 1
         const decided = stopForPhoto(photo, trip.stops, { radiusMetres })
         if (decided !== (photo.stopId ?? null)) {
           photo.stopId = decided
-          changed += 1
+          refiled.push({ id: photo.id, stopId: decided })
         }
       }
-      return { examined, changed }
+      return { examined, changed: refiled.length, refiled }
     },
     async replaceRoute(user, tripId, points) {
       if (!(await this.canEditTrip(user.id, tripId))) return false

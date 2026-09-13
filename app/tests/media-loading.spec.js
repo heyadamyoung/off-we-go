@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -24,6 +25,7 @@ test('every picture that is still coming says so, on its own tile', async ({ pag
       await route.abort()
     })
   }
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await page.getByRole('button', { name: 'Photos', exact: true }).click()

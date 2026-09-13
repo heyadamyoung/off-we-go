@@ -1563,6 +1563,10 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           next.push(decided)
         }
       }
+      /* What moved, so the screen that asked for the edit can follow. Ids and
+         filings only: whoever is asking already holds the photographs, and the
+         one thing they are missing is where these went. */
+      const refiled = ids.map((id, index) => ({ id, stopId: next[index] }))
       if (ids.length) {
         await pool.query(
           `update photos p set stop_id = v.stop_id
@@ -1571,7 +1575,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           [ids, next],
         )
       }
-      return { examined: photos.rowCount, changed: ids.length }
+      return { examined: photos.rowCount, changed: ids.length, refiled }
     },
     async replaceRoute(user, tripId, points) {
       if (!(await this.canEditTrip(user.id, tripId))) return false
