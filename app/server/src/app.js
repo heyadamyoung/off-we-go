@@ -38,6 +38,8 @@ import {
   isPlaylistPath,
   isSupportedVideo,
   isVideoPath,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
   mediaContentType,
 } from './media-types.js'
 import { exifFromImage } from './photo-exif.js'
@@ -147,8 +149,8 @@ export async function buildServer({
      the refusal says which one was hit. 256MB is about two minutes of 4K —
      past that the upload is likelier to die of a lost signal than to land,
      and the nightly backup copies every byte of it. */
-  maxImageBytes = 25 * 1024 * 1024,
-  maxVideoBytes = 256 * 1024 * 1024,
+  maxImageBytes = MAX_IMAGE_BYTES,
+  maxVideoBytes = MAX_VIDEO_BYTES,
   /* Whether this deployment can convert film to something every device
      plays. Optional like every other integration: without it the app says so
      at /api/health rather than quietly storing videos half the trip cannot

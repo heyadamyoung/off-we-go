@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Map as MapGL, prewarm, setWorkerUrl, type GeoJSONSource } from 'maplibre-gl'
+import { Map as MapGL, prewarm, setWorkerUrl } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
@@ -142,13 +142,9 @@ const MapCanvas = memo(function MapCanvas({
        likely to want to add it. Switching these off for the whole of editing
        meant a tap on a sight silently made a blank stop at that point instead,
        which is what was reported. */
+    attractions,
     onPickAttraction: placing ? undefined : onPickAttraction,
   })
-  useEffect(() => {
-    if (!map || !attractions) return
-    const src = map.getSource<GeoJSONSource>('attr')
-    if (src) src.setData(attractions)
-  }, [map, attractions])
   // The inside of an airport terminal, when a stop has asked for it.
   useIndoorLayers(map, indoor, themeRef, placing ? undefined : onPickGate)
 

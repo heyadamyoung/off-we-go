@@ -207,3 +207,191 @@ test('live GPS retention is bounded independently for every phone and removes du
     },
   )
 })
+
+/* ---- the transport an upload actually goes over -------------------------
+   The app runs with CapacitorHttp on, which replaces XMLHttpRequest's open
+   and send with a pair that carries the body across the bridge as base64 —
+   the whole file as a string, then the whole file again a third longer. A
+   photograph survives it. A film off an iPhone is a few hundred megabytes
+   and is not there to be caught: the web view dies, or the conversion throws
+   into a promise with no catch on it, and the request dispatches neither load
+   nor error. Nothing is said and nothing arrives. */
+
+const transport = await import('../src/web-transport-core.ts').catch(() => null)
+
+/* A shell that has patched the prototype, exactly as the bridge does: the
+   originals set aside under their own name, the live methods replaced. */
+function patchedShell() {
+  const used = []
+  class Request {
+    constructor() {
+      this.upload = {}
+      this.status = 0
+      this.responseText = ''
+    }
+    open() {
+      used.push('bridge open')
+    }
+    send() {
+      used.push('bridge send')
+    }
+    setRequestHeader() {
+      used.push('bridge header')
+    }
+    getResponseHeader() {
+      used.push('bridge response header')
+      return null
+    }
+    abort() {
+      used.push('bridge abort')
+    }
+  }
+  const scope = {
+    XMLHttpRequest: Request,
+    CapacitorWebXMLHttpRequest: {
+      constructor: Request,
+      open(...args) {
+        used.push(['open', ...args])
+      },
+      send(body) {
+        used.push(['send', body])
+      },
+      setRequestHeader(name, value) {
+        used.push(['header', name, value])
+      },
+      getResponseHeader(name) {
+        used.push(['response header', name])
+        return name === 'content-type' ? 'application/json' : null
+      },
+      abort() {
+        used.push(['abort'])
+      },
+    },
+  }
+  return { scope, used, Request }
+}
+
+test('a request in the native shell is made with the transport underneath the patch', () => {
+  assert.ok(transport?.webRequest, 'the web transport escape hatch has not been implemented')
+  const { scope, used } = patchedShell()
+  const wire = transport.webRequest(scope)
+  wire.open('POST', 'https://example.test/api/photos')
+  wire.header('authorization', 'Bearer t')
+  wire.send('body')
+  wire.responseHeader('content-type')
+  wire.abort()
+
+  assert.equal(wire.direct, true)
+  assert.deepEqual(used, [
+    ['open', 'POST', 'https://example.test/api/photos', true],
+    ['header', 'authorization', 'Bearer t'],
+    ['send', 'body'],
+    ['response header', 'content-type'],
+    ['abort'],
+  ])
+})
+
+test('a request in a plain browser is made the plain way', () => {
+  const sent = []
+  class Request {
+    open(...args) {
+      sent.push(['open', ...args])
+    }
+    send(body) {
+      sent.push(['send', body])
+    }
+    setRequestHeader() {}
+    getResponseHeader() {
+      return null
+    }
+    abort() {}
+  }
+  const wire = transport.webRequest({ XMLHttpRequest: Request })
+  wire.open('POST', '/api/photos')
+  wire.send('body')
+  assert.equal(wire.direct, false)
+  assert.deepEqual(sent, [
+    ['open', 'POST', '/api/photos', true],
+    ['send', 'body'],
+  ])
+})
+
+test('half a saved transport is not used at all — a request opened one way and sent the other is neither', () => {
+  const { scope, used } = patchedShell()
+  // A future Capacitor that stops setting one of them aside.
+  delete scope.CapacitorWebXMLHttpRequest.send
+  const wire = transport.webRequest(scope)
+  wire.open('POST', '/api/photos')
+  wire.send('body')
+  assert.equal(wire.direct, false)
+  assert.deepEqual(used, ['bridge open', 'bridge send'])
+})
+
+test('an upload hands the file to the real transport, never to the bridge', async () => {
+  const { scope, used, Request } = patchedShell()
+  const realXhr = globalThis.XMLHttpRequest
+  const realSaved = globalThis.CapacitorWebXMLHttpRequest
+  globalThis.XMLHttpRequest = scope.XMLHttpRequest
+  globalThis.CapacitorWebXMLHttpRequest = scope.CapacitorWebXMLHttpRequest
+  // The instance the client is about to build, so the test can answer it.
+  let made = null
+  const originalConstructor = scope.CapacitorWebXMLHttpRequest.constructor
+  scope.CapacitorWebXMLHttpRequest.constructor = class extends Request {
+    constructor() {
+      super()
+      made = this
+    }
+  }
+  try {
+    const client = moduleUnderTest.createApiClient({
+      baseUrl: '/api',
+      storage: { getItem: () => null, setItem() {}, removeItem() {} },
+      fetch: async () => new Response('{}', { status: 200 }),
+    })
+    const form = new FormData()
+    form.append('photo', new Blob(['film']), 'clip.mov')
+    const pending = client.upload('/trips/1/photos', { body: form })
+    // The send is behind one await of the session hydration.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    made.status = 201
+    made.responseText = '{"id":"p1"}'
+    made.onload()
+    assert.deepEqual(await pending, { id: 'p1' })
+  } finally {
+    scope.CapacitorWebXMLHttpRequest.constructor = originalConstructor
+    globalThis.XMLHttpRequest = realXhr
+    globalThis.CapacitorWebXMLHttpRequest = realSaved
+  }
+
+  const sent = used.find(entry => Array.isArray(entry) && entry[0] === 'send')
+  assert.ok(sent, 'the upload never reached the browser transport')
+  assert.ok(sent[1] instanceof FormData, 'the body was converted on the way')
+  assert.ok(
+    !used.includes('bridge send'),
+    'the file was handed to the bridge, which carries it as base64',
+  )
+})
+
+test('an upload asked to stop before it starts says so rather than hanging', async () => {
+  const { scope } = patchedShell()
+  const realXhr = globalThis.XMLHttpRequest
+  const realSaved = globalThis.CapacitorWebXMLHttpRequest
+  globalThis.XMLHttpRequest = scope.XMLHttpRequest
+  globalThis.CapacitorWebXMLHttpRequest = scope.CapacitorWebXMLHttpRequest
+  try {
+    const client = moduleUnderTest.createApiClient({
+      baseUrl: '/api',
+      storage: { getItem: () => null, setItem() {}, removeItem() {} },
+      fetch: async () => new Response('{}', { status: 200 }),
+    })
+    const stop = new AbortController()
+    stop.abort()
+    await assert.rejects(
+      client.upload('/trips/1/photos', { body: new FormData(), signal: stop.signal }),
+      /stopped/,
+    )
+  } finally {
+    globalThis.XMLHttpRequest = realXhr
+    globalThis.CapacitorWebXMLHttpRequest = realSaved
+  }
+})

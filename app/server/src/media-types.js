@@ -27,6 +27,17 @@ const bareMime = mime =>
 export const videoExtension = mime => VIDEO_EXTENSIONS.get(bareMime(mime)) || null
 export const isSupportedVideo = mime => videoExtension(mime) !== null
 
+/* What the API will take. The picker needs the same two numbers: a film
+   refused after two hundred megabytes have crawled up a hotel's wifi is a
+   film that should have been refused before it left, and the person who
+   chose it is the only one who can do anything about it.
+
+   A deployment can lower the video ceiling with WAYFARE_MAX_VIDEO_BYTES. The
+   picker checks against the default, so a tightened deployment still refuses
+   at the door — the guard here is the common case, not the authority. */
+export const MAX_VIDEO_BYTES = 256 * 1024 * 1024
+export const MAX_IMAGE_BYTES = 25 * 1024 * 1024
+
 /* What a stored file is, by the extension we ourselves gave it. Everything on
    this volume was written by this server, so the extension is trustworthy in
    a way an uploaded filename never is — and a boarding pass served as

@@ -21,6 +21,7 @@ interface MapLayerOptions {
   trailFaded: NonNullable<MapCanvasProps['trailFaded']>
   measure: MapCanvasProps['measure']
   sweepIn: (map: MapGL) => void
+  attractions: MapCanvasProps['attractions']
   onPickAttraction: MapCanvasProps['onPickAttraction']
   onContextMenu?: (point: [number, number]) => void
 }
@@ -70,6 +71,7 @@ export default function useMapLayers({
   trailFaded,
   measure,
   sweepIn,
+  attractions,
   onPickAttraction,
   onContextMenu,
 }: MapLayerOptions) {
@@ -273,11 +275,20 @@ export default function useMapLayers({
    almost nothing and stay put during a gesture. */
   const pickRef = useRef(onPickAttraction)
   pickRef.current = onPickAttraction
+  /* What the layer is holding, so a style load can put it back. Every other
+     source here is re-added from a ref for exactly that reason; this one was
+     re-added empty, and the only thing that ever refilled it was the next
+     screenful of sights arriving — which, on a map nobody has panned since,
+     is never. So switching to the night map made every sight on screen
+     disappear, and a sight that is not drawn is a sight that cannot be
+     tapped: queryRenderedFeatures answers about what is rendered. */
+  const attrRef = useRef(attractions)
+  attrRef.current = attractions
   useEffect(() => {
     if (!map) return
     const add = () => {
       if (map.getSource('attr')) return
-      map.addSource('attr', { type: 'geojson', data: EMPTY_FC })
+      map.addSource('attr', { type: 'geojson', data: attrRef.current || EMPTY_FC })
       map.addLayer({
         id: 'attr-dot',
         type: 'circle',
@@ -374,4 +385,10 @@ export default function useMapLayers({
       map.off('mouseleave', 'attr-dot', leave)
     }
   }, [map, themeRef])
+
+  useEffect(() => {
+    if (!map || !attractions) return
+    const src = map.getSource<GeoJSONSource>('attr')
+    if (src) src.setData(attractions)
+  }, [map, attractions])
 }
