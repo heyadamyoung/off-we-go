@@ -70,6 +70,20 @@ const webTracker: MobileTracker = {
   },
 }
 
+/* What the shell calls itself: the version and build number the App Store and
+   TestFlight show, which is the only way to tell a phone running last
+   evening's binary from one running tonight's. Nothing on the web, which has
+   no such number — its identity is the commit the bundle carries. */
+export async function nativeBuild(): Promise<{ version: string; build: string } | null> {
+  if (!isNativeApp) return null
+  try {
+    const info = await NativeApp.getInfo()
+    return { version: info.version || '', build: info.build || '' }
+  } catch {
+    return null // a shell that will not say is not a reason to draw nothing else
+  }
+}
+
 const BackgroundGeolocation = isNativeApp
   ? registerPlugin<LocationDriver>('BackgroundGeolocation')
   : null
