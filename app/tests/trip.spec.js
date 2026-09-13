@@ -773,18 +773,43 @@ test('adding a stop creates exactly one', async ({ page }) => {
   expect(await page.locator('.mstop .lab').filter({ hasText: 'Test Stop' }).count()).toBe(1)
 })
 
-test('reordering moves a stop one place and back', async ({ page }) => {
+test('the move arrows are off while a stop names an hour, and work when it does not', async ({
+  page,
+}) => {
+  /* The arrows swap a sequence number, and the sequence number no longer
+     decides where a stop sits — the hour written on the card does, because an
+     invisible integer defaulted to zero by two of the three ways a stop can be
+     created is how a castle from half past three ended up ahead of a morning.
+
+     So on a stop that names an hour these would change a number nobody can see
+     and move nothing, which is a control that lies. Moving a three o'clock
+     thing earlier means saying so in the field above. Where the clock has
+     nothing to say they still do the job they always did. */
   await open(page)
 
   const pin = await centreOnStop(page, PHOTOLESS)
   expect(pin).not.toBeNull()
-  const before = await stopTitles(page)
 
   await page.getByRole('button', { name: 'Edit the itinerary' }).click()
   await page.mouse.click(pin.x, pin.y)
   await expect(page.locator('.editor')).toBeVisible()
   await expect(page.locator('.editor .eh b')).toHaveText('Edit stop')
 
+  const arrows = page.locator('.editor .ef .ord')
+  await expect(arrows.first()).toBeDisabled()
+  await expect(arrows.first()).toHaveAttribute('title', 'Change the time to move this stop')
+
+  // Take the hours off, and they come back — nothing else is placing it now.
+  await page.locator('.editor input[type="time"]').first().fill('')
+  await page.locator('.editor input[type="time"]').nth(1).fill('')
+  await page.locator('.editor .btn.pri').click()
+  await expect(page.locator('.editor')).toHaveCount(0)
+
+  await page.mouse.click(pin.x, pin.y)
+  await expect(page.locator('.editor')).toBeVisible()
+  await expect(page.locator('.editor .ef .ord').first()).toBeEnabled()
+
+  const before = await stopTitles(page)
   await page.locator('.editor .ef .ord').first().click()
   await expect.poll(() => stopTitles(page)).not.toEqual(before)
   const moved = await stopTitles(page)

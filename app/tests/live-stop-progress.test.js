@@ -1501,12 +1501,18 @@ test('an evening that runs past midnight has not already finished', () => {
     ON(SUNDAY, { id: 'ferry', name: 'Night ferry', lng: 4.88, lat: 52.36, seq: 0 }),
   )
   const progress = deriveLiveStopProgress({
-    stops: [overnight, evening],
+    stops: [overnight],
     fixes: [],
     now: afternoon,
   })
 
   assert.equal(progress.destination?.id, 'ferry')
+
+  /* And it takes its turn after the evening rather than before it, because
+     eleven at night is after six. The ordering is the clock's now; it used to
+     be the sequence number's, and the sequence number had the ferry first. */
+  const both = deriveLiveStopProgress({ stops: [overnight, evening], fixes: [], now: afternoon })
+  assert.equal(both.destination?.id, 'evening')
 })
 
 test('the clock only speaks about today', () => {
