@@ -43,19 +43,12 @@ export const AT_STOP_RADIUS_METRES = 250
 export const ARRIVAL_MAX_SPEED_METRES_PER_SECOND = 10
 const ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS = 2 * 60_000
 
-/* A calendar day as a comparable number, from either an ISO date or a moment.
-   Local rather than UTC on purpose: the traveller's own midnight is the one
-   that decides whether their day is over. */
-function dayNumber(value?: string | Date | null): number | null {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime())
-      ? null
-      : value.getFullYear() * 10_000 + (value.getMonth() + 1) * 100 + value.getDate()
-  }
-  const shaped = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim())
-  if (!shaped) return null
-  return Number(shaped[1]) * 10_000 + Number(shaped[2]) * 100 + Number(shaped[3])
-}
+/* The schedule's own side of the answer lives next door — see
+   live-schedule-core. Re-exported here because this is the module the whole
+   app asks about the journey, and where a caller gets an answer from is not
+   its business. */
+export { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
+import { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
 
 interface LiveStopProgressInput {
   stops: Stop[]
@@ -247,13 +240,36 @@ export function deriveLiveStopProgress({
   }
   const visited = new Set(visitedStopIds)
 
-  // NEXT: the calendar and what has happened, and nothing else.
+  // NEXT: the schedule and what has happened, and nothing else.
   const today = dayNumber(now)
-  const dayIsOver = (stop: Stop) => {
+  const minutesNow = now.getHours() * 60 + now.getMinutes()
+  /* The calendar at the resolution the itinerary is actually written in. A day
+     that is over is over; so is an hour, and for most of a trip the hour is
+     the only one of the two that has anything to say. Reported at twenty past
+     two in the afternoon: the trip still calling a burial ground booked for
+     twenty past eleven the next thing, eighty-seven kilometres behind them.
+     Its day had another ten hours to run and nobody's phone had been near it,
+     so nothing here had a word to say about it — and the answer was written on
+     the same card as the mistake, one line above it. */
+  const isPast = (stop: Stop) => {
     const day = dayNumber(stop.day)
-    return day !== null && today !== null && day < today
+    if (day === null || today === null) return false
+    if (day !== today) return day < today
+    const ends = endOfWindow(stop.time)
+    return ends !== null && minutesNow > ends + LATE_GRACE_MINUTES
   }
-  const destination = orderedStops.find(stop => !visited.has(stop.id) && !dayIsOver(stop)) || null
+  /* Withheld while the live layer is still loading. The schedule on its own is
+     a fine answer once we know there is nothing to hear from — and no answer at
+     all while we are still finding out, because it is about to be corrected.
+     The trip data arrives before the live positions do, so the first render was
+     the schedule talking alone and the second was the schedule after the phones
+     had said where everybody had been: the Up next chip landed on the first
+     stop of the day and a second later jumped three hours down the itinerary.
+     Both were right in turn, which is exactly what makes it wrong to show. */
+  const settled = sourceState !== 'loading'
+  const destination = settled
+    ? orderedStops.find(stop => !visited.has(stop.id) && !isPast(stop)) || null
+    : null
 
   // HERE: the nearest stop the latest fix is actually standing at.
   let currentStop: Stop | null = null
@@ -294,7 +310,7 @@ export function deriveLiveStopProgress({
      need a phone. A trip whose last day is behind it is over, and saying
      "waiting for GPS" about it would be waiting for news that cannot change
      the answer. */
-  if (orderedStops.length && !destination) {
+  if (settled && orderedStops.length && !destination) {
     return {
       state: 'complete' as const,
       reason: null,
