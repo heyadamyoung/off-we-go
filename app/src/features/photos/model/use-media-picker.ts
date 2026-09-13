@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { isNativeApp } from '../../../mobile'
 import { preparePhotoFilesForUpload, type MetadataFile } from '../../../mobile-photos-core'
-import { isVideoFile, videoStill, withVideoMime } from '../../../mobile-videos-core'
+import { isVideoFile, tooBigToSend, videoStill, withVideoMime } from '../../../mobile-videos-core'
 import { appErrorMessage } from '../../../user-messages-core'
 import type { Toast } from '../../../shared/model/types'
 
@@ -70,7 +70,14 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
       setPreparing(true)
       try {
         const already = new Set(current.current.map(item => sameFile(item.file)))
-        const fresh = chosen.filter(file => !already.has(sameFile(file)))
+        const picked = chosen.filter(file => !already.has(sameFile(file)))
+        /* Too big is too big now, not after ten minutes of a hotel's
+           upstream and a 413. Said by name, one line per file, because a
+           selection of twenty with two impossible ones in it should send the
+           eighteen rather than refuse the lot. */
+        const refusals = picked.map(tooBigToSend)
+        const fresh = picked.filter((_, i) => !refusals[i])
+        for (const refusal of refusals.filter(Boolean)) toast(refusal as string, 'error')
         if (!fresh.length) return
         const prepared = await preparePhotoFilesForUpload(fresh.map(withVideoMime))
         /* One decode at a time: a handful of 4K films seeked in parallel is how
@@ -98,7 +105,7 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
         if (mounted.current && round === selection.current) setPreparing(false)
       }
     },
-    [release],
+    [release, toast],
   )
 
   /** The system file picker came back; the input is cleared so the same file

@@ -1,3 +1,4 @@
+import { webRequest } from './web-transport-core'
 import type { ApiRequestOptions, AsyncStorage, AuthSession } from './shared/model/types'
 
 const SESSION_KEY = 'wayfare-session'
@@ -122,6 +123,10 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
      instrumentation traces it the same as fetch, so nothing is lost by using
      the older thing for the one job it still does better.
 
+     It goes over the browser's own transport rather than the one the native
+     shell installs over it — see web-transport-core for why a film could not
+     survive the trip across that bridge.
+
      Everything else matches `request`: the same bearer, the same
      401-clears-the-session, the same refusal shape. */
   const upload = async <T = unknown>(
@@ -144,10 +149,11 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
     await hydrate()
     const token = session?.accessToken
     return new Promise<T>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open(method, baseUrl.replace(/\/$/, '') + path, true)
+      const wire = webRequest()
+      const xhr = wire.xhr
+      wire.open(method, baseUrl.replace(/\/$/, '') + path)
       xhr.withCredentials = true
-      if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`)
+      if (token) wire.header('authorization', `Bearer ${token}`)
       /* Never set content-type for FormData: the boundary is part of it and
          only the browser knows what it chose. */
       xhr.responseType = 'text'
@@ -171,7 +177,7 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
         if (status === 401 && !path.startsWith('/auth/')) void save(null)
         const raw = xhr.responseText || ''
         if (status < 200 || status >= 300) {
-          reject(refusal(status, raw, xhr.getResponseHeader('x-request-id')))
+          reject(refusal(status, raw, wire.responseHeader('x-request-id')))
           return
         }
         /* The whole body arrived, so the progress bar ends where the work
@@ -182,7 +188,7 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
           resolve(null as T)
           return
         }
-        const contentType = xhr.getResponseHeader('content-type') || ''
+        const contentType = wire.responseHeader('content-type') || ''
         try {
           resolve((contentType.includes('json') ? JSON.parse(raw) : raw) as T)
         } catch {
@@ -191,13 +197,18 @@ export function createApiClient({ baseUrl, storage, fetch: fetchFn }: ApiClientO
       }
 
       if (signal) {
+        /* Refused outright, and said so. abort() before send() raises no
+           abort event — there is nothing in flight to stop — so leaving it
+           at that left the promise pending for the life of the tab, and the
+           queue waiting on an upload that had never started. */
         if (signal.aborted) {
-          xhr.abort()
+          wire.abort()
+          die('The upload was stopped')
           return
         }
-        signal.addEventListener('abort', () => xhr.abort(), { once: true })
+        signal.addEventListener('abort', () => wire.abort(), { once: true })
       }
-      xhr.send(body)
+      wire.send(body)
     })
   }
 

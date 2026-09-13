@@ -51,6 +51,29 @@ export function withVideoMime(file: MetadataFile): MetadataFile {
   return new File([file], file.name, { type: mime, lastModified: file.lastModified })
 }
 
+/* What the API will take, said here so the picker can say it first.
+
+   Both numbers are the server's own defaults, and a test holds the two
+   copies together. Refusing at the door is the whole point: a film that is
+   too big is too big before it is sent, and finding that out after ten
+   minutes of a hotel's upstream — with the bar at 100% and a red message
+   underneath it — is the one outcome worth spending a size check to avoid.
+   Nothing is silently dropped: what will not go says so by name. */
+export const MAX_VIDEO_BYTES = 256 * 1024 * 1024
+export const MAX_PHOTO_BYTES = 25 * 1024 * 1024
+
+const megabytes = (bytes: number) => Math.round(bytes / (1024 * 1024))
+
+/** Why this file cannot be sent, in a sentence, or null if it can. */
+export function tooBigToSend(file: { name?: string; size?: number; type?: string } | null) {
+  const size = file?.size || 0
+  const limit = isVideoFile(file) ? MAX_VIDEO_BYTES : MAX_PHOTO_BYTES
+  if (size <= limit) return null
+  const named = (file?.name || '').trim()
+  const what = named || (isVideoFile(file) ? 'That video' : 'That photo')
+  return `${what} is ${megabytes(size)} MB — the limit is ${megabytes(limit)} MB`
+}
+
 /* Whether this browser will decode a film before forty megabytes are pulled
    down a phone line to find out. `canPlayType` answers "probably", "maybe" or
    an empty string; only the empty string is a definite no, and that is the

@@ -7,6 +7,9 @@ import {
   posterSize,
   posterTime,
   videoMetadata,
+  MAX_PHOTO_BYTES,
+  MAX_VIDEO_BYTES,
+  tooBigToSend,
   videoMimeFor,
   videoStill,
   withVideoMime,
@@ -232,4 +235,38 @@ test('a format the browser will not decode is known before the bytes are fetched
     }),
     true,
   )
+})
+
+/* ---- what will not go, said before it is sent --------------------------- */
+
+const MB = 1024 * 1024
+
+test('a film over the ceiling is refused by name, with both numbers in the sentence', () => {
+  const refusal = tooBigToSend({ name: 'funicular.mov', type: 'video/quicktime', size: 400 * MB })
+  assert.match(refusal, /funicular\.mov/)
+  assert.match(refusal, /400 MB/)
+  assert.match(refusal, /256 MB/)
+})
+
+test('a film under the ceiling and a photograph under its own are not refused', () => {
+  assert.equal(tooBigToSend({ name: 'clip.mp4', type: 'video/mp4', size: 200 * MB }), null)
+  assert.equal(tooBigToSend({ name: 'a.jpg', type: 'image/jpeg', size: 8 * MB }), null)
+})
+
+test('a photograph is held to the photograph ceiling, not the film one', () => {
+  const refusal = tooBigToSend({ name: 'raw.jpg', type: 'image/jpeg', size: 40 * MB })
+  assert.match(refusal, /25 MB/)
+})
+
+test('an unnamed file is still refused, in words rather than by filename', () => {
+  assert.match(tooBigToSend({ type: 'video/mp4', size: 300 * MB }), /^That video/)
+})
+
+test('the ceilings the picker enforces are the ones the API accepts', async () => {
+  /* Two copies of one number is one copy too many the moment they disagree:
+     the picker would refuse what the server takes, or wave through what it
+     refuses after the whole file has gone up. */
+  const api = await import('../server/src/media-types.js')
+  assert.equal(MAX_VIDEO_BYTES, api.MAX_VIDEO_BYTES)
+  assert.equal(MAX_PHOTO_BYTES, api.MAX_IMAGE_BYTES)
 })
