@@ -223,7 +223,7 @@ export default function useEditorPlaces({
         toast(appErrorMessage(e, 'add-place'), 'error')
       }
     },
-    [tripId, dayForNewStop, stops, toast, setStops],
+    [tripId, dayForNewStop, stops, toast, setStops, setPhotos],
   )
 
   const {
@@ -265,12 +265,17 @@ export default function useEditorPlaces({
           seq: nextSeq(stops),
         })
         setStops(list => [...list, saved])
+        /* The same as every other way of adding a stop: the server files the
+           photographs near it and says which, and the gallery has to hear. This
+           one was missed because until a moment ago a sight could not be tapped
+           while editing at all, so the path was unreachable. */
+        setPhotos(list => applyRefilings(list, saved.refiled))
         toast(`${poi.n} added to the trip`)
       } catch (e) {
         toast(appErrorMessage(e, 'add-place'), 'error')
       }
     },
-    [tripId, dayForNewStop, stops, toast, setStops],
+    [tripId, dayForNewStop, stops, toast, setStops, setPhotos],
   )
 
   const showSight = useCallback(
