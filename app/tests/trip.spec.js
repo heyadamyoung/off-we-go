@@ -115,20 +115,28 @@ const stopTitles = async page =>
     .filter(item => !item.photo)
     .map(item => item.title)
 
-async function centreOnStop(page, name) {
-  await allDays(page)
-  await page.locator('.fcard', { hasText: name }).first().click()
+/* Where a stop's pin is, once it has stopped moving.
+
+   Geometry and settledness only — never elementFromPoint. On a travel day the
+   demo's live avatar dwells exactly on the museum steps, covering the pin's
+   centre for minutes of every lap, and a hit-test proxy for "the pin has
+   landed" failed every deploy that crossed her dwell.
+
+   Two consecutive quiet reads, not one. `isMoving()` answers for the ease that
+   is running, not the one that is about to start, and the camera re-eases
+   whenever the map's room changes — which is what closing a card does. A
+   single check lands before that ease begins, measures, and hands back
+   coordinates the pin has left by the time anything clicks them. That is the
+   whole of this flake, and it is why every measurement goes through here. */
+async function settledPin(page, name) {
   const pinCentre = () =>
     page.evaluate(n => {
       const p = [...document.querySelectorAll('.mstop')].find(x =>
         (x.textContent || '').includes(n),
       )
       if (!p) return null
-      const q = p.querySelector('.pin').getBoundingClientRect()
-      /* Geometry and settledness only — never elementFromPoint. On a travel
-         day Maya's LIVE avatar dwells exactly on the museum steps, covering
-         the pin's centre for minutes of every lap, and a hit-test proxy for
-         "the pin has landed" failed every deploy that crossed her dwell. */
+      const q = p.querySelector('.pin')?.getBoundingClientRect()
+      if (!q) return null
       const c = { x: q.x + q.width / 2, y: q.y + q.height / 2 }
       return {
         point: q.width > 0 ? c : null,
@@ -157,6 +165,12 @@ async function centreOnStop(page, name) {
     )
     .toBe(true)
   return (await pinCentre()).point
+}
+
+async function centreOnStop(page, name) {
+  await allDays(page)
+  await page.locator('.fcard', { hasText: name }).first().click()
+  return settledPin(page, name)
 }
 
 /* ------------------------------------------------------------- the screen */
@@ -702,17 +716,14 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
 
   /* And find the pin AGAIN, because closing the card gives the map back the
      room the card was holding — which re-eases the camera and slides the pin
-     out from under the coordinates measured a moment ago. Alone that lands
-     before the click; under a full parallel suite it does not, which is what
-     made this one flake. */
-  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
-  const settled = await page.evaluate(name => {
-    const marker = [...document.querySelectorAll('.mstop')].find(stop =>
-      (stop.textContent || '').includes(name),
-    )
-    const box = marker?.querySelector('.pin')?.getBoundingClientRect()
-    return box && box.width > 0 ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null
-  }, PHOTOLESS)
+     out from under the coordinates measured a moment ago.
+
+     Through the same settling as the first measurement. This used to wait on
+     `isMoving()` alone, which answers for the ease that is running and not the
+     one the card's removal is about to start: on a quiet box the check landed
+     after it, and under a full suite it landed before, measured, and clicked
+     where the pin had been. */
+  const settled = await settledPin(page, PHOTOLESS)
   expect(settled, 'the pin should still be on screen with the card closed').not.toBeNull()
 
   await page.mouse.click(settled.x, settled.y)
