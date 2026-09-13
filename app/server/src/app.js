@@ -50,7 +50,7 @@ import {
   linkExpiry,
   mediaCacheControl,
 } from './media-cache.js'
-import { stopForPhoto } from './stop-placement.js'
+import { STOP_RADIUS_METRES, stopForPhoto } from './stop-placement.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -137,6 +137,10 @@ export async function buildServer({
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
   deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 },
   maxDevicesPerTrip = 20,
+  /* How near a stop a photograph has to be taken to be filed at it. An option
+     rather than a constant only so tests can shrink it: everything that ships
+     uses the one number, which is where the rule says it lives. */
+  stopRadiusMetres = STOP_RADIUS_METRES,
   /* A photograph off a phone is a handful of megabytes; a minute of 4K is a
      hundred. One ceiling for both would either refuse ordinary films or let a
      single request fill the volume, so each kind is told its own limit and
@@ -1408,10 +1412,28 @@ export async function buildServer({
      worth losing that over. */
   const refileTrip = async (user, tripId) => {
     try {
-      return await repository.relinkTripPhotos?.(user, tripId)
+      return await repository.relinkTripPhotos?.(user, tripId, { radiusMetres: stopRadiusMetres })
     } catch (error) {
       recordFailure(error)
       return null
+    }
+  }
+
+  /* Which itinerary item an arriving photograph belongs to.
+
+     The rule is in stop-placement.js; this is the part that has to touch a
+     database, kept apart from it so the arithmetic stays testable without one.
+     A photograph with no coordinates costs nothing: there is nothing to decide
+     from, so there is no query worth making. */
+  const stopForUpload = async (user, tripId, photo) => {
+    if (photo.lng == null || photo.lat == null) return photo.stopId ?? null
+    try {
+      const stops = await repository.listStops(user, tripId)
+      return stopForPhoto(photo, stops || [], { radiusMetres: stopRadiusMetres })
+    } catch {
+      /* Filing is a convenience, and losing the photograph over it would not
+         be. It lands unfiled and the next re-link pass picks it up. */
+      return photo.stopId ?? null
     }
   }
 
@@ -1421,6 +1443,12 @@ export async function buildServer({
      request filling the volume; which of the two limits actually applies is
      decided below, once the part has said what it is. */
   const uploadLimits = { files: 2, fileSize: Math.max(maxImageBytes, maxVideoBytes), fields: 24 }
+
+  /* How near "now" a photograph has to have been taken for where the phone is
+     standing to be evidence about where it was taken. An hour is generous: it
+     covers a picture taken on the way into the museum and uploaded on the way
+     out, and it excludes yesterday. */
+  const UPLOADED_WHERE_TAKEN_MS = 60 * 60_000
 
   app.post(
     '/api/trips/:tripId/photos',
@@ -1606,8 +1634,33 @@ export async function buildServer({
             locationSource = 'trail'
           }
         }
+        /* Last of all, where the phone was when it was uploaded — and only
+           for a photograph that was taken about now.
+
+           Where somebody is standing is evidence about a picture they have
+           just taken and nothing at all about one from Tuesday. A phone that
+           strips the coordinates on the way out of its own gallery looks
+           exactly like a camera that never had any, so this is the ordinary
+           case rather than the odd one: a fortnight of holiday uploaded from
+           the hotel, every one of them pinned to the hotel, each as confident
+           as the last.
+
+           Taken around now, it is the best thing anybody has. Taken hours ago
+           with nothing in the trail to place it, no point is the honest
+           answer — the picture still appears under its own day, where it can
+           be dropped on the map by hand, instead of sitting somewhere it
+           never was. A photograph that will not say when it was taken keeps
+           the fallback, because then there is nothing to contradict.
+
+           One-sided on purpose. A capture time in the future is a phone with
+           the wrong clock, which says nothing about how long ago the picture
+           was taken — and refusing a position over it would lose the pin for a
+           photograph that is very probably from this afternoon. Only knowing
+           it is old is a reason to say nothing. */
+        const takenAround =
+          !takenAt || clock().getTime() - takenAt.getTime() <= UPLOADED_WHERE_TAKEN_MS
         if (lng == null || lat == null) {
-          if (fallback.lng != null && fallback.lat != null) {
+          if (takenAround && fallback.lng != null && fallback.lat != null) {
             lng = fallback.lng
             lat = fallback.lat
             locationSource = fallbackLocationSource
@@ -1653,11 +1706,15 @@ export async function buildServer({
           mime: isVideo ? mime : null,
           durationMs: isVideo && durationMs != null ? Math.round(durationMs) : null,
           /* Decided here rather than taken on trust: a client may send a stop
-             it guessed at, and a guess is not a filing. One that knows where
-             it was taken is filed nowhere; one that does not keeps whatever it
-             arrived with. It needs nothing but the row, so no query for the
-             trip's stops happens on the upload path at all any more. */
-          stopId: stopForPhoto({ lng, lat, stopId: fields.stopId || null }),
+             it guessed at, and a guess is not a filing. Filed at the nearest
+             itinerary item within the radius, or at nothing when there is
+             nothing near — and either way its own coordinates are written
+             untouched on the lines below. A filing is a link, not a place. */
+          stopId: await stopForUpload(user, request.params.tripId, {
+            lng,
+            lat,
+            stopId: fields.stopId || null,
+          }),
           caption: String(fields.caption || '').trim() || null,
           lng,
           lat,

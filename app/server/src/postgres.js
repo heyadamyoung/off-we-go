@@ -1451,10 +1451,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.seq,
         ],
       )
-      const value = result.rows[0]
-      return {
-        ...stopRow(value),
-      }
+      return stopRow(result.rows[0]) || null
     },
     async updateStop(user, tripId, stopId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
@@ -1535,23 +1532,26 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
 
        What comes back is bounded by one trip's photographs, and only the three
        columns needed to decide: less than the trip read already sends. */
-    async relinkTripPhotos(user, tripId) {
+    async relinkTripPhotos(user, tripId, { radiusMetres } = {}) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
-      /* The trip's stops are not read. They used to be, to measure every
-         photograph's distance against them; the rule needs nothing but the row
-         now. Aliased into the shape stop-placement.js speaks, so it reads the
-         same row here as it does anywhere else — column names would leave
-         `stopId` undefined, and a pinned row would then be unfiled, the exact
-         undoing this guards against. */
-      const photos = await pool.query(
-        `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
-         from photos where trip_id=$1 and lng is not null and lat is not null`,
-        [tripId],
-      )
+      const [stops, photos] = await Promise.all([
+        pool.query('select id, lng, lat from stops where trip_id=$1 order by seq,created_at', [
+          tripId,
+        ]),
+        /* Aliased into the shape stop-placement.js speaks, so the rule reads
+           the same row here as it does anywhere else. Column names would leave
+           `stopId` undefined, and a pinned row would then be re-filed as
+           belonging nowhere — the exact undoing this guards against. */
+        pool.query(
+          `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
+           from photos where trip_id=$1 and lng is not null and lat is not null`,
+          [tripId],
+        ),
+      ])
       const ids = []
       const next = []
       for (const photo of photos.rows) {
-        const decided = stopForPhoto(photo)
+        const decided = stopForPhoto(photo, stops.rows, { radiusMetres })
         if (decided !== photo.stopId) {
           ids.push(photo.id)
           next.push(decided)

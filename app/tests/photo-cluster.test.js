@@ -67,17 +67,34 @@ test('a photograph filed at a stop is still drawn where it was taken', () => {
      photograph the street, the bikes, your family, the sky, and all of it
      collapses onto the museum's pin.
 
-     Nothing files a located photograph automatically any more, but a person
-     still can, and pinning one says which itinerary item it belongs to — not
-     where on earth it was. Its own coordinates are the most precise thing
-     anybody has about it and they win here, always. */
+     Filing is back — a picture taken near a stop is filed at it again, because
+     that link is what gives the gallery its shape: one card per place, the
+     afternoon at the museum together, the stop's own card showing what was
+     taken there. None of that was the bug. The bug was reading the link as a
+     position, and this is the line where the two are told apart: a filing says
+     which itinerary item a photograph belongs to, never where on earth it was.
+     Its own coordinates are the most precise thing anybody has about it and
+     they win here, always — filed, pinned or neither. */
   const stops = [{ id: 's1', name: 'Museum', lng: -0.1276, lat: 51.5194, day: '', seq: 0 }]
-  const nearby = photo(1, -0.13, 51.52, { stopId: 's1', stopPinned: true })
+  for (const filing of [{ stopId: 's1' }, { stopId: 's1', stopPinned: true }, {}]) {
+    const nearby = photo(1, -0.13, 51.52, filing)
+    const [group] = clusterPhotos([nearby], stops, { zoom: 17 })
+    assert.equal(group.lng, nearby.lng, `drawn at the stop instead: ${JSON.stringify(filing)}`)
+    assert.equal(group.lat, nearby.lat)
+    assert.ok(!group.approximate, 'and not marked as a guess, because it is not one')
+  }
 
-  const [group] = clusterPhotos([nearby], stops, { zoom: 17 })
-  assert.equal(group.lng, nearby.lng, 'drawn where it was taken, not at the stop')
-  assert.equal(group.lat, nearby.lat)
-  assert.ok(!group.approximate, 'and not marked as a guess, because it is not one')
+  /* And a whole afternoon's worth spreads out rather than stacking, which is
+     the thing that was actually reported: the street, the bikes, the family
+     and the sky all landing on one pin. */
+  const afternoon = [
+    photo(2, -0.13, 51.52, { stopId: 's1' }),
+    photo(3, -0.1355, 51.5245, { stopId: 's1' }),
+    photo(4, -0.1201, 51.5151, { stopId: 's1' }),
+  ]
+  const spread = clusterPhotos(afternoon, stops, { zoom: 18 })
+  assert.equal(spread.length, 3, 'three places, three markers')
+  assert.deepEqual(spread.map(group => group.lng).sort(), afternoon.map(item => item.lng).sort())
 })
 
 test('photographs with nothing to place them stack on their stop, at every zoom', () => {
