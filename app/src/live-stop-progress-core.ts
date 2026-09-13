@@ -1,4 +1,4 @@
-import type { LiveFix, Stop } from './shared/model/types'
+import type { Id, LiveFix, Stop } from './shared/model/types'
 import { metres, validLngLat } from './shared/lib/geo'
 import {
   deliberatePause,
@@ -142,181 +142,174 @@ export function deriveLiveStopProgress({
       visitedStopIds: [],
     }
   }
-  if (latestFix && orderedStops.length) {
-    const accuracyOf = (fix: LiveFix) =>
-      typeof fix.accuracy === 'number' && Number.isFinite(fix.accuracy) && fix.accuracy >= 0
-        ? fix.accuracy
-        : null
-    const sameDevice = reliableHistory
-      .filter(fix => fix.deviceId === latestFix.deviceId)
-      .sort((a, b) => a.at.getTime() - b.at.getTime())
-    const speedAt = (fix: LiveFix, index: number) => {
-      if (typeof fix.speed === 'number' && Number.isFinite(fix.speed) && fix.speed >= 0) {
-        return fix.speed
-      }
-      const previous = sameDevice[index - 1]
-      const elapsed = previous ? fix.at.getTime() - previous.at.getTime() : 0
-      if (!previous || elapsed <= 0 || elapsed > ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS) return null
-      return metres([previous.lng, previous.lat], [fix.lng, fix.lat]) / (elapsed / 1_000)
-    }
-    const nearEnough = (fix: LiveFix, distance: number, index: number, radius: number) => {
-      const speed = speedAt(fix, index)
-      /* A speed nobody could work out is not a speed that disqualifies. It was
-         treated as one, and the commonest phone on a trip — backgrounded,
-         reporting every few minutes, standing still so reporting no speed at
-         all — could therefore never arrive anywhere. A speed is derived from
-         the previous fix only when that fix is under two minutes old, which is
-         most of the time not the case. Only a speed we actually know, and know
-         to be too fast, rules an arrival out. */
-      if (speed != null && speed > ARRIVAL_MAX_SPEED_METRES_PER_SECOND) return false
-      /* Could the phone be inside? It used to ask whether it must be —
-         distance PLUS accuracy within the radius — which demands that a fix
-         prove where it is, and a vague fix can prove nothing. So the vaguer
-         the reading the less likely it counted, exactly backwards: indoors, in
-         a station, among tall buildings, where a phone is least sure is
-         precisely where somebody is most likely to be at the thing. */
-      return distance - (accuracyOf(fix) ?? 0) <= radius
-    }
-    const canArrive = (fix: LiveFix, distance: number, index: number) =>
-      nearEnough(fix, distance, index, ARRIVAL_RADIUS_METRES)
-    /** Still there, rather than having been there — see AT_STOP_RADIUS_METRES. */
-    const stillAt = (fix: LiveFix, distance: number, index: number) =>
-      nearEnough(fix, distance, index, AT_STOP_RADIUS_METRES)
-    const confidentlyOutside = (fix: LiveFix, stop: Stop) => {
-      const accuracy = accuracyOf(fix)
-      if (accuracy == null) return false
-      const distance = metres([fix.lng, fix.lat], [stop.lng, stop.lat])
-      return distance - accuracy > ARRIVAL_RADIUS_METRES
-    }
-    const clearlyCloserTo = (fix: LiveFix, target: Stop, previous: Stop) => {
-      const accuracy = accuracyOf(fix)
-      if (accuracy == null) return false
-      const targetDistance = metres([fix.lng, fix.lat], [target.lng, target.lat])
-      const previousDistance = metres([fix.lng, fix.lat], [previous.lng, previous.lat])
-      return targetDistance + accuracy < previousDistance - accuracy
-    }
+  /* ---- where the trip is ------------------------------------------------
 
-    /* GPS advances the itinerary as a cursor, never by globally picking whichever
-       stop happens to be closest. A later stop cannot skip earlier stops, and a
-       co-located return stop is not visited until the phone has first been
-       confidently outside its geofence and then comes back. */
-    /* Ways past a stop nobody's phone ever saw.
+     Time is the backbone and the phone is evidence. That is the opposite way
+     round from what was here: a cursor that walked the itinerary and moved on
+     only when the phone arrived at the stop it was waiting for, with the
+     calendar bolted on afterwards as a way of shoving it along.
 
-       The cursor advances when the phone arrives at the stop it is waiting
-       for, and there was no other way forward — so one stop a phone never saw
-       stopped the trip dead for the rest of the trip. An airport on the first
-       morning, somewhere driven past, anywhere at all with location sharing
-       off, and every stop behind it stayed planned for a fortnight with
-       nothing anybody could do about it.
+     A cursor has one shape of failure and it has it permanently. Any condition
+     that fails to fire leaves it where it is — for the rest of the trip, with
+     every stop behind it stuck as planned and nothing anybody does in the app
+     able to move it. Widening a radius changes the odds of that, never the
+     fact of it.
 
-       A wider radius makes that rarer. It cannot make it impossible, and a
-       thing that wedges permanently needs a way out rather than better odds.
-       Both of these are evidence that the trip has moved on rather than a
-       guess that it has: somebody marked the stop Visited, or its day is over.
-       What is deliberately NOT here is "no arrival was found, so assume one" —
-       that would let a trip starting and ending at the same hotel declare
-       itself complete on the first morning. */
-    const today = dayNumber(now)
-    const behindUs = (stop: Stop) => {
-      if (stop.status === 'done') return true
-      /* Dates only. A stop's time is free text, and running late is not the
-         same as not going. */
-      const day = dayNumber(stop.day)
-      return day !== null && today !== null && day < today
+     So: three questions, none of which can block another.
+
+       VISITED  per stop, on its own evidence — a fix near it, dated on or
+                after that stop's own day, or a person saying so. Nothing about
+                one stop is ever inferred from another.
+       HERE     the stop the latest fix is standing at, if any.
+       NEXT     the first stop in trip order that is neither visited nor on a
+                day that is over.
+
+     It cannot wedge, and the reason is worth writing down: NEXT is a function
+     of what has been visited and of the calendar, and the calendar advances
+     every midnight whether or not a single phone is switched on. The worst a
+     stop nobody ever saw can do is be next until its day passes. Bounded by a
+     day, rather than by the length of the trip.
+
+     The day is also what tells two stops at one address apart, which is the
+     job the in-order walk was really doing and did badly. A trip that starts
+     and ends at the same hotel has two stops on one pin; a fix can only visit
+     the one whose day has come, so the last night cannot be ticked off on the
+     first morning. Undated stops have no such signal and are open to any fix:
+     with no date and the same coordinates there is nothing to tell them apart,
+     and over-claiming on a trip that named no days is a smaller harm than an
+     ordering rule that can block. */
+  const accuracyOf = (fix: LiveFix) =>
+    typeof fix.accuracy === 'number' && Number.isFinite(fix.accuracy) && fix.accuracy >= 0
+      ? fix.accuracy
+      : null
+  /* One phone's history, so two travellers do not pool their movements. The
+     stale one still counts: a phone that reported all day and went flat at six
+     has not un-been anywhere, and reading only fresh fixes would make the trip
+     forget its own day every evening. */
+  const device = latestFix?.deviceId ?? lastFix?.deviceId ?? null
+  const sameDevice =
+    device === null
+      ? []
+      : reliableHistory
+          .filter(fix => fix.deviceId === device)
+          .sort((a, b) => a.at.getTime() - b.at.getTime())
+  const speedAt = (fix: LiveFix, index: number) => {
+    if (typeof fix.speed === 'number' && Number.isFinite(fix.speed) && fix.speed >= 0) {
+      return fix.speed
     }
+    const previous = sameDevice[index - 1]
+    const elapsed = previous ? fix.at.getTime() - previous.at.getTime() : 0
+    if (!previous || elapsed <= 0 || elapsed > ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS) return null
+    return metres([previous.lng, previous.lat], [fix.lng, fix.lat]) / (elapsed / 1_000)
+  }
+  const nearEnough = (fix: LiveFix, distance: number, index: number, radius: number) => {
+    const speed = speedAt(fix, index)
+    /* A speed nobody could work out is not a speed that disqualifies. It was
+       treated as one, and the commonest phone on a trip — backgrounded,
+       reporting every few minutes, standing still so reporting no speed at
+       all — could therefore never arrive anywhere. Only a speed we actually
+       know, and know to be too fast, rules an arrival out. */
+    if (speed != null && speed > ARRIVAL_MAX_SPEED_METRES_PER_SECOND) return false
+    /* Could the phone be inside? It used to ask whether it must be — distance
+       PLUS accuracy within the radius — which demands that a fix prove where
+       it is, and a vague fix can prove nothing. Indoors, in a station, among
+       tall buildings, where a phone is least sure is precisely where somebody
+       is most likely to be at the thing. */
+    return distance - (accuracyOf(fix) ?? 0) <= radius
+  }
+  const canArrive = (fix: LiveFix, distance: number, index: number) =>
+    nearEnough(fix, distance, index, ARRIVAL_RADIUS_METRES)
+  /** Still there, rather than having been there — see AT_STOP_RADIUS_METRES. */
+  const stillAt = (fix: LiveFix, distance: number, index: number) =>
+    nearEnough(fix, distance, index, AT_STOP_RADIUS_METRES)
 
-    /* The last fix that could ever reach each stop, so letting go of one is a
-       fact rather than a hunch: a stop whose day is over but which the phone
-       is about to walk into is still ahead, and its visit is still recorded.
-       Worked out once — asking it inside the walk would be every fix against
-       every fix. */
-    const lastArrivalAt = orderedStops.map(stop => {
-      for (let index = sameDevice.length - 1; index >= 0; index -= 1) {
-        const fix = sameDevice[index]
-        if (canArrive(fix, metres([fix.lng, fix.lat], [stop.lng, stop.lat]), index)) return index
-      }
-      return -1
-    })
-
-    const visitEvents: Array<{ stop: Stop; at: Date }> = []
-    let targetIndex = 0
-    let targetArmed = true
-    /* Let go of anything behind us that nothing left in the timeline reaches.
-       `from` is how far the fixes have been walked, so this only ever gives up
-       on a stop the phone has no remaining chance of arriving at. */
-    const releaseBehind = (from: number) => {
-      while (
-        targetIndex < orderedStops.length &&
-        behindUs(orderedStops[targetIndex]) &&
-        lastArrivalAt[targetIndex] < from
-      ) {
-        targetIndex += 1
-        targetArmed = true
-      }
+  // VISITED: each stop answered on its own, in itinerary order for the reader.
+  const visitedStopIds: Id[] = []
+  for (const stop of orderedStops) {
+    if (stop.status === 'done') {
+      // Somebody said so, which outranks anything a sensor has to offer.
+      visitedStopIds.push(stop.id)
+      continue
     }
-    for (let index = 0; index < sameDevice.length && targetIndex < orderedStops.length; index++) {
-      releaseBehind(index)
-      if (targetIndex >= orderedStops.length) break
+    const opens = dayNumber(stop.day)
+    for (let index = 0; index < sameDevice.length; index += 1) {
       const fix = sameDevice[index]
-      const target = orderedStops[targetIndex]
-      if (!targetArmed) {
-        const previous = visitEvents[visitEvents.length - 1]?.stop
-        targetArmed =
-          confidentlyOutside(fix, target) || (!!previous && clearlyCloserTo(fix, target, previous))
-        if (!targetArmed) continue
+      // Walking past the restaurant on Monday is not dinner on Thursday.
+      if (opens !== null) {
+        const on = dayNumber(fix.at)
+        if (on !== null && on < opens) continue
       }
-      const distance = metres([fix.lng, fix.lat], [target.lng, target.lat])
+      const distance = metres([fix.lng, fix.lat], [stop.lng, stop.lat])
       if (!canArrive(fix, distance, index)) continue
-      visitEvents.push({ stop: target, at: fix.at })
-      targetIndex += 1
-      const next = orderedStops[targetIndex]
-      targetArmed = !!next && confidentlyOutside(fix, next)
+      visitedStopIds.push(stop.id)
+      break
     }
-    // The timeline is spent, so nothing behind us can be reached any more.
-    releaseBehind(sameDevice.length)
-    const visitedStopIds = visitEvents.map(event => event.stop.id)
-    const destination = orderedStops[targetIndex] || null
-    const lastVisit = visitEvents[visitEvents.length - 1] || null
+  }
+  const visited = new Set(visitedStopIds)
+
+  // NEXT: the calendar and what has happened, and nothing else.
+  const today = dayNumber(now)
+  const dayIsOver = (stop: Stop) => {
+    const day = dayNumber(stop.day)
+    return day !== null && today !== null && day < today
+  }
+  const destination = orderedStops.find(stop => !visited.has(stop.id) && !dayIsOver(stop)) || null
+
+  // HERE: the nearest stop the latest fix is actually standing at.
+  let currentStop: Stop | null = null
+  if (latestFix) {
     const latestIndex = sameDevice.indexOf(latestFix)
-    const atLastVisitedStop =
-      !!lastVisit &&
-      stillAt(
-        latestFix,
-        metres([latestFix.lng, latestFix.lat], [lastVisit.stop.lng, lastVisit.stop.lat]),
-        latestIndex,
-      )
-    if (atLastVisitedStop) {
-      return {
-        state: 'arrived' as const,
-        reason: null,
-        latestFix,
-        lastFix,
-        freshFixes,
-        currentStop: lastVisit.stop,
-        destination,
-        distanceMetres: destination
-          ? metres([latestFix.lng, latestFix.lat], [destination.lng, destination.lat])
-          : 0,
-        visitedStopIds,
-      }
+    let nearest = Number.POSITIVE_INFINITY
+    for (const stop of orderedStops) {
+      const distance = metres([latestFix.lng, latestFix.lat], [stop.lng, stop.lat])
+      // Strictly nearer, so two stops on one pin leave the earlier one standing.
+      if (distance >= nearest) continue
+      if (!stillAt(latestFix, distance, latestIndex)) continue
+      nearest = distance
+      currentStop = stop
     }
-    if (!destination) {
-      return {
-        state: 'complete' as const,
-        reason: null,
-        latestFix,
-        lastFix,
-        freshFixes,
-        currentStop: null,
-        destination: null,
-        distanceMetres: 0,
-        visitedStopIds,
-      }
+  }
+
+  const away = (stop: Stop) =>
+    latestFix ? metres([latestFix.lng, latestFix.lat], [stop.lng, stop.lat]) : null
+
+  /* Standing somewhere beats everything, including the trip being over: at the
+     last stop on the last day, "At the airport" is the true and useful thing
+     to say and "Route complete" is neither. */
+  if (latestFix && currentStop) {
+    return {
+      state: 'arrived' as const,
+      reason: null,
+      latestFix,
+      lastFix,
+      freshFixes,
+      currentStop,
+      destination,
+      distanceMetres: destination ? away(destination) : 0,
+      visitedStopIds,
     }
-    const distanceMetres = metres(
-      [latestFix.lng, latestFix.lat],
-      [destination.lng, destination.lat],
-    )
+  }
+
+  /* Nothing left ahead is a fact about the calendar, and the calendar does not
+     need a phone. A trip whose last day is behind it is over, and saying
+     "waiting for GPS" about it would be waiting for news that cannot change
+     the answer. */
+  if (orderedStops.length && !destination) {
+    return {
+      state: 'complete' as const,
+      reason: null,
+      latestFix,
+      lastFix,
+      freshFixes,
+      currentStop: null,
+      destination: null,
+      distanceMetres: 0,
+      visitedStopIds,
+    }
+  }
+
+  if (latestFix && destination) {
+    const distanceMetres = away(destination) as number
     return {
       state:
         distanceMetres <= APPROACHING_RADIUS_METRES
@@ -332,6 +325,8 @@ export function deriveLiveStopProgress({
       visitedStopIds,
     }
   }
+  /* No live fix. The dot is honestly waiting — but the itinerary is not, and
+     it never needed a phone to know that yesterday is over. */
   const lastAge = lastFix ? now.getTime() - lastFix.at.getTime() : null
   const lastAccuracy =
     lastFix &&
@@ -361,9 +356,9 @@ export function deriveLiveStopProgress({
     lastFix,
     freshFixes,
     currentStop: null,
-    destination: null,
+    destination,
     distanceMetres: null,
-    visitedStopIds: [],
+    visitedStopIds,
   }
 }
 
