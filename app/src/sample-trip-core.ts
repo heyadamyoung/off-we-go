@@ -36,6 +36,24 @@ let sample: SampleState | null = null
 const isoDaysFromNow = (days: number) =>
   new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
 
+/* The fiction's calendar mapped onto the real one, middle day on today.
+
+   The trip's own range was already yesterday-to-tomorrow so the home page
+   reads as live, but the stops kept the printed September dates — and nothing
+   noticed, because the live machinery used to walk the itinerary as a cursor
+   and never looked at a date at all. The moment it did, the whole demo was
+   months in the past with nothing ahead of it: no Up next, no day to show,
+   and the first trip anybody opens looking like one that had finished.
+
+   Taken from the days the stops actually carry rather than from three written
+   here, so a fourth day added to the fiction lands somewhere sensible instead
+   of silently outside the window. */
+const sampleStopDays = () => {
+  const printed = [...new Set(STOPS.map(stop => stop.day))].sort()
+  const middle = Math.floor(printed.length / 2)
+  return new Map(printed.map((day, index) => [day, isoDaysFromNow(index - middle)]))
+}
+
 export const sampleTrip = () => {
   if (!sample)
     sample = {
@@ -45,8 +63,17 @@ export const sampleTrip = () => {
         slug: 'sample',
         startsOn: isoDaysFromNow(-1),
         endsOn: isoDaysFromNow(1),
+        /* Drawn from the real range instead of the printed one. The two used
+           to disagree by months and only the printed one was ever shown; now
+           the day chips carry real dates, a subtitle reading "4 – 6 September"
+           beside them would be the demo contradicting itself on its own front
+           page. */
+        dates: '',
       },
-      stops: STOPS.map(value => ({ ...value })),
+      stops: (() => {
+        const days = sampleStopDays()
+        return STOPS.map(value => ({ ...value, day: days.get(value.day) ?? value.day }))
+      })(),
       photos: PHOTOS.map(value => ({ ...value })),
       route: ROUTE.map(value => [...value] as Coordinates),
       family: FAMILY.map((value, index) => ({
