@@ -147,10 +147,13 @@ test('after leaving an observed stop the itinerary advances to the following sto
   assert.deepEqual(progress.visitedStopIds, ['first'])
 })
 
-test('a fix older than the freshness window is stale and never drives the trip state', () => {
+test('a fix older than the freshness window does not pass for a live one', () => {
+  /* A kilometre short of the museum, a quarter of an hour ago. Nowhere near
+     enough to have been there, and too old to be where they are now — so the
+     dot has nothing current to draw and says so. */
   const stale = {
     deviceId: 'phone-1',
-    lng: 0.02,
+    lng: 0.01,
     lat: 0,
     accuracy: 7,
     at: new Date('2026-09-01T17:44:59.000Z'),
@@ -162,6 +165,25 @@ test('a fix older than the freshness window is stale and never drives the trip s
   assert.equal(progress.reason, 'stale-fix')
   assert.equal(progress.latestFix, null)
   assert.equal(progress.lastFix, stale)
+})
+
+test('a phone going quiet does not un-visit the places it saw', () => {
+  /* The other side of the same fix. A phone that reported all day and went
+     flat at six has not un-been anywhere, and a trip that forgot its own day
+     every evening would be worse than useless. Staleness is a fact about the
+     live dot; it is not an argument about the past. */
+  const stale = {
+    deviceId: 'phone-1',
+    lng: 0.02,
+    lat: 0,
+    accuracy: 7,
+    at: new Date('2026-09-01T14:00:00.000Z'),
+  }
+
+  const progress = deriveLiveStopProgress({ stops: STOPS, fixes: [stale], now: NOW })
+
+  assert.equal(progress.latestFix, null, 'still nothing live')
+  assert.deepEqual(progress.visitedStopIds, ['museum'], 'and the museum still happened')
 })
 
 test('an imprecise GPS fix asks for a better signal instead of claiming an arrival', () => {
@@ -247,92 +269,58 @@ test("one phone does not inherit another traveller's visited stops", () => {
   assert.equal(progress.destination?.id, 'first')
 })
 
-test('an out-of-order visit cannot skip the itinerary or complete it', () => {
+test('being at a later day’s stop early does not tick it off', () => {
+  /* The guarantee the in-order walk existed for, now made by the calendar
+     instead. Driving past Thursday's restaurant on Monday is not dinner, and
+     the old model could only say so by refusing to look at anything past the
+     stop it was parked on — which is what made it freeze. */
   const stops = [
-    { id: 'first', name: 'First', lng: 0, lat: 0, seq: 0 },
-    { id: 'middle', name: 'Middle', lng: 0.01, lat: 0, seq: 1 },
-    { id: 'final', name: 'Final', lng: 0.02, lat: 0, seq: 2 },
-  ]
-  const fixes = [
-    {
-      deviceId: 'phone-1',
-      lng: 0.02,
-      lat: 0,
-      accuracy: 8,
-      speed: 0,
-      at: new Date('2026-09-01T17:57:00.000Z'),
-    },
-    {
-      deviceId: 'phone-1',
-      lng: 0.024,
-      lat: 0,
-      accuracy: 8,
-      speed: 1,
-      at: new Date('2026-09-01T17:59:45.000Z'),
-    },
+    ON('2026-09-01', { id: 'monday', name: 'Monday', lng: 4.8852, lat: 52.36, seq: 0 }),
+    ON('2026-09-02', { id: 'tuesday', name: 'Tuesday', lng: 4.8687, lat: 52.3579, seq: 1 }),
+    ON('2026-09-04', { id: 'thursday', name: 'Thursday', lng: 2.3522, lat: 48.8566, seq: 2 }),
   ]
 
-  const progress = deriveLiveStopProgress({ stops, fixes, now: NOW })
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[2], 10), '2026-09-01T17:55:00.000Z')],
+    now: NOW,
+  })
 
-  assert.equal(progress.state, 'heading')
-  assert.equal(progress.destination?.id, 'first')
-  assert.deepEqual(progress.visitedStopIds, [])
+  assert.deepEqual(progress.visitedStopIds, [], 'nothing has happened yet')
+  assert.equal(progress.destination?.id, 'monday', 'and today is still today')
 })
 
-test('a return trip can revisit co-located first and final stops in sequence', () => {
+test('a return trip visits both ends of the same station, each on its own day', () => {
+  /* Out on Monday, the museum on Tuesday, home from the same platform on
+     Wednesday. Two stops share one pin and the days are the only thing that
+     tells them apart — which is exactly what a trip has, and exactly what the
+     ordering walk was groping for. */
+  const platform = { lng: 4.9003, lat: 52.379 }
   const stops = [
-    { id: 'outbound', name: 'Station outbound', lng: 0, lat: 0, seq: 0 },
-    { id: 'museum', name: 'Museum', lng: 0.02, lat: 0, seq: 1 },
-    { id: 'return', name: 'Station return', lng: 0, lat: 0, seq: 2 },
-  ]
-  const fixes = [
-    {
-      deviceId: 'phone-1',
-      lng: 0,
-      lat: 0,
-      accuracy: 8,
-      speed: 0,
-      at: new Date('2026-09-01T17:40:00.000Z'),
-    },
-    {
-      deviceId: 'phone-1',
-      lng: 0.01,
-      lat: 0,
-      accuracy: 8,
-      speed: 2,
-      at: new Date('2026-09-01T17:45:00.000Z'),
-    },
-    {
-      deviceId: 'phone-1',
-      lng: 0.02,
-      lat: 0,
-      accuracy: 8,
-      speed: 0,
-      at: new Date('2026-09-01T17:40:00.000Z'),
-    },
-    {
-      deviceId: 'phone-1',
-      lng: 0.01,
-      lat: 0,
-      accuracy: 8,
-      speed: 2,
-      at: new Date('2026-09-01T17:55:00.000Z'),
-    },
-    {
-      deviceId: 'phone-1',
-      lng: 0,
-      lat: 0,
-      accuracy: 8,
-      speed: 0,
-      at: new Date('2026-09-01T17:59:45.000Z'),
-    },
+    ON('2026-08-31', { id: 'outbound', name: 'Station out', ...platform, seq: 0 }),
+    ON('2026-09-01', { id: 'museum', name: 'Museum', lng: 4.8852, lat: 52.36, seq: 1 }),
+    ON('2026-09-02', { id: 'return', name: 'Station back', ...platform, seq: 2 }),
   ]
 
-  const progress = deriveLiveStopProgress({ stops, fixes, now: NOW })
+  const monday = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[0], 10), '2026-08-31T09:00:00.000Z')],
+    now: new Date('2026-08-31T18:00:00.000Z'),
+  })
+  assert.deepEqual(monday.visitedStopIds, ['outbound'], 'one end, not both')
+  assert.equal(monday.destination?.id, 'museum')
 
-  assert.equal(progress.state, 'arrived')
-  assert.equal(progress.currentStop?.id, 'return')
-  assert.deepEqual(progress.visitedStopIds, ['outbound', 'museum', 'return'])
+  const wednesday = deriveLiveStopProgress({
+    stops,
+    fixes: [
+      fix(near(stops[0], 10), '2026-08-31T09:00:00.000Z'),
+      fix(near(stops[1], 10), '2026-09-01T13:00:00.000Z'),
+      fix(near(stops[2], 10), '2026-09-02T17:55:00.000Z'),
+    ],
+    now: new Date('2026-09-02T18:00:00.000Z'),
+  })
+  assert.deepEqual(wednesday.visitedStopIds, ['outbound', 'museum', 'return'])
+  assert.equal(wednesday.destination, null, 'and the trip is done')
 })
 
 test('nearby sequential stops advance when GPS is clearly closer to the next stop', () => {
@@ -1274,4 +1262,118 @@ test('stops on the same day keep the order somebody put them in', () => {
   })
   assert.deepEqual(walked.visitedStopIds, ['morning', 'afternoon'])
   assert.equal(walked.destination?.id, 'someday', 'and anything undated waits at the end')
+})
+
+/* ---- the heuristic itself ------------------------------------------------
+
+   Everything above is the old model being patched: a cursor that walked the
+   itinerary and moved on only when the phone arrived at the stop it was
+   waiting for. It has one shape of failure and it has it permanently — any
+   condition that fails to fire leaves the cursor where it is, for ever, and
+   every fix so far has been another way to shove it along.
+
+   So the model changes. Time is the backbone and the phone is evidence, which
+   is the opposite of a cursor with the calendar bolted on as an escape hatch.
+   Three questions, and none of them can block another:
+
+     VISITED   per stop, on its own evidence: a fix near it, dated on or after
+               that stop's own day — or a person saying so.
+     HERE      the stop the latest fix is standing at, if any.
+     NEXT      the first stop in trip order that is neither visited nor on a
+               day that is over.
+
+   It cannot wedge, and the reason is worth stating outright: NEXT depends on
+   what has been visited and on the calendar, and the calendar advances every
+   midnight whether or not anybody's phone is on. The worst a stop nobody ever
+   saw can do is be next until its day passes. That is bounded by a day rather
+   than by the length of the trip. */
+
+test('a stop is visited on its own evidence, not on its neighbours’', () => {
+  /* No cursor. Missing the first stop entirely says nothing at all about the
+     second and third — under the old model it said everything, because the
+     cursor sat on the first one and nothing behind it was ever examined. */
+  const stops = [
+    ON('2026-09-01', { id: 'missed', name: 'Missed', lng: -104.66, lat: 50.43, seq: 0 }),
+    ON('2026-09-01', { id: 'museum', name: 'Museum', lng: 4.8852, lat: 52.36, seq: 1 }),
+    ON('2026-09-01', { id: 'park', name: 'Park', lng: 4.8687, lat: 52.3579, seq: 2 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [
+      fix(near(stops[1], 20), '2026-09-01T14:00:00.000Z'),
+      fix(near(stops[2], 20), '2026-09-01T17:55:00.000Z'),
+    ],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['museum', 'park'])
+  assert.equal(progress.destination?.id, 'missed', 'still on today, so still ahead')
+})
+
+test('the same place on two days is told apart by the day', () => {
+  /* The guarantee the cursor existed for, done properly. A trip that starts
+     and ends at the same hotel must not tick off the last night on the first
+     morning — and the calendar knows which is which, where an ordering walk
+     only knew that one came after the other. */
+  const hotel = { lng: 4.8852, lat: 52.36 }
+  const stops = [
+    ON('2026-09-01', { id: 'first-night', name: 'Hotel', ...hotel, seq: 0 }),
+    ON('2026-09-05', { id: 'last-night', name: 'Hotel', ...hotel, seq: 1 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[0], 10), '2026-09-01T17:55:00.000Z')],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, ['first-night'])
+  assert.equal(progress.destination?.id, 'last-night', 'the last night is still to come')
+})
+
+test('being somewhere before its day does not count as having been there', () => {
+  /* The same rule stated on its own. Walking past the restaurant on Monday is
+     not dinner on Thursday. */
+  const stops = [
+    ON('2026-09-04', { id: 'thursday', name: 'Thursday', lng: 4.8852, lat: 52.36, seq: 0 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[0], 10), '2026-09-01T17:55:00.000Z')],
+    now: NOW,
+  })
+
+  assert.deepEqual(progress.visitedStopIds, [])
+  assert.equal(progress.destination?.id, 'thursday')
+})
+
+test('the trip knows what is next with no phone reporting at all', () => {
+  /* The whole point of time being the backbone. Nobody is sharing a location —
+     no phone paired, batteries dead, everybody's tracking off — and the trip
+     still knows perfectly well that Tuesday is over and Wednesday is next.
+     The live dot still says it is waiting, because it is; the itinerary does
+     not have to wait with it. */
+  const stops = [
+    ON('2026-08-31', { id: 'monday', name: 'Monday', lng: 4.8852, lat: 52.36, seq: 0 }),
+    ON('2026-09-01', { id: 'today', name: 'Today', lng: 4.8687, lat: 52.3579, seq: 1 }),
+    ON('2026-09-02', { id: 'tomorrow', name: 'Tomorrow', lng: 2.3522, lat: 48.8566, seq: 2 }),
+  ]
+  const progress = deriveLiveStopProgress({ stops, fixes: [], now: NOW })
+
+  assert.equal(progress.state, 'waiting', 'honest about the dot')
+  assert.equal(progress.destination?.id, 'today', 'and useful about the trip')
+})
+
+test('a trip whose days are all behind it is over', () => {
+  const stops = [
+    ON('2026-08-30', { id: 'one', name: 'One', lng: 4.8852, lat: 52.36, seq: 0 }),
+    ON('2026-08-31', { id: 'two', name: 'Two', lng: 4.8687, lat: 52.3579, seq: 1 }),
+  ]
+  const progress = deriveLiveStopProgress({
+    stops,
+    fixes: [fix(near(stops[0], 10), '2026-08-30T12:00:00.000Z')],
+    now: NOW,
+  })
+
+  assert.equal(progress.destination, null)
+  assert.equal(progress.state, 'complete')
 })

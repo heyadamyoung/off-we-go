@@ -26,20 +26,20 @@ export function applyLiveStopStatuses(
   progress: ReturnType<typeof deriveLiveStopProgress>,
 ) {
   const visited = new Set(progress.visitedStopIds)
-  /* Whether the phones have anything to say at all. Without this there is
-     nothing to contradict, and a stored status is the only thing there is. */
-  const live = !!(progress.currentStop || progress.destination)
+  const here = progress.currentStop?.id ?? null
   return stops.map(stop => {
-    if (progress.currentStop?.id === stop.id) return { ...stop, status: 'now' }
+    if (here === stop.id) return { ...stop, status: 'now' }
+    /* A person saying they are there now outranks the calendar saying it is
+       what comes next — they are there, and "Up next" about where somebody is
+       standing is simply wrong. Only the phone, placing them somewhere else,
+       overrules them. */
+    if (stop.status === 'now') return here ? { ...stop, status: 'planned' } : stop
     if (progress.destination?.id === stop.id) return { ...stop, status: 'next' }
-    if (visited.has(stop.id)) return { ...stop, status: 'done' }
-    /* Somewhere else is where you are, so this is not — two stops both saying
-       "Happening now" is worse than one out-of-date chip. 'done' is never
-       taken away: a phone that was off, or was not being shared, is not
+    /* Never taken away: a phone that was off, or was not being shared, is not
        evidence that somebody was not somewhere. They were there; they said so. */
-    if (live && (stop.status === 'now' || stop.status === 'next')) {
-      return { ...stop, status: 'planned' }
-    }
+    if (visited.has(stop.id)) return { ...stop, status: 'done' }
+    // Somewhere else is what comes next, so this is not.
+    if (stop.status === 'next' && progress.destination) return { ...stop, status: 'planned' }
     return stop
   })
 }
