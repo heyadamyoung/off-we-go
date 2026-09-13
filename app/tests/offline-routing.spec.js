@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 /* The on-device engine, end to end: real Valhalla-WASM, a real tile archive
    built by the production image (Andorra, ~3 MB), stored in OPFS the way the
@@ -21,6 +22,7 @@ test('the phone routes by itself from a saved pack — no server, real streets',
 
   const said = []
   page.on('console', message => said.push(`${message.type()}: ${message.text().slice(0, 200)}`))
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await expect.poll(() => page.evaluate(() => typeof window.__offwegoLocalRoute)).toBe('function')

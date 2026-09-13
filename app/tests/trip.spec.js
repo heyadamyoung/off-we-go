@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 import { serveOverpass } from './overpass-fixture.js'
 import { serveWikipedia } from './wikipedia-fixture.js'
 
@@ -48,6 +49,7 @@ async function open(page) {
   await page.addInitScript(() => {
     window.__offwegoStill = true
   })
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await expect(page.locator('.mstop')).toHaveCount(8)

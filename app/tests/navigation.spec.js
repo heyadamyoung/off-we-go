@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 /* The shell: which URL shows what, and that the pieces around the trip screen
    survive a direct visit and a narrow phone. */
@@ -38,6 +39,7 @@ test('an ordinary trip link carries no query string', async ({ page }) => {
 })
 
 test('human-readable trip and user URLs survive direct navigation', async ({ page }) => {
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await expect(page.getByRole('heading', { name: 'Amsterdam Weekend' })).toBeVisible()
@@ -56,12 +58,14 @@ test('an unavailable profile stays private and offers a way back', async ({ page
 })
 
 test('legacy trip query links are replaced with the canonical trip URL', async ({ page }) => {
+  await atDemoTime(page)
   await page.goto('/?t=sample')
   await expect(page).toHaveURL('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
 })
 
 test('the account menu reaches every screen that is not a trip', async ({ page }) => {
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
 

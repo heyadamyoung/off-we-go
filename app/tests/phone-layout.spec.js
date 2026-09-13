@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 test.beforeEach(async ({ page }) => {
   // Freeze the demo's walking traveller: layout and offline assertions need a
@@ -115,6 +116,7 @@ const STATES = [
     'the trip chrome',
     'header',
     async page => {
+      await atDemoTime(page)
       await page.goto('/trips/sample')
       await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
       await page.waitForTimeout(1500)
@@ -222,6 +224,7 @@ test('the pencil is not offered where the things it unlocks are hidden', async (
   const pin = () => page.getByRole('button', { name: 'Place a pin' })
 
   await page.setViewportSize({ width: 390, height: 844 })
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
   await expect(
@@ -253,6 +256,7 @@ test('the pencil is not offered where the things it unlocks are hidden', async (
    chrome ended up with its buttons half out of their own bar. */
 test('the strips that scroll sideways do not also scroll up and down', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
   await page.waitForTimeout(1500)
@@ -284,6 +288,7 @@ test('the strips that scroll sideways do not also scroll up and down', async ({ 
    were. A name half visible is worse than no name. */
 test('a card on the day bar shows its whole name', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
   await page.waitForTimeout(1500)

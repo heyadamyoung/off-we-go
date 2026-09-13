@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 /* Choosing several photographs and filing them somewhere.
 
@@ -24,6 +25,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 const openPhotos = async page => {
+  await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
   await page.getByRole('button', { name: 'Photos', exact: true }).click()

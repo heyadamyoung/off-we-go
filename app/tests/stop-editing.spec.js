@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { atDemoTime } from './demo-clock'
 
 /* Two things the stop editor claimed to do and did not. Both were reported
    from a real trip, and neither had a browser test — the status was written to
@@ -17,6 +18,7 @@ const ANY_STOP = 'Foodhallen'
 const WITH_PHOTOS = 'Rijksmuseum'
 
 async function open(page) {
+  await atDemoTime(page)
   await page.addInitScript(() => {
     window.__offwegoStill = true
   })
