@@ -49,7 +49,7 @@ const ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS = 2 * 60_000
    its business. */
 export { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
 import { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
-import { startMinutes } from './stop-time-core'
+import { scheduleOrder } from './stop-order-core'
 
 interface LiveStopProgressInput {
   stops: Stop[]
@@ -68,40 +68,7 @@ export function deriveLiveStopProgress({
   sourceState = 'ready',
   devices = [],
 }: LiveStopProgressInput) {
-  /* The itinerary in the order the trip happens, which is the order a
-     traveller reads it in — the timeline, the day bar and the strip along the
-     bottom all order by day, and the numbering only settles ties within one.
-
-     This used to go by the numbering alone, and the numbering is the order
-     stops were typed. Nobody plans a trip in order: the flight out gets
-     remembered halfway through writing up the museums and the flight home
-     gets typed last of all. So the cursor walked a different trip from the one
-     on the screen — parked on something three days out while the stop in front
-     of them was never considered, moving between them in an order that looks
-     like nothing at all. Anything undated goes last, as it does everywhere
-     else: it is not a point in the trip, so it cannot hold a place in it. */
-  const orderedStops = [...stops].sort((a, b) => {
-    const dayA = dayNumber(a.day)
-    const dayB = dayNumber(b.day)
-    if (dayA !== dayB) {
-      if (dayA === null) return 1
-      if (dayB === null) return -1
-      return dayA - dayB
-    }
-    const seqA = a.seq ?? Number.MAX_SAFE_INTEGER
-    const seqB = b.seq ?? Number.MAX_SAFE_INTEGER
-    if (seqA !== seqB) return seqA - seqB
-    /* Then the hour, for the stops a day gives the same sequence number to.
-       Minutes rather than the text they used to be compared as: '9:30' sorted
-       after '14:00' as a string, which is the same afternoon-in-the-morning
-       mistake in a different place. */
-    const fromA = startMinutes(a)
-    const fromB = startMinutes(b)
-    if (fromA === fromB) return 0
-    if (fromA === null) return 1
-    if (fromB === null) return -1
-    return fromA - fromB
-  })
+  const orderedStops = scheduleOrder(stops)
   const coordinateFixes = fixes.filter(
     fix => validLngLat(fix.lng, fix.lat) && Number.isFinite(fix.at.getTime()),
   )

@@ -1,5 +1,6 @@
 import { ALL_DAYS } from '../../../trip-search-core'
 import { clockLabel, dayLabelOf } from '../../../day-label-core'
+import { orderingMinutes } from '../../../stop-order-core'
 import { minutesOf, startMinutes, stopTimeLabel } from '../../../stop-time-core'
 import { dayIsoOf, photoDayIso, tripDays } from '../../../trip-days-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
@@ -50,7 +51,7 @@ const dayFields = (iso: string | null) => ({
 /* Nothing on this trip is ever "Untitled": a stop without a name is at least
    its kind, and a photograph without a caption is at least its time and place.
    The fallback happens here, at render time — stored data stays honest. */
-export function stopItem(stop: Stop): TripItem {
+export function stopItem(stop: Stop, orderMinutes?: number | null): TripItem {
   return {
     id: stop.id,
     kind: 'stop',
@@ -58,14 +59,14 @@ export function stopItem(stop: Stop): TripItem {
     meta: [stopTimeLabel(stop), stop.kind].filter(Boolean).join(' · ') || 'No time set',
     ...dayFields(dayIsoOf(stop.day)),
     time: stopTimeLabel(stop),
-    startsMinutes: startMinutes(stop),
+    startsMinutes: orderMinutes === undefined ? startMinutes(stop) : orderMinutes,
     status: stop.status || 'planned',
     seq: stop.seq ?? Number.MAX_SAFE_INTEGER,
     stop,
   }
 }
 
-export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
+export function photoItem(photo: TripPhoto, stop?: Stop, orderMinutes?: number | null): TripItem {
   return {
     id: photo.id,
     kind: 'photo',
@@ -81,7 +82,9 @@ export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
     time: photo.when || stopTimeLabel(stop),
     /* Its own moment first: a photograph taken at four belongs after one taken
        at two, whatever hour the stop they share is booked for. */
-    startsMinutes: minutesOf(clockLabel(photo.when)) ?? startMinutes(stop),
+    startsMinutes:
+      minutesOf(clockLabel(photo.when)) ??
+      (orderMinutes === undefined ? startMinutes(stop) : orderMinutes),
     status: 'photo',
     seq: stop?.seq ?? Number.MAX_SAFE_INTEGER,
     photo,
@@ -109,10 +112,15 @@ export function tripItems({
 }: ItemsInput): TripItem[] {
   const needle = query.trim().toLowerCase()
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  const items: TripItem[] = stops.map(stop => stopItem(stop))
+  /* The hour each stop is ordered by, carried across the ones that name none —
+     so a lunch nobody timed still sits between the museum and the castle
+     rather than being swept to the end of the day. */
+  const ordering = orderingMinutes(stops)
+  const items: TripItem[] = stops.map(stop => stopItem(stop, ordering.get(stop.id)))
   if (withPhotos) {
     for (const photo of photos) {
-      items.push(photoItem(photo, photo.stopId ? byStop.get(photo.stopId) : undefined))
+      const stop = photo.stopId ? byStop.get(photo.stopId) : undefined
+      items.push(photoItem(photo, stop, stop ? ordering.get(stop.id) : undefined))
     }
   }
   /* Both sides already hold a date, so compare those. Comparing the chip
@@ -142,16 +150,31 @@ export function tripItems({
       if (!b.dayIso) return -1
       return a.dayIso < b.dayIso ? -1 : 1
     }
-    // The itinerary's own order first: it is the one somebody chose.
-    if (a.seq !== b.seq) return a.seq - b.seq
-    /* Then the hour. Minutes rather than the labels, which sorted '9:30 –
-       10:00' after '14:00' because that is what strings do with a leading
-       digit — an afternoon read as a morning, in a third place. */
+    /* Then the hour, which is what a day actually is. This used to come after
+       the sequence number, and the sequence number won — so a castle visited
+       at half past three sat in front of two places from that morning, because
+       it had been added to the itinerary later.
+
+       The sequence deserved to lose. It is invisible, it is trip-wide rather
+       than per-day, and two of the three ways a stop can be created defaulted
+       it to zero — which is the front of the whole trip. The hour is written
+       on the card somebody is looking at.
+
+       Minutes rather than the labels: '9:30 – 10:00' sorts after '14:00' as
+       text, because that is what strings do with a leading digit. */
     if (a.startsMinutes !== b.startsMinutes) {
-      if (a.startsMinutes === null) return 1
-      if (b.startsMinutes === null) return -1
+      /* Nothing at all means nothing this day has named yet — the carry above
+         only comes up empty before the day's first timed stop — so it belongs
+         at the front of the day, where the itinerary put it. Stops with no day
+         are already sorted away above; this is only ever within one. */
+      if (a.startsMinutes === null) return -1
+      if (b.startsMinutes === null) return 1
       return a.startsMinutes - b.startsMinutes
     }
+    /* Then the itinerary's own order, which still settles everything the clock
+       says nothing about — a half-planned day, two things booked for the same
+       hour, and whatever the editor's move arrows were used on. */
+    if (a.seq !== b.seq) return a.seq - b.seq
     // A stop before the photographs taken at it, so the strip reads as a day.
     return a.kind === b.kind ? 0 : a.kind === 'stop' ? -1 : 1
   })

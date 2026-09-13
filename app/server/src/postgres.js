@@ -1430,9 +1430,15 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async createStop(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const result = await pool.query(
+        /* An unnumbered stop goes at the end of the trip, not the front. It
+           used to arrive as zero from two of the three ways a stop can be
+           created, which put it ahead of everything — and since the sequence
+           number is invisible there was nothing on the screen to explain it. */
         `insert into stops
         (trip_id,name,kind,icon,day,starts_at,ends_at,time_note,lng,lat,status,note,image_url,source_url,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning *`,
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+          coalesce($15, (select coalesce(max(seq), -1) + 1 from stops where trip_id=$1)))
+        returning *`,
         [
           tripId,
           input.name,
@@ -1448,7 +1454,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.note,
           input.src,
           input.sourceUrl,
-          input.seq,
+          Number.isInteger(input.seq) ? input.seq : null,
         ],
       )
       return stopRow(result.rows[0]) || null

@@ -45,6 +45,8 @@ function StopEditor({
   /* A refused pick stays visible as words, never as silently mangled data. */
   const [dayError, setDayError] = useState('')
   const [picking, setPicking] = useState(false)
+  /* A stop with an hour on it is placed by that hour, not by the arrows. */
+  const timed = !!(draft.startsAt || draft.endsAt)
   /* The stop's day, which is a date or it is nothing. */
   const dayIso = dayIsoOf(draft.day)
   const pickDay = (iso: string) => {
@@ -255,10 +257,22 @@ function StopEditor({
       <div className="ef">
         {!isNew && (
           <>
-            <button className="ord" onClick={() => onMove(-1)} disabled={busy} title="Move earlier">
+            {/* Off once the stop names an hour, because then the clock decides
+                where it sits and these would swap a number nobody can see for
+                no visible result. Moving a two o'clock thing earlier means
+                saying so in the field above. */}
+            <button
+              className="ord"
+              onClick={() => onMove(-1)}
+              disabled={busy || timed}
+              title={timed ? 'Change the time to move this stop' : 'Move earlier'}>
               <Icon n="chevl" s={14} w={2} />
             </button>
-            <button className="ord" onClick={() => onMove(1)} disabled={busy} title="Move later">
+            <button
+              className="ord"
+              onClick={() => onMove(1)}
+              disabled={busy || timed}
+              title={timed ? 'Change the time to move this stop' : 'Move later'}>
               <Icon n="chev" s={14} w={2} />
             </button>
             <button className="del" onClick={onDelete} disabled={busy}>

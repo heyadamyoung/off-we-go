@@ -3002,7 +3002,12 @@ export async function buildServer({
       note: body.note || null,
       src: body.src || null,
       sourceUrl: body.sourceUrl || null,
-      seq: Number.isInteger(body.seq) ? body.seq : 0,
+      /* Null, not zero. Zero is the front of the whole trip, and it is what a
+         stop added through anything but the map's own button used to get — so
+         a castle added on the Sunday sat ahead of everything from that
+         morning. The repository puts an unnumbered stop at the end, which is
+         what adding one means. */
+      seq: Number.isInteger(body.seq) ? body.seq : null,
     })
     if (!stop) return reply.code(403).send({ error: 'You cannot edit this trip' })
     /* A stop is usually added after the photographs it belongs to — that is

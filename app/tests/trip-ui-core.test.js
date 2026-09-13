@@ -87,6 +87,58 @@ test('all days shows the whole trip in day then time order', () => {
   )
 })
 
+test('the hour a stop happens at outranks the order it was added in', () => {
+  /* Reported from the road with a photograph of the strip. A castle visited at
+     half past three sat in front of two places from that morning, because it
+     had been added to the itinerary later — and a stop added through anything
+     but the map's own button arrives with seq 0, which sorted it to the front
+     of the entire trip.
+
+     Both halves were wrong. The sequence number is invisible, trip-wide, and
+     defaulted to zero by two of the three ways a stop can be created; the hour
+     is written on the card. A day is a schedule, so the clock orders it, and
+     the sequence is what settles the stops the clock says nothing about. */
+  const day = '2026-09-13'
+  const items = tripItems({
+    stops: [
+      { id: 'urquhart', name: 'Urquhart Castle', day, startsAt: '15:30', seq: 0 },
+      { id: 'eilean', name: 'Eilean Donan', day, startsAt: '09:45', seq: 4 },
+      { id: 'clachan', name: 'Clachan Duich', day, startsAt: '11:20', endsAt: '11:50', seq: 5 },
+    ],
+    photos: [],
+    day,
+  })
+
+  assert.deepEqual(
+    items.map(item => item.id),
+    ['eilean', 'clachan', 'urquhart'],
+  )
+})
+
+test('a stop nobody gave an hour keeps its place in the order somebody chose', () => {
+  /* The obvious rule — timed stops in time order, untimed ones after them —
+     is wrong on the commonest day there is, so the hour is carried forward
+     across the stops that name none. One placed before the booked thing stays
+     before it; one placed after stays after. That is what its position in the
+     itinerary was already saying, and it is the one job the sequence number
+     is good at. */
+  const day = '2026-09-13'
+  const items = tripItems({
+    stops: [
+      { id: 'late', name: 'Somewhere', day, seq: 9 },
+      { id: 'timed', name: 'Booked', day, startsAt: '14:00', seq: 7 },
+      { id: 'early', name: 'Anywhere', day, seq: 2 },
+    ],
+    photos: [],
+    day,
+  })
+
+  assert.deepEqual(
+    items.map(item => item.id),
+    ['early', 'timed', 'late'],
+  )
+})
+
 test('a search looks across the whole trip, not only the chosen day', () => {
   const found = tripItems({ stops: STOPS, photos: PHOTOS, day: '2026-09-05', query: 'anne' })
   assert.deepEqual(

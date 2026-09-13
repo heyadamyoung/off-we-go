@@ -760,8 +760,15 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async createStop(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
-      const stop = { id: fakeUuid(4, nextStop++), ...input }
-      trips.get(tripId).stops.push(stop)
+      const stops = trips.get(tripId).stops
+      /* The same answer as the real repository: an unnumbered stop goes at the
+         end of the trip. Zero is the front of it, which is where every stop
+         the assistant added used to land. */
+      const seq = Number.isInteger(input.seq)
+        ? input.seq
+        : stops.reduce((highest, stop) => Math.max(highest, stop.seq ?? -1), -1) + 1
+      const stop = { id: fakeUuid(4, nextStop++), ...input, seq }
+      stops.push(stop)
       return stop
     },
     async updateStop(user, tripId, stopId, changes) {

@@ -628,7 +628,9 @@ function buildMcpServer({
         note: null,
         src: null,
         sourceUrl: null,
-        seq: 0,
+        /* Left for the repository to answer. Defaulting it here put every stop
+           the assistant added at the very front of the trip. */
+        seq: null,
         ...input,
       })
       return stop
