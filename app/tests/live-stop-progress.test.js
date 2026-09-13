@@ -1377,3 +1377,186 @@ test('a trip whose days are all behind it is over', () => {
   assert.equal(progress.destination, null)
   assert.equal(progress.state, 'complete')
 })
+
+/* ---- the hour, not just the day ------------------------------------------
+
+   Reported from the road at twenty past two in the afternoon: the trip still
+   saying UP NEXT about a burial ground booked for twenty past eleven, with
+   eighty-seven kilometres between them and it.
+
+   Nothing above catches that. Its day is today, so "the day is over" has
+   nothing to say for another ten hours. Nobody's phone went near it, so there
+   is no visit either. And the answer was written on the same card as the
+   mistake, one line above it: 11:20–11:50. The schedule knew.
+
+   So the clock does the same job the calendar does, at the resolution the
+   itinerary is actually written in.
+
+   It reads the hours off the stop now rather than out of a sentence. While
+   this was display text it took the last clock it could find and ignored any
+   AM or PM beside it, so '1:30 pm – 3:00 pm' came back as three in the
+   morning — past, all day, every day. Migration 031 turned the text into two
+   columns and there is nothing left to guess at; a value that is not an hour
+   still leaves the stop to the day rule, which is where it was already. */
+
+const AT = (startsAt, endsAt, stop) => ({ ...stop, startsAt, endsAt })
+const SUNDAY = '2026-09-13'
+const afternoon = new Date('2026-09-13T14:19:00')
+
+const morning = AT(
+  '11:20',
+  '11:50',
+  ON(SUNDAY, { id: 'morning', name: 'Morning', lng: 4.88, lat: 52.36, seq: 0 }),
+)
+const evening = AT(
+  '18:00',
+  '20:00',
+  ON(SUNDAY, { id: 'evening', name: 'Evening', lng: 4.9, lat: 52.38, seq: 1 }),
+)
+
+test('a stop whose hour has come and gone is not what comes next', () => {
+  const progress = deriveLiveStopProgress({
+    stops: [morning, evening],
+    fixes: [],
+    now: afternoon,
+  })
+
+  assert.equal(progress.destination?.id, 'evening', 'the one still to come')
+  assert.deepEqual(progress.visitedStopIds, [], 'and nothing is claimed to have happened')
+})
+
+test('a stop whose hour has not come is still ahead', () => {
+  /* The other side. At half past ten the morning stop is the whole point of
+     the morning, and letting go of it would be worse than the bug. */
+  const progress = deriveLiveStopProgress({
+    stops: [morning, evening],
+    fixes: [],
+    now: new Date('2026-09-13T10:30:00'),
+  })
+
+  assert.equal(progress.destination?.id, 'morning')
+})
+
+test('running late is not the same as not going', () => {
+  /* Twenty minutes over is a queue at the door, not a change of plan. The
+     grace is generous on purpose: the cost of holding on slightly too long is
+     a stale chip, and the cost of letting go too early is the app telling
+     somebody standing outside a place that they have moved on from it. */
+  const progress = deriveLiveStopProgress({
+    stops: [morning, evening],
+    fixes: [],
+    now: new Date('2026-09-13T12:10:00'),
+  })
+
+  assert.equal(progress.destination?.id, 'morning')
+})
+
+test('a stop that names no hour is left to its day', () => {
+  /* Most of the itinerary is like this, and it must not vanish at midday for
+     want of a time nobody wrote. */
+  const noTime = ON(SUNDAY, { id: 'whenever', name: 'Whenever', lng: 4.88, lat: 52.36, seq: 0 })
+  const progress = deriveLiveStopProgress({
+    stops: [noTime, evening],
+    fixes: [],
+    now: afternoon,
+  })
+
+  assert.equal(progress.destination?.id, 'whenever')
+})
+
+test('an hour that cannot be read is not an hour that has passed', () => {
+  /* The lesson from the day that meant four things: parse strictly, and when
+     it does not parse, say nothing rather than something. */
+  for (const time of ['morning-ish', 'after lunch', '25:99', 'tbc', '', '2:30 PM']) {
+    const odd = AT(
+      time,
+      null,
+      ON(SUNDAY, { id: 'odd', name: 'Odd', lng: 4.88, lat: 52.36, seq: 0 }),
+    )
+    const progress = deriveLiveStopProgress({ stops: [odd, evening], fixes: [], now: afternoon })
+    assert.equal(progress.destination?.id, 'odd', JSON.stringify(time))
+  }
+})
+
+test('a single time is the end of its own window', () => {
+  /* "Check-in 14:00" is one moment rather than a range, and the itinerary is
+     full of them. */
+  const checkIn = AT(
+    '09:00',
+    null,
+    ON(SUNDAY, { id: 'hotel', name: 'Hotel', lng: 4.88, lat: 52.36, seq: 0, timeNote: 'Check-in' }),
+  )
+  const progress = deriveLiveStopProgress({ stops: [checkIn, evening], fixes: [], now: afternoon })
+  assert.equal(progress.destination?.id, 'evening')
+})
+
+test('an evening that runs past midnight has not already finished', () => {
+  /* 23:00 – 01:00 is a real shape on a trip — a late ferry, a night bus, the
+     last of a bar. Read as ending at 01:00 of the same morning it would be
+     twenty-two hours finished before it began, and nothing would ever be
+     heading to it. */
+  const overnight = AT(
+    '23:00',
+    '01:00',
+    ON(SUNDAY, { id: 'ferry', name: 'Night ferry', lng: 4.88, lat: 52.36, seq: 0 }),
+  )
+  const progress = deriveLiveStopProgress({
+    stops: [overnight, evening],
+    fixes: [],
+    now: afternoon,
+  })
+
+  assert.equal(progress.destination?.id, 'ferry')
+})
+
+test('the clock only speaks about today', () => {
+  /* Tomorrow's eleven-twenty has not passed because today's has. */
+  const tomorrow = AT(
+    '11:20',
+    '11:50',
+    ON('2026-09-14', { id: 'tomorrow', name: 'Tomorrow', lng: 4.88, lat: 52.36, seq: 1 }),
+  )
+  const progress = deriveLiveStopProgress({ stops: [morning, tomorrow], fixes: [], now: afternoon })
+  assert.equal(progress.destination?.id, 'tomorrow')
+})
+
+test('nothing is called next until the phones have had their say', () => {
+  /* The flash, reported from the road: the first stop of the day wore the Up
+     next chip for a second on load and then it jumped to a stop three hours
+     later. Both answers were right in turn — the trip data arrives before the
+     live positions do, so the first render is the schedule talking on its own
+     and the second is the schedule after the phones have said where everyone
+     has been.
+
+     The schedule alone is a fine answer when there is nothing to hear from.
+     It is not a fine answer while we are still finding out, because it is
+     about to be corrected — and a chip that lands on one stop and immediately
+     moves is worse than one that arrives a beat later in the right place. */
+  const stops = [
+    ON('2026-09-01', { id: 'earlier', name: 'Earlier', lng: 4.8852, lat: 52.36, seq: 0 }),
+    ON('2026-09-01', { id: 'later', name: 'Later', lng: 4.8687, lat: 52.3579, seq: 1 }),
+  ]
+
+  const loading = deriveLiveStopProgress({ stops, fixes: [], now: NOW, sourceState: 'loading' })
+  assert.equal(loading.reason, 'loading')
+  assert.equal(loading.destination, null, 'no answer offered while one is still coming')
+
+  /* And the moment the answer is in — even when the answer is that nobody is
+     sharing anything — the schedule speaks. */
+  const ready = deriveLiveStopProgress({ stops, fixes: [], now: NOW })
+  assert.equal(ready.reason, 'no-fix')
+  assert.equal(ready.destination?.id, 'earlier')
+})
+
+test('a trip is not called complete before the phones have reported', () => {
+  /* The same withholding, at the other end. Everything is behind us by the
+     calendar, but until the live layer answers we do not know whether a phone
+     is about to say somebody is standing at one of them. */
+  const stops = [ON('2026-08-30', { id: 'over', name: 'Over', lng: 4.8852, lat: 52.36, seq: 0 })]
+
+  const loading = deriveLiveStopProgress({ stops, fixes: [], now: NOW, sourceState: 'loading' })
+  assert.equal(loading.state, 'waiting')
+  assert.equal(loading.reason, 'loading')
+
+  assert.equal(deriveLiveStopProgress({ stops, fixes: [], now: NOW }).state, 'complete')
+})

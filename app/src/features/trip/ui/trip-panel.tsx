@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { stopTimeLabel } from '../../../stop-time-core'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { SightsList, type SightsListProps } from '../../sights'
@@ -232,7 +233,7 @@ function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
               return (
                 <div key={stop.id}>
                   <Row
-                    time={stop.time || ''}
+                    time={stopTimeLabel(stop)}
                     title={stop.name || 'Untitled stop'}
                     detail={stop.note || stop.kind || ''}
                     selected={selected === stop.id}

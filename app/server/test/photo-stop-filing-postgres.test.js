@@ -70,71 +70,74 @@ test('re-filing writes every change and only the changes', { skip: reachable }, 
     seq: 1,
   })
 
-  /* Enough rows that the batched write is doing real work: twenty that know
-     where they were taken, filed at a stop on the way in the way an older
-     build would have filed them, and three that know nothing and were filed
-     by hand. Only the first twenty are the re-link's business. */
-  const located = []
+  /* Enough rows that the batched write is doing real work, in three groups:
+     at the museum, at the station, and nowhere near either. */
+  const made = { rijks: [], centraal: [], nowhere: [] }
   for (let index = 0; index < 20; index++) {
     const spot =
       index % 3 === 0
-        ? { lng: 4.8852, lat: 52.36 }
+        ? { lng: 4.8852, lat: 52.36, group: 'rijks' }
         : index % 3 === 1
-          ? { lng: 4.9003, lat: 52.379 }
-          : { lng: 2.3522, lat: 48.8566 }
+          ? { lng: 4.9003, lat: 52.379, group: 'centraal' }
+          : { lng: 2.3522, lat: 48.8566, group: 'nowhere' }
     const photo = await repository.createPhoto(user, trip.id, {
       storagePath: `${trip.id}/${index}.jpg`,
       kind: 'photo',
       status: 'ready',
-      ...spot,
+      lng: spot.lng,
+      lat: spot.lat,
       locationSource: 'exif',
-      stopId: index % 2 === 0 ? centraal.id : rijks.id,
+      /* Deliberately filed wrong on the way in, all of them at one stop, so
+         a re-link that silently did nothing could not pass this. */
+      stopId: centraal.id,
     })
-    located.push(photo.id)
-  }
-  const unplaced = []
-  for (let index = 0; index < 3; index++) {
-    const photo = await repository.createPhoto(user, trip.id, {
-      storagePath: `${trip.id}/unplaced-${index}.jpg`,
-      kind: 'photo',
-      status: 'ready',
-      stopId: rijks.id,
-    })
-    unplaced.push(photo.id)
+    made[spot.group].push(photo.id)
   }
 
-  const first = await repository.relinkTripPhotos(user, trip.id)
-  assert.equal(first.examined, 20, 'the ones with nothing to go on are not its business')
-  assert.equal(first.changed, 20, 'and every one of them comes off its stop')
+  const first = await repository.relinkTripPhotos(user, trip.id, {})
+  assert.equal(first.examined, 20)
+  assert.equal(
+    first.changed,
+    made.rijks.length + made.nowhere.length,
+    'the museum group and the Paris group both move; the station group was already right',
+  )
 
   const read = async () => (await repository.listTripPhotos(user, trip.id, { limit: 500 })).photos
   const rows = await read()
   const filedAt = id => rows.find(row => row.id === id)?.stopId
-  for (const id of located) assert.equal(filedAt(id), null, 'back where it was taken')
-  for (const id of unplaced) {
-    assert.equal(filedAt(id), rijks.id, 'the stop is the only place anybody knows for these')
-  }
+  for (const id of made.rijks) assert.equal(filedAt(id), rijks.id, 'at the museum')
+  for (const id of made.centraal) assert.equal(filedAt(id), centraal.id, 'at the station')
+  for (const id of made.nowhere) assert.equal(filedAt(id), null, 'Paris belongs to neither')
 
   // Settled: running it again is a no-op, which is what makes it safe to call
   // on every itinerary edit rather than only when somebody remembers to.
-  assert.deepEqual(await repository.relinkTripPhotos(user, trip.id), {
+  assert.deepEqual(await repository.relinkTripPhotos(user, trip.id, {}), {
     examined: 20,
     changed: 0,
   })
 
-  /* And moving a stop no longer disturbs anything: there is nothing to
-     re-measure, because nothing is filed by measurement. */
+  /* And a null in the middle of the batch is a real null, not the string.
+     Moving the museum away should unfile exactly its own photographs. */
   await repository.updateStop(user, trip.id, rijks.id, { lng: 5.9, lat: 51.9 })
-  assert.equal((await repository.relinkTripPhotos(user, trip.id)).changed, 0)
+  const moved = await repository.relinkTripPhotos(user, trip.id, {})
+  assert.equal(moved.changed, made.rijks.length)
   const after = await read()
-  for (const id of unplaced) assert.equal(after.find(row => row.id === id)?.stopId, rijks.id)
+  for (const id of made.rijks) {
+    assert.equal(
+      after.find(row => row.id === id)?.stopId,
+      null,
+      'unfiled, rather than left at a stop that has moved away',
+    )
+  }
 })
 
 test('the repair migration agrees with the rule that follows it', { skip: reachable }, async t => {
-  /* Migration 030 hands back the photographs that migration 024 filed, and it
+  /* Migration 032 files the photographs that migration 030 handed back, and it
      spells the rule out in SQL because it has to run before any of this code
-     can. Two implementations of one rule is exactly the thing that rots, so
-     this is the check that they say the same thing on the day it matters:
+     can — including the four-hundred-metre radius and the great-circle
+     distance, done without PostGIS. Two implementations of one rule is exactly
+     the thing that rots, so this is the check that they say the same thing on
+     the day it matters:
      scatter photographs across a real spread of distances and filings, ask
      JavaScript where each belongs, then re-run the migration's own statement
      and require the same answer for every row. */
@@ -217,7 +220,7 @@ test('the repair migration agrees with the rule that follows it', { skip: reacha
       dirname(fileURLToPath(import.meta.url)),
       '..',
       'migrations',
-      '030_unfile_located_photos.sql',
+      '032_refile_located_photos.sql',
     ),
     'utf8',
   )
@@ -251,6 +254,27 @@ test('the repair migration agrees with the rule that follows it', { skip: reacha
     'nothing was handed back at all',
   )
   assert.ok([...byJavaScript.values()].some(Boolean), 'nothing was left filed')
+
+  /* And not one coordinate moved. This is the requirement the whole thing hangs
+     on: filing a photograph at an itinerary item says which item it belongs to,
+     never where on earth it was. The column was never written to even when the
+     bug was at its worst — the map was overruling it on the way to the screen —
+     so a migration that started writing to it would be the first time anybody
+     actually lost a position. */
+  const points = new Map(
+    (await client.query('select id, lng, lat from photos')).rows.map(row => [
+      row.id,
+      `${row.lng},${row.lat}`,
+    ]),
+  )
+  const moved = []
+  for (const [index, photo] of made.entries()) {
+    const was = scatter[index]
+    const expected = was.lng == null ? 'null,null' : `${was.lng},${was.lat}`
+    if (points.get(photo.id) !== expected)
+      moved.push({ id: photo.id, from: expected, to: points.get(photo.id) })
+  }
+  assert.deepEqual(moved, [], 'filing a photograph must never move it')
 })
 
 test('a pinned photograph is untouched by the batched re-link', { skip: reachable }, async t => {
@@ -276,9 +300,7 @@ test('a pinned photograph is untouched by the batched re-link', { skip: reachabl
   const trip = await repository.createTrip(user, { title: 'Amsterdam' })
   const stop = async (name, lng, lat, seq) =>
     repository.createStop(user, trip.id, { name, icon: 'pin', lng, lat, status: 'planned', seq })
-  // The museum exists so the photographs below are standing at a real place;
-  // nothing files them there any more, so its id is never needed.
-  await stop('Rijksmuseum', 4.8852, 52.36, 0)
+  const rijks = await stop('Rijksmuseum', 4.8852, 52.36, 0)
   const centraal = await stop('Centraal', 4.9003, 52.379, 1)
 
   /* Three rows the rule would move if it were allowed to: one pinned at the
@@ -306,9 +328,9 @@ test('a pinned photograph is untouched by the batched re-link', { skip: reachabl
     true,
   )
 
-  const report = await repository.relinkTripPhotos(user, trip.id)
+  const report = await repository.relinkTripPhotos(user, trip.id, {})
   assert.equal(report.examined, 3)
-  assert.equal(report.changed, 0, 'nothing to do: the control was never filed')
+  assert.equal(report.changed, 1, 'only the unpinned one had anywhere to go')
 
   const after = new Map(
     (
@@ -323,19 +345,16 @@ test('a pinned photograph is untouched by the batched re-link', { skip: reachabl
   )
   assert.equal(after.get(wrong.id).stop_id, centraal.id, 'the correction held')
   assert.equal(after.get(nowhere.id).stop_id, null, 'filed at nothing on purpose')
-  assert.equal(after.get(control.id).stop_id, null, 'and the rule files a located one nowhere')
+  assert.equal(after.get(control.id).stop_id, rijks.id, 'the rule still ran on the rest')
   assert.equal(after.get(control.id).stop_pinned, false)
 
-  /* Handed back, the rule takes it again — and its answer for a photograph
-     that knows where it was taken is nowhere. Showing that answer at once is
-     the API handler's job; this is the repository, so the re-link is what
-     does it here. */
+  // Handed back, the rule takes it again.
   await repository.updatePhoto(user, trip.id, wrong.id, { stopPinned: false })
-  assert.deepEqual(await repository.relinkTripPhotos(user, trip.id), {
+  assert.deepEqual(await repository.relinkTripPhotos(user, trip.id, {}), {
     examined: 3,
     changed: 1,
   })
-  assert.equal((await repository.findPhoto(user, trip.id, wrong.id)).stopId, null)
+  assert.equal((await repository.findPhoto(user, trip.id, wrong.id)).stopId, rijks.id)
 
   /* And the same move made in bulk, which is one statement over an array of
      ids — the piece with no equivalent in the memory repository, and the one
@@ -361,5 +380,5 @@ test('a pinned photograph is untouched by the batched re-link', { skip: reachabl
     await repository.movePhotosToStop(user, trip.id, ids, { stopId: elsewhere.id }),
     null,
   )
-  assert.equal((await repository.relinkTripPhotos(user, trip.id)).changed, 0, 'all pinned')
+  assert.equal((await repository.relinkTripPhotos(user, trip.id, {})).changed, 0, 'all pinned')
 })

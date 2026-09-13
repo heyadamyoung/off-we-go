@@ -784,7 +784,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     /* The same answer as the real repository, from the same rule. Kept
        deliberately naive: this exists so the route can be tested, not to be
        fast. */
-    async relinkTripPhotos(user, tripId) {
+    async relinkTripPhotos(user, tripId, { radiusMetres } = {}) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       let examined = 0
@@ -792,7 +792,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       for (const photo of trip.photos) {
         if (photo.lng == null || photo.lat == null) continue
         examined += 1
-        const decided = stopForPhoto(photo)
+        const decided = stopForPhoto(photo, trip.stops, { radiusMetres })
         if (decided !== (photo.stopId ?? null)) {
           photo.stopId = decided
           changed += 1

@@ -1,4 +1,5 @@
 import HoldToDelete from '../../../shared/ui/hold-delete'
+import { placeProvenance } from '../../../photo-place-core'
 import type { Id, Stop, TripPhoto } from '../../../shared/model/types'
 
 interface PhotoDetailsProps {
@@ -21,6 +22,7 @@ export default function PhotoDetails({
   onDelete,
 }: PhotoDetailsProps) {
   const video = photo.kind === 'video'
+  const placed = placeProvenance(photo)
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the scrim is the pointer way out; the card's Done is the keyboard way
     // biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the whole viewer by design
@@ -61,6 +63,23 @@ export default function PhotoDetails({
             ))}
           </select>
         </label>
+        {placed && (
+          /* Where the pin came from. The app has always known and never said,
+             so a picture sitting at the airport instead of the castle read as
+             a bug — and the two ways a picture can arrive without its own
+             coordinates are different problems, only one of which anybody can
+             do anything about. */
+          <div className="flex flex-col gap-1 rounded-lg bg-raised px-3 py-2">
+            <span className="text-[11px] font-bold text-muted">Location</span>
+            <span className="text-[13px] text-ink">
+              {placed.label}
+              {!placed.exact && <span className="ml-1.5 text-[11px] text-faint">approximate</span>}
+            </span>
+            {placed.detail && (
+              <span className="text-[11px] leading-snug text-faint">{placed.detail}</span>
+            )}
+          </div>
+        )}
         <div className="mt-1 flex items-center justify-between border-t border-line pt-3">
           <HoldToDelete
             what={video ? 'this video' : 'this photo'}

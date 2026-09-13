@@ -25,10 +25,14 @@ export interface ChosenSummary {
 
 /* No itinerary item is counted. There used to be a third number here — how
    many would be grouped at the nearest stop, and which stop — and the sheet
-   said so before you pressed Add. Nothing files a located photograph any more:
-   it goes on the map where it was taken, which is what the first sentence
-   already promises, and the clause was the app promising to do the thing that
-   was moving people's pictures off the spot they were taken. */
+   said so before you pressed Add.
+
+   A photograph near a stop is filed at it again, so the clause would be true.
+   It stays out because the server decides that, not this: the sheet is drawn
+   from what the phone can read off the file, and a stop named here is a guess
+   the upload cannot make stick. What this promises is what it can see — where
+   each picture will land on the map — and the filing shows up in the gallery a
+   moment later without having been announced twice. */
 export function summarise(placements: readonly ChosenPlacement[]): ChosenSummary {
   const total = placements.length
   const located = placements.filter(item => !!item.previewPoint).length

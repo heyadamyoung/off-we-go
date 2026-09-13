@@ -1,4 +1,5 @@
 import type { Dispatch, FormEvent, RefObject, SetStateAction } from 'react'
+import { stopTimeLabel } from '../../../stop-time-core'
 import { MapCanvas } from '../../map'
 import Icon from '../../../shared/ui/icon'
 import type { MapTint } from '../../map'
@@ -95,7 +96,7 @@ export default function PhotoSide({
               : stop.status === 'done'
                 ? 'Visited'
                 : 'Planned'}{' '}
-            · {stop.time}
+            · {stopTimeLabel(stop)}
           </div>
           <h3>{stop.name}</h3>
           <p>{stop.note}</p>

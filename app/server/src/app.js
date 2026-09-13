@@ -42,6 +42,7 @@ import {
 } from './media-types.js'
 import { exifFromImage } from './photo-exif.js'
 import { tripDayOrNull } from './trip-day.js'
+import { clockOrNull, timeNoteOrNull } from './stop-time.js'
 import { signPlaylist } from './hls.js'
 import {
   DEFAULT_BUCKET_SECONDS,
@@ -49,7 +50,7 @@ import {
   linkExpiry,
   mediaCacheControl,
 } from './media-cache.js'
-import { stopForPhoto } from './stop-placement.js'
+import { STOP_RADIUS_METRES, stopForPhoto } from './stop-placement.js'
 import { event, recordFailure, span, stamp } from './tracing.js'
 
 const normalizeEmail = value =>
@@ -136,6 +137,10 @@ export async function buildServer({
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
   deviceRegistrationRateLimit = { max: 30, windowMs: 15 * 60_000 },
   maxDevicesPerTrip = 20,
+  /* How near a stop a photograph has to be taken to be filed at it. An option
+     rather than a constant only so tests can shrink it: everything that ships
+     uses the one number, which is where the rule says it lives. */
+  stopRadiusMetres = STOP_RADIUS_METRES,
   /* A photograph off a phone is a handful of megabytes; a minute of 4K is a
      hundred. One ceiling for both would either refuse ordinary films or let a
      single request fill the volume, so each kind is told its own limit and
@@ -1407,10 +1412,28 @@ export async function buildServer({
      worth losing that over. */
   const refileTrip = async (user, tripId) => {
     try {
-      return await repository.relinkTripPhotos?.(user, tripId)
+      return await repository.relinkTripPhotos?.(user, tripId, { radiusMetres: stopRadiusMetres })
     } catch (error) {
       recordFailure(error)
       return null
+    }
+  }
+
+  /* Which itinerary item an arriving photograph belongs to.
+
+     The rule is in stop-placement.js; this is the part that has to touch a
+     database, kept apart from it so the arithmetic stays testable without one.
+     A photograph with no coordinates costs nothing: there is nothing to decide
+     from, so there is no query worth making. */
+  const stopForUpload = async (user, tripId, photo) => {
+    if (photo.lng == null || photo.lat == null) return photo.stopId ?? null
+    try {
+      const stops = await repository.listStops(user, tripId)
+      return stopForPhoto(photo, stops || [], { radiusMetres: stopRadiusMetres })
+    } catch {
+      /* Filing is a convenience, and losing the photograph over it would not
+         be. It lands unfiled and the next re-link pass picks it up. */
+      return photo.stopId ?? null
     }
   }
 
@@ -1420,6 +1443,12 @@ export async function buildServer({
      request filling the volume; which of the two limits actually applies is
      decided below, once the part has said what it is. */
   const uploadLimits = { files: 2, fileSize: Math.max(maxImageBytes, maxVideoBytes), fields: 24 }
+
+  /* How near "now" a photograph has to have been taken for where the phone is
+     standing to be evidence about where it was taken. An hour is generous: it
+     covers a picture taken on the way into the museum and uploaded on the way
+     out, and it excludes yesterday. */
+  const UPLOADED_WHERE_TAKEN_MS = 60 * 60_000
 
   app.post(
     '/api/trips/:tripId/photos',
@@ -1605,8 +1634,33 @@ export async function buildServer({
             locationSource = 'trail'
           }
         }
+        /* Last of all, where the phone was when it was uploaded — and only
+           for a photograph that was taken about now.
+
+           Where somebody is standing is evidence about a picture they have
+           just taken and nothing at all about one from Tuesday. A phone that
+           strips the coordinates on the way out of its own gallery looks
+           exactly like a camera that never had any, so this is the ordinary
+           case rather than the odd one: a fortnight of holiday uploaded from
+           the hotel, every one of them pinned to the hotel, each as confident
+           as the last.
+
+           Taken around now, it is the best thing anybody has. Taken hours ago
+           with nothing in the trail to place it, no point is the honest
+           answer — the picture still appears under its own day, where it can
+           be dropped on the map by hand, instead of sitting somewhere it
+           never was. A photograph that will not say when it was taken keeps
+           the fallback, because then there is nothing to contradict.
+
+           One-sided on purpose. A capture time in the future is a phone with
+           the wrong clock, which says nothing about how long ago the picture
+           was taken — and refusing a position over it would lose the pin for a
+           photograph that is very probably from this afternoon. Only knowing
+           it is old is a reason to say nothing. */
+        const takenAround =
+          !takenAt || clock().getTime() - takenAt.getTime() <= UPLOADED_WHERE_TAKEN_MS
         if (lng == null || lat == null) {
-          if (fallback.lng != null && fallback.lat != null) {
+          if (takenAround && fallback.lng != null && fallback.lat != null) {
             lng = fallback.lng
             lat = fallback.lat
             locationSource = fallbackLocationSource
@@ -1652,11 +1706,15 @@ export async function buildServer({
           mime: isVideo ? mime : null,
           durationMs: isVideo && durationMs != null ? Math.round(durationMs) : null,
           /* Decided here rather than taken on trust: a client may send a stop
-             it guessed at, and a guess is not a filing. One that knows where
-             it was taken is filed nowhere; one that does not keeps whatever it
-             arrived with. It needs nothing but the row, so no query for the
-             trip's stops happens on the upload path at all any more. */
-          stopId: stopForPhoto({ lng, lat, stopId: fields.stopId || null }),
+             it guessed at, and a guess is not a filing. Filed at the nearest
+             itinerary item within the radius, or at nothing when there is
+             nothing near — and either way its own coordinates are written
+             untouched on the lines below. A filing is a link, not a place. */
+          stopId: await stopForUpload(user, request.params.tripId, {
+            lng,
+            lat,
+            stopId: fields.stopId || null,
+          }),
           caption: String(fields.caption || '').trim() || null,
           lng,
           lat,
@@ -2872,6 +2930,44 @@ export async function buildServer({
     return reply.code(204).send()
   })
 
+  /* A stop's time, as both routes below need it read.
+   *
+   * Refused rather than half-read. '2:30 PM' is a caller saying something this
+   * column cannot hold, and taking the 2:30 off the front of it is exactly how
+   * a stop ends up finishing at half past two in the morning — which is the
+   * bug this whole shape exists to end.
+   *
+   * On a patch only the keys actually sent come back, so an edit to a note
+   * cannot blank the hours beside it. On a create every key is answered, so a
+   * stop with no time is stored with none rather than with `undefined`.
+   *
+   * A lone end becomes the start either way: one time given is when the thing
+   * happens, whichever box it landed in, and a window that ends without ever
+   * beginning is not something anybody meant to say.
+   */
+  const stopTimes = (body, { creating = false } = {}) => {
+    const fields = creating ? { startsAt: null, endsAt: null, timeNote: null } : {}
+    for (const key of ['startsAt', 'endsAt']) {
+      if (body[key] === undefined) continue
+      const clock = clockOrNull(body[key])
+      if (clock === undefined) return { error: 'A stop’s time must be a 24-hour clock, like 09:30' }
+      fields[key] = clock
+    }
+    if (body.timeNote !== undefined) {
+      const note = timeNoteOrNull(body.timeNote)
+      if (note === undefined) return { error: 'A stop’s time note must be text' }
+      fields.timeNote = note
+    }
+    /* Only where the caller has said something about the beginning. Silence
+       about it on a patch means "leave it as it is", and moving an end into a
+       start we cannot see would overwrite an hour nobody asked to change. */
+    if (fields.endsAt && fields.startsAt === null) {
+      fields.startsAt = fields.endsAt
+      fields.endsAt = null
+    }
+    return { fields }
+  }
+
   app.post('/api/trips/:tripId/stops', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -2888,12 +2984,18 @@ export async function buildServer({
     if (day === undefined) {
       return reply.code(400).send({ error: 'A stop’s day must be a date, like 2026-09-04' })
     }
+    /* Two clocks and the words that used to share a box with them. Refused
+       rather than half-read: '2:30 PM' is a caller saying something this
+       column cannot hold, and taking the 2:30 off the front is exactly how a
+       stop ends up finishing at half past two in the morning. */
+    const times = stopTimes(body, { creating: true })
+    if (times.error) return reply.code(400).send({ error: times.error })
     const stop = await repository.createStop(user, request.params.tripId, {
       name,
       kind: body.kind || null,
       icon: body.icon || 'pin',
       day,
-      time: body.time || null,
+      ...times.fields,
       lng,
       lat,
       status: body.status || 'planned',
@@ -2937,6 +3039,9 @@ export async function buildServer({
     if (fields.seq !== undefined && !Number.isInteger(fields.seq)) {
       return reply.code(400).send({ error: 'A stop order must be a whole number' })
     }
+    const times = stopTimes(fields)
+    if (times.error) return reply.code(400).send({ error: times.error })
+    Object.assign(fields, times.fields)
     const stop = await repository.updateStop(
       user,
       request.params.tripId,

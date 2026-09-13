@@ -118,3 +118,71 @@ test('the pictures already filed at a stop are the ones offered first', async ({
   }
   await expect(page.locator('.editor .epickh')).toContainText('from this stop')
 })
+
+test('a stop keeps the hours somebody picked, on one clock', async ({ page }) => {
+  /* The time was a text box for the whole of this app's life, and nothing
+     anywhere made two of them agree — which is how an itinerary came to read
+     `11:20-11:50` on one line and `2:30 PM` on the next.
+
+     It was worse than untidy. The rule that decides whether a stop is behind
+     you took the last clock it could find and ignored the PM beside it, so an
+     afternoon stop was treated as finished by four in the morning and the trip
+     walked straight past it. Two native pickers end both: they write 24-hour
+     HH:MM whatever face the phone shows the person using them. */
+  await open(page)
+  await editStop(page, WITH_PHOTOS)
+
+  const from = page.locator('.editor input[type="time"]').first()
+  const to = page.locator('.editor input[type="time"]').nth(1)
+  await expect(from).toHaveValue('09:30')
+  await expect(to).toHaveValue('12:30')
+
+  await from.fill('13:05')
+  await to.fill('16:45')
+  await page.locator('.editor .btn.pri').click()
+  await expect(page.locator('.editor')).toHaveCount(0)
+
+  /* Drawn as one range on one clock, from the two stored hours — not echoed
+     back as whatever was typed, which is what the text box did. */
+  const card = page.locator('.detailcard')
+  await expect(card).toContainText('13:05 – 16:45')
+  await expect(card).not.toContainText('PM')
+
+  // And still the same two hours when the editor is opened again.
+  await card.getByTitle('Edit this stop').click()
+  await expect(page.locator('.editor input[type="time"]').first()).toHaveValue('13:05')
+  await expect(page.locator('.editor input[type="time"]').nth(1)).toHaveValue('16:45')
+})
+
+test('the words that used to share the box now have their own', async ({ page }) => {
+  /* `Check-in 14:00` was one string, and the hour had to be dug back out of it
+     by anything that wanted to do arithmetic — which is how an afternoon stop
+     came to be treated as finished at three in the morning. The words are
+     worth keeping, because they say something two clocks cannot, so they get a
+     field of their own and the numbers get left alone. */
+  await open(page)
+  await editStop(page, ANY_STOP)
+
+  const from = page.locator('.editor input[type="time"]').first()
+  const to = page.locator('.editor input[type="time"]').nth(1)
+  await expect(from).toHaveValue('13:00')
+  await expect(to).toHaveValue('14:30')
+
+  const note = page.locator('.editor input[placeholder="Check-in, Doors, Evening"]')
+  await expect(note).toHaveValue('')
+  await note.fill('Lunch')
+  await page.locator('.editor .btn.pri').click()
+  await expect(page.locator('.editor')).toHaveCount(0)
+
+  // The words lead and the hours follow, which is where they were in the text.
+  const card = page.locator('.detailcard')
+  await expect(card).toContainText('Lunch 13:00 – 14:30')
+
+  // And the hours are exactly the ones that were there before the note existed.
+  await card.getByTitle('Edit this stop').click()
+  await expect(page.locator('.editor input[type="time"]').first()).toHaveValue('13:00')
+  await expect(page.locator('.editor input[type="time"]').nth(1)).toHaveValue('14:30')
+  await expect(page.locator('.editor input[placeholder="Check-in, Doors, Evening"]')).toHaveValue(
+    'Lunch',
+  )
+})

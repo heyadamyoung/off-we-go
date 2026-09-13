@@ -6,6 +6,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
 import { pinAfter, stopForPhoto } from './stop-placement.js'
+import { clockOrNull } from './stop-time.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -94,6 +95,30 @@ const segmentRow = row =>
 /* One shape for a photograph or a film. `kind` is what the app switches on;
    a video also carries the poster frame every grid draws it with, the type
    its bytes are in, and how long it runs. */
+/* A stop, as the rest of the world sees one.
+   Postgres hands a `time` column back as '14:00:00'; the door trims it to the
+   'HH:MM' everything above this line is written against. Four different reads
+   used to spell this object out for themselves, which is three chances for a
+   column added later to reach one screen and not the others. */
+const stopRow = value =>
+  value && {
+    id: value.id,
+    name: value.name,
+    kind: value.kind,
+    icon: value.icon,
+    day: value.day,
+    startsAt: clockOrNull(value.starts_at) ?? null,
+    endsAt: clockOrNull(value.ends_at) ?? null,
+    timeNote: value.time_note ?? null,
+    lng: value.lng,
+    lat: value.lat,
+    status: value.status,
+    note: value.note,
+    src: value.image_url,
+    sourceUrl: value.source_url,
+    seq: value.seq,
+  }
+
 const photoRow = value => ({
   id: value.id,
   stopId: value.stop_id,
@@ -953,19 +978,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           avatarUrl: value.avatar_path,
         })),
         stops: rows(stops).map(value => ({
-          id: value.id,
-          name: value.name,
-          kind: value.kind,
-          icon: value.icon,
-          day: value.day,
-          time: value.time,
-          lng: value.lng,
-          lat: value.lat,
-          status: value.status,
-          note: value.note,
-          seq: value.seq,
-          src: value.image_url,
-          sourceUrl: value.source_url,
+          ...stopRow(value),
           documents: value.documents || [],
         })),
         photos: rows(photos).map(photoRow),
@@ -1412,35 +1425,23 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         'select * from stops where trip_id=$1 order by seq,created_at',
         [tripId],
       )
-      return result.rows.map(value => ({
-        id: value.id,
-        name: value.name,
-        kind: value.kind,
-        icon: value.icon,
-        day: value.day,
-        time: value.time,
-        lng: value.lng,
-        lat: value.lat,
-        status: value.status,
-        note: value.note,
-        src: value.image_url,
-        sourceUrl: value.source_url,
-        seq: value.seq,
-      }))
+      return result.rows.map(stopRow)
     },
     async createStop(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
       const result = await pool.query(
         `insert into stops
-        (trip_id,name,kind,icon,day,time,lng,lat,status,note,image_url,source_url,seq)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,
+        (trip_id,name,kind,icon,day,starts_at,ends_at,time_note,lng,lat,status,note,image_url,source_url,seq)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning *`,
         [
           tripId,
           input.name,
           input.kind,
           input.icon,
           input.day,
-          input.time,
+          input.startsAt,
+          input.endsAt,
+          input.timeNote,
           input.lng,
           input.lat,
           input.status,
@@ -1450,22 +1451,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.seq,
         ],
       )
-      const value = result.rows[0]
-      return {
-        id: value.id,
-        name: value.name,
-        kind: value.kind,
-        icon: value.icon,
-        day: value.day,
-        time: value.time,
-        lng: value.lng,
-        lat: value.lat,
-        status: value.status,
-        note: value.note,
-        src: value.image_url,
-        sourceUrl: value.source_url,
-        seq: value.seq,
-      }
+      return stopRow(result.rows[0]) || null
     },
     async updateStop(user, tripId, stopId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
@@ -1474,7 +1460,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         kind: 'kind',
         icon: 'icon',
         day: 'day',
-        time: 'time',
+        startsAt: 'starts_at',
+        endsAt: 'ends_at',
+        timeNote: 'time_note',
         lng: 'lng',
         lat: 'lat',
         status: 'status',
@@ -1498,23 +1486,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         values,
       )
       const value = result.rows[0]
-      return value
-        ? {
-            id: value.id,
-            name: value.name,
-            kind: value.kind,
-            icon: value.icon,
-            day: value.day,
-            time: value.time,
-            lng: value.lng,
-            lat: value.lat,
-            status: value.status,
-            note: value.note,
-            src: value.image_url,
-            sourceUrl: value.source_url,
-            seq: value.seq,
-          }
-        : null
+      return stopRow(value) || null
     },
     async deleteStop(user, tripId, stopId) {
       if (!(await this.canEditTrip(user.id, tripId))) return false
@@ -1560,23 +1532,26 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
 
        What comes back is bounded by one trip's photographs, and only the three
        columns needed to decide: less than the trip read already sends. */
-    async relinkTripPhotos(user, tripId) {
+    async relinkTripPhotos(user, tripId, { radiusMetres } = {}) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
-      /* The trip's stops are not read. They used to be, to measure every
-         photograph's distance against them; the rule needs nothing but the row
-         now. Aliased into the shape stop-placement.js speaks, so it reads the
-         same row here as it does anywhere else — column names would leave
-         `stopId` undefined, and a pinned row would then be unfiled, the exact
-         undoing this guards against. */
-      const photos = await pool.query(
-        `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
-         from photos where trip_id=$1 and lng is not null and lat is not null`,
-        [tripId],
-      )
+      const [stops, photos] = await Promise.all([
+        pool.query('select id, lng, lat from stops where trip_id=$1 order by seq,created_at', [
+          tripId,
+        ]),
+        /* Aliased into the shape stop-placement.js speaks, so the rule reads
+           the same row here as it does anywhere else. Column names would leave
+           `stopId` undefined, and a pinned row would then be re-filed as
+           belonging nowhere — the exact undoing this guards against. */
+        pool.query(
+          `select id, lng, lat, stop_id as "stopId", stop_pinned as "stopPinned"
+           from photos where trip_id=$1 and lng is not null and lat is not null`,
+          [tripId],
+        ),
+      ])
       const ids = []
       const next = []
       for (const photo of photos.rows) {
-        const decided = stopForPhoto(photo)
+        const decided = stopForPhoto(photo, stops.rows, { radiusMetres })
         if (decided !== photo.stopId) {
           ids.push(photo.id)
           next.push(decided)

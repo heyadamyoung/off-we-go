@@ -141,12 +141,43 @@ function StopEditor({
               </em>
             )}
           </label>
+          {/* Two clocks, not a box. This was free text for the whole of this
+              app's life, which is why one itinerary item read 11:20-11:50 and
+              the next one read 2:30 PM — and why an afternoon stop was treated
+              as finished by four in the morning by the rule that had to guess
+              what the text meant. A native picker writes 24-hour HH:MM
+              whatever it shows the person using it, so a phone set to twelve
+              hours still stores the one shape everything else reads. */}
           <label className="f">
-            <span>Time</span>
+            <span>From</span>
             <input
-              value={draft.time || ''}
-              placeholder="09:30 – 12:30"
-              onChange={e => onField('time', e.target.value)}
+              type="time"
+              value={draft.startsAt || ''}
+              onChange={e => onField('startsAt', e.target.value || null)}
+            />
+          </label>
+          <label className="f">
+            <span>To</span>
+            <input
+              type="time"
+              value={draft.endsAt || ''}
+              onChange={e => onField('endsAt', e.target.value || null)}
+            />
+          </label>
+        </div>
+
+        <div className="frow">
+          {/* The words that used to share the box with the hours. Worth its own
+              field rather than none: 'Check-in' and 'Doors' say something the
+              two clocks cannot, and putting them back in with the numbers is
+              how the numbers stopped being readable. */}
+          <label className="f">
+            <span>Time note</span>
+            <input
+              value={draft.timeNote || ''}
+              placeholder="Check-in, Doors, Evening"
+              maxLength={80}
+              onChange={e => onField('timeNote', e.target.value || null)}
             />
           </label>
         </div>

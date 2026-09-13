@@ -31,6 +31,21 @@ const openPhotos = async page => {
   await expect(page.locator('.pgrid-photo').first()).toBeVisible()
 }
 
+test('a trip with no films is never asked whether it wants only films', async ({ page }) => {
+  /* The band above the grid has one row to spend, and on a phone it is already
+     holding an arrangement, four faces, a count and two buttons. A Photos /
+     Videos control on a trip of nothing but photographs divides nothing — its
+     Videos half can only ever produce an empty screen — so it is not drawn at
+     all until there is something of each to divide. Same rule the faces are
+     under: one person's photographs is not a filter, it is the trip. */
+  await openPhotos(page)
+  await expect(page.getByRole('button', { name: 'Videos only' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Photos only' })).toHaveCount(0)
+  // The one that is there is the arrangement, which every trip has a use for.
+  await expect(page.locator('.segbar')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'By date' })).toBeVisible()
+})
+
 test('a trip that fits on one screen renders every photograph, with no spacers', async ({
   page,
 }) => {
