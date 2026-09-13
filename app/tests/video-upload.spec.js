@@ -156,3 +156,39 @@ test('the gallery can be narrowed to the films, or to everything but them', asyn
   await expect(tiles).toHaveCount(everything)
   await expect(films).toHaveCount(1)
 })
+
+test('asking for videos opens a picker that will show videos', async ({ page }) => {
+  /* Reported from the iPhone app: video upload does not work.
+
+     The sheet's `accept` was React state, written on the next render, and the
+     picker was opened from a microtask — which does not wait for one. So it
+     opened carrying whatever the previous tap had left behind. On a desktop
+     that is invisible, because the file dialog lets you widen the filter by
+     hand. On iOS the system picker honours the attribute absolutely: tap Add
+     photos once, which asks for `image/*` on a phone, and every Add videos
+     after it offers a library with no film in it at all.
+
+     So this drives the two buttons in the order a person does, and reads the
+     attribute off the element the picker is actually opened from. Every other
+     test here reaches past the buttons and sets the input directly, which is
+     how the one door videos can be reached by went untested. */
+  await page.addInitScript(() => {
+    // The video button is the native app's; the web sheet asks for both at once.
+    window.__offwegoNative = true
+  })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  await page.getByRole('button', { name: 'Add photos' }).first().click()
+
+  const input = page.locator('.dlg input[type="file"]')
+  await expect(input).toHaveCount(1)
+
+  // Photographs first, which is what leaves the attribute narrowed on a phone.
+  await page.getByRole('button', { name: /Choose photos from your photo library/ }).click()
+  await expect(input).toHaveJSProperty('accept', 'image/*')
+
+  /* Then films. Before this fix the element still read `image/*` here, and the
+     phone's picker showed a library of photographs. */
+  await page.getByRole('button', { name: 'Choose videos instead' }).click()
+  await expect(input).toHaveJSProperty('accept', 'video/*')
+})

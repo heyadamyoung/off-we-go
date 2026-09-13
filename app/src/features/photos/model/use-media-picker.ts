@@ -114,10 +114,27 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
   )
 
   const openFilePicker = useCallback((types: string) => {
+    const input = fileRef.current
+    if (!input) return
+    /* Straight onto the element, and then opened in the same breath.
+
+       This went through state and a microtask, on the reasoning that the
+       attribute has to be right before the picker opens and React writes it on
+       the next render. A microtask does not wait for a render. So the picker
+       opened carrying whatever `accept` the previous tap had left on it, and on
+       iOS that is not cosmetic: the system picker honours the attribute
+       absolutely. Tap Add photos once — which asks for `image/*` on a phone —
+       and every Add videos after it opened a library filtered to photographs,
+       with no film in it to choose. Which is exactly "video upload does not
+       work", from the only door it can be reached by.
+
+       Setting the property is also synchronous inside the tap, which keeps the
+       user gesture intact; a click deferred out of the gesture is one a
+       WKWebView is entitled to refuse outright. State is kept in step so a
+       later render writes back what is already there rather than undoing it. */
+    input.accept = types
     setAccept(types)
-    /* The attribute has to be on the element before it opens, and React
-       writes it on the next render. */
-    queueMicrotask(() => fileRef.current?.click())
+    input.click()
   }, [])
 
   /* The system file picker, on the phone as well as the web.

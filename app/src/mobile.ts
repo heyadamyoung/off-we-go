@@ -22,7 +22,17 @@ import { createNativeLocationDriver, createNativeTrackingFetch } from './mobile-
 import { beginOidcLogin, beginOidcLogout, NATIVE_OIDC_VERIFIER_KEY } from './login-core'
 import type { AsyncStorage } from './shared/model/types'
 
-export const isNativeApp = Capacitor.isNativePlatform()
+/* Whether this is the app rather than the browser.
+ *
+ * The flag beside it is a test seam, the same shape as `__offwegoStill` next
+ * door in backend-live: the app's own way in to the camera roll — the button
+ * that asks for films rather than photographs — exists only here, so without
+ * it the one door videos can be reached by cannot be driven by a browser test.
+ * Which is how it shipped broken. It changes nothing but which buttons the
+ * add-media sheet offers. */
+export const isNativeApp =
+  Capacitor.isNativePlatform() ||
+  (globalThis as { __offwegoNative?: boolean }).__offwegoNative === true
 export const mobilePlatform = Capacitor.getPlatform()
 if (isNativeApp) document.documentElement.classList.add('native-app', `native-${mobilePlatform}`)
 
