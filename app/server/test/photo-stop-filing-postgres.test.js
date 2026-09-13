@@ -114,6 +114,8 @@ test('re-filing writes every change and only the changes', { skip: reachable }, 
   assert.deepEqual(await repository.relinkTripPhotos(user, trip.id, {}), {
     examined: 20,
     changed: 0,
+    // Nothing moved, so there is nothing to tell the screen about.
+    refiled: [],
   })
 
   /* And a null in the middle of the batch is a real null, not the string.
@@ -353,6 +355,8 @@ test('a pinned photograph is untouched by the batched re-link', { skip: reachabl
   assert.deepEqual(await repository.relinkTripPhotos(user, trip.id, {}), {
     examined: 3,
     changed: 1,
+    // And the one that moved is named, so the screen can follow it.
+    refiled: [{ id: wrong.id, stopId: rijks.id }],
   })
   assert.equal((await repository.findPhoto(user, trip.id, wrong.id)).stopId, rijks.id)
 

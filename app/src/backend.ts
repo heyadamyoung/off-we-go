@@ -1,4 +1,5 @@
 import { sampleProfile, sampleResult, sampleTrip, uid } from './sample-trip-core'
+import type { Refiling } from './photo-refile-core'
 import { safeOAuthContinuation } from './api-client-core'
 import { browserLoginHandoffFromUrl } from './mobile-auth-core'
 import { createLogtoExperienceClient } from './logto-experience-core'
@@ -143,7 +144,12 @@ export async function loadTripLanding(session: AuthSession): Promise<TripLanding
   })
 }
 
-export async function createStop(tripId: Id, fields: Partial<Stop>): Promise<Stop> {
+/* An itinerary edit's reply, which may also say which photographs it moved.
+   The server re-files the trip whenever a stop is added, moved or deleted, and
+   the screen that asked needs to hear about it — see photo-refile-core. */
+type Refiled<T> = T & { refiled?: Refiling[] }
+
+export async function createStop(tripId: Id, fields: Partial<Stop>): Promise<Refiled<Stop>> {
   if (isSample(tripId)) {
     const stop = {
       id: uid(),
@@ -161,7 +167,11 @@ export async function createStop(tripId: Id, fields: Partial<Stop>): Promise<Sto
   const target = localId()
   return withOfflineEdit(
     { kind: 'stop.create', tripId, target, fields },
-    () => authClient.request<Stop>(`${tripPath(tripId)}/stops`, { method: 'POST', body: fields }),
+    () =>
+      authClient.request<Refiled<Stop>>(`${tripPath(tripId)}/stops`, {
+        method: 'POST',
+        body: fields,
+      }),
     // The stop exists on the screen straight away under a name only this
     // device knows; the server's name replaces it when the queue drains.
     () => ({ id: target, name: '', lng: 0, lat: 0, ...fields }) as Stop,
@@ -171,7 +181,7 @@ export async function updateStop(
   tripId: Id,
   id: Id,
   fields: Partial<Stop>,
-): Promise<Stop | undefined> {
+): Promise<Refiled<Stop> | undefined> {
   if (isSample(tripId)) {
     const stop = sampleTrip().stops.find(item => item.id === id)
     if (stop) Object.assign(stop, fields)
@@ -180,14 +190,17 @@ export async function updateStop(
   return withOfflineEdit(
     { kind: 'stop.update', tripId, target: id, fields },
     () =>
-      authClient.request<Stop | undefined>(`${tripPath(tripId)}/stops/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: fields,
-      }),
+      authClient.request<Refiled<Stop> | undefined>(
+        `${tripPath(tripId)}/stops/${encodeURIComponent(id)}`,
+        { method: 'PATCH', body: fields },
+      ),
     () => ({ id, ...fields }) as Stop,
   )
 }
-export async function deleteStop(tripId: Id, id: Id): Promise<unknown> {
+export async function deleteStop(
+  tripId: Id,
+  id: Id,
+): Promise<{ refiled?: Refiling[] } | undefined> {
   if (isSample(tripId)) {
     sampleTrip().stops = sampleTrip().stops.filter(item => item.id !== id)
     return
@@ -195,9 +208,10 @@ export async function deleteStop(tripId: Id, id: Id): Promise<unknown> {
   return withOfflineEdit(
     { kind: 'stop.delete', tripId, target: id },
     () =>
-      authClient.request(`${tripPath(tripId)}/stops/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+      authClient.request<{ refiled?: Refiling[] }>(
+        `${tripPath(tripId)}/stops/${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      ),
     () => undefined,
   )
 }

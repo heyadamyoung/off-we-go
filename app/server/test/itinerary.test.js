@@ -63,7 +63,10 @@ test('an owner can create, change and delete a stop', async () => {
     url: `/api/trips/${trip.id}/stops/${created.json().id}`,
     headers: { authorization },
   })
-  assert.equal(removed.statusCode, 204)
+  /* 200 with a body, not the 204 it used to be: the reply says where the
+     deleted stop's photographs went, because the client was guessing and
+     guessing wrong. */
+  assert.equal(removed.statusCode, 200)
 
   const loaded = await app.inject({
     method: 'GET',

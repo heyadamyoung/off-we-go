@@ -7,6 +7,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react'
+import { applyRefilings } from '../../../photo-refile-core'
 import { createStop, deleteStop, replaceRoute, updateStop } from '../../../backend'
 import useEditorPlaces from './use-editor-places'
 import { enrichStops } from '../../sights'
@@ -97,6 +98,7 @@ export default function useItineraryEditor({
     tripId,
     stops,
     setStops,
+    setPhotos,
     dayForNewStop,
     draft,
     setDraft,
@@ -200,12 +202,17 @@ export default function useItineraryEditor({
       setStops(list => list.map(s => (s.id === id ? { ...s, lng: lngLat[0], lat: lngLat[1] } : s)))
       setDraft(d => (d && d.id === id ? { ...d, lng: lngLat[0], lat: lngLat[1] } : d))
       try {
-        await updateStop(tripId, id, { lng: lngLat[0], lat: lngLat[1] })
+        /* The server re-files the whole trip around a moved pin, and says what
+           it moved. Without this the photographs it just gathered up went on
+           being drawn where they were until the trip was loaded again, which
+           reads exactly like the gathering not having happened. */
+        const saved = await updateStop(tripId, id, { lng: lngLat[0], lat: lngLat[1] })
+        setPhotos(list => applyRefilings(list, saved?.refiled))
       } catch (e) {
         toast(appErrorMessage(e, 'move-stop'), 'error')
       }
     },
-    [tripId, toast, setStops],
+    [tripId, toast, setStops, setPhotos],
   )
 
   const onDraftField = useCallback((key: keyof StopDraft, value: StopDraft[keyof StopDraft]) => {
@@ -269,10 +276,12 @@ export default function useItineraryEditor({
           sourceUrl: draft.sourceUrl || undefined,
         })
         setStops(list => list.map(s => (s.id === draft.id ? { ...s, ...saved } : s)))
+        setPhotos(list => applyRefilings(list, saved?.refiled))
         toast('Stop saved')
       } else {
         const saved = await createStop(tripId, { ...draft, seq: nextSeq(stops) })
         setStops(list => [...list, saved])
+        setPhotos(list => applyRefilings(list, saved.refiled))
         setSelected(saved.id)
         toast('Stop added')
       }
@@ -282,7 +291,7 @@ export default function useItineraryEditor({
     } finally {
       setSaving(false)
     }
-  }, [draft, saving, tripId, stops, toast, setStops, setSelected])
+  }, [draft, saving, tripId, stops, toast, setStops, setPhotos, setSelected])
 
   /* The stop to remove is passed in by callers that have one but no draft —
      the detail card renders only when there is no draft, so reading `draft`
@@ -293,9 +302,18 @@ export default function useItineraryEditor({
       if (!doomed || saving) return
       setSaving(true)
       try {
-        await deleteStop(tripId, doomed)
+        const gone = await deleteStop(tripId, doomed)
         setStops(list => list.filter(s => s.id !== doomed))
-        setPhotos(list => list.map(p => (p.stopId === doomed ? { ...p, stopId: null } : p)))
+        /* Where they actually went, rather than a guess. This used to unfile
+           every photograph at the deleted stop while the server was handing
+           them to the next one along — two screens disagreeing about the same
+           rows until one of them reloaded. Offline there is no answer yet, so
+           the guess stands in until the queue drains. */
+        setPhotos(list =>
+          gone?.refiled
+            ? applyRefilings(list, gone.refiled)
+            : list.map(p => (p.stopId === doomed ? { ...p, stopId: null } : p)),
+        )
         if (selected === doomed) setSelected(null)
         setDraft(null)
         toast('Stop deleted')

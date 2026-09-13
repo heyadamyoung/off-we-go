@@ -221,7 +221,8 @@ test('a stop deleted hands its photographs to the next nearest, not to nothing',
     method: 'DELETE',
     headers: { authorization: `Bearer ${place.accessToken}` },
   })
-  assert.equal(gone.status, 204)
+  // 200 with a body now: the reply says where the orphans went. See below.
+  assert.equal(gone.status, 200)
 
   const after = await place.photos()
   assert.equal(after.find(item => item.id === photo.id).stopId, wester.id)
@@ -237,7 +238,7 @@ test('re-filing only touches what actually moved', async t => {
   await place.stopAt('Rijksmuseum', 4.8852, 52.36)
 
   const again = await place.repository.relinkTripPhotos(place.user, place.trip.id, {})
-  assert.deepEqual(again, { examined: 3, changed: 0 }, 'already settled')
+  assert.deepEqual(again, { examined: 3, changed: 0, refiled: [] }, 'already settled')
 })
 
 test('a photograph with no coordinates is left alone by re-filing', async t => {
@@ -277,7 +278,7 @@ test('a stop chosen by hand survives the itinerary changing under it', async t =
 
   // And re-filing directly, which is the same rule with nothing in the way.
   const report = await place.repository.relinkTripPhotos(place.user, place.trip.id, {})
-  assert.deepEqual(report, { examined: 1, changed: 0 })
+  assert.deepEqual(report, { examined: 1, changed: 0, refiled: [] })
 })
 
 test('a photograph with no coordinates can be filed by hand and stays filed', async t => {
@@ -507,4 +508,79 @@ test('a bulk move cannot reach photographs on another trip', async t => {
     place.accessToken,
   )
   assert.equal((await place.photos()).find(item => item.id === mine.id).stopId, rijks.id)
+})
+
+test('a stop that re-files photographs says so in its own reply', async t => {
+  /* Reported from the road: moving an itinerary item next to some photographs
+     did not gather them up.
+
+     The database was right the whole time. Every route below already re-filed
+     the trip, and every test above proves it did — by asking the API again.
+     What none of them did was tell the screen that asked for the move, so it
+     went on drawing the old filing until somebody reloaded the entire trip,
+     which reads exactly like the re-filing never happening.
+
+     So each of these now hands back what it moved. Ids and filings only: the
+     client already holds the photographs, and all it is missing is where they
+     went. */
+  const place = await world(t)
+  const early = await place.upload({ lng: 4.8852, lat: 52.36 })
+  const far = await place.upload({ lng: 2.3522, lat: 48.8566 })
+  assert.equal(early.stopId, null, 'nothing to file against yet')
+
+  // Added next to it: the reply carries the photograph it has just collected.
+  const added = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+  assert.deepEqual(added.refiled, [{ id: early.id, stopId: added.id }])
+
+  // Moved away: the same photograph comes loose, and the reply says that too.
+  const moved = await patchStop(
+    place.origin,
+    place.trip.id,
+    added.id,
+    { lng: 4.9003, lat: 52.379 },
+    place.accessToken,
+  )
+  assert.equal(moved.status, 200)
+  const afterMove = await moved.json()
+  assert.deepEqual(afterMove.refiled, [{ id: early.id, stopId: null }])
+
+  // Moved back, and it is collected again.
+  const back = await patchStop(
+    place.origin,
+    place.trip.id,
+    added.id,
+    { lng: 4.8852, lat: 52.36 },
+    place.accessToken,
+  )
+  assert.deepEqual((await back.json()).refiled, [{ id: early.id, stopId: added.id }])
+
+  /* An edit that moves nothing says nothing, rather than an empty promise of
+     news: a caption is not a move, and neither is a photograph in Paris. */
+  const renamed = await patchStop(
+    place.origin,
+    place.trip.id,
+    added.id,
+    { name: 'The Rijksmuseum' },
+    place.accessToken,
+  )
+  assert.equal((await renamed.json()).refiled, undefined)
+  assert.ok(far, 'and Paris was never anybody’s business')
+})
+
+test('deleting a stop says where its photographs went', async t => {
+  /* The client guessed at this one and guessed wrong: it unfiled every
+     photograph at the deleted stop, while the server was handing them to the
+     next stop along. Two screens disagreeing about the same rows. */
+  const place = await world(t)
+  const rijks = await place.stopAt('Rijksmuseum', 4.8852, 52.36)
+  const nearby = await place.stopAt('Museumplein', 4.8845, 52.3605)
+  const photo = await place.upload({ lng: 4.8852, lat: 52.36 })
+  assert.equal(photo.stopId, rijks.id, 'the nearer of the two')
+
+  const response = await fetch(`${place.origin}/api/trips/${place.trip.id}/stops/${rijks.id}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${place.accessToken}` },
+  })
+  assert.equal(response.status, 200)
+  assert.deepEqual((await response.json()).refiled, [{ id: photo.id, stopId: nearby.id }])
 })
