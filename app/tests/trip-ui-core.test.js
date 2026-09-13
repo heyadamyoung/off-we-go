@@ -46,12 +46,12 @@ const STOPS = [
     id: 's1',
     name: 'Rijksmuseum',
     day: '2026-09-05',
-    time: '09:30',
+    startsAt: '09:30',
     status: 'done',
     note: 'The Night Watch',
   },
-  { id: 's2', name: 'Foodhallen', day: '2026-09-05', time: '13:00', status: 'now' },
-  { id: 's3', name: 'Anne Frank House', day: '2026-09-06', time: '15:45', status: 'planned' },
+  { id: 's2', name: 'Foodhallen', day: '2026-09-05', startsAt: '13:00', status: 'now' },
+  { id: 's3', name: 'Anne Frank House', day: '2026-09-06', startsAt: '15:45', status: 'planned' },
 ]
 const PHOTOS = [
   { id: 'p1', stopId: 's1', by: 'Maya', when: '10:42', caption: 'In front of The Night Watch' },
@@ -69,7 +69,7 @@ test('a day shows its own stops and the photographs taken at them, in order', ()
 
 test('a stop comes before the photographs taken at it, even at the same time', () => {
   const together = tripItems({
-    stops: [{ id: 's', name: 'Stop', day: '2026-09-07', time: '10:00' }],
+    stops: [{ id: 's', name: 'Stop', day: '2026-09-07', startsAt: '10:00' }],
     photos: [{ id: 'p', stopId: 's', by: 'A', when: '10:00' }],
     day: '2026-09-07',
   })

@@ -1390,21 +1390,27 @@ test('a trip whose days are all behind it is over', () => {
    mistake, one line above it: 11:20–11:50. The schedule knew.
 
    So the clock does the same job the calendar does, at the resolution the
-   itinerary is actually written in. Strictly parsed — an hour and a minute or
-   nothing — because this is display text and guessing at display text is what
-   made a day mean four different things. Anything unreadable simply leaves
-   the stop to the day rule, which is where it was already. */
+   itinerary is actually written in.
 
-const AT = (time, stop) => ({ ...stop, time })
+   It reads the hours off the stop now rather than out of a sentence. While
+   this was display text it took the last clock it could find and ignored any
+   AM or PM beside it, so '1:30 pm – 3:00 pm' came back as three in the
+   morning — past, all day, every day. Migration 031 turned the text into two
+   columns and there is nothing left to guess at; a value that is not an hour
+   still leaves the stop to the day rule, which is where it was already. */
+
+const AT = (startsAt, endsAt, stop) => ({ ...stop, startsAt, endsAt })
 const SUNDAY = '2026-09-13'
 const afternoon = new Date('2026-09-13T14:19:00')
 
 const morning = AT(
-  '11:20 – 11:50',
+  '11:20',
+  '11:50',
   ON(SUNDAY, { id: 'morning', name: 'Morning', lng: 4.88, lat: 52.36, seq: 0 }),
 )
 const evening = AT(
-  '18:00 – 20:00',
+  '18:00',
+  '20:00',
   ON(SUNDAY, { id: 'evening', name: 'Evening', lng: 4.9, lat: 52.38, seq: 1 }),
 )
 
@@ -1461,8 +1467,12 @@ test('a stop that names no hour is left to its day', () => {
 test('an hour that cannot be read is not an hour that has passed', () => {
   /* The lesson from the day that meant four things: parse strictly, and when
      it does not parse, say nothing rather than something. */
-  for (const time of ['morning-ish', 'after lunch', '25:99', 'tbc', '']) {
-    const odd = AT(time, ON(SUNDAY, { id: 'odd', name: 'Odd', lng: 4.88, lat: 52.36, seq: 0 }))
+  for (const time of ['morning-ish', 'after lunch', '25:99', 'tbc', '', '2:30 PM']) {
+    const odd = AT(
+      time,
+      null,
+      ON(SUNDAY, { id: 'odd', name: 'Odd', lng: 4.88, lat: 52.36, seq: 0 }),
+    )
     const progress = deriveLiveStopProgress({ stops: [odd, evening], fixes: [], now: afternoon })
     assert.equal(progress.destination?.id, 'odd', JSON.stringify(time))
   }
@@ -1472,17 +1482,38 @@ test('a single time is the end of its own window', () => {
   /* "Check-in 14:00" is one moment rather than a range, and the itinerary is
      full of them. */
   const checkIn = AT(
-    'Check-in 09:00',
-    ON(SUNDAY, { id: 'hotel', name: 'Hotel', lng: 4.88, lat: 52.36, seq: 0 }),
+    '09:00',
+    null,
+    ON(SUNDAY, { id: 'hotel', name: 'Hotel', lng: 4.88, lat: 52.36, seq: 0, timeNote: 'Check-in' }),
   )
   const progress = deriveLiveStopProgress({ stops: [checkIn, evening], fixes: [], now: afternoon })
   assert.equal(progress.destination?.id, 'evening')
 })
 
+test('an evening that runs past midnight has not already finished', () => {
+  /* 23:00 – 01:00 is a real shape on a trip — a late ferry, a night bus, the
+     last of a bar. Read as ending at 01:00 of the same morning it would be
+     twenty-two hours finished before it began, and nothing would ever be
+     heading to it. */
+  const overnight = AT(
+    '23:00',
+    '01:00',
+    ON(SUNDAY, { id: 'ferry', name: 'Night ferry', lng: 4.88, lat: 52.36, seq: 0 }),
+  )
+  const progress = deriveLiveStopProgress({
+    stops: [overnight, evening],
+    fixes: [],
+    now: afternoon,
+  })
+
+  assert.equal(progress.destination?.id, 'ferry')
+})
+
 test('the clock only speaks about today', () => {
   /* Tomorrow's eleven-twenty has not passed because today's has. */
   const tomorrow = AT(
-    '11:20 – 11:50',
+    '11:20',
+    '11:50',
     ON('2026-09-14', { id: 'tomorrow', name: 'Tomorrow', lng: 4.88, lat: 52.36, seq: 1 }),
   )
   const progress = deriveLiveStopProgress({ stops: [morning, tomorrow], fixes: [], now: afternoon })

@@ -49,6 +49,7 @@ const ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS = 2 * 60_000
    its business. */
 export { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
 import { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
+import { startMinutes } from './stop-time-core'
 
 interface LiveStopProgressInput {
   stops: Stop[]
@@ -90,9 +91,16 @@ export function deriveLiveStopProgress({
     const seqA = a.seq ?? Number.MAX_SAFE_INTEGER
     const seqB = b.seq ?? Number.MAX_SAFE_INTEGER
     if (seqA !== seqB) return seqA - seqB
-    const timeA = a.time || ''
-    const timeB = b.time || ''
-    return timeA < timeB ? -1 : timeA > timeB ? 1 : 0
+    /* Then the hour, for the stops a day gives the same sequence number to.
+       Minutes rather than the text they used to be compared as: '9:30' sorted
+       after '14:00' as a string, which is the same afternoon-in-the-morning
+       mistake in a different place. */
+    const fromA = startMinutes(a)
+    const fromB = startMinutes(b)
+    if (fromA === fromB) return 0
+    if (fromA === null) return 1
+    if (fromB === null) return -1
+    return fromA - fromB
   })
   const coordinateFixes = fixes.filter(
     fix => validLngLat(fix.lng, fix.lat) && Number.isFinite(fix.at.getTime()),
@@ -255,7 +263,7 @@ export function deriveLiveStopProgress({
     const day = dayNumber(stop.day)
     if (day === null || today === null) return false
     if (day !== today) return day < today
-    const ends = endOfWindow(stop.time)
+    const ends = endOfWindow(stop)
     return ends !== null && minutesNow > ends + LATE_GRACE_MINUTES
   }
   /* Withheld while the live layer is still loading. The schedule on its own is

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { AGENT_TOKEN_PREFIX, AGENT_TOKEN_TTL_MS, readAgentToken } from './agent-token.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
 import { isTripDay } from './trip-day.js'
+import { isClock } from './stop-time.js'
 import { recordFailure, span, stamp } from './tracing.js'
 
 const SCOPES = ['trips:read', 'trips:write']
@@ -216,6 +217,29 @@ const pgInteger = z.number().int().min(0).max(2_147_483_647)
  * to accept from a text box, and migration 025 spent a whole file converting
  * the last of it; a tool that keeps writing it puts the mess straight back.
  * The calendar picker writes this format and every screen reads it. */
+/* A clock, and only a clock. An itinerary pasted out of an email is full of
+   '1:30 pm' and 'doors at 7', and reading those was the job the old free-text
+   column pretended to do — badly enough that an afternoon stop was treated as
+   finished by four in the morning. Converting is work the model does well and
+   a regular expression does not, so the door asks for it done. */
+const stopClock = z
+  .string()
+  .refine(isClock, { message: 'Use a 24-hour clock, like 09:30 or 14:00' })
+  .describe(
+    'A time of day on a 24-hour clock, as HH:MM — 09:30, 14:00, 23:15. ' +
+      'Local to where the stop is, the way a ticket prints it. Convert any ' +
+      'am/pm you were given: 1:30 pm is 13:30, 12:00 am is 00:00. Null for a ' +
+      'stop with no time yet.',
+  )
+
+const stopTimeNote = z
+  .string()
+  .max(80)
+  .describe(
+    'The words that go with the time rather than a time themselves — ' +
+      '"Check-in", "Doors", "Evening", "All day". Never put a clock in here.',
+  )
+
 const tripDay = z
   .string()
   .refine(isTripDay, { message: 'Use a calendar date, like 2026-09-04' })
@@ -581,7 +605,9 @@ function buildMcpServer({
         kind: z.string().max(80).nullable().optional(),
         icon: z.string().max(80).optional(),
         day: tripDay.nullable().optional(),
-        time: z.string().max(80).nullable().optional(),
+        startsAt: stopClock.nullable().optional(),
+        endsAt: stopClock.nullable().optional(),
+        timeNote: stopTimeNote.nullable().optional(),
         status: z.enum(['done', 'now', 'next', 'planned']).optional(),
         note: z.string().max(5000).nullable().optional(),
         src: externalUrl.nullable().optional(),
@@ -595,7 +621,9 @@ function buildMcpServer({
         kind: null,
         icon: 'pin',
         day: null,
-        time: null,
+        startsAt: null,
+        endsAt: null,
+        timeNote: null,
         status: 'planned',
         note: null,
         src: null,
@@ -622,7 +650,9 @@ function buildMcpServer({
         kind: z.string().max(80).nullable().optional(),
         icon: z.string().max(80).optional(),
         day: tripDay.nullable().optional(),
-        time: z.string().max(80).nullable().optional(),
+        startsAt: stopClock.nullable().optional(),
+        endsAt: stopClock.nullable().optional(),
+        timeNote: stopTimeNote.nullable().optional(),
         status: z.enum(['done', 'now', 'next', 'planned']).optional(),
         note: z.string().max(5000).nullable().optional(),
         src: externalUrl.nullable().optional(),

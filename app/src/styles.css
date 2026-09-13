@@ -1010,7 +1010,8 @@
 .editor .ef .del:disabled, .editor .ef .ord:disabled { opacity: .45; cursor: default }
 .editor .f { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1 }
 .editor .f > span { font-size: 11px; font-weight: 700; color: var(--c-faint) }
-.editor .frow { display: flex; gap: 10px }
+.editor .frow { display: flex; gap: 10px; flex-wrap: wrap }
+.editor .frow > .f { flex: 1 1 96px; min-width: 0 }
 /* The calendar's fence, in words: a pick outside the trip is refused and says
    so; a legacy label the range cannot place is kept, quietly, until a pick. */
 .editor .dayfence { font-size: 11px; font-style: normal; color: var(--c-danger) }

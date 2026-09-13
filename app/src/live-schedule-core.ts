@@ -14,18 +14,15 @@
    place that they have moved on from it. */
 export const LATE_GRACE_MINUTES = 90
 
-/* The last hour a stop names, as minutes past midnight, or null.
+/* When a stop is over, as minutes counted from the start of its own day.
 
-   A stop's time is display text — '11:20 – 11:50', 'Check-in 14:00' — and the
-   last clock time in it is when it is over. Strictly parsed, because guessing
-   at display text is exactly what made a day mean four different things: an
-   hour and a minute or nothing at all, and nothing at all leaves the stop to
-   its day, which is where it already was. */
-export function endOfWindow(time?: string | null): number | null {
-  const found = [...String(time ?? '').matchAll(/(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])/g)]
-  const last = found[found.length - 1]
-  return last ? Number(last[1]) * 60 + Number(last[2]) : null
-}
+   This used to read the hour out of display text — '11:20 – 11:50',
+   'Check-in 14:00' — taking the last clock it could find and ignoring any AM
+   or PM sitting beside it. So '1:30 pm – 3:00 pm' came back as three in the
+   morning: past, all day, every day, and stepped over by whatever came next.
+   A stop now holds its hours as hours, and this is arithmetic rather than a
+   guess at somebody's typing. */
+export { windowEndMinutes as endOfWindow } from './stop-time-core'
 
 /* A calendar day as a comparable number, from either an ISO date or a moment.
    Local rather than UTC on purpose: the traveller's own midnight is the one

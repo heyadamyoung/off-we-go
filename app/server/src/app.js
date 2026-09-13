@@ -42,6 +42,7 @@ import {
 } from './media-types.js'
 import { exifFromImage } from './photo-exif.js'
 import { tripDayOrNull } from './trip-day.js'
+import { clockOrNull, timeNoteOrNull } from './stop-time.js'
 import { signPlaylist } from './hls.js'
 import {
   DEFAULT_BUCKET_SECONDS,
@@ -2872,6 +2873,44 @@ export async function buildServer({
     return reply.code(204).send()
   })
 
+  /* A stop's time, as both routes below need it read.
+   *
+   * Refused rather than half-read. '2:30 PM' is a caller saying something this
+   * column cannot hold, and taking the 2:30 off the front of it is exactly how
+   * a stop ends up finishing at half past two in the morning — which is the
+   * bug this whole shape exists to end.
+   *
+   * On a patch only the keys actually sent come back, so an edit to a note
+   * cannot blank the hours beside it. On a create every key is answered, so a
+   * stop with no time is stored with none rather than with `undefined`.
+   *
+   * A lone end becomes the start either way: one time given is when the thing
+   * happens, whichever box it landed in, and a window that ends without ever
+   * beginning is not something anybody meant to say.
+   */
+  const stopTimes = (body, { creating = false } = {}) => {
+    const fields = creating ? { startsAt: null, endsAt: null, timeNote: null } : {}
+    for (const key of ['startsAt', 'endsAt']) {
+      if (body[key] === undefined) continue
+      const clock = clockOrNull(body[key])
+      if (clock === undefined) return { error: 'A stop’s time must be a 24-hour clock, like 09:30' }
+      fields[key] = clock
+    }
+    if (body.timeNote !== undefined) {
+      const note = timeNoteOrNull(body.timeNote)
+      if (note === undefined) return { error: 'A stop’s time note must be text' }
+      fields.timeNote = note
+    }
+    /* Only where the caller has said something about the beginning. Silence
+       about it on a patch means "leave it as it is", and moving an end into a
+       start we cannot see would overwrite an hour nobody asked to change. */
+    if (fields.endsAt && fields.startsAt === null) {
+      fields.startsAt = fields.endsAt
+      fields.endsAt = null
+    }
+    return { fields }
+  }
+
   app.post('/api/trips/:tripId/stops', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -2888,12 +2927,18 @@ export async function buildServer({
     if (day === undefined) {
       return reply.code(400).send({ error: 'A stop’s day must be a date, like 2026-09-04' })
     }
+    /* Two clocks and the words that used to share a box with them. Refused
+       rather than half-read: '2:30 PM' is a caller saying something this
+       column cannot hold, and taking the 2:30 off the front is exactly how a
+       stop ends up finishing at half past two in the morning. */
+    const times = stopTimes(body, { creating: true })
+    if (times.error) return reply.code(400).send({ error: times.error })
     const stop = await repository.createStop(user, request.params.tripId, {
       name,
       kind: body.kind || null,
       icon: body.icon || 'pin',
       day,
-      time: body.time || null,
+      ...times.fields,
       lng,
       lat,
       status: body.status || 'planned',
@@ -2937,6 +2982,9 @@ export async function buildServer({
     if (fields.seq !== undefined && !Number.isInteger(fields.seq)) {
       return reply.code(400).send({ error: 'A stop order must be a whole number' })
     }
+    const times = stopTimes(fields)
+    if (times.error) return reply.code(400).send({ error: times.error })
+    Object.assign(fields, times.fields)
     const stop = await repository.updateStop(
       user,
       request.params.tripId,

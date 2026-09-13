@@ -31,7 +31,14 @@ export interface Stop {
   lng: number
   lat: number
   day?: string
-  time?: string
+  /* Times of day, `HH:MM`, local to where the stop is — the way the ticket
+     prints it. Free text until migration 031: that is why one itinerary item
+     read `11:20-11:50` and the next `2:30 PM`, and why an afternoon stop was
+     treated as finished by four in the morning. */
+  startsAt?: string | null
+  endsAt?: string | null
+  /** The words that went with the hours: `Check-in`, `Doors`, `Evening`. */
+  timeNote?: string | null
   kind?: string
   icon?: string
   status?: string

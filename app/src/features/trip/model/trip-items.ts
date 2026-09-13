@@ -1,5 +1,6 @@
 import { ALL_DAYS } from '../../../trip-search-core'
 import { clockLabel, dayLabelOf } from '../../../day-label-core'
+import { minutesOf, startMinutes, stopTimeLabel } from '../../../stop-time-core'
 import { dayIsoOf, photoDayIso, tripDays } from '../../../trip-days-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
@@ -18,6 +19,10 @@ export interface TripItem {
   /** The day this actually falls on. The identity and the sort key. */
   dayIso: string | null
   time: string
+  /* The hour it happens at, as minutes past midnight, for ordering a day.
+     Never the label: '9:30 – 10:00' sorts after '14:00' as a string, which is
+     an afternoon read as a morning. Null when nothing has said. */
+  startsMinutes: number | null
   status: string
   /** the stop's place in the itinerary; a photograph inherits its stop's */
   seq: number
@@ -50,9 +55,10 @@ export function stopItem(stop: Stop): TripItem {
     id: stop.id,
     kind: 'stop',
     title: stop.name || stop.kind || 'Stop',
-    meta: [stop.time, stop.kind].filter(Boolean).join(' · ') || 'No time set',
+    meta: [stopTimeLabel(stop), stop.kind].filter(Boolean).join(' · ') || 'No time set',
     ...dayFields(dayIsoOf(stop.day)),
-    time: stop.time || '',
+    time: stopTimeLabel(stop),
+    startsMinutes: startMinutes(stop),
     status: stop.status || 'planned',
     seq: stop.seq ?? Number.MAX_SAFE_INTEGER,
     stop,
@@ -72,7 +78,10 @@ export function photoItem(photo: TripPhoto, stop?: Stop): TripItem {
        a day, and taking the day only from the stop meant it could never appear
        under one. */
     ...dayFields(photoDayIso(photo, stop?.day)),
-    time: photo.when || stop?.time || '',
+    time: photo.when || stopTimeLabel(stop),
+    /* Its own moment first: a photograph taken at four belongs after one taken
+       at two, whatever hour the stop they share is booked for. */
+    startsMinutes: minutesOf(clockLabel(photo.when)) ?? startMinutes(stop),
     status: 'photo',
     seq: stop?.seq ?? Number.MAX_SAFE_INTEGER,
     photo,
@@ -135,7 +144,14 @@ export function tripItems({
     }
     // The itinerary's own order first: it is the one somebody chose.
     if (a.seq !== b.seq) return a.seq - b.seq
-    if (a.time !== b.time) return a.time < b.time ? -1 : 1
+    /* Then the hour. Minutes rather than the labels, which sorted '9:30 –
+       10:00' after '14:00' because that is what strings do with a leading
+       digit — an afternoon read as a morning, in a third place. */
+    if (a.startsMinutes !== b.startsMinutes) {
+      if (a.startsMinutes === null) return 1
+      if (b.startsMinutes === null) return -1
+      return a.startsMinutes - b.startsMinutes
+    }
     // A stop before the photographs taken at it, so the strip reads as a day.
     return a.kind === b.kind ? 0 : a.kind === 'stop' ? -1 : 1
   })
