@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
+import {
+  kindInForce,
+  narrowPhotos,
+  nothingShown,
+  tallyKinds,
+  type MediaKind,
+} from '../../../photo-filter-core'
 import { chosenIn } from '../../../photo-select-core'
 import { GalleryBar, PlacePicker, SelectBar, usePhotoSelection, type Filing } from '../../photos'
 import type { GroupMode } from '../../../photo-groups-core'
@@ -46,12 +53,24 @@ export default function PanelPhotos({
      name on a photograph whose owner has left the trip still needs a face. */
   const names = [...new Set(photos.map(photo => photo.by).filter(Boolean))]
   const faces = new Map((roster || []).map(person => [person.name, person]))
-  const shown = photoBy ? photos.filter(photo => photo.by === photoBy) : photos
   const byStop = new Map(stops.map(stop => [stop.id, stop]))
 
   /* By place by default: the trip already knows where it went, and a wall of
      everything is the harder thing to read once there is a lot of it. */
   const [mode, setMode] = useState<GroupMode>('stop')
+
+  /* Stills, films, or both. Counted over the whole trip rather than over what
+     is on the screen, so the control does not appear and vanish as faces are
+     tapped — and read back through the tally, so the last film being deleted
+     cannot leave somebody staring at an empty grid with no button to undo it. */
+  const [wanted, setWanted] = useState<MediaKind>('all')
+  const tally = useMemo(() => tallyKinds(photos), [photos])
+  const kind = kindInForce(tally, wanted)
+
+  /* Memoised, because the grid below re-groups, re-measures and re-windows
+     whenever it is handed a different array — and a filter that built a new
+     one every render would have it do all three on every render. */
+  const shown = useMemo(() => narrowPhotos(photos, { by: photoBy, kind }), [photos, photoBy, kind])
   const {
     ref: grid,
     columns,
@@ -118,6 +137,9 @@ export default function PanelPhotos({
       <GalleryBar
         mode={mode}
         onMode={setMode}
+        kind={kind}
+        onKind={setWanted}
+        tally={tally}
         names={names}
         faces={faces}
         photoBy={photoBy}
@@ -280,7 +302,7 @@ export default function PanelPhotos({
           )}
         </div>
       ) : (
-        <p className="hint px-6 py-10 text-center">Nothing from {photoBy} on this trip.</p>
+        <p className="hint px-6 py-10 text-center">{nothingShown({ by: photoBy, kind })}</p>
       )}
       {picking && onMovePhotos && (
         <PlacePicker

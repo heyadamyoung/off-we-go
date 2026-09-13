@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Icon from '../../../shared/ui/icon'
+import { worthFiltering, type KindTally, type MediaKind } from '../../../photo-filter-core'
 import type { GroupMode } from '../../../photo-groups-core'
 import type { Person } from '../../../shared/model/types'
 
@@ -13,6 +14,10 @@ import type { Person } from '../../../shared/model/types'
 interface GalleryBarProps {
   mode: GroupMode
   onMode: (mode: GroupMode) => void
+  kind: MediaKind
+  onKind: (kind: MediaKind) => void
+  /** How much of each kind the trip holds, which is what decides whether to ask. */
+  tally: KindTally
   names: string[]
   faces: Map<string, Person>
   photoBy: string | null
@@ -27,6 +32,9 @@ interface GalleryBarProps {
 export default function GalleryBar({
   mode,
   onMode,
+  kind,
+  onKind,
+  tally,
   names,
   faces,
   photoBy,
@@ -62,6 +70,37 @@ export default function GalleryBar({
             By date
           </button>
         </fieldset>
+        {worthFiltering(tally) && (
+          /* Only where there is something of each to divide. A trip of
+             nothing but stills does not need a Videos button, and this row
+             has to stay one row.
+
+             The spoken names are longer than the written ones because the
+             written one has to be short enough to fit three of: a tab called
+             Photos already sits a few pixels away, and two controls that
+             announce themselves identically is one too many for anybody
+             listening rather than looking. */
+          <fieldset className="segbar" aria-label="Photos or videos">
+            <button
+              aria-pressed={kind === 'all'}
+              aria-label="All media"
+              onClick={() => onKind('all')}>
+              All
+            </button>
+            <button
+              aria-pressed={kind === 'photo'}
+              aria-label="Photos only"
+              onClick={() => onKind('photo')}>
+              Photos
+            </button>
+            <button
+              aria-pressed={kind === 'video'}
+              aria-label="Videos only"
+              onClick={() => onKind('video')}>
+              Videos
+            </button>
+          </fieldset>
+        )}
         {names.length > 1 && (
           /* Faces rather than names. Four names in pills is most of a phone's
              width spent spelling out something a 26px circle says at a

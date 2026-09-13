@@ -1,17 +1,11 @@
 import { test, expect } from '@playwright/test'
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, context }) => {
   // Freeze the demo's walking traveller: layout and placement assertions need
   // a world that holds still. Set before boot; the router strips query params.
   await page.addInitScript(() => {
     window.__offwegoStill = true
   })
-})
-
-test('a video is chosen, drawn from its own first frame, and plays in the viewer', async ({
-  page,
-  context,
-}) => {
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ longitude: 4.8686, latitude: 52.3664 })
   await page.route('https://en.wikipedia.org/**', route =>
@@ -20,15 +14,15 @@ test('a video is chosen, drawn from its own first frame, and plays in the viewer
       body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
     }),
   )
-  await page.goto('/trips/sample')
-  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
-  await page.getByRole('button', { name: 'Add photos' }).first().click()
+})
 
-  /* A real film, recorded in the page rather than committed to the repository:
-     a canvas painted for half a second and taken off it by MediaRecorder. It
-     is a genuinely decodable video, so this drives the actual decode-seek-draw
-     path a phone's camera roll would — including the awkward part, that a
-     recorded file reports no seekable length to draw a poster from. */
+/* A real film, recorded in the page rather than committed to the repository:
+   a canvas painted for half a second and taken off it by MediaRecorder. It is
+   a genuinely decodable video, so this drives the actual decode-seek-draw path
+   a phone's camera roll would — including the awkward part, that a recorded
+   file reports no seekable length to draw a poster from. */
+const chooseFilm = async page => {
+  await page.getByRole('button', { name: 'Add photos' }).first().click()
   await page.evaluate(async () => {
     const canvas = document.createElement('canvas')
     canvas.width = 320
@@ -60,11 +54,19 @@ test('a video is chosen, drawn from its own first frame, and plays in the viewer
     input.files = transfer.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
+  await expect(page.locator('.dlg .previews img')).toHaveCount(1, { timeout: 30_000 })
+}
+
+test('a video is chosen, drawn from its own first frame, and plays in the viewer', async ({
+  page,
+}) => {
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  await chooseFilm(page)
 
   /* The chosen tile is the film's own frame, not a placeholder: a poster that
      failed to draw would leave the camcorder stand-in instead. */
   const chosen = page.locator('.dlg .previews img')
-  await expect(chosen).toHaveCount(1, { timeout: 30_000 })
   await expect(chosen).toHaveJSProperty('naturalWidth', 320)
   /* The chip says how long it runs, or just "Video" when the file carries no
      seekable length — either way it marks the tile as one that moves. */
@@ -106,4 +108,48 @@ test('a video is chosen, drawn from its own first frame, and plays in the viewer
     'pointer-events',
     'none',
   )
+})
+
+test('the gallery can be narrowed to the films, or to everything but them', async ({ page }) => {
+  /* Reported from a trip that had been going a fortnight: the films were in
+     there somewhere. A photograph is scrolled past on the way to something
+     else, but a film is looked for on purpose — the forty seconds of the
+     funicular, the one where she finally let go of the handlebars — and there
+     was no way to ask for just those.
+
+     The control only exists once the trip holds both kinds, so this has to
+     make one before it can drive it. */
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  await chooseFilm(page)
+  await page.getByRole('button', { name: 'Add 1', exact: true }).click()
+
+  /* Chronological, where the film just added is first and the grid is one
+     plain card — so the counts below are the whole trip rather than whatever
+     the window happened to be holding. */
+  await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  await page.getByRole('button', { name: 'By date' }).click()
+  const tiles = page.locator('.pgrid-photo')
+  const films = page.locator('.pgrid-photo[aria-label="Video"]')
+  await expect(tiles.first()).toHaveAttribute('aria-label', 'Video', { timeout: 15_000 })
+  const everything = await tiles.count()
+  expect(everything).toBeGreaterThan(5)
+
+  await page.getByRole('button', { name: 'Videos only' }).click()
+  await expect(tiles).toHaveCount(1)
+  await expect(films).toHaveCount(1)
+
+  /* And the grouping is built from what is left rather than filtered after the
+     fact: one film means one card, not a column of empty itinerary items. */
+  await page.getByRole('button', { name: 'By place' }).click()
+  await expect(page.locator('.pgrid-head')).toHaveCount(1)
+  await page.getByRole('button', { name: 'By date' }).click()
+
+  await page.getByRole('button', { name: 'Photos only' }).click()
+  await expect(tiles).toHaveCount(everything - 1)
+  await expect(films).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'All media' }).click()
+  await expect(tiles).toHaveCount(everything)
+  await expect(films).toHaveCount(1)
 })
