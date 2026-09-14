@@ -1325,11 +1325,25 @@ test('the compass button raises a facing beam at the browser fix', async ({ page
         new DeviceOrientationEvent('deviceorientationabsolute', { alpha: a, absolute: true }),
       )
     }, alpha)
+  /* Which way the beam points, as a direction rather than as a number.
+
+     The rendered rotation is cumulative on purpose — 350° to 10° has to be a
+     20° nudge and not a 340° pirouette, so the value is free to read 370 or
+     -40 and a string comparison is comparing the accumulator's history. An
+     exact half-turn is a tie, and which way it breaks depends on whether the
+     map's ease was sampled on its way round or arrived in one step: the same
+     beam, pointing the same way, reads 0deg or 360deg. This is the direction
+     the test means. */
+  const facing = () =>
+    page
+      .locator('.youb .beam')
+      .evaluate(el => Number(/-?[\d.]+/.exec(el.style.transform)?.[0] ?? Number.NaN))
+      .then(degrees => ((degrees % 360) + 360) % 360)
+
   await face(270) // alpha is counterclockwise: 270 means facing east
   await expect(page.locator('.youb .beam')).toHaveCSS('transform', /matrix/)
   await face(180)
-  const turned = await page.locator('.youb .beam').evaluate(el => el.style.transform)
-  expect(turned).toBe('rotate(180deg)')
+  expect(await facing()).toBe(180)
 
   // Second press: heading-up. The map itself turns to the facing — south up
   // means bearing 180 — and the beam counter-turns to keep pointing at the
@@ -1338,9 +1352,7 @@ test('the compass button raises a facing beam at the browser fix', async ({ page
   await expect
     .poll(() => page.evaluate(() => Math.round(window.__offwegoMap?.getBearing() ?? 0)))
     .toBe(180)
-  await expect
-    .poll(() => page.locator('.youb .beam').evaluate(el => el.style.transform))
-    .toBe('rotate(0deg)')
+  await expect.poll(facing).toBe(0)
 
   // Third press: everything stands down — the dot leaves, north comes back.
   await page.getByTitle("Show which way you're facing").click()
