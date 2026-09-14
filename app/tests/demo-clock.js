@@ -22,3 +22,13 @@ export const DEMO_NOW = new Date('2026-09-13T13:00:00Z')
 
 /** Pin the page's clock. Call before `goto`, or the first render reads the real one. */
 export const atDemoTime = page => page.clock.setFixedTime(DEMO_NOW)
+
+/* A day either side of the demo's own today, as an ISO date.
+
+   Never from Date.now(). The page's clock is pinned and the suite's is not,
+   so the two agreed only for as long as the machine's date happened to match
+   the one above — which it stopped doing at midnight, and the day-range
+   assertion went red with nothing having changed. The same lesson as the
+   clock itself, one level up. */
+export const demoDay = (shift = 0) =>
+  new Date(DEMO_NOW.getTime() + shift * 86_400_000).toISOString().slice(0, 10)
