@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { isNativeApp } from '../../../mobile'
-import { preparePhotoFilesForUpload, type MetadataFile } from '../../../mobile-photos-core'
+import { readPhotoFiles, type MetadataFile } from '../../../mobile-photos-core'
 import { isVideoFile, tooBigToSend, videoStill, withVideoMime } from '../../../mobile-videos-core'
 import { photoThumbnail } from '../../../photo-thumb-core'
 import { appErrorMessage } from '../../../user-messages-core'
@@ -21,6 +21,10 @@ export interface ChosenMedia {
      always was. */
   thumb: Blob | null
   thumbUrl: string | null
+  /* Whether this browser can put the file on screen at all. A HEIC is a
+     picture everywhere and an image only in Safari, so the tile for one
+     elsewhere is an icon rather than a broken <img>. */
+  drawable: boolean
   durationMs: number | null
   isVideo: boolean
   uploadKey: string
@@ -87,7 +91,7 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
         const fresh = picked.filter((_, i) => !refusals[i])
         for (const refusal of refusals.filter(Boolean)) toast(refusal as string, 'error')
         if (!fresh.length) return
-        const prepared = await preparePhotoFilesForUpload(fresh.map(withVideoMime))
+        const prepared = await readPhotoFiles(fresh.map(withVideoMime))
         /* One decode at a time: a handful of 4K films seeked in parallel is how
          a phone's browser tab runs out of memory mid-selection. */
         const stills: ChosenMedia[] = []
@@ -106,6 +110,9 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
             poster: still?.poster ?? null,
             thumb,
             thumbUrl: thumb ? URL.createObjectURL(thumb) : null,
+            /* A thumbnail proves the decoder took it. Without one, only a
+               type the browser draws natively is worth pointing an <img> at. */
+            drawable: !!thumb || /^image\/(jpeg|png|gif|webp|avif)$/i.test(file.type || ''),
             durationMs: still?.durationMs ?? null,
             isVideo: video,
             uploadKey: newKey(index),
@@ -172,8 +179,8 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
    * then filed at wherever the phone happened to be when it was uploaded.
    *
    * A file input hands over the original bytes. No re-encode, no asset lookup,
-   * no photo-library permission to get wrong — and `preparePhotoFilesForUpload`
-   * reads the block before converting anything, so it survives HEIC too. */
+   * no photo-library permission to get wrong — and the block is read off the
+   * original bytes, so it survives HEIC too. */
   const choosePhotos = useCallback(() => {
     openFilePicker(isNativeApp ? 'image/*' : 'image/*,video/*')
   }, [openFilePicker])

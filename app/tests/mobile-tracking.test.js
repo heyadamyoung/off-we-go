@@ -583,19 +583,19 @@ test('photo metadata accepts Android rational GPS and browser file EXIF', async 
     takenAt: '2026-08-30T04:20:00.000Z',
   })
 
-  assert.ok(
-    mobilePhotos.preparePhotoFilesForUpload,
-    'browser HEIC conversion has not been implemented',
-  )
-  const converted = await mobilePhotos.preparePhotoFilesForUpload([browserFile], {
-    parseExif: async () => ({ latitude: -33.8568, longitude: 151.2153 }),
+  /* The conversion happens as the file is sent rather than when it is chosen:
+     a batch of thirty off an iPhone was thirty HEIC decodes and thirty JPEG
+     encodes back to back, before a single byte went anywhere, with all thirty
+     results held. The metadata read off the original has to survive it. */
+  assert.ok(mobilePhotos.readyToSend, 'browser HEIC conversion has not been implemented')
+  const converted = await mobilePhotos.readyToSend(browserFile, {
     isHeic: async () => true,
     convertHeic: async () =>
       new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }),
   })
-  assert.equal(converted[0].name, 'iphone.jpg')
-  assert.equal(converted[0].type, 'image/jpeg')
-  assert.deepEqual(converted[0].offwegoMetadata, {
+  assert.equal(converted.name, 'iphone.jpg')
+  assert.equal(converted.type, 'image/jpeg')
+  assert.deepEqual(converted.offwegoMetadata, {
     lat: -33.8568,
     lng: 151.2153,
     takenAt: '2026-08-30T04:20:00.000Z',

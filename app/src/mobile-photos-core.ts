@@ -133,31 +133,56 @@ export async function readPhotoFilesMetadata(
 const looksLikeHeic = (file: MetadataFile) =>
   /^image\/hei[cf]$/i.test(file?.type || '') || /\.hei[cf]$/i.test(file?.name || '')
 
-export async function preparePhotoFilesForUpload(
+export interface ConvertOptions {
+  isHeic?: (file: File) => boolean | Promise<boolean>
+  convertHeic?: (file: File) => Promise<Blob | Blob[]>
+}
+
+/* Reading a selection: the EXIF block, and nothing heavier.
+
+   This used to convert every HEIC in the batch as well, before a single byte
+   went anywhere. Thirty photographs off an iPhone is thirty HEIC decodes and
+   thirty JPEG encodes, in WebAssembly, back to back, with all thirty results
+   held — and a web view has a small fraction of a desktop browser's memory to
+   do it in. Reported as the app dying on a batch of thirty during the upload,
+   which is exactly where it looked like it was happening: the burst runs
+   after the Add button and before the first request.
+
+   So this reads the header and stops. Turning a HEIC into something the
+   server will take is `readyToSend`, and it happens one file at a time as
+   each upload starts. */
+export async function readPhotoFiles(
   files: MetadataFile[],
-  {
-    parseExif = parseExifFile as ExifParser,
-    isHeic,
-    convertHeic,
-  }: {
-    parseExif?: ExifParser
-    isHeic?: (file: File) => boolean | Promise<boolean>
-    convertHeic?: (file: File) => Promise<Blob | Blob[]>
-  } = {},
+  { parseExif = parseExifFile as ExifParser }: { parseExif?: ExifParser } = {},
 ) {
   await readPhotoFilesMetadata(files, { parseExif })
-  if (!(files || []).some(looksLikeHeic)) return files
-  if (!isHeic || !convertHeic) {
-    const converter = await import('heic-to/csp')
-    isHeic ||= converter.isHeic
-    convertHeic ||= file => converter.heicTo({ blob: file, type: 'image/jpeg', quality: 0.9 })
-  }
-  const prepared: MetadataFile[] = []
-  for (const file of files || []) {
-    if (!looksLikeHeic(file) || !(await isHeic(file))) {
-      prepared.push(file)
-      continue
+  return files
+}
+
+/* What the server can actually take, made at the last possible moment.
+
+   The API resizes with sharp, whose prebuilt binaries carry no HEVC decoder —
+   patents — so an iPhone's HEIC has to become a JPEG somewhere, and the
+   browser is the only place that can. Here, then, rather than thirty at once:
+   the queue sends three at a time, so three of these run at a time and the
+   phone holds three converted photographs rather than a batch of them.
+
+   Anything that is not a HEIC is handed straight back, which is almost every
+   file and costs nothing. A conversion that fails gives the original back to
+   be sent as it is: the server refusing one photograph with a message is a
+   better outcome than the app refusing to send it at all. */
+export async function readyToSend(
+  file: MetadataFile,
+  { isHeic, convertHeic }: ConvertOptions = {},
+): Promise<MetadataFile> {
+  if (!looksLikeHeic(file)) return file
+  try {
+    if (!isHeic || !convertHeic) {
+      const converter = await import('heic-to/csp')
+      isHeic ||= converter.isHeic
+      convertHeic ||= source => converter.heicTo({ blob: source, type: 'image/jpeg', quality: 0.9 })
     }
+    if (!(await isHeic(file))) return file
     const result = await convertHeic(file)
     const jpeg = Array.isArray(result) ? result[0] : result
     const name = /\.hei[cf]$/i.test(file.name)
@@ -168,9 +193,10 @@ export async function preparePhotoFilesForUpload(
       lastModified: file.lastModified,
     })
     attachMetadata(converted, file.offwegoMetadata ?? null)
-    prepared.push(converted)
+    return converted
+  } catch {
+    return file
   }
-  return prepared
 }
 
 interface GalleryPhotoLike {

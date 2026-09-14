@@ -210,9 +210,15 @@ function UploadModal({ onClose, onAdd, live, toast }: UploadModalProps) {
               <span
                 key={file.uploadKey}
                 className="group relative aspect-square overflow-hidden rounded-xl bg-raised">
-                {file.isVideo && !file.posterUrl && !file.thumbUrl ? (
+                {!file.thumbUrl && (file.isVideo ? !file.posterUrl : !file.drawable) ? (
+                  /* Nothing this browser can draw. A film whose opening frame
+                     would not decode, or a HEIC on a browser with no decoder
+                     for it — which is every browser but Safari's, and is why
+                     the conversion that used to happen here now happens as
+                     each one is sent. The camera says what is going up; a
+                     broken-image glyph says nothing. */
                   <span className="flex size-full items-center justify-center bg-ink/85">
-                    <Icon n="video" s={20} c="#fff" />
+                    <Icon n={file.isVideo ? 'video' : 'camera'} s={20} c="#fff" />
                   </span>
                 ) : (
                   /* The tile-sized copy wherever there is one. A browser
