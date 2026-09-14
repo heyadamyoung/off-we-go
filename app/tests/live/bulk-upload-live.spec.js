@@ -70,7 +70,16 @@ const chooseMany = (page, count) =>
     input.dispatchEvent(new Event('change', { bubbles: true }))
   }, count)
 
+const onTheTrip = async page => {
+  const response = await page.request.get(`${stack.apiBase}/trips/current?t=${stack.trip.slug}`, {
+    headers: { authorization: `Bearer ${stack.accessToken}` },
+  })
+  expect(response.ok(), 'the trip could not be read back').toBe(true)
+  return ((await response.json()).photos || []).length
+}
+
 test('thirty photographs all arrive, and the tab is alive at the end of it', async ({ page }) => {
+  const started = await onTheTrip(page)
   const crashes = []
   const blewUp = []
   page.on('crash', () => crashes.push('the tab crashed'))
@@ -98,13 +107,9 @@ test('thirty photographs all arrive, and the tab is alive at the end of it', asy
   expect(blewUp, 'something threw in the page').toEqual([])
   expect(refused, 'the server refused some of them').toEqual([])
 
-  // And the trip actually holds them, which is the whole point of sending.
-  const response = await page.request.get(`${stack.apiBase}/trips/current?t=${stack.trip.slug}`, {
-    headers: { authorization: `Bearer ${stack.accessToken}` },
-  })
-  expect(response.ok()).toBe(true)
-  const arrived = ((await response.json()).photos || []).filter(
-    photo => /^many-\d+\.jpg$/.test(photo.name || '') || /many-/.test(photo.src || ''),
-  )
-  expect(arrived.length, 'not all thirty are on the trip').toBe(HOW_MANY)
+  /* And the trip actually holds them, which is the whole point of sending.
+     Counted as a difference rather than matched by name: what comes back is a
+     row with a signed media link on it, and the filename a browser gave the
+     multipart is not part of it. */
+  expect(await onTheTrip(page), 'not all thirty are on the trip').toBe(started + HOW_MANY)
 })
