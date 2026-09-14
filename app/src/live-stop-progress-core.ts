@@ -47,8 +47,8 @@ const ARRIVAL_DERIVED_SPEED_MAX_INTERVAL_MS = 2 * 60_000
    live-schedule-core. Re-exported here because this is the module the whole
    app asks about the journey, and where a caller gets an answer from is not
    its business. */
-export { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
-import { dayNumber, endOfWindow, LATE_GRACE_MINUTES } from './live-schedule-core'
+export { dayNumber, endOfWindow, LATE_GRACE_MINUTES, stopsBehindUs } from './live-schedule-core'
+import { dayNumber, stopsBehindUs } from './live-schedule-core'
 import { scheduleOrder } from './stop-order-core'
 
 interface LiveStopProgressInput {
@@ -108,6 +108,7 @@ export function deriveLiveStopProgress({
       destination: null,
       distanceMetres: null,
       visitedStopIds: [],
+      behindStopIds: [],
     }
   }
   /* ---- where the trip is ------------------------------------------------
@@ -216,8 +217,6 @@ export function deriveLiveStopProgress({
   const visited = new Set(visitedStopIds)
 
   // NEXT: the schedule and what has happened, and nothing else.
-  const today = dayNumber(now)
-  const minutesNow = now.getHours() * 60 + now.getMinutes()
   /* The calendar at the resolution the itinerary is actually written in. A day
      that is over is over; so is an hour, and for most of a trip the hour is
      the only one of the two that has anything to say. Reported at twenty past
@@ -225,14 +224,12 @@ export function deriveLiveStopProgress({
      twenty past eleven the next thing, eighty-seven kilometres behind them.
      Its day had another ten hours to run and nobody's phone had been near it,
      so nothing here had a word to say about it — and the answer was written on
-     the same card as the mistake, one line above it. */
-  const isPast = (stop: Stop) => {
-    const day = dayNumber(stop.day)
-    if (day === null || today === null) return false
-    if (day !== today) return day < today
-    const ends = endOfWindow(stop)
-    return ends !== null && minutesNow > ends + LATE_GRACE_MINUTES
-  }
+     the same card as the mistake, one line above it.
+
+     The rule itself lives in live-schedule-core, with the rest of what the
+     itinerary's own dates and times mean; this is only where it is asked. */
+  const behind = stopsBehindUs(orderedStops, now)
+  const behindStopIds = orderedStops.filter(stop => behind.has(stop.id)).map(stop => stop.id)
   /* Withheld while the live layer is still loading. The schedule on its own is
      a fine answer once we know there is nothing to hear from — and no answer at
      all while we are still finding out, because it is about to be corrected.
@@ -243,7 +240,7 @@ export function deriveLiveStopProgress({
      Both were right in turn, which is exactly what makes it wrong to show. */
   const settled = sourceState !== 'loading'
   const destination = settled
-    ? orderedStops.find(stop => !visited.has(stop.id) && !isPast(stop)) || null
+    ? orderedStops.find(stop => !visited.has(stop.id) && !behind.has(stop.id)) || null
     : null
 
   // HERE: the nearest stop the latest fix is actually standing at.
@@ -278,6 +275,7 @@ export function deriveLiveStopProgress({
       destination,
       distanceMetres: destination ? away(destination) : 0,
       visitedStopIds,
+      behindStopIds,
     }
   }
 
@@ -296,6 +294,7 @@ export function deriveLiveStopProgress({
       destination: null,
       distanceMetres: 0,
       visitedStopIds,
+      behindStopIds,
     }
   }
 
@@ -314,6 +313,7 @@ export function deriveLiveStopProgress({
       destination,
       distanceMetres,
       visitedStopIds,
+      behindStopIds,
     }
   }
   /* No live fix. The dot is honestly waiting — but the itinerary is not, and
@@ -350,6 +350,7 @@ export function deriveLiveStopProgress({
     destination,
     distanceMetres: null,
     visitedStopIds,
+    behindStopIds,
   }
 }
 

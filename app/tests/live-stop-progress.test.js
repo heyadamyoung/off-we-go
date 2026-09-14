@@ -1566,3 +1566,129 @@ test('a trip is not called complete before the phones have reported', () => {
 
   assert.equal(deriveLiveStopProgress({ stops, fixes: [], now: NOW }).state, 'complete')
 })
+
+/* ---- the day going past a stop ------------------------------------------
+
+   Reported from Scotland at a quarter to twelve, with a photograph of the
+   card: a shore walk booked 09:45 to 10:45 still wearing UP NEXT, the party
+   an hour down the road and two stops past it, and neither of the two they
+   had actually done marked as done.
+
+   Nobody's phone was sharing — it is a web browser, where background tracking
+   does not exist — so there was no evidence of the kind the app was looking
+   for, and there never would be. Without the clock the itinerary is a plan
+   that never becomes a history. */
+
+/** Local rather than UTC: the traveller's own clock is the one that decides. */
+const at = (hour, minute) => new Date(2026, 8, 14, hour, minute)
+const TODAY = '2026-09-14'
+
+const MORNING = [
+  {
+    id: 'loch',
+    name: 'Loch',
+    lng: 0,
+    lat: 0,
+    seq: 0,
+    day: TODAY,
+    startsAt: '09:45',
+    endsAt: '10:45',
+    status: 'planned',
+  },
+  {
+    id: 'mountain',
+    name: 'Mountain',
+    lng: 0.02,
+    lat: 0,
+    seq: 1,
+    day: TODAY,
+    startsAt: '13:00',
+    endsAt: '15:00',
+    status: 'planned',
+  },
+]
+
+test('a stop whose hour has gone is done, and is no longer what comes next', () => {
+  const progress = deriveLiveStopProgress({ stops: MORNING, fixes: [], now: at(11, 46) })
+
+  assert.deepEqual(progress.behindStopIds, ['loch'])
+  assert.equal(progress.destination?.id, 'mountain', 'the trip has moved on to the afternoon')
+  assert.deepEqual(
+    applyLiveStopStatuses(MORNING, progress).map(stop => stop.status),
+    ['done', 'next'],
+  )
+})
+
+test('running late keeps the stop ahead of you, which is the whole point of the grace', () => {
+  const progress = deriveLiveStopProgress({ stops: MORNING, fixes: [], now: at(11, 20) })
+
+  assert.deepEqual(progress.behindStopIds, [])
+  assert.equal(progress.destination?.id, 'loch')
+})
+
+test('the next thing starting ends the grace early, however much of it is left', () => {
+  /* You cannot still be heading to the quarter-to-ten when the quarter-past
+     eleven has begun. Without this the grace runs to 11:30 whatever else is
+     on the day, which on a packed morning is the app a stop behind. */
+  const packed = [
+    MORNING[0],
+    { ...MORNING[1], id: 'ridge', name: 'Ridge', startsAt: '11:15', endsAt: '12:30' },
+  ]
+  const progress = deriveLiveStopProgress({ stops: packed, fixes: [], now: at(11, 20) })
+
+  assert.deepEqual(progress.behindStopIds, ['loch'])
+  assert.equal(progress.destination?.id, 'ridge')
+})
+
+test('two stops going on at once do not end each other', () => {
+  /* A thing that starts before this one was meant to finish is a second thing
+     happening, not a replacement for the first. */
+  const overlapping = [
+    MORNING[0],
+    { ...MORNING[1], id: 'walk', name: 'Walk', startsAt: '10:00', endsAt: '12:00' },
+  ]
+  const progress = deriveLiveStopProgress({ stops: overlapping, fixes: [], now: at(11, 0) })
+
+  assert.deepEqual(progress.behindStopIds, [])
+})
+
+test('a stop today with no hour of its own waits for the day to end', () => {
+  const loose = [{ ...MORNING[0], startsAt: null, endsAt: null }]
+  const progress = deriveLiveStopProgress({ stops: loose, fixes: [], now: at(23, 30) })
+
+  assert.deepEqual(progress.behindStopIds, [])
+  assert.equal(progress.destination?.id, 'loch')
+})
+
+test('yesterday is done whether or not it named an hour', () => {
+  const yesterday = [
+    { ...MORNING[0], day: '2026-09-13', startsAt: null, endsAt: null },
+    { ...MORNING[1], day: '2026-09-13' },
+  ]
+  const progress = deriveLiveStopProgress({ stops: yesterday, fixes: [], now: at(9, 0) })
+
+  assert.deepEqual(progress.behindStopIds, ['loch', 'mountain'])
+  assert.equal(progress.destination, null, 'nothing left ahead')
+})
+
+test('a stop with no date is never overtaken by the clock', () => {
+  /* It is not a point in the trip, so there is nothing for the day to be past.
+     Guessing here would quietly tick off every undated stop on the itinerary. */
+  const undated = [{ ...MORNING[0], day: null }]
+  const progress = deriveLiveStopProgress({ stops: undated, fixes: [], now: at(23, 59) })
+
+  assert.deepEqual(progress.behindStopIds, [])
+  assert.equal(progress.destination?.id, 'loch')
+})
+
+test('a stop somebody says they are at now is not closed by its own hour', () => {
+  /* The one claim the clock does not overrule: a person saying they are there.
+     They are there; the schedule only thought otherwise. */
+  const standing = [{ ...MORNING[0], status: 'now' }, MORNING[1]]
+  const progress = deriveLiveStopProgress({ stops: standing, fixes: [], now: at(11, 46) })
+
+  assert.deepEqual(
+    applyLiveStopStatuses(standing, progress).map(stop => stop.status),
+    ['now', 'next'],
+  )
+})

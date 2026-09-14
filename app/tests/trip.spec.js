@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { atDemoTime } from './demo-clock'
+import { atDemoTime, demoDay } from './demo-clock'
 import { serveOverpass } from './overpass-fixture.js'
 import { serveWikipedia } from './wikipedia-fixture.js'
 
@@ -1354,7 +1354,7 @@ test('the itinerary day is a calendar fenced to the trip range', async ({ page }
   // Free-form days are gone: the editor's Day is a date input whose min and
   // max are the trip's own range, and a pick outside it is refused in words
   // while the draft keeps its last good day.
-  const iso = shift => new Date(Date.now() + shift * 86_400_000).toISOString().slice(0, 10)
+  const iso = demoDay
   await open(page)
   await page.getByRole('button', { name: 'Edit the itinerary' }).click()
   const spot = await emptyMapPoint(page)
