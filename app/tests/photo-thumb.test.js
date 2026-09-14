@@ -117,3 +117,80 @@ test('the tile edge is one number, so the sheet and the bar agree', () => {
   assert.equal(THUMB_EDGE, 320)
   assert.equal(Math.max(...Object.values(thumbSize(9000, 100))), THUMB_EDGE)
 })
+
+/* ---- when a HEIC becomes a JPEG ------------------------------------------
+
+   Thirty photographs off an iPhone used to be thirty HEIC decodes and thirty
+   JPEG encodes, in WebAssembly, back to back, with every result held — all of
+   it after the Add button and before the first request went out, which is
+   exactly where "it crashes during the upload" came from. */
+
+const photos = await import('../src/mobile-photos-core.ts')
+
+const heicFile = (name = 'IMG_0001.HEIC') =>
+  Object.assign(new File([new Uint8Array([0, 0, 0, 24])], name, { type: 'image/heic' }))
+
+const converter = () => {
+  let converted = 0
+  return {
+    converted: () => converted,
+    isHeic: async () => true,
+    convertHeic: async () => {
+      converted += 1
+      return new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' })
+    },
+  }
+}
+
+test('reading a selection reads the header and converts nothing', async () => {
+  const many = Array.from({ length: 30 }, (_, index) => heicFile(`IMG_${index}.HEIC`))
+  const read = await photos.readPhotoFiles(many, { parseExif: async () => ({}) })
+
+  assert.equal(read.length, 30)
+  // Still HEIC, every one of them: nothing has been decoded yet.
+  assert.deepEqual([...new Set(read.map(file => file.type))], ['image/heic'])
+})
+
+test('a HEIC is turned into a JPEG when it is sent, one file at a time', async () => {
+  const heic = converter()
+  const ready = await photos.readyToSend(heicFile(), heic)
+
+  assert.equal(heic.converted(), 1)
+  assert.equal(ready.type, 'image/jpeg')
+  assert.equal(ready.name, 'IMG_0001.jpg')
+})
+
+test('anything that is not a HEIC is handed straight back, untouched', async () => {
+  const heic = converter()
+  const jpeg = new File([new Uint8Array([0xff, 0xd8])], 'holiday.jpg', { type: 'image/jpeg' })
+  assert.equal(await photos.readyToSend(jpeg, heic), jpeg)
+  assert.equal(heic.converted(), 0, 'it opened a decoder for a JPEG')
+})
+
+test('a conversion that fails sends the original rather than sending nothing', async () => {
+  /* The server refusing one photograph with a message a person can read beats
+     the app quietly dropping it. */
+  const file = heicFile()
+  const back = await photos.readyToSend(file, {
+    isHeic: async () => true,
+    convertHeic: async () => {
+      throw new Error('out of memory')
+    },
+  })
+  assert.equal(back, file)
+})
+
+test('the metadata read off the original survives the conversion', async () => {
+  const file = heicFile()
+  Object.defineProperty(file, 'offwegoMetadata', {
+    value: { lat: 57.6, lng: -5.4, takenAt: '2026-09-14T09:00:00.000Z' },
+    enumerable: false,
+    configurable: true,
+  })
+  const ready = await photos.readyToSend(file, converter())
+  assert.deepEqual(ready.offwegoMetadata, {
+    lat: 57.6,
+    lng: -5.4,
+    takenAt: '2026-09-14T09:00:00.000Z',
+  })
+})

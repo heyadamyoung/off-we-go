@@ -9,7 +9,7 @@ import {
   updatePhoto,
   uploadPhoto,
 } from '../../../backend'
-import { photoUploadMetadata } from '../../../mobile-photos-core'
+import { photoUploadMetadata, readyToSend } from '../../../mobile-photos-core'
 import { clamp } from '../../../shared/lib/numbers'
 import { appErrorMessage } from '../../../user-messages-core'
 import type {
@@ -159,9 +159,14 @@ export default function useTripPhotos({
   // biome-ignore lint/correctness/useExhaustiveDependencies: the queue keeps one sender; length covers the next sequence, and clashes reconcile by seq on the server
   const addPhoto = useCallback(
     async (input: UploadInput, onProgress?: (sent: number, total: number | null) => void) => {
+      /* A HEIC becomes a JPEG here rather than when it was chosen: the
+         server's resizer has no HEVC decoder, and doing the whole batch up
+         front was thirty of them at once on a phone. The queue runs three
+         uploads at a time, so three of these at a time. */
+      const file = await readyToSend(input.file)
       const saved = await uploadPhoto(
         tripId,
-        input.file,
+        file,
         photoUploadMetadata(input, {
           by: me.name,
           nextSequence: Math.max(photos.length, ...photos.map(photo => (photo.seq ?? -1) + 1)),
