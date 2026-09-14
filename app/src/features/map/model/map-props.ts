@@ -47,6 +47,8 @@ export interface MapCanvasProps {
   onPhoto?: (photos: TripPhoto[], index: number) => void
   onLive?: () => void
   labels?: boolean
+  /** Whether the basemap names its roads. Off is a quieter map, not a duller one. */
+  streetNames?: boolean
   highlight?: Id | null
   padding?: MapPadding | null
   editing?: boolean

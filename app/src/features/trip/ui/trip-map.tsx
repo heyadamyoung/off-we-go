@@ -21,6 +21,7 @@ export default function TripMap({
     mapTheme, sun, mapView, onMapView, mapPadding, routeDraft, track, liveStops, photos,
     markers, trail, trailFaded, selected, pickStop, openViewer, liveStop, editing, placing,
     onMapClicked, onStopMove, places, pickPlace, attractions, setAttractionCard, indoor,
+    streetNames,
   } = page
   /* The beam rides this device's own reporting phone when it has one on the
      map still talking; otherwise a plain compass dot at the browser's fix.
@@ -53,6 +54,7 @@ export default function TripMap({
       onContextMenu={onContextMenu}
       selectedStop={selected}
       labels={mapView.zoom > 13}
+      streetNames={streetNames}
       onStop={pickStop}
       onPhoto={openViewer}
       onLive={() => liveStop && patch({ sel: liveStop.id })}

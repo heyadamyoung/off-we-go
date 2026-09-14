@@ -25,6 +25,8 @@ interface ClusterProps {
   onPlace: () => void
   onAdd: () => void
   onTheme: () => void
+  streetNames: boolean
+  onStreetNames: () => void
   onEdit: () => void
 }
 
@@ -115,8 +117,10 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
       <MoreTools
         night={night}
         attractions={props.attractions}
+        streetNames={props.streetNames}
         onSettings={props.onSettings}
         onAttractions={props.onAttractions}
+        onStreetNames={props.onStreetNames}
         onTheme={props.onTheme}
       />
     </div>
@@ -129,14 +133,18 @@ export const TripCluster = memo(function TripCluster(props: ClusterProps) {
 function MoreTools({
   night,
   attractions,
+  streetNames,
   onSettings,
   onAttractions,
+  onStreetNames,
   onTheme,
 }: {
   night: boolean
   attractions: boolean
+  streetNames: boolean
   onSettings: () => void
   onAttractions: () => void
+  onStreetNames: () => void
   onTheme: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -190,6 +198,14 @@ function MoreTools({
           <button className={item} role="menuitem" onClick={pick(onAttractions)}>
             <Icon n="museum" s={14} />
             {attractions ? 'Hide attractions' : 'Show attractions'}
+          </button>
+          {/* The basemap's own words. A city with every street named is a
+              mat of text over the itinerary, and a Highland road with none is
+              a map that will not say what you are driving on — so it is a
+              switch rather than a decision made once for everybody. */}
+          <button className={item} role="menuitem" onClick={pick(onStreetNames)}>
+            <Icon n="drive" s={14} />
+            {streetNames ? 'Hide street names' : 'Show street names'}
           </button>
           <button className={item} role="menuitem" onClick={pick(onTheme)}>
             <Icon n={night ? 'sun' : 'moon'} s={14} />
