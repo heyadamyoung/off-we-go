@@ -76,8 +76,9 @@ function Trip({
   const page = useTripPage({ data, busyEditing, search, patch, notify, reload })
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
-    theme, setTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
-    setMapOverride, asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
+    theme, toggleTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
+    streetNames, toggleStreetNames,
+    asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, sun, mapTheme, markers, progressCopy,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
@@ -153,6 +154,8 @@ function Trip({
             theme={theme}
             attractions={showAttractions}
             onAttractions={toggleAttractions}
+            streetNames={streetNames}
+            onStreetNames={toggleStreetNames}
             onEdit={startEditing}
             onSettings={() => patch({ sheet: 'settings', tab: 'trip' })}
             onPlace={() => {
@@ -160,11 +163,7 @@ function Trip({
               patch({ sel: undefined })
             }}
             onAdd={() => patch({ sheet: 'add' })}
-            onTheme={() => {
-              const next = theme === 'dark' ? 'light' : 'dark'
-              setTheme(next)
-              setMapOverride(next)
-            }}
+            onTheme={toggleTheme}
           />
         </div>
 

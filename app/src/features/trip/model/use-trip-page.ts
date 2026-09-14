@@ -17,6 +17,7 @@ import useOfflineEdits from './use-offline-edits'
 import { track as trackEvent } from '../../../shared/lib/telemetry'
 import { withFace } from './faces'
 import { tripSubtitle } from './trip-items'
+import useMapLook from './use-map-look'
 import useTripDays from './use-trip-days'
 import type {
   Attraction,
@@ -59,9 +60,7 @@ export default function useTripPage({
   // The boot script in the document head has already applied the stored theme;
   // read it back off the element rather than from storage, which the shell
   // renderer does not have.
-  const [theme, setTheme] = useState(() =>
-    typeof document === 'undefined' ? 'dark' : document.documentElement.dataset.theme || 'dark',
-  )
+  const { theme, toggleTheme, mapOverride, streetNames, toggleStreetNames } = useMapLook()
   const [trip, setTrip] = useState(data.trip)
   const [route, setRoute] = useState(data.route)
   const [stops, setStops] = useState(data.stops)
@@ -69,7 +68,6 @@ export default function useTripPage({
   const [me] = useState<Person>(data.me || data.family[0] || { name: 'You' })
   const [placing, setPlacing] = useState<null | { move?: string }>(null)
   const [photoBy, setPhotoBy] = useState<string | null>(null)
-  const [mapOverride, setMapOverride] = useState<string | null>(theme)
   const [attraction, setAttractionCardBare] = useState<Attraction | null>(null)
   const setAttractionCard = useCallback((next: Attraction | null) => {
     if (next) trackEvent('open attraction', { attraction: String(next.name || next.id) })
@@ -100,15 +98,6 @@ export default function useTripPage({
     },
     [patch],
   )
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    try {
-      localStorage.setItem('offwego-theme', theme)
-    } catch {
-      /* private mode */
-    }
-  }, [theme])
 
   // A reload hands down new data; adopt it.
   useEffect(() => {
@@ -364,8 +353,8 @@ export default function useTripPage({
 
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   return {
-    theme, setTheme, trip, route, stops, family, me, viewers,
-    placing, setPlacing, photoBy, setPhotoBy, setMapOverride,
+    theme, toggleTheme, trip, route, stops, family, me, viewers,
+    placing, setPlacing, photoBy, setPhotoBy, streetNames, toggleStreetNames,
     attraction, setAttractionCard, asking, setAsking, assistant,
     view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,

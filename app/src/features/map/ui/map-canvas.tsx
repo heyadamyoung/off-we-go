@@ -11,6 +11,7 @@ import useViewport from '../model/use-viewport'
 import useIndoorLayers from '../model/indoor-layers'
 import usePlaceTap from '../model/use-place-tap'
 import makeTrailSweep from '../model/trail-sweep'
+import useMapLabels from '../model/use-map-labels'
 import useMapLayers from '../model/use-map-layers'
 import { creditControl, STYLE } from '../model/map-style'
 import registerOfflineTiles from '../model/offline-tiles'
@@ -46,6 +47,7 @@ const MapCanvas = memo(function MapCanvas({
   onPhoto,
   onLive,
   labels = false,
+  streetNames = true,
   highlight = null,
   padding = null,
   editing = false,
@@ -248,6 +250,7 @@ const MapCanvas = memo(function MapCanvas({
     return () => ro.disconnect()
   }, [map])
 
+  useMapLabels(map, streetNames)
   usePlaceTap(map, { editing, placing, onMapClick })
 
   /* ---- overlays --------------------------------------------------------- */
