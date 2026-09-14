@@ -10,9 +10,9 @@ import type { deriveLiveStopProgress } from './live-stop-progress-core'
 /**
  * The itinerary with what the phones know written over it.
  *
- * It knows three things and no more: which stop somebody is at, which one they
- * are heading to, and which ones a phone has actually been at. Everything else
- * keeps the status a person gave it.
+ * It knows four things and no more: which stop somebody is at, which one they
+ * are heading to, which ones a phone has actually been at, and which ones the
+ * day has gone past. Everything else keeps the status a person gave it.
  *
  * It used to say 'planned' about everything else instead — a claim, not an
  * absence. With nobody sharing a location, which is most of a trip, that was
@@ -26,6 +26,7 @@ export function applyLiveStopStatuses(
   progress: ReturnType<typeof deriveLiveStopProgress>,
 ) {
   const visited = new Set(progress.visitedStopIds)
+  const behind = new Set(progress.behindStopIds)
   const here = progress.currentStop?.id ?? null
   return stops.map(stop => {
     if (here === stop.id) return { ...stop, status: 'now' }
@@ -38,6 +39,14 @@ export function applyLiveStopStatuses(
     /* Never taken away: a phone that was off, or was not being shared, is not
        evidence that somebody was not somewhere. They were there; they said so. */
     if (visited.has(stop.id)) return { ...stop, status: 'done' }
+    /* The day went past it. Said plainly rather than left as Planned, which
+       is the app claiming a thing is still ahead of you when its hour ended
+       this morning — and which is what "we did both of those and neither is
+       done" was about. A phone is the better evidence and it is usually
+       absent; the schedule is the evidence there always is, and a plan whose
+       hour has gone is a plan that happened. Wrong about a stop somebody
+       skipped, and two taps to put right. */
+    if (behind.has(stop.id)) return { ...stop, status: 'done' }
     // Somewhere else is what comes next, so this is not.
     if (stop.status === 'next' && progress.destination) return { ...stop, status: 'planned' }
     return stop
