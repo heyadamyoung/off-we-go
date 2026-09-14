@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { isNativeApp } from '../../../mobile'
 import { preparePhotoFilesForUpload, type MetadataFile } from '../../../mobile-photos-core'
 import { isVideoFile, tooBigToSend, videoStill, withVideoMime } from '../../../mobile-videos-core'
+import { photoThumbnail } from '../../../photo-thumb-core'
 import { appErrorMessage } from '../../../user-messages-core'
 import type { Toast } from '../../../shared/model/types'
 
@@ -13,6 +14,13 @@ export interface ChosenMedia {
   /** The drawn opening frame, which is what every grid shows for a film. */
   posterUrl: string | null
   poster: File | null
+  /* A tile-sized copy, and the only thing anything ever draws. Thirty
+     photographs on screen at their own size is thirty full decodes and about
+     a gigabyte of bitmap; at three hundred pixels it is nothing. Null when
+     the browser would not decode it, and then the full file is drawn as it
+     always was. */
+  thumb: Blob | null
+  thumbUrl: string | null
   durationMs: number | null
   isVideo: boolean
   uploadKey: string
@@ -86,19 +94,27 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
         for (const [index, file] of prepared.entries()) {
           const video = isVideoFile(file)
           const still = video ? await videoStill(file) : null
+          /* A film is drawn from the frame we just took off it; a photograph
+             from itself. Either way it is the small copy that gets drawn, and
+             the big one is closed before the next file is opened. */
+          const thumb = await photoThumbnail(still?.poster || file)
           if (!mounted.current || round !== selection.current) return
           stills.push({
             file,
             url: URL.createObjectURL(file),
             posterUrl: still?.poster ? URL.createObjectURL(still.poster) : null,
             poster: still?.poster ?? null,
+            thumb,
+            thumbUrl: thumb ? URL.createObjectURL(thumb) : null,
             durationMs: still?.durationMs ?? null,
             isVideo: video,
             uploadKey: newKey(index),
           })
         }
         held.current.push(
-          ...stills.flatMap(item => [item.url, item.posterUrl].filter(Boolean) as string[]),
+          ...stills.flatMap(
+            item => [item.url, item.posterUrl, item.thumbUrl].filter(Boolean) as string[],
+          ),
         )
         setFiles(list => [...list, ...stills])
       } finally {
@@ -169,7 +185,9 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
   const drop = useCallback((uploadKey: string) => {
     setFiles(list => {
       const going = list.find(item => item.uploadKey === uploadKey)
-      for (const url of [going?.url, going?.posterUrl].filter(Boolean) as string[]) {
+      for (const url of [going?.url, going?.posterUrl, going?.thumbUrl].filter(
+        Boolean,
+      ) as string[]) {
         URL.revokeObjectURL(url)
         held.current = held.current.filter(value => value !== url)
       }

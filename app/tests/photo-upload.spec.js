@@ -135,3 +135,63 @@ test('adding hands the batch over and gets out of the way', async ({ page }) => 
   // The sheet closes rather than sitting on the trip while they go up.
   await expect(page.locator('.dlg')).toHaveCount(0)
 })
+
+/* ---- thirty at once ------------------------------------------------------
+
+   Reported as the app dying on a selection of thirty or more. Nothing was
+   wrong with the sending: it was the looking. A browser decodes what it draws
+   at the size the file is, not at the size of the tile, so thirty
+   hundred-pixel tiles cost thirty full-size bitmaps — better than a gigabyte
+   of them, all alive because they are all on screen — and then the upload bar
+   drew the same thirty again.
+
+   Real pictures rather than the four-byte stand-ins above: the whole question
+   is what the browser decoded, and it will not decode those. */
+
+const chooseReal = (page, count, edge = 1600) =>
+  page.locator('.dlg input[type="file"]').evaluate(
+    async (input, { count: many, edge: size }) => {
+      const transfer = new DataTransfer()
+      for (let index = 0; index < many; index += 1) {
+        const canvas = Object.assign(document.createElement('canvas'), {
+          width: size,
+          height: Math.round(size * 0.75),
+        })
+        const context = canvas.getContext('2d')
+        context.fillStyle = `hsl(${(index * 37) % 360} 70% 50%)`
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        const blob = await new Promise(done => canvas.toBlob(done, 'image/jpeg', 0.8))
+        transfer.items.add(
+          new File([blob], `real-${index}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: 1_700_000_000_000 + index,
+          }),
+        )
+      }
+      input.files = transfer.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    },
+    { count, edge },
+  )
+
+/** What each tile actually decoded, which is the thing that costs the memory. */
+const decodedWidths = locator =>
+  locator.evaluateAll(images => images.map(image => image.naturalWidth))
+
+test('a chosen photograph is drawn from a tile-sized copy, not from the file', async ({ page }) => {
+  await openSheet(page)
+  await chooseReal(page, 6)
+  const tiles = page.locator('.dlg .previews img')
+  await expect(tiles).toHaveCount(6)
+
+  // Every one decoded, and every one small: 1600px in, a tile's worth out.
+  await expect.poll(() => decodedWidths(tiles)).toEqual([320, 320, 320, 320, 320, 320])
+})
+
+/* The bar's own tiles are the other half of the gigabyte — a row per upload,
+   each decoding the whole file — and they draw the very same copy now: the
+   queue is handed `item.thumb` rather than a fresh URL for the file. Not
+   asserted in a browser here, and worth saying why: on the demo trip an
+   upload finishes the instant it starts, so the bar is gone before a test can
+   open it, and slowing the product down to be watched is not a test. The core
+   is covered next door in photo-thumb, and the tile above is the same blob. */

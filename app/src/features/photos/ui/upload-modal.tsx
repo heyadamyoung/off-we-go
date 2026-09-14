@@ -85,13 +85,19 @@ function UploadModal({ onClose, onAdd, live, toast }: UploadModalProps) {
           /* Its own URL, because this modal revokes every one it made when
              it closes — which it does in the same breath as handing these
              over, leaving the bar showing broken images for the whole
-             upload. The queue revokes this one when the upload is done. A
-             film's tile is its poster: an <img> of an mp4 draws nothing. */
-          preview: item.isVideo
-            ? item.poster
-              ? URL.createObjectURL(item.poster)
-              : undefined
-            : URL.createObjectURL(item.file),
+             upload. The queue revokes this one when the upload is done.
+
+             The tile-sized copy, not the file: the bar draws one of these per
+             upload, so thirty of them was a second gigabyte of bitmap behind
+             the first. A film's tile is drawn from its poster; an <img> of an
+             mp4 draws nothing at all. */
+          preview: item.thumb
+            ? URL.createObjectURL(item.thumb)
+            : item.isVideo
+              ? item.poster
+                ? URL.createObjectURL(item.poster)
+                : undefined
+              : URL.createObjectURL(item.file),
           input: {
             /* No caption stays no caption — the UI titles it by time and place
              at render. Writing "Untitled" here would poison the data with a
@@ -204,20 +210,24 @@ function UploadModal({ onClose, onAdd, live, toast }: UploadModalProps) {
               <span
                 key={file.uploadKey}
                 className="group relative aspect-square overflow-hidden rounded-xl bg-raised">
-                {file.isVideo && !file.posterUrl ? (
+                {file.isVideo && !file.posterUrl && !file.thumbUrl ? (
                   <span className="flex size-full items-center justify-center bg-ink/85">
                     <Icon n="video" s={20} c="#fff" />
                   </span>
                 ) : (
+                  /* The tile-sized copy wherever there is one. A browser
+                     decodes what it draws at the size the file is, not at the
+                     size of the tile — which is why thirty of these at once
+                     was a gigabyte of bitmap and a dead app. */
                   <img
                     className="size-full object-cover"
-                    src={file.isVideo ? file.posterUrl! : file.url}
+                    src={file.thumbUrl || (file.isVideo ? file.posterUrl! : file.url)}
                     alt=""
                   />
                 )}
                 {/* A film reads as a film, with the mark every camera roll in
                     the world uses and its length in the corner. */}
-                {file.isVideo && file.posterUrl && <PlayBadge size={22} />}
+                {file.isVideo && (file.thumbUrl || file.posterUrl) && <PlayBadge size={22} />}
                 {file.isVideo && (
                   <span
                     className="pointer-events-none absolute bottom-1 right-1 rounded-md bg-black/70
