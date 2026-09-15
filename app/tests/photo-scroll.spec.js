@@ -89,8 +89,10 @@ test('a drag across the full-screen picture measures the page once, not once a m
   const stage = page.locator('.vzstage')
   await expect(stage).toBeVisible({ timeout: 8000 })
 
+  /* The one being looked at, not its neighbours: the full-screen view is a
+     strip of three, the same as the viewer behind it. */
   const scale = async () => {
-    const t = await page.locator('.vzimg').evaluate(el => getComputedStyle(el).transform)
+    const t = await page.locator('.vzpane.on img').evaluate(el => getComputedStyle(el).transform)
     return t === 'none' ? 1 : Number(t.match(/matrix\(([-\d.]+)/)?.[1] ?? 1)
   }
   // Zoomed in, so a drag pans the picture rather than turning the page.

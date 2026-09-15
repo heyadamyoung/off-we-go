@@ -132,6 +132,49 @@ export function followed(drag: { dx: number; dy: number }, limits: DragLimits = 
   return across > Math.abs(drag.dy) ? drag.dx : 0
 }
 
+/* ---- how fast it was going ------------------------------------------------
+
+   `vx` above is measured over the LAST moment of a gesture rather than
+   averaged over all of it. An average says a finger that set off quickly and
+   then stopped was quick — which is exactly the shape of changing your mind,
+   and exactly the case that used to turn the page anyway.
+
+   Long enough to span a couple of pointer events, short enough that a finger
+   which has come to rest reads as at rest. */
+export const RECENT_MS = 90
+
+/** Where the finger was, and when. */
+export interface Moment {
+  x: number
+  at: number
+}
+
+/**
+ * The samples still worth keeping: the last moment, and never fewer than two.
+ *
+ * The same array comes back when nothing has aged out, so a gesture is not a
+ * copy per pointer event — these run at the rate a finger reports itself.
+ */
+export function lastMoments(samples: Moment[], now: number, within = RECENT_MS): Moment[] {
+  let from = 0
+  while (samples.length - from > 2 && now - samples[from + 1].at > within) from++
+  return from ? samples.slice(from) : samples
+}
+
+/**
+ * Pixels a millisecond, rightwards, across what is kept.
+ *
+ * A gesture with nothing to measure — one move, or two in the same
+ * millisecond — is not fast, it is unmeasured, and unmeasured must read as
+ * still: guessing fast is how a nudge turns the page.
+ */
+export function speedFrom(samples: readonly Moment[], at: number, x: number): number {
+  const first = samples[0]
+  if (!first) return 0
+  const ms = at - first.at
+  return ms > 0 ? (x - first.x) / ms : 0
+}
+
 export interface Tap {
   at: number
   x: number
