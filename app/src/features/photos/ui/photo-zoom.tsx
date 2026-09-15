@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
+import { oncePerFrame } from '../../../frame-throttle-core'
 import { dragMeans, isDoubleTap, type Tap } from '../../../swipe-core'
 import {
   AT_REST,
@@ -35,6 +36,20 @@ import type { TripPhoto } from '../../../shared/model/types'
    where the same guard sits on the viewer's own stage. */
 const preventDrag = (event: React.DragEvent) => event.preventDefault()
 
+/* The stage, the picture drawn on it, and the middle of the screen in page
+   coordinates. */
+interface Stage {
+  shown: { width: number; height: number }
+  screen: { width: number; height: number }
+  middle: { x: number; y: number }
+}
+
+/** Where a point sits relative to the middle, which is the picture's origin. */
+const about = (stage: Stage, x: number, y: number) => ({
+  x: x - stage.middle.x,
+  y: y - stage.middle.y,
+})
+
 export default function PhotoZoom({
   photo,
   onClose,
@@ -56,18 +71,15 @@ export default function PhotoZoom({
   const from = useRef<{ x: number; y: number; at: number; view: View } | null>(null)
   const lastTap = useRef<Tap | null>(null)
 
-  // A new photograph is a new picture to look at, not the old one's zoom.
-  useEffect(() => setView(AT_REST), [photo.id])
-
   /* What the picture is drawn at when it is not zoomed, and the screen it is
      drawn on. Measured rather than remembered: the phone can turn over. */
-  const boxes = useCallback(() => {
+  const measure = useCallback((): Stage => {
     const screen = stage.current?.getBoundingClientRect()
     // Read off the element rather than held in a ref: Img is memoised and does
     // not forward one, and the size is only ever wanted mid-gesture anyway.
     const image = stage.current?.querySelector('img')
     const fallback = { width: 1, height: 1 }
-    if (!screen) return { shown: fallback, screen: fallback }
+    if (!screen) return { shown: fallback, screen: fallback, middle: { x: 0, y: 0 } }
     const size = { width: screen.width, height: screen.height }
     return {
       screen: size,
@@ -75,20 +87,49 @@ export default function PhotoZoom({
         { width: image?.naturalWidth ?? 0, height: image?.naturalHeight ?? 0 },
         size,
       ),
+      middle: { x: screen.left + screen.width / 2, y: screen.top + screen.height / 2 },
     }
   }, [])
 
-  /* Where a point sits relative to the middle of the screen, which is where
-     the photograph's own origin is. */
-  const middleOf = useCallback((x: number, y: number) => {
-    const screen = stage.current?.getBoundingClientRect()
-    if (!screen) return { x: 0, y: 0 }
-    return { x: x - (screen.left + screen.width / 2), y: y - (screen.top + screen.height / 2) }
-  }, [])
+  /* Measured once when a finger lands and held for the whole gesture. Reading
+     a bounding rect forces the browser to lay the page out there and then, and
+     a finger reports itself a hundred and twenty times a second: doing it per
+     move was the main thread being busy with an answer it already had at the
+     moment the next touch arrived. The stage is fixed to the screen and the
+     picture's natural size belongs to the file, so neither can change while
+     a finger is down — and the next gesture takes its own measurement, so a
+     phone turned over between them is measured again. */
+  const held = useRef<Stage | null>(null)
+  const measured = useCallback(() => {
+    /* Except a picture that had not decoded when the finger landed: it has no
+       drawn size worth keeping, so look again until it has one. */
+    const kept = held.current
+    if (kept && kept.shown.width > 0 && kept.shown.height > 0) return kept
+    held.current = measure()
+    return held.current
+  }, [measure])
+
+  /* The picture follows the fingers once a frame rather than once an event.
+     Each of these is a render, and the ones between two paints were never
+     going to be seen. */
+  const follow = useMemo(() => oncePerFrame(setView), [])
+  useEffect(() => () => follow.cancel(), [follow])
+  /** A view set outright — and nothing half-drawn left to land on top of it. */
+  const settle = useCallback(
+    (next: View) => {
+      follow.cancel()
+      setView(next)
+    },
+    [follow],
+  )
+
+  // A new photograph is a new picture to look at, not the old one's zoom.
+  useEffect(() => settle(AT_REST), [photo.id, settle])
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
       event.currentTarget.setPointerCapture?.(event.pointerId)
+      held.current = measure()
       fingers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (fingers.current.size === 2) {
         const [a, b] = [...fingers.current.values()]
@@ -98,7 +139,7 @@ export default function PhotoZoom({
       }
       from.current = { x: event.clientX, y: event.clientY, at: event.timeStamp, view }
     },
-    [view],
+    [measure, view],
   )
 
   const onPointerMove = useCallback(
@@ -106,14 +147,14 @@ export default function PhotoZoom({
       if (!fingers.current.has(event.pointerId)) return
       fingers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
 
-      const held = pinch.current
-      if (held && fingers.current.size >= 2) {
+      const started = pinch.current
+      if (started && fingers.current.size >= 2) {
         const [a, b] = [...fingers.current.values()]
         const apart = spread(a, b)
-        if (!(held.apart > 0)) return
-        const { shown, screen } = boxes()
-        const middle = middleOf((a.x + b.x) / 2, (a.y + b.y) / 2)
-        setView(zoomAbout(held.view, apart / held.apart, middle, shown, screen))
+        if (!(started.apart > 0)) return
+        const box = measured()
+        const middle = about(box, (a.x + b.x) / 2, (a.y + b.y) / 2)
+        follow(zoomAbout(started.view, apart / started.apart, middle, box.shown, box.screen))
         return
       }
 
@@ -122,20 +163,20 @@ export default function PhotoZoom({
          the finger lifts. */
       const start = from.current
       if (!start || !dragPans(start.view)) return
-      const { shown, screen } = boxes()
-      setView(
+      const box = measured()
+      follow(
         clampPan(
           {
             scale: start.view.scale,
             x: start.view.x + (event.clientX - start.x),
             y: start.view.y + (event.clientY - start.y),
           },
-          shown,
-          screen,
+          box.shown,
+          box.screen,
         ),
       )
     },
-    [boxes, middleOf],
+    [follow, measured],
   )
 
   /* A tap is either half of a double tap or the way out, and the only thing
@@ -150,8 +191,8 @@ export default function PhotoZoom({
       closing.current = null
       if (isDoubleTap(lastTap.current, tap)) {
         lastTap.current = null
-        const { shown, screen } = boxes()
-        setView(toggleZoom(current, middleOf(tap.x, tap.y), shown, screen))
+        const box = measured()
+        settle(toggleZoom(current, about(box, tap.x, tap.y), box.shown, box.screen))
         return
       }
       lastTap.current = tap
@@ -163,7 +204,7 @@ export default function PhotoZoom({
         if (!dragPans(current)) onClose()
       }, 330)
     },
-    [boxes, middleOf, onClose],
+    [measured, onClose, settle],
   )
 
   const onPointerUp = useCallback(
@@ -203,11 +244,11 @@ export default function PhotoZoom({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'ArrowLeft' && siblings) onPage('previous')
       if (event.key === 'ArrowRight' && siblings) onPage('next')
-      if (event.key === '0') setView(AT_REST)
+      if (event.key === '0') settle(AT_REST)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onPage, siblings])
+  }, [onPage, settle, siblings])
 
   /* Every gesture this stage reads, in one place — including the one that says
      the browser may not take the gesture for itself. */
@@ -241,7 +282,7 @@ export default function PhotoZoom({
         <Icon n="x" s={18} c="#fff" w={2} />
       </button>
       {view.scale > 1.01 && (
-        <button className="vzreset" onClick={() => setView(AT_REST)}>
+        <button className="vzreset" onClick={() => settle(AT_REST)}>
           Fit
         </button>
       )}
