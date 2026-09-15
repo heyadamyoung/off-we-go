@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type React from 'react'
 import {
+  axisOf,
   carryDistance,
   dragMeans,
   followed,
   isDoubleTap,
   lastMoments,
   speedFrom,
+  type Axis,
   type Moment,
   type Tap,
 } from '../../../swipe-core'
@@ -61,6 +63,16 @@ export default function useViewerGestures({
      state: a gesture in progress is not something the screen should redraw
      for, and re-rendering mid-drag is how a drag loses its own start. */
   const from = useRef<{ x: number; y: number; at: number } | null>(null)
+  /* Which pointer this gesture belongs to. A second finger arriving — the one
+     resting on the phone, a palm, somebody reading over your shoulder — used
+     to overwrite the start, so when the first finger lifted its travel was
+     measured from where the second one had landed: a few pixels, and the
+     picture springs home mid-swipe. A gesture has one finger; the rest are
+     not a new one. */
+  const owner = useRef<number | null>(null)
+  /* Which way this gesture committed, decided once and then held. The long
+     version is in swipe-core, beside `axisOf`. */
+  const axis = useRef<Axis>(null)
   // The last moment of the gesture, for how fast it was going when it left.
   const recent = useRef<Moment[]>([])
   const lastTap = useRef<Tap | null>(null)
@@ -84,9 +96,12 @@ export default function useViewerGestures({
         from.current = null
         return
       }
+      if (owner.current !== null) return
+      owner.current = event.pointerId
       takeOver()
       carry.current = carryDistance(event.currentTarget.getBoundingClientRect().width)
       from.current = { x: event.clientX, y: event.clientY, at: event.timeStamp }
+      axis.current = null
       recent.current = [{ x: event.clientX, at: event.timeStamp }]
     },
     [takeOver],
@@ -95,10 +110,12 @@ export default function useViewerGestures({
   const onPointerMove = useCallback(
     (event: React.PointerEvent) => {
       const start = from.current
-      if (!start) return
+      if (!start || event.pointerId !== owner.current) return
       recent.current.push({ x: event.clientX, at: event.timeStamp })
       recent.current = lastMoments(recent.current, event.timeStamp)
-      follow(followed({ dx: event.clientX - start.x, dy: event.clientY - start.y }))
+      const drag = { dx: event.clientX - start.x, dy: event.clientY - start.y }
+      axis.current ??= axisOf(drag)
+      follow(followed(drag, {}, axis.current))
     },
     [follow],
   )
@@ -108,14 +125,19 @@ export default function useViewerGestures({
      parked half off the screen. */
   const forget = useCallback(() => {
     from.current = null
+    owner.current = null
+    axis.current = null
     home()
   }, [home])
 
   const onPointerUp = useCallback(
     (event: React.PointerEvent) => {
       const start = from.current
+      if (!start || event.pointerId !== owner.current) return
       from.current = null
-      if (!start) return
+      owner.current = null
+      const committed = axis.current
+      axis.current = null
 
       const means = dragMeans(
         {
@@ -125,6 +147,7 @@ export default function useViewerGestures({
           vx: speedFrom(recent.current, event.timeStamp, event.clientX),
         },
         { travel: carry.current },
+        committed,
       )
       recent.current = []
 

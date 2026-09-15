@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { oncePerFrame } from '../../../frame-throttle-core'
 import {
+  axisOf,
   carryDistance,
   dragMeans,
   followed,
   isDoubleTap,
   lastMoments,
   speedFrom,
+  type Axis,
   type Moment,
   type Tap,
 } from '../../../swipe-core'
@@ -84,6 +86,9 @@ export default function useZoomGestures({
   const recent = useRef<Moment[]>([])
   const lastTap = useRef<Tap | null>(null)
   const carry = useRef(64)
+  /* Which way this gesture committed, decided once and then held. The long
+     version is in swipe-core, beside `axisOf`. */
+  const axis = useRef<Axis>(null)
 
   /* What the picture is drawn at when it is not zoomed, and the screen it is
      drawn on. Measured rather than remembered: the phone can turn over. */
@@ -164,6 +169,7 @@ export default function useZoomGestures({
       takeOver()
       carry.current = carryDistance(held.current.screen.width)
       from.current = { x: event.clientX, y: event.clientY, at: event.timeStamp, view }
+      axis.current = null
       recent.current = [{ x: event.clientX, at: event.timeStamp }]
     },
     [home, measure, takeOver, view],
@@ -194,7 +200,9 @@ export default function useZoomGestures({
          next photograph coming in at the edge, the same as in the viewer
          behind this one. */
       if (!dragPans(start.view)) {
-        follow(followed({ dx: event.clientX - start.x, dy: event.clientY - start.y }))
+        const drag = { dx: event.clientX - start.x, dy: event.clientY - start.y }
+        axis.current ??= axisOf(drag)
+        follow(followed(drag, {}, axis.current))
         return
       }
 
@@ -252,6 +260,8 @@ export default function useZoomGestures({
       // Still a finger down, or this one was part of a pinch: nothing to read.
       if (!start || fingers.current.size > 0) return
 
+      const committed = axis.current
+      axis.current = null
       const means = dragMeans(
         {
           dx: event.clientX - start.x,
@@ -260,6 +270,7 @@ export default function useZoomGestures({
           vx: speedFrom(recent.current, event.timeStamp, event.clientX),
         },
         { travel: carry.current },
+        committed,
       )
       recent.current = []
       const tap = { at: event.timeStamp, x: event.clientX, y: event.clientY }
@@ -291,6 +302,7 @@ export default function useZoomGestures({
       if (fingers.current.size < 2) pinch.current = null
       if (!from.current) return
       from.current = null
+      axis.current = null
       recent.current = []
       home()
     },

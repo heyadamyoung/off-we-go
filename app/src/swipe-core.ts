@@ -72,17 +72,15 @@ export function carryDistance(width: number, share = 0.5, least = 60, most = 260
  * Dragging left shows the next photograph, the way a page turns and the way
  * every gallery on a phone already behaves.
  */
-export function dragMeans(drag: Drag, limits: DragLimits = {}): DragMeans {
+export function dragMeans(drag: Drag, limits: DragLimits = {}, axis: Axis = null): DragMeans {
   const { travel = 60, slop = 10, restMs = 700, project = 200 } = limits
-  const { dx, dy, vx = 0 } = drag
-  const across = Math.abs(dx)
-  const down = Math.abs(dy)
-  const sideways = across > down
+  const { dx, vx = 0 } = drag
 
-  /* Across rather than down. Comparing the two is what keeps a scroll down a
-     long comment thread from turning the page as well: a finger that travelled
-     further vertically was going vertically, however far it also wandered. */
-  if (!sideways) return tapOrNothing(drag, slop, restMs)
+  /* Across rather than down. That rule is what keeps a finger going down a
+     long comment thread from turning the page as well — but WHEN it is asked
+     decides everything, which is why the answer is handed in rather than
+     worked out again here. See `axisOf`. */
+  if ((axis ?? axisOf(drag, limits)) !== 'across') return tapOrNothing(drag, slop, restMs)
 
   /* Where the photograph would come to rest if you let the finger's own speed
      carry it. One rule, not two.
@@ -123,13 +121,49 @@ function tapOrNothing(drag: Drag, slop: number, restMs: number): DragMeans {
  * Nothing at all for a drag that is going down rather than across, so reading
  * the comments never smears the photograph sideways.
  */
-export function followed(drag: { dx: number; dy: number }, limits: DragLimits = {}): number {
+export function followed(
+  drag: { dx: number; dy: number },
+  limits: DragLimits = {},
+  axis: Axis = null,
+): number {
+  const { slop = 10 } = limits
+  if (Math.abs(drag.dx) <= slop) return 0
+  // The same axis the release reads, so what the picture does under the finger
+  // and what happens when it lifts can never disagree.
+  return (axis ?? axisOf(drag, limits)) === 'across' ? drag.dx : 0
+}
+
+/* ---- which way a gesture committed ----------------------------------------
+
+   Reported from the road: "you swipe a bunch and they work fine, then you use
+   the same gesture and the photo only partially swipes and then snaps back."
+
+   A thumb does not travel in a straight line. It pivots from the base of the
+   hand, so a swipe across a phone arcs downwards — gently at first and most at
+   the end, which is exactly when the decision gets made. Both halves of the
+   reader used to ask "more across than down?" of the TOTAL displacement, every
+   time they were asked, so a gesture could be horizontal for its whole visible
+   life and vertical at the one instant that counted. The strip follows the
+   finger, the finger lifts, and nothing happens.
+
+   So the question is asked once, the moment the finger has travelled far
+   enough to mean anything, and the answer is held for the rest of the gesture
+   — which is what every scroller on every phone does, and why none of them
+   lose a swipe to the shape of a hand. Committing cuts both ways: a finger
+   that set off down a comment thread keeps the page where it is however far
+   sideways it wanders afterwards. */
+
+/** Across, down, or not yet moved enough to be either. */
+export type Axis = 'across' | 'down' | null
+
+export function axisOf(drag: { dx: number; dy: number }, limits: DragLimits = {}): Axis {
   const { slop = 10 } = limits
   const across = Math.abs(drag.dx)
-  if (across <= slop) return 0
-  // The same across-beats-down rule the release uses, so what the picture does
-  // under the finger and what happens when it lifts can never disagree.
-  return across > Math.abs(drag.dy) ? drag.dx : 0
+  const down = Math.abs(drag.dy)
+  /* A fingertip resting on the glass jitters by a pixel or two, and whichever
+     way that jitter happened to fall is not a decision. */
+  if (across <= slop && down <= slop) return null
+  return across > down ? 'across' : 'down'
 }
 
 /* ---- how fast it was going ------------------------------------------------
