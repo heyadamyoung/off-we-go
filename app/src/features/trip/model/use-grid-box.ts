@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useState } from 'react'
+import { oncePerFrame } from '../../../frame-throttle-core'
 
 export interface GridBox {
   /** The grid's content width: what a row of cells actually has to fill. */
@@ -39,20 +40,31 @@ export default function useGridBox() {
     }
     const view = scroller && scroller !== document.body ? scroller : null
 
-    const measure = () => {
-      /* The content box, not the border box. clientWidth includes the grid's
-         own padding, and a cell computed from the padded width is a row eight
-         pixels taller than the one the browser lays out — over a few thousand
-         rows that is a scrollbar claiming a trip is a third longer than it is,
-         and a window that slides faster than the photographs under it. */
+    /* The content box, not the border box. clientWidth includes the grid's own
+       padding, and a cell computed from the padded width is a row eight pixels
+       taller than the one the browser lays out — over a few thousand rows that
+       is a scrollbar claiming a trip is a third longer than it is, and a window
+       that slides faster than the photographs under it.
+
+       Read when the shape of the thing changes rather than on every scroll
+       event. getComputedStyle is a style recalculation, and padding does not
+       move while a thumb does. */
+    let sides = 0
+    let above = 0
+    const readPadding = () => {
       const pad = getComputedStyle(grid)
-      const sides = Number.parseFloat(pad.paddingLeft) + Number.parseFloat(pad.paddingRight)
-      const above = Number.parseFloat(pad.paddingTop) || 0
+      const left = Number.parseFloat(pad.paddingLeft)
+      const right = Number.parseFloat(pad.paddingRight)
+      sides = Number.isFinite(left + right) ? left + right : 0
+      above = Number.parseFloat(pad.paddingTop) || 0
+    }
+
+    const measure = () => {
       const gridTop = grid.getBoundingClientRect().top + above
       const viewTop = view ? view.getBoundingClientRect().top : 0
       setBox(current => {
         const next = {
-          width: Math.max(0, grid.clientWidth - (Number.isFinite(sides) ? sides : 0)),
+          width: Math.max(0, grid.clientWidth - sides),
           scrolled: Math.max(0, viewTop - gridTop),
           viewportHeight: view ? view.clientHeight : window.innerHeight,
         }
@@ -67,16 +79,31 @@ export default function useGridBox() {
       })
     }
 
+    readPadding()
     measure()
+
+    /* Once a frame, not once an event. Every one of these ends in two forced
+       layouts and, because `scrolled` changes on every single scroll event, a
+       render of the whole window — several times over for each frame anybody
+       could see. That is the main thread being busy with invisible work at the
+       moment the next touch arrives. */
+    const onScroll = oncePerFrame(measure)
+    const onResize = oncePerFrame(() => {
+      readPadding()
+      measure()
+    })
+
     const target: HTMLElement | Window = view || window
-    target.addEventListener('scroll', measure, { passive: true })
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    target.addEventListener('scroll', onScroll, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
     observer?.observe(grid)
     if (view) observer?.observe(view)
-    window.addEventListener('resize', measure)
+    window.addEventListener('resize', onResize)
     return () => {
-      target.removeEventListener('scroll', measure)
-      window.removeEventListener('resize', measure)
+      onScroll.cancel()
+      onResize.cancel()
+      target.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
       observer?.disconnect()
     }
   }, [grid])

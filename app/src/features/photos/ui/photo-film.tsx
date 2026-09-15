@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { filmScroll, filmWindow } from '../../../film-window-core'
+import { oncePerFrame } from '../../../frame-throttle-core'
 import type { TripPhoto } from '../../../shared/model/types'
 
 /* The strip of thumbnails along the bottom of the viewer: where you are in the
@@ -45,6 +46,12 @@ export default function PhotoFilm({
     [list.length],
   )
 
+  /* A flicked strip fires scroll events faster than the screen paints, and
+     every one of them reads a layout back and can hand the row a new slice of
+     the trip to build. Once a frame is once per thing anybody sees. */
+  const onScroll = useMemo(() => oncePerFrame(read), [read])
+  useEffect(() => () => onScroll.cancel(), [onScroll])
+
   /* Setting the scroll fires a scroll event, which reads the window back — so
      the two only have to agree here, not be kept in step by hand. */
   useEffect(() => {
@@ -55,7 +62,7 @@ export default function PhotoFilm({
   }, [index, read])
 
   return (
-    <div className="vfilm" ref={row} onScroll={() => read(index)}>
+    <div className="vfilm" ref={row} onScroll={() => onScroll(index)}>
       {strip.before > 0 && (
         <span className="vhold" style={{ width: strip.before }} aria-hidden="true" />
       )}
