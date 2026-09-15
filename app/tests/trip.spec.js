@@ -394,8 +394,11 @@ test('tapping the photograph opens it full screen, where it zooms', async ({ pag
   await page.locator('.vpane.on .vmaintap').click()
   await expect(page.locator('.vzoom')).toBeVisible()
 
+  /* The one being looked at. Full screen is a strip of three — the picture
+     before, this one, and the one after — so that a swipe has somewhere to go
+     rather than swapping the picture where it stands. */
   const scale = async () => {
-    const t = await page.locator('.vzimg').evaluate(el => getComputedStyle(el).transform)
+    const t = await page.locator('.vzpane.on img').evaluate(el => getComputedStyle(el).transform)
     return t === 'none' ? 1 : Number(t.match(/matrix\(([-\d.]+)/)?.[1] ?? 1)
   }
   expect(await scale()).toBeCloseTo(1, 1)
@@ -1668,7 +1671,7 @@ test('the photograph you tap is the photograph you get, and the one you open ful
   const zoom = page.locator('.vzoom')
   await expect(zoom).toBeVisible({ timeout: 8000 })
   expect(
-    await zoom.locator('img').getAttribute('alt'),
+    await zoom.locator('.vzpane.on img').getAttribute('alt'),
     'full screen opened a different photograph',
   ).toBe(wanted)
   expect(await zoom.getAttribute('aria-label')).toBe(wanted)

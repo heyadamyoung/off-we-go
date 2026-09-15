@@ -855,6 +855,25 @@
      the space around it. */
   user-select: none; -webkit-user-select: none;
 }
+/* The same filmstrip the viewer behind this has, for the same reason: a view
+   that draws one picture and puts its transform back to nought when the page
+   turns can only ever snap. The track is the whole stage wide, because a turn
+   moves it by exactly one of its own widths — and a percentage in a transform
+   is of the element's own box, so nothing here measures the screen and a phone
+   turned on its side is right on the frame it turns.
+
+   Clipping is the stage's, not the track's: a track that clipped its own
+   neighbours would also clip the photograph in the middle at the moment it is
+   zoomed past the edges, which is the one thing this view is for. */
+.vztrack { position: absolute; inset: 0; will-change: transform }
+.vzpane {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+/* A neighbour is scenery: on the screen so that it does not have to be fetched
+   when it becomes the photograph, and never answering a touch meant for the
+   one in the middle. */
+.vzpane[aria-hidden='true'] { pointer-events: none }
 .vzimg {
   max-width: 100%; max-height: 100%; object-fit: contain;
   transform-origin: center center; will-change: transform;

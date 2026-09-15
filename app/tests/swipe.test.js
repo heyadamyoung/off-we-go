@@ -6,7 +6,9 @@ import {
   dragMeans,
   followed,
   isDoubleTap,
+  lastMoments,
   pageBy,
+  speedFrom,
   strip,
   trackShift,
   warmAround,
@@ -200,4 +202,50 @@ test('warming never asks for the same photograph twice', () => {
   assert.ok(!warmed.includes(0), 'and never the one already on the screen')
   assert.deepEqual(warmAround(0, 1, 3), [], 'nothing to warm on a single photograph')
   assert.deepEqual(warmAround(0, 0, 3), [])
+})
+
+test('how fast it was going is read off the end of the gesture, not all of it', () => {
+  /* The whole reason the samples are trimmed. A finger that set off quickly
+     and then stopped is somebody changing their mind, and an average over the
+     whole swipe calls it a flick and turns the page anyway. */
+  const whole = [
+    { x: 0, at: 0 },
+    { x: 200, at: 40 },
+    { x: 210, at: 400 },
+    { x: 212, at: 480 },
+  ]
+  assert.ok(speedFrom(whole, 500, 213) > 0.4, 'the average says this was quick')
+  const end = lastMoments(whole, 500)
+  assert.ok(speedFrom(end, 500, 213) < 0.05, 'the last moment says it had stopped')
+})
+
+test('the samples come back as they were when nothing has aged out', () => {
+  /* These run at the rate a finger reports itself, which is faster than a
+     screen paints: a copy per pointer event is work nobody sees. */
+  const fresh = [
+    { x: 0, at: 100 },
+    { x: 10, at: 140 },
+    { x: 20, at: 180 },
+  ]
+  assert.equal(lastMoments(fresh, 190), fresh)
+})
+
+test('two are always kept, however long ago they were', () => {
+  // A speed needs two points. One is not slow, it is unmeasured.
+  const stale = [
+    { x: 0, at: 0 },
+    { x: 5, at: 10 },
+  ]
+  assert.deepEqual(lastMoments(stale, 9000), stale)
+})
+
+test('an unmeasured gesture reads as still, never as fast', () => {
+  assert.equal(speedFrom([], 100, 50), 0, 'nothing to measure')
+  assert.equal(speedFrom([{ x: 0, at: 100 }], 100, 50), 0, 'no time passed')
+})
+
+test('speed is signed the way travel is', () => {
+  const samples = [{ x: 100, at: 0 }]
+  assert.equal(speedFrom(samples, 10, 200), 10, 'rightwards is positive')
+  assert.equal(speedFrom(samples, 10, 0), -10, 'and leftwards is not')
 })

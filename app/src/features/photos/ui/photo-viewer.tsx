@@ -10,7 +10,7 @@ import PhotoSide from './photo-side'
 import PhotoZoom from './photo-zoom'
 import VideoFrame from './video-frame'
 import { durationLabel } from '../../../mobile-videos-core'
-import { pageBy, warmAround } from '../../../swipe-core'
+import { warmAround } from '../../../swipe-core'
 import usePhotoDownload from '../model/use-photo-download'
 import usePhotoShare from '../model/use-photo-share'
 import useViewerGestures from '../model/use-viewer-gestures'
@@ -142,6 +142,18 @@ function PhotoViewer({
   const notify = useToast()
   const { share, sharing } = usePhotoShare(tripId, photo, notify)
   const { download, saving } = usePhotoDownload(photo, notify)
+
+  /* The photographs of the trip, and the way back to where one of them sits
+     in the whole gallery. */
+  const stills = useMemo(() => list.filter(p => p.kind !== 'video'), [list])
+  const setStill = useCallback(
+    (at: number) => {
+      const id = stills[at]?.id
+      const to = id ? list.findIndex(p => p.id === id) : -1
+      if (to >= 0) setIndex(to)
+    },
+    [list, stills, setIndex],
+  )
 
   const openZoom = useCallback(() => setZoomed(true), [])
   const gestures = useViewerGestures({
@@ -332,11 +344,18 @@ function PhotoViewer({
         </div>
 
         {zoomed && !video && (
+          /* Full screen is for photographs, so it pages through the
+             photographs: swiping onto a film would throw you out of the view
+             you had just asked for, and its poster standing in for it would be
+             a picture that cannot be looked at. */
           <PhotoZoom
-            photo={photo}
-            siblings={list.length > 1}
+            list={stills}
+            index={Math.max(
+              0,
+              stills.findIndex(p => p.id === photo.id),
+            )}
+            setIndex={setStill}
             onClose={() => setZoomed(false)}
-            onPage={way => setIndex(pageBy(way, index, list.length))}
           />
         )}
 
