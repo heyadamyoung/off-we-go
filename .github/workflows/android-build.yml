@@ -31,7 +31,15 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+      # Named rather than left to the action's default, which is
+      # "tools platform-tools". `tools` is the old SDK Tools package, replaced
+      # by the cmdline-tools this action installs for itself, and Google has
+      # now dropped it from the SDK repository altogether — so sdkmanager
+      # exits 1 on "Failed to find package 'tools'" before a line of this app
+      # is compiled. Nothing in the Gradle build wanted it.
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          packages: platform-tools
       - name: Install and synchronize Android
         run: pnpm install --frozen-lockfile && VITE_API_URL="https://${WAYFARE_DOMAIN}/api" pnpm android:sync
       - name: Test and compile the Kotlin app

@@ -77,3 +77,51 @@ test('one action is pinned to one commit everywhere it is used', async () => {
 
   assert.deepEqual(drifted, [], drifted.join('\n\n'))
 })
+
+/** The lines of one `- uses:` step: its own line, plus everything under it. */
+function stepFor(contents, action) {
+  const lines = contents.split('\n')
+  const at = lines.findIndex(line => line.includes(`uses: ${action}@`))
+  if (at < 0) return null
+  const depth = lines[at].search(/\S/)
+  const step = [lines[at]]
+  for (let next = at + 1; next < lines.length; next++) {
+    const indent = lines[next].search(/\S/)
+    if (indent >= 0 && indent <= depth) break
+    step.push(lines[next])
+  }
+  return step.join('\n')
+}
+
+test('the Android SDK is asked for the packages it wants, not the action’s defaults', async () => {
+  /* The build died in setup, before a line of this app was compiled:
+     "Failed to find package 'tools'", and sdkmanager exit 1 takes the job with
+     it. setup-android's default package list is "tools platform-tools", and
+     `tools` — the old SDK Tools, long since replaced by the cmdline-tools the
+     action installs for itself — has now been dropped from Google's SDK
+     repository altogether.
+
+     A default that names a package nobody can install any more is a default
+     to stop taking, and the same removal will come for others: what this
+     build needs is short, and it should say so. */
+  const files = (await readdir(workflowRoot)).filter(name => /\.ya?ml$/.test(name))
+  const wrong = []
+  for (const file of files) {
+    const step = stepFor(
+      await readFile(path.join(workflowRoot, file), 'utf8'),
+      'android-actions/setup-android',
+    )
+    if (!step) continue
+    const asked = /\n\s*packages:\s*(.*)/
+      .exec(step)?.[1]
+      ?.trim()
+      .replace(/^['"]|['"]$/g, '')
+    if (!asked) {
+      wrong.push(`${file}: setup-android takes the action's own default package list`)
+      continue
+    }
+    if (asked.split(/\s+/).includes('tools'))
+      wrong.push(`${file}: setup-android still asks for 'tools', which Google has withdrawn`)
+  }
+  assert.deepEqual(wrong, [], wrong.join('\n'))
+})
