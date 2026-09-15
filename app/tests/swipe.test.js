@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   atSlot,
+  axisOf,
   carryDistance,
   dragMeans,
   followed,
@@ -248,4 +249,81 @@ test('speed is signed the way travel is', () => {
   const samples = [{ x: 100, at: 0 }]
   assert.equal(speedFrom(samples, 10, 200), 10, 'rightwards is positive')
   assert.equal(speedFrom(samples, 10, 0), -10, 'and leftwards is not')
+})
+
+/* ---- the axis a gesture committed to --------------------------------------
+
+   Reported from the road: "you swipe a bunch and they work fine, then you use
+   the same gesture and the photo only partially swipes and then snaps back."
+
+   A thumb does not travel in a straight line. It pivots from the base of the
+   hand, so a swipe across a phone arcs downwards — gently at first and most
+   at the end, which is exactly when the decision is made. Both halves of the
+   reader asked "is this more across than down?" of the TOTAL displacement,
+   every time they were asked, so a gesture could be horizontal for its whole
+   visible life and vertical at the one instant that counted.
+
+   That is the report word for word: the strip follows the finger, and then
+   the finger lifts and nothing happens. */
+
+test('a thumb that arcs downwards still turns the page it was turning', () => {
+  // A quarter of the way through: plainly across, and the strip follows it.
+  assert.equal(followed({ dx: -90, dy: 40 }), -90)
+  const axis = axisOf({ dx: -90, dy: 40 })
+  assert.equal(axis, 'across')
+
+  /* And by the end the arc has carried it further down than across — a
+     perfectly ordinary one-handed swipe. */
+  const release = { dx: -210, dy: 230, ms: 260, vx: -0.9 }
+  assert.equal(
+    dragMeans(release, { travel: 195 }),
+    null,
+    'without the axis it reads as a scroll and the picture snaps back',
+  )
+  assert.equal(dragMeans(release, { travel: 195 }, axis), 'next')
+})
+
+test('the strip keeps following a finger that has committed to going across', () => {
+  /* Otherwise the picture tracks the thumb, freezes partway as the arc steepens
+     and then springs home: three things happening where one gesture was. */
+  assert.equal(followed({ dx: -210, dy: 230 }), 0)
+  assert.equal(followed({ dx: -210, dy: 230 }, {}, 'across'), -210)
+})
+
+test('reading a comment thread is still never a page turn', () => {
+  /* The rule the axis replaces, and the reason it existed: a finger going down
+     a long thread wanders sideways, and must not take the gallery with it. */
+  assert.equal(axisOf({ dx: 12, dy: -140 }), 'down')
+  assert.equal(followed({ dx: 12, dy: -140 }, {}, 'down'), 0)
+  assert.equal(dragMeans({ dx: 60, dy: -300, ms: 300, vx: 0.8 }, { travel: 195 }, 'down'), null)
+})
+
+test('a gesture that began downwards stays downwards, however it ends', () => {
+  // The mirror of the arc: commitment has to cut both ways or it is not one.
+  const axis = axisOf({ dx: 6, dy: -40 })
+  assert.equal(axis, 'down')
+  assert.equal(dragMeans({ dx: -300, dy: -320, ms: 300, vx: -1 }, { travel: 195 }, axis), null)
+})
+
+test('nothing is committed to until the finger has moved enough to mean it', () => {
+  /* A fingertip resting on the glass jitters by a pixel or two, and whichever
+     way that jitter happened to fall is not a decision. */
+  assert.equal(axisOf({ dx: 0, dy: 0 }), null)
+  assert.equal(axisOf({ dx: -7, dy: 4 }), null, 'inside the slop, either way')
+  assert.equal(axisOf({ dx: -11, dy: 4 }), 'across')
+  assert.equal(axisOf({ dx: 4, dy: -11 }), 'down')
+})
+
+test('with nothing committed to, it reads the drag itself — as it always did', () => {
+  assert.equal(followed({ dx: -90, dy: 40 }, {}, null), -90)
+  assert.equal(followed({ dx: -40, dy: 90 }, {}, null), 0)
+  assert.equal(dragMeans({ dx: -210, dy: 30, ms: 260, vx: -0.9 }, { travel: 195 }, null), 'next')
+  assert.equal(dragMeans({ dx: 4, dy: 3, ms: 120 }, { travel: 195 }, null), 'tap')
+})
+
+test('a tap is a tap whatever the axis says', () => {
+  // A still finger commits to nothing, so the tap must survive the lock.
+  assert.equal(dragMeans({ dx: 2, dy: 1, ms: 120 }, { travel: 195 }, null), 'tap')
+  assert.equal(dragMeans({ dx: 2, dy: 1, ms: 120 }, { travel: 195 }, 'across'), 'tap')
+  assert.equal(dragMeans({ dx: 2, dy: 1, ms: 120 }, { travel: 195 }, 'down'), 'tap')
 })
