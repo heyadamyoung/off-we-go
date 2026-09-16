@@ -193,9 +193,30 @@ await app.listen({ host: '0.0.0.0', port })
 /* The privacy policy promises GPS fixes are deleted after 30 days; this is
    what keeps the promise. Cheap enough to run often, checked on boot so a
    long-stopped instance catches up immediately. */
-const prunePositions = () =>
+/* What actually happened, written down before the trail it is read from is
+   deleted. The rule is in stop-visits and the query is in the repository; this
+   is the clock.
+
+   Ten minutes because an arrival nobody is shown for ten minutes is an arrival
+   nobody misses — the live layer is already lighting the pin on the map in real
+   time from the same fixes, and this is the durable copy behind it. Stops that
+   already carry both times cost one small query, so a fleet of finished trips
+   is nearly free. */
+const stampVisits = () =>
   repository
-    .prunePositions()
+    .stampVisits()
+    .then(stamped => {
+      if (stamped) app.log.info({ evt: 'stamp.visits', stamped }, 'arrival times recorded')
+    })
+    .catch(error => app.log.warn({ err: error }, 'recording arrival times failed'))
+
+const prunePositions = () =>
+  /* Always immediately before the delete, never after it. The fixes are the
+     evidence and the stamps are the finding, and a finding not yet drawn when
+     its evidence is destroyed is a finding lost — a trip going quiet for a
+     month and then losing the day it happened on. */
+  stampVisits()
+    .then(() => repository.prunePositions())
     .then(removed => {
       // Always, not only when something was removed: a prune timer that quietly
       // stopped must not be indistinguishable from a healthy no-op — this job
@@ -206,10 +227,13 @@ const prunePositions = () =>
 await prunePositions()
 const pruneTimer = setInterval(prunePositions, 6 * 60 * 60 * 1000)
 pruneTimer.unref?.()
+const stampTimer = setInterval(stampVisits, 10 * 60 * 1000)
+stampTimer.unref?.()
 
 const stop = async signal => {
   app.log.info({ signal }, 'shutting down')
   clearInterval(pruneTimer)
+  clearInterval(stampTimer)
   await app.close().catch(() => {})
   await repository.close().catch(() => {})
   process.exit(0)

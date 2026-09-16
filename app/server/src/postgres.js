@@ -7,6 +7,7 @@ import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
 import { pinAfter, stopForPhoto } from './stop-placement.js'
 import { clockOrNull } from './stop-time.js'
+import { visitOf } from './stop-visits.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -110,6 +111,13 @@ const stopRow = value =>
     startsAt: clockOrNull(value.starts_at) ?? null,
     endsAt: clockOrNull(value.ends_at) ?? null,
     timeNote: value.time_note ?? null,
+    /* What happened, next to what was planned — and never the same fact. A
+       stop carries its clocks and, once the trail can account for it, the two
+       times nobody typed. See stop-visits. */
+    arrivedAt: value.arrived_at ?? null,
+    leftAt: value.left_at ?? null,
+    /** the zone those two were recorded in — see stop-visits */
+    visitZone: value.visit_zone ?? null,
     lng: value.lng,
     lat: value.lat,
     status: value.status,
@@ -2438,6 +2446,77 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async prunePositions() {
       const result = await pool.query('select wayfare_prune_positions() as removed')
       return Number(result.rows[0]?.removed || 0)
+    },
+    /* What actually happened, written down before the evidence for it is
+       deleted. The rule itself is in stop-visits; this is only where the trail
+       is fetched and the finding stored.
+
+       Only stops still missing one of the two times are asked about, so a
+       finished trip costs one small query and nothing else — and the fixes are
+       fetched from the earliest of those stops' own days rather than from the
+       whole retained window, so the usual answer is "today's trail".
+
+       A fix a minute is ample. The trail arrives every few seconds and the
+       finest thing anybody is ever shown is a clock time, so the extra rows
+       would buy precision that gets rounded away on the screen. */
+    async stampVisits({ tripId = null } = {}) {
+      const pending = await pool.query(
+        `select id, trip_id, day, lng, lat from stops
+        where (arrived_at is null or left_at is null)
+          and lng is not null and lat is not null
+          and ($1::uuid is null or trip_id=$1)
+        order by trip_id, seq, created_at`,
+        [tripId],
+      )
+      const byTrip = new Map()
+      for (const stop of rows(pending)) {
+        if (!byTrip.has(stop.trip_id)) byTrip.set(stop.trip_id, [])
+        byTrip.get(stop.trip_id).push(stop)
+      }
+
+      let stamped = 0
+      for (const [trip, stops] of byTrip) {
+        /* An undated stop could have been visited at any point in the trail,
+           so one of those drags the window back to the beginning — which is
+           still only ever thirty days, because that is all there is. */
+        const days = stops.map(stop => stop.day).filter(Boolean)
+        const from = days.length === stops.length ? days.sort()[0] : null
+        const trail = await pool.query(
+          `select distinct on (floor(extract(epoch from p.recorded_at) / 60))
+            p.lng, p.lat, p.accuracy, p.speed, p.recorded_at, d.timezone
+          from positions p join devices d on d.id=p.device_id
+          where p.trip_id=$1 and ($2::date is null or p.recorded_at >= $2::date)
+          order by floor(extract(epoch from p.recorded_at) / 60), p.accuracy nulls last`,
+          [trip, from],
+        )
+        const fixes = rows(trail).map(fix => ({
+          lng: Number(fix.lng),
+          lat: Number(fix.lat),
+          accuracy: fix.accuracy === null ? null : Number(fix.accuracy),
+          speed: fix.speed === null ? null : Number(fix.speed),
+          zone: fix.timezone || null,
+          at: fix.recorded_at,
+        }))
+        if (!fixes.length) continue
+
+        for (const stop of stops) {
+          const visit = visitOf({ ...stop, lng: Number(stop.lng), lat: Number(stop.lat) }, fixes)
+          if (!visit) continue
+          /* Never overwritten once written. An arrival is the first time
+             somebody was there and a later run of this must not be able to
+             move it, and a departure already proved is already proved. */
+          const result = await pool.query(
+            `update stops set
+              arrived_at = coalesce(arrived_at, $2),
+              left_at = coalesce(left_at, $3),
+              visit_zone = coalesce(visit_zone, $4)
+            where id=$1 and (arrived_at is null or (left_at is null and $3::timestamptz is not null))`,
+            [stop.id, visit.arrivedAt, visit.leftAt, visit.zone],
+          )
+          stamped += result.rowCount
+        }
+      }
+      return stamped
     },
     async removeDevice(user, tripId, deviceId) {
       if (!(await this.canEditTrip(user.id, tripId))) return false

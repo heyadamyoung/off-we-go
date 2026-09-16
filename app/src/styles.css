@@ -1229,3 +1229,82 @@
   .editor .eb { flex: 1 }
   .editor .ef { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) }
 }
+
+/* The timeline — the day, in order, in time.
+ *
+ * Every height here is also a number in timeline-core.ts, because the window
+ * that decides which rows exist and the boxes the browser lays out have to
+ * agree exactly. A row taller than the arithmetic thinks it is slides the
+ * window faster than the rows inside it, and the drift grows the further down
+ * a long trip somebody reads. Change one, change the other. */
+.tline { display: flex; flex-direction: column }
+.tday {
+  display: flex; align-items: baseline; gap: 8px; padding: 14px 12px 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--c-faint);
+}
+.tday b { color: var(--c-ink) }
+.tday.now b { color: var(--c-accent-bright) }
+.tdaycount { margin-right: auto }
+/* Where the trip actually is. Without it today is only findable by counting
+   headings, on the one screen whose whole subject is when things happened. */
+.tnow {
+  padding: 1px 7px; border-radius: 999px; letter-spacing: .06em;
+  background: var(--c-accent-soft); color: var(--c-accent-bright);
+}
+.trow {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 0 10px; border-radius: 12px; text-align: left;
+}
+.trow:hover { background: var(--c-raised2) }
+.trow.on { background: var(--c-accent-soft) }
+.ttime {
+  flex: none; width: 52px; display: flex; flex-direction: column; gap: 1px;
+  font-size: 11px; color: var(--c-faint); overflow: hidden;
+}
+.ttime b { font-weight: 600; color: var(--c-muted) }
+.ttime span { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ticon {
+  display: grid; place-items: center; width: 30px; height: 30px; flex: none;
+  border-radius: 10px; background: var(--c-raised); color: var(--c-muted);
+}
+.ticon.been { color: var(--c-accent-bright) }
+.tbody { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 }
+.tbody b { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.tdetail, .tsaid {
+  font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tdetail { color: var(--c-muted) }
+/* What the phones say, as against what the itinerary says. It reads as a
+   different kind of fact because it is one. */
+.tsaid { color: var(--c-accent-bright); font-variant-numeric: tabular-nums }
+.tdrift {
+  flex: none; font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 999px; background: var(--c-raised); color: var(--c-muted);
+}
+.tdrift.late { background: var(--c-accent-soft); color: var(--c-accent-bright) }
+.tdrift.ontime { color: var(--c-faint) }
+/* An afternoon is a strip and a number, never one text row per photograph.
+   The gallery next door is a real gallery; this is a reminder that it is. */
+.tshots { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 4px 10px 8px 62px }
+.tshots::-webkit-scrollbar { display: none }
+.tshot, .tmore {
+  flex: none; width: 72px; height: 72px; border-radius: 10px; overflow: hidden;
+  background: var(--c-raised);
+}
+.tshot img { width: 100%; height: 100%; object-fit: cover }
+.tmore { display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--c-muted) }
+.tleg { padding: 0 12px 0 62px; font-size: 11px; color: var(--c-faint); display: flex; align-items: center }
+/* Planning a day from the day, rather than from the map with the right chip
+   already chosen. Travellers only — a follower has nothing to add. */
+.tadd {
+  display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+  border-radius: 999px; background: var(--c-raised); color: var(--c-muted);
+}
+.tadd:hover { background: var(--c-accent-soft); color: var(--c-accent-bright) }
+/* A leg of the journey, in the day it happens in. It reads as a different
+   kind of row because it is one: the trip moving rather than the trip
+   stopping. Its home is still the Travel view, where the seats and the
+   deadlines and the boarding pass live. */
+.trow.tgo .ticon.going { background: var(--c-accent-soft); color: var(--c-accent-bright) }
+.trow.tgo b { letter-spacing: -.01em }

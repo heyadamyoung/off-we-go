@@ -23,7 +23,6 @@ import { Advisories, MapChrome, MapControls, ScopeToggle, TripTitle } from './tr
 import { TripCluster } from './trip-cluster'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
-import { SegmentEditor } from '../../transport'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
@@ -70,12 +69,12 @@ function Trip({
   const page = useTripPage({ data, busyEditing, search, patch, notify, reload })
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
-    theme, toggleTheme, trip, stops, family, me, viewers, placing, setPlacing, photoBy, setPhotoBy,
+    theme, toggleTheme, trip, stops, family, me, viewers, placing, setPlacing, planOnDay, photoBy, setPhotoBy,
     streetNames, toggleStreetNames,
     asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, sun, mapTheme, markers, progress, progressCopy, openViewer,
-    latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
+    latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, movePhotos, removePhoto, removeComment, editing, startEditing,
@@ -182,6 +181,8 @@ function Trip({
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           onMovePhotos={canEdit ? movePhotos : undefined}
           legs={legs}
+          onAddOnDay={canEdit ? planOnDay : undefined}
+          onTravel={() => patch({ view: 'travel' })}
           chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
@@ -196,18 +197,6 @@ function Trip({
             onEditDoc: transport.editDocument,
             onRemoveDoc: transport.removeDocument,
           }}
-        />
-      )}
-
-      {segmentEditing !== null && (
-        <SegmentEditor
-          segment={transport.segments.find(s => s.id === segmentEditing) || null}
-          people={family}
-          startsOn={trip.startsOn}
-          endsOn={trip.endsOn}
-          onSave={transport.saveSegment}
-          onDelete={transport.removeSegment}
-          onClose={() => setSegmentEditing(null)}
         />
       )}
 

@@ -51,21 +51,32 @@ export const TRIP = {
   dayIndex: 2, dayCount: 3,
 };
 
+/* `arrived` and `left` are wall clocks, and become instants in
+   sample-trip-core against whichever real day the stop lands on — the demo's
+   September dates are mapped onto the live calendar, so an ISO instant written
+   here would be months out by the time anybody read it.
+
+   They are what the phones saw, as against the plan beside them: Schiphol
+   eleven minutes late, the canal boat four minutes early, and the Rijksmuseum
+   thirty-five minutes late with a good reason. Foodhallen has an arrival and
+   no departure because the family are still in it, which is the one shape a
+   demo of this must include — a phone that goes quiet has not left anywhere,
+   and the row has to be able to say so. */
 export const STOPS = [
   { id:'s1', name:'Schiphol Airport', kind:'Transport', icon:'plane', day:'2026-09-04', startsAt:'08:30', endsAt:'10:00',
-    lng:4.7639, lat:52.3105, status:'done', kw:'airport,terminal', lock:41,
+    lng:4.7639, lat:52.3105, status:'done', kw:'airport,terminal', lock:41, arrived:'08:41', left:'10:12',
     note:'Wheels down. The train to Centraal takes seventeen minutes and she slept through all of it.' },
   { id:'s2', name:'Hotel Jakarta', kind:'Stay', icon:'bed', day:'2026-09-04', startsAt:'14:00', timeNote:'Check-in',
-    lng:4.9350, lat:52.3793, status:'done', kw:'hotel,lobby,plants', lock:12,
+    lng:4.9350, lat:52.3793, status:'done', kw:'hotel,lobby,plants', lock:12, arrived:'14:05', left:'16:20',
     note:'Our base for three nights. An indoor jungle in the atrium and harbour views from the top floor.' },
   { id:'s3', name:'Canal cruise', kind:'Activity', icon:'boat', day:'2026-09-04', startsAt:'18:30', endsAt:'20:00',
-    lng:4.8840, lat:52.3740, status:'done', kw:'amsterdam,canal,boat', lock:7,
+    lng:4.8840, lat:52.3740, status:'done', kw:'amsterdam,canal,boat', lock:7, arrived:'18:26', left:'20:05',
     note:'An open boat through the Jordaan at golden hour. Best hour of the trip so far, by a distance.' },
   { id:'s4', name:'Rijksmuseum', kind:'Sight', icon:'museum', day:'2026-09-05', startsAt:'09:30', endsAt:'12:30',
-    lng:4.8852, lat:52.3600, status:'done', kw:'rijksmuseum,amsterdam', lock:23,
+    lng:4.8852, lat:52.3600, status:'done', kw:'rijksmuseum,amsterdam', lock:23, arrived:'10:05', left:'12:40',
     note:'The Night Watch, the Cuypers Library, and roughly nine hundred stairs. Worth every one.' },
   { id:'s5', name:'Foodhallen', kind:'Food', icon:'food', day:'2026-09-05', startsAt:'13:00', endsAt:'14:30',
-    lng:4.8686, lat:52.3664, status:'now', kw:'food,market,hall', lock:55,
+    lng:4.8686, lat:52.3664, status:'now', kw:'food,market,hall', lock:55, arrived:'13:12',
     note:'Indoor food market in an old tram depot. Bitterballen for the kiddo, natural wine for the grown-ups.' },
   { id:'s6', name:'Anne Frank House', kind:'Sight', icon:'museum', day:'2026-09-05', startsAt:'15:45', endsAt:'17:00',
     lng:4.8840, lat:52.3752, status:'next', kw:'amsterdam,house,canal', lock:31,

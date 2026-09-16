@@ -39,6 +39,18 @@ export interface Stop {
   endsAt?: string | null
   /** The words that went with the hours: `Check-in`, `Doors`, `Evening`. */
   timeNote?: string | null
+  /* What happened, as against what was planned — the two times nobody typed.
+     Derived from the phones' own trail by the server and written down, because
+     the fixes behind them are deleted at thirty days and the finding has to
+     outlive the evidence. Never a copy of startsAt: a column that sometimes
+     holds the plan is a column nobody can read.
+
+     `leftAt` stays null until a later fix proves somebody went somewhere else.
+     A phone that goes quiet has not left anywhere. */
+  arrivedAt?: string | null
+  leftAt?: string | null
+  /** the zone those two were recorded in, from the phone that was there */
+  visitZone?: string | null
   kind?: string
   icon?: string
   status?: string
