@@ -124,10 +124,8 @@ services:
       # No cloud-metadata probing: the default detectors wait out a timeout
       # against GCP/AWS endpoints that will never answer this VPS.
       OTEL_NODE_RESOURCE_DETECTORS: env,host,os
-      REPLAY_DIR: /data/replays
     volumes:
       - ./data/uploads:/data/uploads
-      - ./data/replays:/data/replays
       # A named volume rather than a bind mount: Codex rewrites its own login
       # as tokens rotate, and the image pre-creates this path owned by node.
       - codex_data:/data/codex

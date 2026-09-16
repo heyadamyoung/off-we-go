@@ -15,7 +15,6 @@ import { Route as NewRouteImport } from './routes/new'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as PastRouteImport } from './routes/past'
 import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as ReplaysRouteImport } from './routes/replays'
 import { Route as AuthNativeRouteImport } from './routes/auth.native'
 import { Route as TripsSlugRouteImport } from './routes/trips.$slug'
 import { Route as UsersHandleRouteImport } from './routes/users.$handle'
@@ -50,11 +49,6 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReplaysRoute = ReplaysRouteImport.update({
-  id: '/replays',
-  path: '/replays',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthNativeRoute = AuthNativeRouteImport.update({
   id: '/auth/native',
   path: '/auth/native',
@@ -78,7 +72,6 @@ export interface FileRoutesByFullPath {
   '/pair': typeof PairRoute
   '/past': typeof PastRoute
   '/profile': typeof ProfileRoute
-  '/replays': typeof ReplaysRoute
   '/auth/native': typeof AuthNativeRoute
   '/trips/$slug': typeof TripsSlugRoute
   '/users/$handle': typeof UsersHandleRoute
@@ -90,7 +83,6 @@ export interface FileRoutesByTo {
   '/pair': typeof PairRoute
   '/past': typeof PastRoute
   '/profile': typeof ProfileRoute
-  '/replays': typeof ReplaysRoute
   '/auth/native': typeof AuthNativeRoute
   '/trips/$slug': typeof TripsSlugRoute
   '/users/$handle': typeof UsersHandleRoute
@@ -103,7 +95,6 @@ export interface FileRoutesById {
   '/pair': typeof PairRoute
   '/past': typeof PastRoute
   '/profile': typeof ProfileRoute
-  '/replays': typeof ReplaysRoute
   '/auth/native': typeof AuthNativeRoute
   '/trips/$slug': typeof TripsSlugRoute
   '/users/$handle': typeof UsersHandleRoute
@@ -117,7 +108,6 @@ export interface FileRouteTypes {
     | '/pair'
     | '/past'
     | '/profile'
-    | '/replays'
     | '/auth/native'
     | '/trips/$slug'
     | '/users/$handle'
@@ -129,7 +119,6 @@ export interface FileRouteTypes {
     | '/pair'
     | '/past'
     | '/profile'
-    | '/replays'
     | '/auth/native'
     | '/trips/$slug'
     | '/users/$handle'
@@ -141,7 +130,6 @@ export interface FileRouteTypes {
     | '/pair'
     | '/past'
     | '/profile'
-    | '/replays'
     | '/auth/native'
     | '/trips/$slug'
     | '/users/$handle'
@@ -154,7 +142,6 @@ export interface RootRouteChildren {
   PairRoute: typeof PairRoute
   PastRoute: typeof PastRoute
   ProfileRoute: typeof ProfileRoute
-  ReplaysRoute: typeof ReplaysRoute
   AuthNativeRoute: typeof AuthNativeRoute
   TripsSlugRoute: typeof TripsSlugRoute
   UsersHandleRoute: typeof UsersHandleRoute
@@ -204,13 +191,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/replays': {
-      id: '/replays'
-      path: '/replays'
-      fullPath: '/replays'
-      preLoaderRoute: typeof ReplaysRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/auth/native': {
       id: '/auth/native'
       path: '/auth/native'
@@ -242,7 +222,6 @@ const rootRouteChildren: RootRouteChildren = {
   PairRoute: PairRoute,
   PastRoute: PastRoute,
   ProfileRoute: ProfileRoute,
-  ReplaysRoute: ReplaysRoute,
   AuthNativeRoute: AuthNativeRoute,
   TripsSlugRoute: TripsSlugRoute,
   UsersHandleRoute: UsersHandleRoute,

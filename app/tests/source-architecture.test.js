@@ -177,3 +177,44 @@ test('a bulk move is batched below the size the server will accept', async () =>
     `the client sends ${batch} photos at a time and the server accepts ${ceiling}`,
   )
 })
+
+test('the product ships no session recorder', async () => {
+  /* rrweb recorded every signed-in browser and kept the chunks on the VPS, so
+     a debugging tool was shipped inside the product: a route nobody on a trip
+     will ever open, a store on the disk, a prune job, and two dependencies
+     that walk the DOM of every page somebody looks at.
+
+     It is not a question of whether it worked. Recording the people using the
+     app is the largest thing the app did that nobody asked it to do, and the
+     cheapest way to be sure it is gone is to be unable to add it back by
+     accident. */
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+  const shipped = { ...manifest.dependencies, ...manifest.devDependencies }
+  assert.deepEqual(
+    Object.keys(shipped).filter(name => /rrweb/.test(name)),
+    [],
+    'a session recorder is back in the dependencies',
+  )
+
+  const left = []
+  for (const where of ['src', 'server/src']) {
+    const files = await walk(path.join(root, where))
+    for (const file of files) {
+      const body = await readFile(file, 'utf8')
+      if (/rrweb|\/api\/replay|replay-store/.test(body)) left.push(path.relative(root, file))
+    }
+  }
+  assert.deepEqual(left, [], `session replay is still wired in:\n${left.join('\n')}`)
+})
+
+/** Every source file under a directory, however deep. */
+async function walk(from) {
+  const out = []
+  for (const entry of await readdir(from, { withFileTypes: true })) {
+    const at = path.join(from, entry.name)
+    if (entry.isDirectory()) out.push(...(await walk(at)))
+    else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) out.push(at)
+  }
+  return out
+}
