@@ -357,7 +357,7 @@ export function deriveLiveStopProgress({
 /* The words for the banner live next door — see live-progress-copy-core.
    Re-exported here because this is the module the whole app asks about the
    journey, and where a caller gets an answer from is not its business. */
-export { describeLiveStopProgress } from './live-progress-copy-core'
+export { describeLiveStopProgress, dueLabel } from './live-progress-copy-core'
 
 /* The itinerary with what the phones know written over it lives next door —
    see live-stop-statuses-core. Re-exported here because this is the module

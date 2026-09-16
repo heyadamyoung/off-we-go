@@ -16,16 +16,10 @@ import useTripLegs from '../model/use-trip-legs'
 import useTripChat from '../model/use-trip-chat'
 import { withFace } from '../model/faces'
 import useMapAsk from '../model/use-map-ask'
+import TripNow from './trip-now'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
-import {
-  Advisories,
-  MapChrome,
-  MapControls,
-  NowCapsule,
-  ScopeToggle,
-  TripTitle,
-} from './trip-chrome'
+import { Advisories, MapChrome, MapControls, ScopeToggle, TripTitle } from './trip-chrome'
 import { TripCluster } from './trip-cluster'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
@@ -80,7 +74,7 @@ function Trip({
     streetNames, toggleStreetNames,
     asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
-    phones, setPhones, sun, mapTheme, markers, progressCopy,
+    phones, setPhones, sun, mapTheme, markers, progress, progressCopy, openViewer,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport, segmentEditing,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
@@ -240,13 +234,25 @@ function Trip({
         {/* A demo has no phone to wait for: the sample never shows the GPS
             nudge, which read as broken in the one trip everyone sees first. */}
         {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
-          <NowCapsule
-            text={progressCopy.text}
-            meta={progressCopy.meta}
-            tone={progressCopy.tone}
-            onClick={() => {
+          <TripNow
+            progressCopy={progressCopy}
+            progress={progress}
+            stops={stops}
+            photos={photos}
+            clock={clock}
+            travelling={canEdit}
+            liveStop={liveStop}
+            onFollow={stop => {
               setFollowing(true)
-              if (liveStop) patch({ sel: liveStop.id, day: liveStop.day })
+              if (stop) patch({ sel: stop.id, day: stop.day })
+            }}
+            onSelect={stop => {
+              setFollowing(false)
+              patch({ sel: stop.id, day: stop.day })
+            }}
+            onPhotos={photo => {
+              const at = photos.findIndex(one => one.id === photo.id)
+              openViewer(photos, at < 0 ? 0 : at)
             }}
           />
         )}

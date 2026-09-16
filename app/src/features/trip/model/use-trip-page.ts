@@ -359,7 +359,7 @@ export default function useTripPage({
     view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
-    progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
+    progress, progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
     transport, segmentEditing, setSegmentEditing, clock, showGate,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, movePhotos, removePhoto, removeComment, indoor, editing,

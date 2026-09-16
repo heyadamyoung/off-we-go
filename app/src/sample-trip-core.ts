@@ -74,7 +74,21 @@ export const sampleTrip = () => {
         const days = sampleStopDays()
         return STOPS.map(value => ({ ...value, day: days.get(value.day) ?? value.day }))
       })(),
-      photos: PHOTOS.map(value => ({ ...value })),
+      /* A photograph is on the day of the stop it belongs to. Without this the
+         demo's pictures had no day at all — their `when` is display text, not
+         an instant — so anything that asks "what has been photographed today"
+         came back empty in the one trip everybody sees first. The demo
+         contradicting the app is the worst kind of demo. */
+      photos: (() => {
+        const days = sampleStopDays()
+        const dayOfStop = new Map(
+          STOPS.map(stop => [stop.id, days.get(stop.day) ?? stop.day] as const),
+        )
+        return PHOTOS.map(value => ({
+          ...value,
+          day: value.stopId ? (dayOfStop.get(value.stopId) ?? null) : null,
+        }))
+      })(),
       route: ROUTE.map(value => [...value] as Coordinates),
       family: FAMILY.map((value, index) => ({
         ...value,

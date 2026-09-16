@@ -77,11 +77,14 @@ export const NowCapsule = memo(function NowCapsule({
   text,
   meta,
   tone,
+  open,
   onClick,
 }: {
   text: string
   meta?: string
   tone: 'waiting' | 'heading' | 'approaching' | 'arrived' | 'complete'
+  /** Whether the card it opens is up, so the pill can say so. */
+  open?: boolean
   onClick: () => void
 }) {
   const dot =
@@ -94,12 +97,13 @@ export const NowCapsule = memo(function NowCapsule({
           }`
   return (
     <button
-      className="glass absolute bottom-[var(--trip-1)] left-1/2 z-[4] flex
+      className="nowpill glass absolute bottom-[var(--trip-1)] left-1/2 z-[4] flex
                        max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 overflow-hidden
                        whitespace-nowrap rounded-full py-2.5 pl-4 pr-5
                        max-sm:static max-sm:min-w-0 max-sm:flex-1 max-sm:translate-x-0
                        max-sm:gap-2 max-sm:py-2 max-sm:pl-3 max-sm:pr-3.5"
       aria-label={[text, meta].filter(Boolean).join('. ')}
+      aria-expanded={open}
       onClick={onClick}>
       <span className={`size-2.5 shrink-0 rounded-full ${dot}`} />
       <span className="flex min-w-0 items-center gap-3">

@@ -835,6 +835,68 @@
 }
 .vbody img, .vbody svg { -webkit-user-drag: none }
 
+/* What is happening, opened out from the capsule.
+
+   Anchored where the capsule is and no wider than the screen it floats over:
+   the map stays the hero, and this is a card on it rather than a screen in
+   front of it. Capped in height and scrolling inside, because a day with
+   fifteen stops behind it must not push its own bottom off the glass. */
+.nowcard {
+  position: absolute; bottom: var(--trip-1); left: 50%; z-index: 4;
+  width: min(420px, calc(100% - 2rem)); max-height: min(50vh, 380px);
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 10px;
+  overflow-y: auto; overscroll-behavior: contain;
+  border-radius: 18px; padding: 14px 14px 12px;
+  animation: media-arrived .16s ease;
+}
+@media (max-width: 640px) {
+  /* On a phone the capsule sits in the chrome row rather than over the map, so
+     the card it opens belongs above that row, not on top of it. */
+  .nowcard { bottom: calc(var(--trip-bar) + 56px); width: calc(100% - 1.5rem) }
+}
+.nchead { display: flex; align-items: baseline; gap: 10px; padding-right: 22px }
+/* The headline is the way to the live dot — what the pill used to do the
+   moment you touched it, which is a camera move nobody asked for by name. */
+.ncgo { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; text-align: left }
+.nchead b { font-size: 15px; font-weight: 700; min-width: 0 }
+.ncmeta { font-size: 11px; color: var(--c-muted) }
+.nclate { font-size: 11px; font-weight: 700; color: var(--c-accent-bright) }
+.ncx {
+  position: absolute; top: 10px; right: 10px;
+  display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 999px; color: var(--c-muted);
+}
+.ncrow {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  border: 1px solid var(--c-line); border-radius: 12px;
+  background: var(--c-raised); padding: 9px 11px; text-align: left;
+}
+.ncwhen {
+  display: grid; place-items: center; width: 22px; height: 22px; flex: none;
+  border-radius: 999px; background: var(--c-accent-soft); color: var(--c-accent-bright);
+}
+.ncbody { display: flex; flex-direction: column; gap: 1px; min-width: 0 }
+.ncbody b { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ncshead { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px 5px }
+.ncshead span:first-child { font-size: 11px; color: var(--c-muted) }
+/* A row, not a gallery — the gallery is one tap away and already does it
+   better. It scrolls rather than wrapping, so the card keeps its height. */
+.ncstrip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none }
+.ncstrip::-webkit-scrollbar { display: none }
+.ncshot {
+  flex: none; width: 62px; height: 62px; border-radius: 10px; overflow: hidden;
+  background: var(--c-raised);
+}
+.ncshot img { width: 100%; height: 100%; object-fit: cover }
+.ncdone { display: flex; flex-direction: column; gap: 5px }
+.ncdonelist { display: flex; flex-wrap: wrap; gap: 5px }
+.ncchip {
+  border: 1px solid var(--c-line); border-radius: 999px;
+  padding: 3px 9px; font-size: 11px; color: var(--c-muted);
+}
+.ncempty { font-size: 12px; color: var(--c-muted); padding: 2px }
+
 /* The photograph on its own. Over everything, including the viewer's chrome,
    because the whole point is that there is nothing else on the screen. */
 .vzoom {

@@ -4,6 +4,7 @@ import {
   applyLiveStopStatuses,
   deriveLiveStopProgress,
   describeLiveStopProgress,
+  dueLabel,
   liveHistoryHours,
 } from '../src/live-stop-progress-core.ts'
 
@@ -1691,4 +1692,25 @@ test('a stop somebody says they are at now is not closed by its own hour', () =>
     applyLiveStopStatuses(standing, progress).map(stop => stop.status),
     ['now', 'next'],
   )
+})
+
+test('how long until the next thing reads as a span, and says when it has passed', () => {
+  /* Being late is the most useful thing the line ever says, and a countdown
+     that stops at nought is a countdown that lies about it. */
+  assert.equal(dueLabel(74), 'in 1 h 14')
+  assert.equal(dueLabel(120), 'in 2 h')
+  assert.equal(dueLabel(25), 'in 25 min')
+  assert.equal(dueLabel(-25), '25 min ago')
+  assert.equal(dueLabel(-70), '1 h 10 ago')
+})
+
+test('the minute it is due says so, either side of the second', () => {
+  assert.equal(dueLabel(0), 'now')
+  assert.equal(dueLabel(0.4), 'now')
+  assert.equal(dueLabel(-0.4), 'now')
+})
+
+test('a stop on another day gets no countdown at all', () => {
+  assert.equal(dueLabel(null), '')
+  assert.equal(dueLabel(Number.NaN), '')
 })
