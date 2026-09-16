@@ -27,7 +27,15 @@ export interface NoticePhoto {
   when?: string | null
 }
 
-export type NoticeKind = 'arrived' | 'photos'
+export type NoticeKind = 'arrived' | 'landed' | 'photos'
+
+/* A journey, for the one thing a notice needs to know about one: where it was
+   going. The far end is the news — nobody at home is waiting to hear that a
+   plane left. */
+export interface NoticeSegment {
+  id: string
+  toName?: string | null
+}
 
 export interface Notice {
   /** Stable for the same happening, so a list can be keyed by it. */
@@ -36,6 +44,8 @@ export interface Notice {
   title: string
   /** Where on the map it happened, when it happened anywhere in particular. */
   stopId?: string
+  /** Which journey ended, so a landing can open the leg it belongs to. */
+  segmentId?: string
   /** Which picture to open the gallery at. */
   photoId?: string
   count?: number
@@ -47,6 +57,11 @@ export interface Seen {
   done: string[]
   /** The newest photograph already seen, as an instant. */
   photosTo: number
+  /* Journeys already known to have ended. Absent, not empty, on a mark
+     written before landings were counted — and the difference matters: empty
+     means none had, absent means nobody was keeping track, and treating the
+     second as the first turns the update itself into the news. */
+  landed?: string[]
 }
 
 export interface NoticeInput<S extends NoticeStop, P extends NoticePhoto> {
@@ -55,6 +70,10 @@ export interface NoticeInput<S extends NoticeStop, P extends NoticePhoto> {
   photos?: readonly P[]
   /** Stops a phone stood at, or the clock has gone past. */
   doneStopIds?: readonly string[]
+  /** The getting-there legs, in the order they are travelled. */
+  segments?: readonly NoticeSegment[]
+  /** Journeys the trail can account for having ended — see landedSegments. */
+  landedSegmentIds?: readonly string[]
 }
 
 /* When a picture was taken. A photograph with no time of its own cannot be
@@ -68,10 +87,12 @@ const takenAt = (photo: NoticePhoto): number => {
 export function seenNow<S extends NoticeStop, P extends NoticePhoto>({
   photos = [],
   doneStopIds = [],
+  landedSegmentIds = [],
 }: NoticeInput<S, P>): Seen {
   return {
     done: [...doneStopIds],
     photosTo: photos.reduce((newest, photo) => Math.max(newest, takenAt(photo)), 0),
+    landed: [...landedSegmentIds],
   }
 }
 
@@ -86,7 +107,13 @@ export interface NoticeLimits {
 }
 
 export function noticesSince<S extends NoticeStop, P extends NoticePhoto>(
-  { stops = [], photos = [], doneStopIds = [] }: NoticeInput<S, P>,
+  {
+    stops = [],
+    photos = [],
+    doneStopIds = [],
+    segments = [],
+    landedSegmentIds = [],
+  }: NoticeInput<S, P>,
   seen: Seen | null,
   { arrivals: wantArrivals = true }: NoticeLimits = {},
 ): Notice[] {
@@ -97,6 +124,7 @@ export function noticesSince<S extends NoticeStop, P extends NoticePhoto>(
 
   const known = new Set(seen.done)
   const nowDone = new Set(doneStopIds)
+  const nowLanded = new Set(landedSegmentIds)
   /* Read off the itinerary rather than off the list of ids, so arrivals come
      in the order the day ran rather than the order the evidence arrived. */
   const arrivals: Notice[] = (wantArrivals ? stops : [])
@@ -106,6 +134,24 @@ export function noticesSince<S extends NoticeStop, P extends NoticePhoto>(
       kind: 'arrived' as const,
       title: `Arrived at ${stop.name}`,
       stopId: stop.id,
+    }))
+
+  /* Did they land — the one question a family at home actually asks on a
+     travel day, and one this app can answer from its own trail without a word
+     from any airline. News to everybody except whoever was on the plane, which
+     is the same rule an arrival follows.
+
+     A mark with no record of landings makes no claim about them, so nothing is
+     announced this once: otherwise the update itself becomes the news, and
+     every follower is told about every flight of the whole trip the first time
+     they open it. */
+  const landings: Notice[] = (wantArrivals && seen.landed ? segments : [])
+    .filter(leg => nowLanded.has(leg.id) && !seen.landed?.includes(leg.id))
+    .map(leg => ({
+      id: `landed:${leg.id}`,
+      kind: 'landed' as const,
+      title: leg.toName ? `Landed at ${leg.toName}` : 'Landed',
+      segmentId: leg.id,
     }))
 
   /* One notice a place, counted. Fourteen pictures from one afternoon is one
@@ -142,8 +188,9 @@ export function noticesSince<S extends NoticeStop, P extends NoticePhoto>(
     }
   })
 
-  /* A place first. Somebody reaching the lighthouse is bigger news than the
-     pictures they took when they got there, and the pictures are usually of
-     the place anyway. */
-  return [...arrivals, ...pictures]
+  /* Landing first of all: a family who have been watching a plane cross an
+     ocean are not reading past it. Then a place, because somebody reaching the
+     lighthouse is bigger news than the pictures they took when they got there
+     — and the pictures are usually of the place anyway. */
+  return [...landings, ...arrivals, ...pictures]
 }

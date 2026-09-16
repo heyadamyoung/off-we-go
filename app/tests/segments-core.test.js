@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   connectionGap,
+  delayLabel,
+  delayMinutes,
   deriveDeadlines,
   makeIt,
   nextDeadline,
@@ -104,4 +106,45 @@ test('the make-it meter tells each traveller the truth about their legs', () => 
 test('a segment files under the day it departs, where it departs', () => {
   assert.equal(segmentDay({ ...FLIGHT, departTz: 'America/Toronto' }, '2026-09-01'), 19)
   assert.equal(segmentDay(FLIGHT, null), null)
+})
+
+/* A departure that moved, said out loud.
+ *
+ * A gate change has struck the old gate through since the card was written.
+ * The departure — the number the whole day hangs off — moved silently: the
+ * countdown quietly re-based and nothing anywhere said the plan had changed,
+ * so a traveller glancing at the screen could not tell a delay from having
+ * misremembered.
+ */
+
+test('a departure that never moved has nothing to say about it', () => {
+  assert.equal(delayMinutes({ departsAt: '2026-09-19T16:10:00.000Z' }), null)
+  assert.equal(delayLabel({ departsAt: '2026-09-19T16:10:00.000Z' }), '')
+  assert.equal(
+    delayMinutes({ departsAt: '2026-09-19T16:10:00.000Z', departsWas: '2026-09-19T16:10:00.000Z' }),
+    null,
+  )
+})
+
+test('later is positive and earlier is negative, because the sign is the point', () => {
+  /* A card that says "brought forward" when it means "put back" is a card
+     that makes somebody miss a flight. */
+  const back = { departsAt: '2026-09-19T17:40:00.000Z', departsWas: '2026-09-19T16:10:00.000Z' }
+  const forward = { departsAt: '2026-09-19T15:50:00.000Z', departsWas: '2026-09-19T16:10:00.000Z' }
+  assert.equal(delayMinutes(back), 90)
+  assert.equal(delayMinutes(forward), -20)
+  assert.equal(delayLabel(back), '1 h 30 later')
+  assert.equal(delayLabel(forward), '20 min earlier')
+})
+
+test('under an hour reads in minutes, the way anybody would say it', () => {
+  assert.equal(
+    delayLabel({ departsAt: '2026-09-19T16:45:00.000Z', departsWas: '2026-09-19T16:10:00.000Z' }),
+    '35 min later',
+  )
+})
+
+test('nonsense either side is no claim rather than a wrong one', () => {
+  assert.equal(delayMinutes({ departsAt: 'soon', departsWas: '2026-09-19T16:10:00.000Z' }), null)
+  assert.equal(delayLabel({ departsAt: '2026-09-19T16:10:00.000Z', departsWas: 'earlier' }), '')
 })

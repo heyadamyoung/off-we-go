@@ -138,3 +138,50 @@ test('segments belong to editors: created, gate history kept, gone on delete', a
   assert.equal(after.json().segments.length, 0)
   await app.close()
 })
+
+test('a delay through the API moves the countdown and remembers where it was', async () => {
+  /* The rule is proved against rows next door. This proves the join: an
+     ordinary edit of a departure time comes back with the rest of the day
+     moved, through the same handler a traveller's own edit goes through. */
+  const repository = createMemoryRepository({ allowedEmails: [] })
+  const app = await buildServer({
+    repository,
+    mailer: { async send() {} },
+    publicUrl: 'https://offwego.example.com',
+    sessionSecret: 'test-secret-that-is-long-enough',
+  })
+  const owner = await authenticate(repository, 'owner@example.com')
+  const ownerUser = await repository.ensureUser('owner@example.com')
+  const trip = await repository.createTrip(ownerUser, { title: 'Getting home' })
+
+  const created = await app.inject({
+    method: 'POST',
+    url: `/api/trips/${trip.id}/segments`,
+    headers: { authorization: owner },
+    body: {
+      mode: 'flight',
+      carrier: 'KLM',
+      number: 'KL 677',
+      fromName: 'Amsterdam',
+      toName: 'Calgary',
+      departsAt: '2026-09-19T16:10:00.000Z',
+      arrivesAt: '2026-09-19T18:40:00.000Z',
+    },
+  })
+  assert.equal(created.statusCode, 200)
+  const segment = created.json()
+  assert.equal(segment.deadlines.doorsAt, '2026-09-19T15:55:00.000Z')
+
+  const delayed = await app.inject({
+    method: 'PATCH',
+    url: `/api/trips/${trip.id}/segments/${segment.id}`,
+    headers: { authorization: owner },
+    body: { departsAt: '2026-09-19T17:40:00.000Z' },
+  })
+  assert.equal(delayed.statusCode, 200)
+  const moved = delayed.json()
+  assert.equal(moved.deadlines.doorsAt, '2026-09-19T17:25:00.000Z', 'doors did not move')
+  assert.equal(moved.arrivesAt, '2026-09-19T20:10:00.000Z', 'it lands late too')
+  assert.equal(moved.departsWas, '2026-09-19T16:10:00.000Z', 'nothing says it ever moved')
+  assert.equal(moved.status, 'delayed')
+})

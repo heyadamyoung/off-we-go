@@ -119,6 +119,7 @@ export default function useTripPage({
   const {
     phones,
     setPhones,
+    fixes,
     track,
     live,
     livePoints,
@@ -380,7 +381,7 @@ export default function useTripPage({
     attraction, setAttractionCard, asking, setAsking, assistant,
     view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
-    phones, setPhones, track, sun, mapTheme, markers, trail, trailFaded,
+    phones, setPhones, fixes, track, sun, mapTheme, markers, trail, trailFaded,
     progress, progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
     transport, segmentEditing, setSegmentEditing, clock, showGate,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,

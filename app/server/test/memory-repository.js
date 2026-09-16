@@ -1,3 +1,4 @@
+import { rescheduled } from '../src/segments.js'
 import { randomBytes } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
 import { maskHomeZones } from '../src/home-zone.js'
@@ -1276,7 +1277,26 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const row = segments.get(segmentId)
       if (!row || row.tripId !== tripId) return null
       if (changes.gate !== undefined && changes.gate !== row.gate) row.gateWas = row.gate
+      /* The same rule the real repository applies, from the same module: a
+         memory store that disagrees about what a delay does is a memory store
+         that makes the live suite prove the wrong thing. */
+      const moved = rescheduled(
+        {
+          ...row,
+          departs_at: row.departsAt,
+          arrives_at: row.arrivesAt,
+          departs_was: row.departsWas,
+        },
+        changes,
+      )
       Object.assign(row, changes)
+      if (moved) {
+        if (changes.deadlines === undefined) row.deadlines = moved.deadlines
+        if (changes.arrivesAt === undefined && moved.arrivesAt !== undefined)
+          row.arrivesAt = moved.arrivesAt
+        if (changes.status === undefined) row.status = moved.status
+        row.departsWas = moved.departsWas
+      }
       return { ...row }
     },
     async deleteSegment(user, tripId, segmentId) {

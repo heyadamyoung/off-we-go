@@ -54,6 +54,9 @@ export interface Segment {
   terminal?: string | null
   gate?: string | null
   gateWas?: string | null
+  /** where the departure was before it moved — see rescheduled() on the
+      server. The same idea as gateWas and, on a travel day, the bigger one. */
+  departsWas?: string | null
   platform?: string | null
   passengers: SegmentPassenger[]
   bags?: { checked?: string; carryOn?: string; personal?: boolean } | null
@@ -225,6 +228,32 @@ export function segmentDay(segment: Segment, startsOn: string | null | undefined
   const departed = new Date(local + 'T00:00:00')
   const day = Math.round((departed.getTime() - first.getTime()) / 86_400_000) + 1
   return day >= 1 ? day : null
+}
+
+/**
+ * How far a departure moved, in minutes, or null if it never did.
+ *
+ * Positive is later. The sign is the whole of the difference between "put
+ * back" and "brought forward", and a card that says one when it means the
+ * other is a card that makes somebody miss a flight.
+ */
+export function delayMinutes(segment: Pick<Segment, 'departsAt' | 'departsWas'>): number | null {
+  const now = segment?.departsAt ? new Date(segment.departsAt).getTime() : Number.NaN
+  const was = segment?.departsWas ? new Date(segment.departsWas).getTime() : Number.NaN
+  if (!Number.isFinite(now) || !Number.isFinite(was) || now === was) return null
+  return Math.round((now - was) / 60_000)
+}
+
+/** `1 h 30 later`, `20 min earlier`, or nothing to say. */
+export function delayLabel(segment: Pick<Segment, 'departsAt' | 'departsWas'>): string {
+  const moved = delayMinutes(segment)
+  if (moved === null) return ''
+  const total = Math.abs(moved)
+  const spelt =
+    total < 60
+      ? `${total} min`
+      : `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, '0')}`
+  return `${spelt} ${moved > 0 ? 'later' : 'earlier'}`
 }
 
 export function localTime(iso: string | null | undefined, tz?: string | null) {

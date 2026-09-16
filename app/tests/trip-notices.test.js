@@ -141,7 +141,7 @@ test('the snapshot to compare against next time is the one taken now', () => {
 
 test('an empty trip has an empty snapshot rather than a broken one', () => {
   const mark = seenNow({})
-  assert.deepEqual(mark, { done: [], photosTo: 0 })
+  assert.deepEqual(mark, { done: [], photosTo: 0, landed: [] })
   assert.deepEqual(noticesSince({}, mark), [])
 })
 
@@ -180,4 +180,77 @@ test('arriving somewhere is not news to the person who arrived', () => {
     forEveryoneElse.map(n => n.kind),
     ['arrived', 'photos'],
   )
+})
+
+/* And that they landed.
+ *
+ * The only question a family at home actually asks on a travel day. It rides
+ * the same machinery as an arrival — a difference against what this device
+ * last saw, never a clock — and it is news to exactly the same people: not to
+ * whoever was on the plane.
+ */
+
+const flightTo = (id, toName) => ({ id, toName, fromName: 'Amsterdam' })
+
+test('a journey that has ended since the last look is news', () => {
+  const said = noticesSince(
+    { segments: [flightTo('g1', 'Calgary')], landedSegmentIds: ['g1'] },
+    { done: [], photosTo: 0, landed: [] },
+  )
+  assert.deepEqual(
+    said.map(notice => notice.title),
+    ['Landed at Calgary'],
+  )
+  assert.equal(said[0].kind, 'landed')
+  assert.equal(said[0].segmentId, 'g1')
+})
+
+test('a landing already seen is not news twice', () => {
+  const said = noticesSince(
+    { segments: [flightTo('g1', 'Calgary')], landedSegmentIds: ['g1'] },
+    { done: [], photosTo: 0, landed: ['g1'] },
+  )
+  assert.deepEqual(said, [])
+})
+
+test('landing is not news to the person who was on the plane', () => {
+  const said = noticesSince(
+    { segments: [flightTo('g1', 'Calgary')], landedSegmentIds: ['g1'] },
+    { done: [], photosTo: 0, landed: [] },
+    { arrivals: false },
+  )
+  assert.deepEqual(said, [])
+})
+
+test('a mark written before landings were counted announces none of them', () => {
+  /* Otherwise the update itself becomes the news: every follower opens the app
+     once and is told about every flight of the whole trip. A snapshot with no
+     record of landings makes no claim about them. */
+  const said = noticesSince(
+    { segments: [flightTo('g1', 'Calgary')], landedSegmentIds: ['g1'] },
+    { done: [], photosTo: 0 },
+  )
+  assert.deepEqual(said, [])
+})
+
+test('the landing leads, because it is the bigger thing that happened', () => {
+  const said = noticesSince(
+    {
+      segments: [flightTo('g1', 'Calgary')],
+      landedSegmentIds: ['g1'],
+      stops: [{ id: 's1', name: 'Lighthouse' }],
+      doneStopIds: ['s1'],
+      photos: [{ id: 'p1', stopId: 's1', when: '2026-09-19T21:00:00Z' }],
+    },
+    { done: [], photosTo: 0, landed: [] },
+  )
+  assert.deepEqual(
+    said.map(notice => notice.kind),
+    ['landed', 'arrived', 'photos'],
+  )
+})
+
+test('the snapshot records which journeys have ended', () => {
+  const mark = seenNow({ segments: [flightTo('g1', 'Calgary')], landedSegmentIds: ['g1'] })
+  assert.deepEqual(mark.landed, ['g1'])
 })

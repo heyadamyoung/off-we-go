@@ -1,6 +1,6 @@
 import Icon from '../../../shared/ui/icon'
 import { SightsList, type SightsListProps } from '../../sights'
-import { SegmentChain } from '../../transport'
+import { MakeIt, SegmentChain } from '../../transport'
 import PanelPhotos from './panel-photos'
 import Timeline from './timeline'
 import type { TripItem } from '../model/trip-items'
@@ -45,6 +45,8 @@ interface PanelProps {
     segments: Segment[]
     loadFailed?: boolean
     now: number
+    /** everybody's live position, for the make-it meter above the chain */
+    travellers?: Array<{ name: string; lng: number; lat: number }>
     canEdit: boolean
     onEdit: (segment: Segment) => void
     onAdd: () => void
@@ -180,6 +182,17 @@ function Travel({ transport }: PanelProps) {
     )
   return (
     <div className="px-3 pt-3">
+      {/* The one thing on this screen no competitor can build, at the top of
+          the screen it is about. It floated over the map and the map hides it
+          the moment a panel opens — so on the tab whose whole subject is
+          whether you are going to make it, it was the one place it never
+          appeared. It draws itself only on a travel day with somebody's
+          position to draw. */}
+      <MakeIt
+        segments={transport.segments}
+        travellers={transport.travellers || []}
+        now={transport.now}
+      />
       <SegmentChain {...transport} />
     </div>
   )

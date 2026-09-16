@@ -73,7 +73,7 @@ function Trip({
     streetNames, toggleStreetNames,
     asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
     mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
-    phones, setPhones, sun, mapTheme, markers, progress, progressCopy, openViewer,
+    phones, setPhones, fixes, sun, mapTheme, markers, progress, progressCopy, openViewer,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
@@ -189,6 +189,12 @@ function Trip({
             segments: transport.segments,
             loadFailed: transport.loadFailed,
             now: clock,
+            /* The same list the floating meter over the map is built from —
+               a second opinion about where somebody is would eventually
+               disagree with the first, on the same screen. */
+            travellers: markers
+              .filter(marker => !marker.stale)
+              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat })),
             canEdit,
             onEdit: segment => setSegmentEditing(segment.id),
             onAdd: () => setSegmentEditing('new'),
@@ -229,6 +235,8 @@ function Trip({
             progress={progress}
             stops={stops}
             photos={photos}
+            segments={transport.segments}
+            fixes={fixes}
             clock={clock}
             travelling={canEdit}
             liveStop={liveStop}
@@ -244,6 +252,7 @@ function Trip({
               const at = photos.findIndex(one => one.id === photo.id)
               openViewer(photos, at < 0 ? 0 : at)
             }}
+            onTravel={() => patch({ view: 'travel' })}
           />
         )}
         <AssistantButton on={asking} onClick={() => setAsking(value => !value)} />

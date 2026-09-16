@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   DEADLINE_LABELS,
+  delayLabel,
   localTime,
   MODE_GLYPH,
   nextDeadline,
@@ -43,6 +44,7 @@ export default function SegmentCard({
   onRemoveDoc?: (documentId: string) => void
 }) {
   const face = segmentFace(segment, now)
+  const moved = delayLabel(segment)
   const glyph = MODE_GLYPH[segment.mode]
   const title = [segment.carrier, segment.number].filter(Boolean).join(' ') || segment.mode
   const upcoming = nextDeadline(segment, now)
@@ -77,6 +79,9 @@ export default function SegmentCard({
           {segment.status !== 'scheduled' && (
             <span className="ml-2 text-tight">{segment.status}</span>
           )}
+          {/* By how much, next to the fact of it. "Delayed" on its own is the
+              start of a question rather than an answer. */}
+          {moved && <span className="ml-1.5 text-tight">{moved}</span>}
         </span>
         {segment.ref && (
           <button
@@ -93,9 +98,15 @@ export default function SegmentCard({
           <div className="text-lg font-extrabold tracking-[-.01em]">
             {segment.fromCode || segment.fromName}
           </div>
+          {/* The old time struck through beside the new one, the way a changed
+              gate has always been drawn. Without it the countdown quietly
+              re-based and nothing said the plan had moved, so a traveller
+              could not tell a delay from having misremembered. */}
           <div className="font-mono text-[11.5px] text-muted">
             {localTime(segment.departsAt, segment.departTz)}
-            {segment.departTz ? '' : ''}
+            {segment.departsWas && (
+              <s className="ml-1.5 text-faint">{localTime(segment.departsWas, segment.departTz)}</s>
+            )}
           </div>
         </div>
         <div className="text-center text-[11px] leading-tight text-faint">

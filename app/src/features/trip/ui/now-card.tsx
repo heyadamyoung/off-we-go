@@ -25,6 +25,12 @@ import type { Stop, StopDocument, TripPhoto } from '../../../shared/model/types'
  */
 /* The same glyphs the documents sheet uses: a boarding pass should look like
    the same object wherever it turns up. */
+const DOT: Record<string, string> = {
+  landed: 'ncndot land',
+  arrived: 'ncndot on',
+  photos: 'ncndot',
+}
+
 const PAPER_GLYPH: Record<string, string> = {
   pass: '🎫',
   ticket: '🎟️',
@@ -146,7 +152,10 @@ export default memo(function NowCard({
         <div className="ncnew">
           {notices.slice(0, 4).map(notice => (
             <button key={notice.id} className="ncnrow" onClick={() => onNotice(notice)}>
-              <span className={notice.kind === 'arrived' ? 'ncndot on' : 'ncndot'} />
+              {/* A landing is the loudest thing on the list and reads that way:
+                  a family who have watched a plane cross an ocean are not
+                  looking for it among the photographs. */}
+              <span className={DOT[notice.kind] || 'ncndot'} />
               <span className="ncbody">
                 <b>{notice.title}</b>
               </span>

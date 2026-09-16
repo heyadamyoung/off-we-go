@@ -4,7 +4,9 @@ import { NowCapsule } from './trip-chrome'
 import { tripNow } from '../../../trip-now-core'
 import useTripNotices from '../model/use-trip-notices'
 import type { deriveLiveStopProgress } from '../../../live-stop-progress-core'
-import type { Stop, TripPhoto } from '../../../shared/model/types'
+import { landedSegments } from '../../../segment-arrival-core'
+import type { Segment } from '../../../segments-core'
+import type { LiveFix, Stop, TripPhoto } from '../../../shared/model/types'
 
 /* The one thing on the map screen that talks.
  *
@@ -25,9 +27,12 @@ export default function TripNow({
   clock,
   travelling,
   liveStop,
+  segments,
+  fixes,
   onSelect,
   onFollow,
   onPhotos,
+  onTravel,
 }: {
   tripId: string
   progressCopy: {
@@ -43,9 +48,15 @@ export default function TripNow({
   /** Whether this person is on the trip or following it. */
   travelling: boolean
   liveStop: Stop | null
+  /** the getting-there legs, so somebody at home can be told they landed */
+  segments: readonly Segment[]
+  /** the phones' own trail, which is the only thing that knows they did */
+  fixes: readonly LiveFix[]
   onSelect: (stop: Stop) => void
   onFollow: (stop: Stop | null) => void
   onPhotos: (photo: TripPhoto) => void
+  /** where a landing opens: the leg it belongs to */
+  onTravel: () => void
 }) {
   const [open, setOpen] = useState(false)
 
@@ -59,11 +70,18 @@ export default function TripNow({
     () => [...progress.behindStopIds, ...progress.visitedStopIds],
     [progress],
   )
+  /* Which journeys the trail can account for having ended. Memoised for the
+     same reason the finished stops are: a fresh array every render is a fresh
+     answer every render, and the effect that wakes a phone would fire on all
+     of them. */
+  const landedSegmentIds = useMemo(() => landedSegments(segments, fixes), [segments, fixes])
   const { notices, markSeen } = useTripNotices({
     tripId,
     stops,
     photos,
     doneStopIds,
+    segments,
+    landedSegmentIds,
     travelling,
   })
 
@@ -120,7 +138,10 @@ export default function TripNow({
             const stop = notice.stopId ? stops.find(one => one.id === notice.stopId) : null
             const photo = notice.photoId ? photos.find(one => one.id === notice.photoId) : null
             if (notice.kind === 'photos' && photo) shut(onPhotos)(photo)
-            else if (stop) shut(onSelect)(stop)
+            else if (notice.kind === 'landed') {
+              setOpen(false)
+              onTravel()
+            } else if (stop) shut(onSelect)(stop)
             else setOpen(false)
           }}
           onStop={shut(onSelect)}

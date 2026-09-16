@@ -7,6 +7,7 @@ import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
 import { pinAfter, stopForPhoto } from './stop-placement.js'
 import { clockOrNull } from './stop-time.js'
+import { rescheduled } from './segments.js'
 import { visitOf } from './stop-visits.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -79,6 +80,10 @@ const segmentRow = row =>
         terminal: row.terminal,
         gate: row.gate,
         gateWas: row.gate_was,
+        /* Where the departure was before it moved — see rescheduled(). The
+           same idea as gateWas and, on a travel day, the more important of
+           the two. */
+        departsWas: row.departs_was || null,
         platform: row.platform,
         passengers: row.passengers || [],
         bags: row.bags || null,
@@ -1203,6 +1208,18 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       // A gate change keeps its history: the old gate slides into gate_was.
       const gateWas =
         changes.gate !== undefined && changes.gate !== row.gate ? row.gate : row.gate_was
+      /* And a departure that moves takes the whole day with it — every
+         deadline, the arrival, and the status. The rule is in segments.js;
+         here it only decides what is written. An explicit value in `changes`
+         always wins: a caller who states a boarding time or an arrival knows
+         something this does not. */
+      const moved = rescheduled(row, changes)
+      if (moved) {
+        if (changes.deadlines === undefined) changes = { ...changes, deadlines: moved.deadlines }
+        if (changes.arrivesAt === undefined && moved.arrivesAt !== undefined)
+          changes = { ...changes, arrivesAt: moved.arrivesAt }
+        if (changes.status === undefined) changes = { ...changes, status: moved.status }
+      }
       const merged = {
         mode: changes.mode ?? row.mode,
         carrier: changes.carrier === undefined ? row.carrier : changes.carrier,
@@ -1256,7 +1273,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           from_lat=$10,to_name=$11,to_code=$12,to_lng=$13,to_lat=$14,departs_at=$15,
           arrives_at=$16,depart_tz=$17,arrive_tz=$18,terminal=$19,gate=$20,gate_was=$21,
           platform=$22,passengers=$23,bags=$24,deadlines=$25,cost_amount=$26,
-          cost_currency=$27,status=$28,status_note=$29,notes=$30,updated_at=now()
+          cost_currency=$27,status=$28,status_note=$29,notes=$30,departs_was=$31,
+          updated_at=now()
         where id=$1 and trip_id=$2 returning *`,
         [
           segmentId,
@@ -1289,6 +1307,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           merged.status,
           merged.status_note,
           merged.notes,
+          moved ? moved.departsWas : row.departs_was,
         ],
       )
       return result.rows[0] ? segmentRow({ ...result.rows[0], documents: undefined }) : null
