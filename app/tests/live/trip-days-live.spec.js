@@ -56,14 +56,40 @@ test('many stops on one date make one chip', async ({ page }) => {
 test('the timeline heads those days the same way, in the same order', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
-  const headings = (await page.locator('.sheet .flex.items-baseline b').allInnerTexts()).map(flat)
+  await page.locator('.tline').waitFor()
+  /* Every heading it holds, not just the ones on screen. The timeline draws
+     the rows near the fold and stands spacers in for the rest, so reading the
+     document once would report a trip that ends wherever the window does. */
+  const scroller = page.locator('.sheet div.flex-1.overflow-y-auto')
+  const headingsInOrder = async () => {
+    const seen = []
+    for (let guard = 0; guard < 40; guard += 1) {
+      for (const heading of await page.locator('.tday b').allInnerTexts()) {
+        const day = flat(heading)
+        if (!seen.includes(day)) seen.push(day)
+      }
+      const moved = await scroller.evaluate(node => {
+        const was = node.scrollTop
+        node.scrollTop = was + node.clientHeight
+        return node.scrollTop > was
+      })
+      if (!moved) return seen
+      await page.waitForTimeout(150)
+    }
+    return seen
+  }
+  const headings = await headingsInOrder()
   expect(headings.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
   expect(headings.at(-1)).toBe('no date yet', 'and the stop with no day is drawn, last')
 
   /* And the four stops of the fourth are all under the first heading — read as
      the panel reads, top to bottom, because that is what somebody scrolling it
      sees. Four spellings of one day filed together under one date. */
-  const order = flat(await page.locator('.sheet').innerText())
+  await page.locator('.sheet div.flex-1.overflow-y-auto').evaluate(node => {
+    node.scrollTop = 0
+  })
+  await page.waitForTimeout(150)
+  const order = flat(await page.locator('.tline').innerText())
   const secondHeading = order.indexOf('sat 5 sep')
   expect(secondHeading).toBeGreaterThan(-1)
   for (const name of ['anne frank house', 'rijksmuseum', 'westerkerk', 'vondelpark']) {
