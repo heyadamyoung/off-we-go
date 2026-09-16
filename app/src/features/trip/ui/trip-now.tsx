@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import NowCard from './now-card'
 import { NowCapsule } from './trip-chrome'
 import { tripNow } from '../../../trip-now-core'
+import useTripNotices from '../model/use-trip-notices'
 import type { deriveLiveStopProgress } from '../../../live-stop-progress-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
@@ -20,6 +21,7 @@ export default function TripNow({
   progress,
   stops,
   photos,
+  tripId,
   clock,
   travelling,
   liveStop,
@@ -27,6 +29,7 @@ export default function TripNow({
   onFollow,
   onPhotos,
 }: {
+  tripId: string
   progressCopy: {
     text: string
     meta?: string
@@ -45,6 +48,24 @@ export default function TripNow({
   onPhotos: (photo: TripPhoto) => void
 }) {
   const [open, setOpen] = useState(false)
+
+  /* What this person has missed while they were not looking. Everybody gets
+     the pictures; only somebody following gets told about arriving somewhere,
+     because the person who arrived was there. */
+  /* Held rather than rebuilt: a fresh array every render is a fresh answer
+     every render, which recomputes the notices, re-fires the effect that wakes
+     the phone, and replaces the very row somebody is reaching for. */
+  const doneStopIds = useMemo(
+    () => [...progress.behindStopIds, ...progress.visitedStopIds],
+    [progress],
+  )
+  const { notices, markSeen } = useTripNotices({
+    tripId,
+    stops,
+    photos,
+    doneStopIds,
+    travelling,
+  })
 
   /* Gathered once from what the live layer and the calendar already worked
      out. A second opinion about where somebody is would eventually disagree
@@ -78,6 +99,7 @@ export default function TripNow({
         meta={progressCopy.meta}
         tone={progressCopy.tone}
         open={open}
+        unread={notices.length}
         onClick={() => setOpen(value => !value)}
       />
       {/* The capsule opened out. The map keeps the screen; this is a card on
@@ -85,10 +107,22 @@ export default function TripNow({
       {open && (
         <NowCard
           now={now}
+          notices={notices}
           headline={progressCopy.text}
           meta={progressCopy.meta}
           travelling={travelling}
           onFollow={() => shut(onFollow)(liveStop)}
+          onNotice={notice => {
+            /* Reading one is reading the lot: somebody who has opened the card
+               has seen everything in it, and leaving the rest marked unread
+               would have the pill lie about what is waiting. */
+            markSeen()
+            const stop = notice.stopId ? stops.find(one => one.id === notice.stopId) : null
+            const photo = notice.photoId ? photos.find(one => one.id === notice.photoId) : null
+            if (notice.kind === 'photos' && photo) shut(onPhotos)(photo)
+            else if (stop) shut(onSelect)(stop)
+            else setOpen(false)
+          }}
           onStop={shut(onSelect)}
           onPhotos={shut(onPhotos)}
           onClose={() => setOpen(false)}

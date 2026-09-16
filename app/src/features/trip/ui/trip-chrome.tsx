@@ -78,6 +78,7 @@ export const NowCapsule = memo(function NowCapsule({
   meta,
   tone,
   open,
+  unread,
   onClick,
 }: {
   text: string
@@ -85,6 +86,8 @@ export const NowCapsule = memo(function NowCapsule({
   tone: 'waiting' | 'heading' | 'approaching' | 'arrived' | 'complete'
   /** Whether the card it opens is up, so the pill can say so. */
   open?: boolean
+  /** How much has happened since this person last looked. */
+  unread?: number
   onClick: () => void
 }) {
   const dot =
@@ -102,10 +105,15 @@ export const NowCapsule = memo(function NowCapsule({
                        whitespace-nowrap rounded-full py-2.5 pl-4 pr-5
                        max-sm:static max-sm:min-w-0 max-sm:flex-1 max-sm:translate-x-0
                        max-sm:gap-2 max-sm:py-2 max-sm:pl-3 max-sm:pr-3.5"
-      aria-label={[text, meta].filter(Boolean).join('. ')}
+      aria-label={[text, meta, unread ? `${unread} since you last looked` : '']
+        .filter(Boolean)
+        .join('. ')}
       aria-expanded={open}
       onClick={onClick}>
       <span className={`size-2.5 shrink-0 rounded-full ${dot}`} />
+      {/* A pill that does not say anything has happened is a pill nobody
+          opens, and the whole of this is behind it. */}
+      {!!unread && <span className="ncbadge">{unread > 9 ? '9+' : unread}</span>}
       <span className="flex min-w-0 items-center gap-3">
         <b className="truncate text-base font-bold max-sm:text-xs" aria-live="polite">
           {text}

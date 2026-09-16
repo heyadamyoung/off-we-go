@@ -235,6 +235,7 @@ function Trip({
             nudge, which read as broken in the one trip everyone sees first. */}
         {!panelOpen && (data.source !== 'sample' || progressCopy.tone !== 'waiting') && (
           <TripNow
+            tripId={tripId}
             progressCopy={progressCopy}
             progress={progress}
             stops={stops}

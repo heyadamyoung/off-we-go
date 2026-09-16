@@ -74,20 +74,29 @@ export const sampleTrip = () => {
         const days = sampleStopDays()
         return STOPS.map(value => ({ ...value, day: days.get(value.day) ?? value.day }))
       })(),
-      /* A photograph is on the day of the stop it belongs to. Without this the
-         demo's pictures had no day at all — their `when` is display text, not
-         an instant — so anything that asks "what has been photographed today"
-         came back empty in the one trip everybody sees first. The demo
-         contradicting the app is the worst kind of demo. */
+      /* A photograph is on the day of the stop it belongs to, at the hour its
+         own caption line names.
+
+         The demo's pictures used to carry neither. `when` was display text —
+         'Today · 10:42' — and there was no day at all, so everything that asks
+         a real question about them ("what has been photographed today", "what
+         is new since I last looked") came back empty in the one trip everybody
+         sees first. A real photograph has an ISO instant and an ISO day; the
+         demo contradicting the app is the worst kind of demo. */
       photos: (() => {
         const days = sampleStopDays()
         const dayOfStop = new Map(
           STOPS.map(stop => [stop.id, days.get(stop.day) ?? stop.day] as const),
         )
-        return PHOTOS.map(value => ({
-          ...value,
-          day: value.stopId ? (dayOfStop.get(value.stopId) ?? null) : null,
-        }))
+        return PHOTOS.map(value => {
+          const day = value.stopId ? (dayOfStop.get(value.stopId) ?? null) : null
+          const hour = /(\d{1,2}):(\d{2})/.exec(String(value.when ?? ''))
+          const when =
+            day && hour
+              ? new Date(`${day}T${hour[1].padStart(2, '0')}:${hour[2]}:00`).toISOString()
+              : value.when
+          return { ...value, day, when }
+        })
       })(),
       route: ROUTE.map(value => [...value] as Coordinates),
       family: FAMILY.map((value, index) => ({
