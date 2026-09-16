@@ -69,7 +69,14 @@ export const STOPS = [
     note:'Indoor food market in an old tram depot. Bitterballen for the kiddo, natural wine for the grown-ups.' },
   { id:'s6', name:'Anne Frank House', kind:'Sight', icon:'museum', day:'2026-09-05', startsAt:'15:45', endsAt:'17:00',
     lng:4.8840, lat:52.3752, status:'next', kw:'amsterdam,house,canal', lock:31,
-    note:'Timed entry at 15:45. A quiet visit — we talked with her about it beforehand.' },
+    note:'Timed entry at 15:45. A quiet visit — we talked with her about it beforehand.',
+    /* The demo has a ticket on it, because a demo of a trip app with no
+       paperwork anywhere in it is a demo of a different app. A bundled file
+       rather than a signed media link: the sample answers with no backend at
+       all, so there is nothing to sign it with — which also means it is
+       nobody's private media and is correctly not taken offline. */
+    documents:[{ id:'d-demo-1', name:'Timed entry ticket', kind:'ticket',
+      mime:'application/pdf', src:'/demo/boarding-pass.pdf' }] },
   { id:'s7', name:'NEMO Science Museum', kind:'Sight', icon:'museum', day:'2026-09-06', startsAt:'10:00', endsAt:'13:00',
     lng:4.9124, lat:52.3742, status:'planned', kw:'science,museum', lock:18,
     note:'Hands-on everything, plus the best free rooftop view in the city.' },

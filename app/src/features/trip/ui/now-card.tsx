@@ -4,7 +4,7 @@ import MediaThumb from '../../../shared/ui/media-thumb'
 import { dueLabel } from '../../../live-stop-progress-core'
 import type { TripNow } from '../../../trip-now-core'
 import type { Notice } from '../../../trip-notices-core'
-import type { Stop, TripPhoto } from '../../../shared/model/types'
+import type { Stop, StopDocument, TripPhoto } from '../../../shared/model/types'
 
 /* What is happening, opened out.
  *
@@ -23,6 +23,16 @@ import type { Stop, TripPhoto } from '../../../shared/model/types'
  * facts either way — trip-now-core gathers them once — and the difference is
  * only which of them leads.
  */
+/* The same glyphs the documents sheet uses: a boarding pass should look like
+   the same object wherever it turns up. */
+const PAPER_GLYPH: Record<string, string> = {
+  pass: '🎫',
+  ticket: '🎟️',
+  receipt: '🧾',
+  visa: '🛂',
+  other: '📄',
+}
+
 export default memo(function NowCard({
   now,
   notices,
@@ -63,18 +73,42 @@ export default memo(function NowCard({
      is watching — but both are here either way. A follower who wants to know
      where they are going next should not have to guess, and a traveller does
      look at their own photographs. */
+  /* The papers for the next thing, on the next thing. A boarding pass filed
+     under the flight it belongs to is filed correctly and reached slowly, and
+     the one moment it is wanted is the moment somebody is at a desk with a
+     queue behind them. */
+  const papers: StopDocument[] = next?.stop.documents || []
+
   const nextBlock = next && (
-    <button className="ncrow" onClick={() => onStop(next.stop)}>
-      <span className="ncwhen">
-        <Icon n="chev" s={12} />
-      </span>
-      <span className="ncbody">
-        <b>{next.stop.name}</b>
-        <span className={late ? 'nclate' : 'ncmeta'}>
-          {countdown ? (late ? `due ${countdown}` : countdown) : 'Later on the trip'}
+    <div className="ncnext">
+      <button className="ncrow" onClick={() => onStop(next.stop)}>
+        <span className="ncwhen">
+          <Icon n="chev" s={12} />
         </span>
-      </span>
-    </button>
+        <span className="ncbody">
+          <b>{next.stop.name}</b>
+          <span className={late ? 'nclate' : 'ncmeta'}>
+            {countdown ? (late ? `due ${countdown}` : countdown) : 'Later on the trip'}
+          </span>
+        </span>
+      </button>
+      {travelling && papers.length > 0 && (
+        <div className="ncpapers">
+          {papers.map(doc => (
+            <a
+              key={doc.id}
+              className="ncpaper"
+              href={doc.src}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open ${doc.name}`}>
+              <span aria-hidden="true">{PAPER_GLYPH[doc.kind] || PAPER_GLYPH.other}</span>
+              <span className="truncate">{doc.name}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
   )
 
   const photoBlock = fresh.length > 0 && (

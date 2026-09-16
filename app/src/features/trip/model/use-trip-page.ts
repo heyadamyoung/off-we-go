@@ -12,6 +12,7 @@ import useTripMutations from './use-trip-mutations'
 import useTripSelection from './use-trip-selection'
 import useLiveTrip from './use-live-trip'
 import useTripPresence from './use-trip-presence'
+import useOfflinePapers from './use-offline-papers'
 import useTripEscape from './use-trip-escape'
 import useOfflineEdits from './use-offline-edits'
 import { track as trackEvent } from '../../../shared/lib/telemetry'
@@ -159,6 +160,11 @@ export default function useTripPage({
      card into the terminal — same camera move the airport auto-open makes. */
   const transport = useSegments(tripId, toast)
   const [segmentEditing, setSegmentEditing] = useState<null | 'new' | string>(null)
+  /* The tickets and bookings, onto the phone before anybody asks for one. Here
+     rather than in the page's render file because it is a thing done with the
+     trip's data, not a thing drawn: the case it exists for is a check-in desk
+     with no signal and the document nobody thought to open on the way there. */
+  useOfflinePapers({ tripId, stops: ordered, segments: transport.segments })
   const [clock, setClock] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 60_000)
