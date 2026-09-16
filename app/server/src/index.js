@@ -3,6 +3,7 @@ import { createDiskFileStore } from './files.js'
 import { createS3FileStore } from './s3-store.js'
 import { createSmtpMailer } from './mailer.js'
 import { buildServer } from './app.js'
+import { startTravelWatch } from './travel-watch.js'
 import { writeFile } from 'node:fs/promises'
 import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
@@ -230,10 +231,22 @@ pruneTimer.unref?.()
 const stampTimer = setInterval(stampVisits, 10 * 60 * 1000)
 stampTimer.unref?.()
 
+/* The mailbox, looking without being asked — but only for the mailboxes whose
+   owner turned it on, only around legs departing soon, and only for the flight
+   number and booking reference the traveller typed in themselves. The rule is
+   in travel-mail.js and the restraint is in travel-watch.js; this is the clock.
+
+   Absent entirely when no connector is configured, which is most deployments:
+   there is nothing to look in. */
+const travelWatch = app.mailboxReader
+  ? startTravelWatch({ repository, reader: app.mailboxReader, log: app.log })
+  : null
+
 const stop = async signal => {
   app.log.info({ signal }, 'shutting down')
   clearInterval(pruneTimer)
   clearInterval(stampTimer)
+  travelWatch?.stop()
   await app.close().catch(() => {})
   await repository.close().catch(() => {})
   process.exit(0)

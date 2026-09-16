@@ -195,6 +195,10 @@ const mailboxRow = row =>
   row
     ? {
         id: row.id,
+        /* Whose mailbox it is. Only ever handed back to that same person —
+           every read above resolves through their own rows — and the watch job
+           needs it to know whose trips to look at. */
+        userId: row.user_id,
         provider: row.provider,
         accountId: row.account_id,
         accountEmail: row.account_email,
@@ -207,6 +211,10 @@ const mailboxRow = row =>
         connectedAt: row.connected_at,
         lastUsedAt: row.last_used_at,
         needsReconnect: row.needs_reconnect,
+        /* Whether its owner asked it to watch this trip's travel legs, and
+           when it last looked — see migration 036. */
+        watchTravel: !!row.watch_travel,
+        travelSeenAt: row.travel_seen_at || null,
       }
     : null
 
@@ -2637,6 +2645,92 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
 
     async markMailboxNeedsReconnect(id) {
       await pool.query('update mailbox_connections set needs_reconnect=true where id=$1', [id])
+    },
+
+    /* The legs worth watching a mailbox for: on trips this person can edit,
+       departing near enough that a change would still change what they do.
+       The window is the watcher's, so it is asked for rather than assumed. */
+    async segmentsForMailbox(userId, { now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = new Date(now - (afterMs ?? 6 * 60 * 60 * 1000)).toISOString()
+      const to = new Date(now + (beforeMs ?? 48 * 60 * 60 * 1000)).toISOString()
+      const result = await pool.query(
+        `select s.* from segments s
+        join trip_members m on m.trip_id = s.trip_id
+        where m.profile_id = $1 and m.role in ('owner','editor')
+          and s.departs_at between $2 and $3
+        order by s.departs_at`,
+        [userId, from, to],
+      )
+      return result.rows.map(row => segmentRow({ ...row, documents: undefined }))
+    },
+
+    /* A mailbox its owner has asked to watch their travel legs. Off unless
+       they said so, one mailbox at a time — see migration 036. */
+    async setMailboxWatchesTravel(userId, id, watching) {
+      const result = await pool.query(
+        `update mailbox_connections set watch_travel=$3
+        where user_id=$1 and id=$2 returning *`,
+        [userId, id, !!watching],
+      )
+      return result.rows[0] ? mailboxRow(result.rows[0]) : null
+    },
+
+    /* Every mailbox that is watching and is still usable. A connection that
+       needs reconnecting is not asked again until somebody signs it back in:
+       spending a refresh attempt every few minutes on a token Microsoft has
+       already refused is how a job gets an account rate-limited. */
+    async mailboxesWatchingTravel() {
+      const result = await pool.query(
+        `select * from mailbox_connections
+        where watch_travel and not needs_reconnect order by connected_at`,
+      )
+      return result.rows.map(mailboxRow)
+    },
+
+    async markTravelMailSeen(id, at) {
+      await pool.query('update mailbox_connections set travel_seen_at=$2 where id=$1', [id, at])
+    },
+
+    /* What the mailbox found, filed against the leg it is about. Unique on the
+       pair, so a job that runs again over the same window adds nothing and the
+       card does not grow a second copy of the same email. */
+    async noteSegmentMail(connectionId, found) {
+      let kept = 0
+      for (const one of found) {
+        const result = await pool.query(
+          `insert into segment_mail
+          (segment_id, connection_id, message_id, subject, from_addr, received_at, matched_on)
+          values($1,$2,$3,$4,$5,$6,$7) on conflict (segment_id, message_id) do nothing`,
+          [
+            one.segmentId,
+            connectionId,
+            one.messageId,
+            one.subject,
+            one.from,
+            one.received,
+            one.mark,
+          ],
+        )
+        kept += result.rowCount
+      }
+      return kept
+    },
+
+    async listSegmentMail(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `select m.* from segment_mail m
+        join segments s on s.id = m.segment_id
+        where s.trip_id=$1 order by m.received_at desc`,
+        [tripId],
+      )
+      return result.rows.map(row => ({
+        id: row.id,
+        segmentId: row.segment_id,
+        subject: row.subject,
+        from: row.from_addr,
+        receivedAt: row.received_at,
+      }))
     },
 
     async deleteMailboxConnection(userId, id) {

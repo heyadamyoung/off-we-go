@@ -2508,6 +2508,9 @@ export async function buildServer({
     connectedAt: connection.connectedAt,
     lastUsedAt: connection.lastUsedAt,
     needsReconnect: connection.needsReconnect,
+    /* Whether this mailbox has been asked to watch travel legs. Off unless
+       its owner said so — see migration 036. */
+    watchTravel: !!connection.watchTravel,
   })
 
   app.get('/api/connectors', async (request, reply) => {
@@ -2630,6 +2633,21 @@ export async function buildServer({
     }
   })
 
+  /* Turning the watch on, and off again. Its own route rather than a field on
+     something larger, because "start reading my mail on a timer" is not a
+     setting that should ever be changed as a side effect of saving something
+     else. */
+  app.patch('/api/connectors/:id', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const wanted = request.body?.watchTravel
+    if (typeof wanted !== 'boolean')
+      return reply.code(400).send({ error: 'Say whether to watch travel mail' })
+    const changed = await repository.setMailboxWatchesTravel(user.id, request.params.id, wanted)
+    if (!changed) return reply.code(404).send({ error: 'That mailbox is not connected' })
+    return { connection: publicConnection(changed) }
+  })
+
   app.delete('/api/connectors/:id', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -2642,6 +2660,18 @@ export async function buildServer({
      Every leg of a travel day as one shape. The change-kind table announces
      these to watching browsers like any other trip edit. */
   const SEGMENT_MODE = value => SEGMENT_MODES.includes(String(value || ''))
+
+  /* What a watching mailbox has noticed about this trip's legs: who wrote,
+     what it says on the outside, and when it landed. Never the body — the
+     whole worth of it is that it points at the mail rather than repeating
+     it. */
+  app.get('/api/trips/:tripId/segments/mail', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const mail = await repository.listSegmentMail?.(user, request.params.tripId)
+    if (!mail) return reply.code(403).send({ error: 'You cannot view this trip' })
+    return { mail }
+  })
   app.get('/api/trips/:tripId/segments', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -3365,6 +3395,11 @@ export async function buildServer({
   // Where do the trips already go? Answered once per boot, so a fresh deploy
   // (or a long-stopped box) converges on the right tiles without being asked.
   coverage?.refresh()
+
+  /* The watch job needs the same reader the assistant uses, and index.js is
+     where the timers live. Handed out rather than started here: a server built
+     for a test should not begin reading anybody's mail because it exists. */
+  app.decorate('mailboxReader', mailboxReader)
 
   return app
 }
