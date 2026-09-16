@@ -841,8 +841,14 @@
    the map stays the hero, and this is a card on it rather than a screen in
    front of it. Capped in height and scrolling inside, because a day with
    fifteen stops behind it must not push its own bottom off the glass. */
+/* Fixed to the screen rather than absolute inside whatever holds the pill.
+   Below 640px that pill leaves the map and joins a chrome row — it is `static`
+   there — so a card positioned against it was positioned against a strip forty
+   pixels tall, and came out at the top of the phone underneath the trip's own
+   title. The map fills the screen behind this at every width, so fixed and
+   absolute agree on a desktop and only fixed is right on a phone. */
 .nowcard {
-  position: absolute; bottom: var(--trip-1); left: 50%; z-index: 4;
+  position: fixed; bottom: var(--trip-1); left: 50%; z-index: 12;
   width: min(420px, calc(100% - 2rem)); max-height: min(50vh, 380px);
   transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 10px;
@@ -896,6 +902,22 @@
   padding: 3px 9px; font-size: 11px; color: var(--c-muted);
 }
 .ncempty { font-size: 12px; color: var(--c-muted); padding: 2px }
+/* What was missed. Set apart from the rest of the card because it is the one
+   part with a shelf life: it is read once and then it is gone. */
+.ncnew {
+  display: flex; flex-direction: column; gap: 4px;
+  border-radius: 12px; background: var(--c-accent-soft); padding: 8px;
+}
+.ncnrow { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 3px 4px }
+.ncnrow b { font-size: 12.5px; font-weight: 700 }
+.ncndot { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--c-muted) }
+.ncndot.on { background: var(--c-accent-bright); box-shadow: 0 0 0 3px var(--c-accent-soft) }
+/* The pill says there is something without being opened, or nobody opens it. */
+.nowpill .ncbadge {
+  min-width: 17px; height: 17px; flex: none; display: grid; place-items: center;
+  border-radius: 999px; background: var(--c-accent-bright); color: #1b1200;
+  font-size: 10px; font-weight: 800; padding: 0 4px;
+}
 
 /* The photograph on its own. Over everything, including the viewer's chrome,
    because the whole point is that there is nothing else on the screen. */

@@ -3,6 +3,7 @@ import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { dueLabel } from '../../../live-stop-progress-core'
 import type { TripNow } from '../../../trip-now-core'
+import type { Notice } from '../../../trip-notices-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
 /* What is happening, opened out.
@@ -24,15 +25,20 @@ import type { Stop, TripPhoto } from '../../../shared/model/types'
  */
 export default memo(function NowCard({
   now,
+  notices,
   headline,
   meta,
   travelling,
+  onNotice,
   onStop,
   onFollow,
   onPhotos,
   onClose,
 }: {
   now: TripNow<Stop, TripPhoto>
+  /** What has happened since this person last looked. Empty for a traveller:
+      they were there. */
+  notices: readonly Notice[]
   /** The live layer's own line, which is already the best first sentence. */
   headline: string
   meta?: string
@@ -45,6 +51,8 @@ export default memo(function NowCard({
   onFollow: () => void
   /** Open the gallery at today's newest. */
   onPhotos: (photo: TripPhoto) => void
+  /** Go to where a notice happened, and count the lot of them as read. */
+  onNotice: (notice: Notice) => void
   onClose: () => void
 }) {
   const { next, done, fresh, todayCount } = now
@@ -97,6 +105,25 @@ export default memo(function NowCard({
         </button>
       </div>
 
+      {/* What was missed, first and once. Somebody who opened the app because
+          their phone buzzed came for this line, and burying it under the
+          itinerary would be answering a different question. */}
+      {notices.length > 0 && (
+        <div className="ncnew">
+          {notices.slice(0, 4).map(notice => (
+            <button key={notice.id} className="ncnrow" onClick={() => onNotice(notice)}>
+              <span className={notice.kind === 'arrived' ? 'ncndot on' : 'ncndot'} />
+              <span className="ncbody">
+                <b>{notice.title}</b>
+              </span>
+            </button>
+          ))}
+          {notices.length > 4 && (
+            <span className="ncmeta">and {notices.length - 4} more since you last looked</span>
+          )}
+        </div>
+      )}
+
       {travelling ? (
         <>
           {nextBlock}
@@ -124,7 +151,7 @@ export default memo(function NowCard({
 
       {/* An honest empty rather than a card that opens onto nothing: a trip
           that has not started yet has a headline and no day behind it. */}
-      {!next && !done.length && !fresh.length && (
+      {!next && !done.length && !fresh.length && !notices.length && (
         <p className="ncempty">Nothing has happened today yet.</p>
       )}
     </section>
