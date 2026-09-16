@@ -1,3 +1,4 @@
+import { rescheduled } from '../src/segments.js'
 import { randomBytes } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
 import { maskHomeZones } from '../src/home-zone.js'
@@ -22,6 +23,7 @@ const profileShape = profile => ({
 export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const walkways = new Map()
   const segments = new Map()
+  const segmentMail = new Map()
   const segmentDocuments = new Map()
   const stopDocuments = new Map()
   const fakeUuid = (namespace, value) =>
@@ -1105,6 +1107,68 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         if (row.id === id) mailboxes.set(key, { ...row, needsReconnect: true })
       }
     },
+    /* The same handful the real repository grew for the travel watch. A memory
+       store that does not know them makes the live suite prove a server that
+       cannot boot. */
+    async setMailboxWatchesTravel(userId, id, watching) {
+      for (const row of mailboxes.values())
+        if (row.userId === userId && row.id === id) {
+          row.watchTravel = !!watching
+          return { ...row }
+        }
+      return null
+    },
+    async mailboxesWatchingTravel() {
+      return [...mailboxes.values()].filter(row => row.watchTravel && !row.needsReconnect)
+    },
+    async markTravelMailSeen(id, at) {
+      for (const row of mailboxes.values()) if (row.id === id) row.travelSeenAt = at
+    },
+    async segmentsForMailbox(userId, { now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = now - (afterMs ?? 6 * 60 * 60 * 1000)
+      const to = now + (beforeMs ?? 48 * 60 * 60 * 1000)
+      const mine = new Set(
+        [...trips.values()]
+          .filter(trip =>
+            (trip.members || []).some(
+              member => member.profileId === userId && ['owner', 'editor'].includes(member.role),
+            ),
+          )
+          .map(trip => trip.id),
+      )
+      return [...segments.values()]
+        .filter(row => mine.has(row.tripId))
+        .filter(row => {
+          const at = new Date(row.departsAt).getTime()
+          return Number.isFinite(at) && at >= from && at <= to
+        })
+        .sort((a, b) => new Date(a.departsAt) - new Date(b.departsAt))
+    },
+    async noteSegmentMail(connectionId, found) {
+      let kept = 0
+      for (const one of found) {
+        const key = `${one.segmentId}:${one.messageId}`
+        if (segmentMail.has(key)) continue
+        segmentMail.set(key, { id: key, connectionId, ...one })
+        kept += 1
+      }
+      return kept
+    },
+    async listSegmentMail(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const here = new Set(
+        [...segments.values()].filter(row => row.tripId === tripId).map(row => row.id),
+      )
+      return [...segmentMail.values()]
+        .filter(one => here.has(one.segmentId))
+        .map(one => ({
+          id: one.id,
+          segmentId: one.segmentId,
+          subject: one.subject,
+          from: one.from,
+          receivedAt: one.received,
+        }))
+    },
     async deleteMailboxConnection(userId, id) {
       for (const [key, row] of mailboxes) {
         if (row.userId === userId && row.id === id) {
@@ -1276,7 +1340,26 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const row = segments.get(segmentId)
       if (!row || row.tripId !== tripId) return null
       if (changes.gate !== undefined && changes.gate !== row.gate) row.gateWas = row.gate
+      /* The same rule the real repository applies, from the same module: a
+         memory store that disagrees about what a delay does is a memory store
+         that makes the live suite prove the wrong thing. */
+      const moved = rescheduled(
+        {
+          ...row,
+          departs_at: row.departsAt,
+          arrives_at: row.arrivesAt,
+          departs_was: row.departsWas,
+        },
+        changes,
+      )
       Object.assign(row, changes)
+      if (moved) {
+        if (changes.deadlines === undefined) row.deadlines = moved.deadlines
+        if (changes.arrivesAt === undefined && moved.arrivesAt !== undefined)
+          row.arrivesAt = moved.arrivesAt
+        if (changes.status === undefined) row.status = moved.status
+        row.departsWas = moved.departsWas
+      }
       return { ...row }
     },
     async deleteSegment(user, tripId, segmentId) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { noticesSince, seenNow, type Notice, type Seen } from '../../../trip-notices-core'
 import { tellTheFollower } from '../../../follower-notify'
+import type { Segment } from '../../../segments-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
 
 /* What this person has missed, kept between visits.
@@ -27,7 +28,15 @@ const readSeen = (tripId: string, store?: Pick<Storage, 'getItem'> | null): Seen
        failed to record. Anything that does not read back as a snapshot is
        treated as a first visit. */
     if (!Array.isArray(held.done) || typeof held.photosTo !== 'number') return null
-    return { done: held.done.map(String), photosTo: held.photosTo }
+    /* Landings are carried through only when the mark actually recorded them.
+       A mark written before they were counted makes no claim either way, and
+       filling in an empty list here would turn the update itself into news —
+       every follower told about every flight of the whole trip, once. */
+    return {
+      done: held.done.map(String),
+      photosTo: held.photosTo,
+      ...(Array.isArray(held.landed) ? { landed: held.landed.map(String) } : {}),
+    }
   } catch {
     return null
   }
@@ -47,12 +56,18 @@ export default function useTripNotices({
   stops,
   photos,
   doneStopIds,
+  segments,
+  landedSegmentIds,
   travelling,
 }: {
   tripId: string
   stops: Stop[]
   photos: TripPhoto[]
   doneStopIds: readonly string[]
+  /** the getting-there legs, so a landing can name where it landed */
+  segments: readonly Segment[]
+  /** which of them the trail can account for having ended */
+  landedSegmentIds: readonly string[]
   /** Somebody on the trip rather than following it: they were there for the
       arrivals, so those are not news to them. The photographs still are. */
   travelling: boolean
@@ -65,14 +80,17 @@ export default function useTripNotices({
   useEffect(() => {
     if (started.current || seen) return
     started.current = true
-    const mark = seenNow({ photos, doneStopIds })
+    const mark = seenNow({ photos, doneStopIds, landedSegmentIds })
     writeSeen(tripId, mark)
     setSeen(mark)
-  }, [seen, tripId, photos, doneStopIds])
+  }, [seen, tripId, photos, doneStopIds, landedSegmentIds])
 
   const notices = useMemo(
-    () => noticesSince({ stops, photos, doneStopIds }, seen, { arrivals: !travelling }),
-    [travelling, stops, photos, doneStopIds, seen],
+    () =>
+      noticesSince({ stops, photos, doneStopIds, segments, landedSegmentIds }, seen, {
+        arrivals: !travelling,
+      }),
+    [travelling, stops, photos, doneStopIds, segments, landedSegmentIds, seen],
   )
 
   /* A notice the phone has already woken somebody for is not woken for again.
@@ -88,10 +106,10 @@ export default function useTripNotices({
 
   /** Read: the mark moves to where things stand, and the list empties. */
   const markSeen = useCallback(() => {
-    const mark = seenNow({ photos, doneStopIds })
+    const mark = seenNow({ photos, doneStopIds, landedSegmentIds })
     writeSeen(tripId, mark)
     setSeen(mark)
-  }, [tripId, photos, doneStopIds])
+  }, [tripId, photos, doneStopIds, landedSegmentIds])
 
   return { notices, markSeen }
 }

@@ -24,6 +24,20 @@ const idFor = (key: string) => {
   return Math.abs(hash) % 2_000_000_000
 }
 
+/* What is worth the buzz first. A family who have been watching a plane
+   cross an ocean are not reading past the landing; somebody reaching a place
+   is bigger news than the pictures they took when they got there; and the
+   pictures are usually of the place anyway.
+
+   Its own function because it is the only judgement in this file — the rest is
+   a plugin call that cannot run outside a phone. */
+const RANK: Record<Notice['kind'], number> = { landed: 0, arrived: 1, photos: 2 }
+
+export function worthWaking(notices: readonly Notice[]): Notice[] {
+  /* Stable within a rank: two landings stay in the order the day flew them. */
+  return [...notices].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))
+}
+
 /** At most this many at once: a day's catching-up is not a day's buzzing. */
 const AT_ONCE = 3
 
@@ -32,13 +46,7 @@ export async function tellTheFollower(notices: readonly Notice[]): Promise<numbe
   try {
     const granted = await LocalNotifications.checkPermissions()
     if (granted.display !== 'granted') return 0
-    /* A place ahead of a pile of pictures, and never more than a handful:
-       somebody coming back after an afternoon away should get one useful
-       buzz, not one for every hour they missed. */
-    const worth = [...notices].sort(
-      (a, b) => (a.kind === 'arrived' ? -1 : 0) - (b.kind === 'arrived' ? -1 : 0),
-    )
-    const going = worth.slice(0, AT_ONCE)
+    const going = worthWaking(notices).slice(0, AT_ONCE)
     const rest = notices.length - going.length
     await LocalNotifications.schedule({
       notifications: going.map((notice, nth) => ({

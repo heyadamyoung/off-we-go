@@ -7,6 +7,7 @@ import { availableSlug, normalizeProfileHandle, slugBase } from './slugs.js'
 import { maskHomeZones } from './home-zone.js'
 import { pinAfter, stopForPhoto } from './stop-placement.js'
 import { clockOrNull } from './stop-time.js'
+import { rescheduled } from './segments.js'
 import { visitOf } from './stop-visits.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -79,6 +80,10 @@ const segmentRow = row =>
         terminal: row.terminal,
         gate: row.gate,
         gateWas: row.gate_was,
+        /* Where the departure was before it moved — see rescheduled(). The
+           same idea as gateWas and, on a travel day, the more important of
+           the two. */
+        departsWas: row.departs_was || null,
         platform: row.platform,
         passengers: row.passengers || [],
         bags: row.bags || null,
@@ -190,6 +195,10 @@ const mailboxRow = row =>
   row
     ? {
         id: row.id,
+        /* Whose mailbox it is. Only ever handed back to that same person —
+           every read above resolves through their own rows — and the watch job
+           needs it to know whose trips to look at. */
+        userId: row.user_id,
         provider: row.provider,
         accountId: row.account_id,
         accountEmail: row.account_email,
@@ -202,6 +211,10 @@ const mailboxRow = row =>
         connectedAt: row.connected_at,
         lastUsedAt: row.last_used_at,
         needsReconnect: row.needs_reconnect,
+        /* Whether its owner asked it to watch this trip's travel legs, and
+           when it last looked — see migration 036. */
+        watchTravel: !!row.watch_travel,
+        travelSeenAt: row.travel_seen_at || null,
       }
     : null
 
@@ -1203,6 +1216,18 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       // A gate change keeps its history: the old gate slides into gate_was.
       const gateWas =
         changes.gate !== undefined && changes.gate !== row.gate ? row.gate : row.gate_was
+      /* And a departure that moves takes the whole day with it — every
+         deadline, the arrival, and the status. The rule is in segments.js;
+         here it only decides what is written. An explicit value in `changes`
+         always wins: a caller who states a boarding time or an arrival knows
+         something this does not. */
+      const moved = rescheduled(row, changes)
+      if (moved) {
+        if (changes.deadlines === undefined) changes = { ...changes, deadlines: moved.deadlines }
+        if (changes.arrivesAt === undefined && moved.arrivesAt !== undefined)
+          changes = { ...changes, arrivesAt: moved.arrivesAt }
+        if (changes.status === undefined) changes = { ...changes, status: moved.status }
+      }
       const merged = {
         mode: changes.mode ?? row.mode,
         carrier: changes.carrier === undefined ? row.carrier : changes.carrier,
@@ -1256,7 +1281,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           from_lat=$10,to_name=$11,to_code=$12,to_lng=$13,to_lat=$14,departs_at=$15,
           arrives_at=$16,depart_tz=$17,arrive_tz=$18,terminal=$19,gate=$20,gate_was=$21,
           platform=$22,passengers=$23,bags=$24,deadlines=$25,cost_amount=$26,
-          cost_currency=$27,status=$28,status_note=$29,notes=$30,updated_at=now()
+          cost_currency=$27,status=$28,status_note=$29,notes=$30,departs_was=$31,
+          updated_at=now()
         where id=$1 and trip_id=$2 returning *`,
         [
           segmentId,
@@ -1289,6 +1315,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           merged.status,
           merged.status_note,
           merged.notes,
+          moved ? moved.departsWas : row.departs_was,
         ],
       )
       return result.rows[0] ? segmentRow({ ...result.rows[0], documents: undefined }) : null
@@ -2618,6 +2645,92 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
 
     async markMailboxNeedsReconnect(id) {
       await pool.query('update mailbox_connections set needs_reconnect=true where id=$1', [id])
+    },
+
+    /* The legs worth watching a mailbox for: on trips this person can edit,
+       departing near enough that a change would still change what they do.
+       The window is the watcher's, so it is asked for rather than assumed. */
+    async segmentsForMailbox(userId, { now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = new Date(now - (afterMs ?? 6 * 60 * 60 * 1000)).toISOString()
+      const to = new Date(now + (beforeMs ?? 48 * 60 * 60 * 1000)).toISOString()
+      const result = await pool.query(
+        `select s.* from segments s
+        join trip_members m on m.trip_id = s.trip_id
+        where m.profile_id = $1 and m.role in ('owner','editor')
+          and s.departs_at between $2 and $3
+        order by s.departs_at`,
+        [userId, from, to],
+      )
+      return result.rows.map(row => segmentRow({ ...row, documents: undefined }))
+    },
+
+    /* A mailbox its owner has asked to watch their travel legs. Off unless
+       they said so, one mailbox at a time — see migration 036. */
+    async setMailboxWatchesTravel(userId, id, watching) {
+      const result = await pool.query(
+        `update mailbox_connections set watch_travel=$3
+        where user_id=$1 and id=$2 returning *`,
+        [userId, id, !!watching],
+      )
+      return result.rows[0] ? mailboxRow(result.rows[0]) : null
+    },
+
+    /* Every mailbox that is watching and is still usable. A connection that
+       needs reconnecting is not asked again until somebody signs it back in:
+       spending a refresh attempt every few minutes on a token Microsoft has
+       already refused is how a job gets an account rate-limited. */
+    async mailboxesWatchingTravel() {
+      const result = await pool.query(
+        `select * from mailbox_connections
+        where watch_travel and not needs_reconnect order by connected_at`,
+      )
+      return result.rows.map(mailboxRow)
+    },
+
+    async markTravelMailSeen(id, at) {
+      await pool.query('update mailbox_connections set travel_seen_at=$2 where id=$1', [id, at])
+    },
+
+    /* What the mailbox found, filed against the leg it is about. Unique on the
+       pair, so a job that runs again over the same window adds nothing and the
+       card does not grow a second copy of the same email. */
+    async noteSegmentMail(connectionId, found) {
+      let kept = 0
+      for (const one of found) {
+        const result = await pool.query(
+          `insert into segment_mail
+          (segment_id, connection_id, message_id, subject, from_addr, received_at, matched_on)
+          values($1,$2,$3,$4,$5,$6,$7) on conflict (segment_id, message_id) do nothing`,
+          [
+            one.segmentId,
+            connectionId,
+            one.messageId,
+            one.subject,
+            one.from,
+            one.received,
+            one.mark,
+          ],
+        )
+        kept += result.rowCount
+      }
+      return kept
+    },
+
+    async listSegmentMail(user, tripId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const result = await pool.query(
+        `select m.* from segment_mail m
+        join segments s on s.id = m.segment_id
+        where s.trip_id=$1 order by m.received_at desc`,
+        [tripId],
+      )
+      return result.rows.map(row => ({
+        id: row.id,
+        segmentId: row.segment_id,
+        subject: row.subject,
+        from: row.from_addr,
+        receivedAt: row.received_at,
+      }))
     },
 
     async deleteMailboxConnection(userId, id) {

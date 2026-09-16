@@ -23,6 +23,12 @@ function sampleSegments(): Segment[] {
     toLng: 4.7683,
     toLat: 52.3105,
     departsAt: at(21, 40),
+    /* Put back twenty-five minutes, because a demo where nothing ever goes
+       wrong is a demo of a different app — and a delay is the one thing the
+       Travel screen exists to survive. The whole countdown moved with it; the
+       card strikes the old time through beside the new one. */
+    departsWas: at(21, 15),
+    status: 'delayed',
     arrivesAt: at(22),
     departTz: 'Europe/Amsterdam',
     arriveTz: 'Europe/Amsterdam',
@@ -31,7 +37,6 @@ function sampleSegments(): Segment[] {
     deadlines: deriveDeadlines('train', at(21, 40)),
     costAmount: 9.6,
     costCurrency: 'EUR',
-    status: 'scheduled',
   }
   const flight: Segment = {
     id: 'sample-segment-flight',

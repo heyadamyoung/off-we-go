@@ -1308,3 +1308,6 @@
    deadlines and the boarding pass live. */
 .trow.tgo .ticon.going { background: var(--c-accent-soft); color: var(--c-accent-bright) }
 .trow.tgo b { letter-spacing: -.01em }
+/* A landing: the loudest notice there is. A family who have watched a plane
+   cross an ocean are not looking for it among the photographs. */
+.ncndot.land { background: var(--c-accent-bright); box-shadow: 0 0 0 3px var(--c-accent-soft) }
