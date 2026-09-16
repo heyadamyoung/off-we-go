@@ -128,3 +128,22 @@ export function describeLiveStopProgress(
     tone: 'waiting' as const,
   }
 }
+
+/* How long until the next thing was due, in words.
+ *
+ * Signed on purpose. A countdown that stops at nought is a countdown that lies
+ * about the one case worth reading — being late for the ferry is the most
+ * useful thing this line ever says, and "in 0 min" says nothing about it.
+ *
+ * Nothing for a stop on another day: minutes until tomorrow morning is a
+ * number nobody reads, and the day chip beside it already said which day.
+ */
+export function dueLabel(inMinutes: number | null): string {
+  if (inMinutes === null || !Number.isFinite(inMinutes)) return ''
+  const away = Math.abs(Math.round(inMinutes))
+  if (away < 1) return 'now'
+  const hours = Math.floor(away / 60)
+  const minutes = away % 60
+  const span = hours ? (minutes ? `${hours} h ${minutes}` : `${hours} h`) : `${minutes} min`
+  return inMinutes < 0 ? `${span} ago` : `in ${span}`
+}
