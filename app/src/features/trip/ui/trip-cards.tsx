@@ -1,5 +1,6 @@
 import { IndoorChrome, isAirportStop } from '../../airport'
 import { StopEditor } from '../../itinerary'
+import { SegmentEditor } from '../../transport'
 import { AttractionCard } from '../../sights'
 import DetailCard from './detail-card'
 import { EditHint, PlaceHint } from './trip-chrome'
@@ -17,9 +18,9 @@ interface TripCardsProps {
   stats: RouteToStop | null
 }
 
-/* The floating layer over the map: the stop card, the stop editor, the
-   placement and route hints, and the attraction card. The page decides what
-   exists; this layer decides how it hovers. */
+/* The floating layer over the map: the stop card, the stop editor, the editor
+   for a leg of the journey, the placement and route hints, and the attraction
+   card. The page decides what exists; this layer decides how it hovers. */
 export default function TripCards({ page, canEdit, patch, stopDocs, stats }: TripCardsProps) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
@@ -28,9 +29,24 @@ export default function TripCards({ page, canEdit, patch, stopDocs, stats }: Tri
     lookUpDraft, saving, placing, editing, routeDraft, setRouteDraft, saveRoute,
     searchPlaces, places, setPlaces, route, attraction, stops, addAttraction,
     setAttractionCard, showAttractions, attrFilling, attrCount, photos,
+    transport, segmentEditing, setSegmentEditing, family,
   } = page
   return (
     <>
+      {/* A leg of the journey, edited where every other editor on this screen
+          lives. It sat on the page beside the panel it is opened from, which
+          made the page the only thing that knew a flight has an editor. */}
+      {segmentEditing !== null && (
+        <SegmentEditor
+          segment={transport.segments.find(leg => leg.id === segmentEditing) || null}
+          people={family}
+          startsOn={trip.startsOn}
+          endsOn={trip.endsOn}
+          onSave={transport.saveSegment}
+          onDelete={transport.removeSegment}
+          onClose={() => setSegmentEditing(null)}
+        />
+      )}
       {/* One card at a time: stacked over the stop card, the attraction's X
           sat exactly where the stop card's X would be next — one perceived
           close became two real ones, and "the walking line vanished". The

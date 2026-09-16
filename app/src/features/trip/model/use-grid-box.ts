@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { oncePerFrame } from '../../../frame-throttle-core'
 
 export interface GridBox {
@@ -25,6 +25,10 @@ export default function useGridBox() {
   const [grid, setGrid] = useState<HTMLDivElement | null>(null)
   const ref = useCallback((node: HTMLDivElement | null) => setGrid(node), [])
   const [box, setBox] = useState<GridBox>({ width: 0, scrolled: 0, viewportHeight: 0 })
+  /* The element that actually scrolls, found once here and handed out, so a
+     caller that wants to move the view to a particular row does not have to
+     go looking for it a second time and find a different answer. */
+  const scroller = useRef<HTMLElement | null>(null)
 
   useLayoutEffect(() => {
     if (!grid) return
@@ -32,13 +36,14 @@ export default function useGridBox() {
     /* The nearest ancestor that actually scrolls. Listening to the window
        instead would miss it entirely: this grid lives inside a panel with its
        own overflow, and the page behind it never moves. */
-    let scroller: HTMLElement | null = grid.parentElement
-    while (scroller && scroller !== document.body) {
-      const overflow = getComputedStyle(scroller).overflowY
+    let found: HTMLElement | null = grid.parentElement
+    while (found && found !== document.body) {
+      const overflow = getComputedStyle(found).overflowY
       if (overflow === 'auto' || overflow === 'scroll') break
-      scroller = scroller.parentElement
+      found = found.parentElement
     }
-    const view = scroller && scroller !== document.body ? scroller : null
+    const view = found && found !== document.body ? found : null
+    scroller.current = view
 
     /* The content box, not the border box. clientWidth includes the grid's own
        padding, and a cell computed from the padded width is a row eight pixels
@@ -108,5 +113,5 @@ export default function useGridBox() {
     }
   }, [grid])
 
-  return { ref, box }
+  return { ref, box, scroller }
 }

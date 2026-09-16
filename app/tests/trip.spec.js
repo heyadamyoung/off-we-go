@@ -1417,7 +1417,7 @@ test('the way to a stop survives closing its card', async ({ page }) => {
 test('a stop added under a day joins that day in the timeline', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
-  const headings = () => page.locator('.sheet .flex.items-baseline b')
+  const headings = () => page.locator('.tday b')
   const before = await headings().allInnerTexts()
 
   await page.getByRole('button', { name: 'Edit the itinerary' }).click()
@@ -1463,6 +1463,15 @@ test('a stop with no day still appears in the timeline', async ({ page }) => {
   await expect(page.locator('.mstop .lab').filter({ hasText: 'Undated Stop' })).toHaveCount(1)
 
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
+  /* Down to the bottom first: a dateless stop is its own pile after every
+     dated day, the timeline opens at today, and only the rows near the fold
+     are in the document at all now that it is windowed. Being off the screen
+     is not the same as being missing, which is what this test is about. */
+  await page.locator('.tline').waitFor()
+  await page.evaluate(() => {
+    const scroller = document.querySelector('.sheet div.flex-1.overflow-y-auto')
+    if (scroller) scroller.scrollTop = scroller.scrollHeight
+  })
   // In the panel, not on the map: the map pin was never the thing that vanished.
   await expect(page.locator('.sheet').getByRole('button', { name: /Undated Stop/ })).toHaveCount(1)
 })
@@ -1476,7 +1485,7 @@ test('the timeline heads its days the way the day bar does', async ({ page }) =>
   // The headings are drawn uppercase by CSS; it is the day they name that has
   // to match, not the casing the stylesheet gives it.
   const flat = text => text.trim().toLowerCase()
-  const headings = await page.locator('.sheet .flex.items-baseline b').allInnerTexts()
+  const headings = await page.locator('.tday b').allInnerTexts()
   const chips = await page.locator('.fdays .chip').allInnerTexts()
   const named = chips.map(flat).filter(chip => chip !== 'all days')
   expect(headings.length).toBeGreaterThan(0)

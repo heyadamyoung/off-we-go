@@ -54,6 +54,12 @@ const sampleStopDays = () => {
   return new Map(printed.map((day, index) => [day, isoDaysFromNow(index - middle)]))
 }
 
+/* A wall clock on a given day, as an instant — the same arithmetic the
+   photographs' capture times go through next door, and in the reader's own
+   zone for the same reason. */
+const sampleInstant = (day?: string | null, clock?: string | null) =>
+  day && clock ? new Date(`${day}T${clock}:00`).toISOString() : null
+
 export const sampleTrip = () => {
   if (!sample)
     sample = {
@@ -70,9 +76,28 @@ export const sampleTrip = () => {
            page. */
         dates: '',
       },
+      /* The stops carry what the phones saw as well as what was planned, which
+         is the timeline's whole subject. Written in data.ts as wall clocks and
+         turned into instants here, against whichever real day the stop landed
+         on — the fiction's September dates are mapped onto the live calendar,
+         so an ISO instant written there would be months out by the time
+         anybody read it.
+
+         No visitZone, and deliberately: these are built in the reader's own
+         clock and are read back in it, so they say the same thing in Sydney as
+         in Amsterdam. A real trip carries the zone of the phone that was
+         standing there, which the sample has not got. */
       stops: (() => {
         const days = sampleStopDays()
-        return STOPS.map(value => ({ ...value, day: days.get(value.day) ?? value.day }))
+        return STOPS.map(value => {
+          const day = days.get(value.day) ?? value.day
+          return {
+            ...value,
+            day,
+            arrivedAt: sampleInstant(day, value.arrived),
+            leftAt: sampleInstant(day, value.left),
+          }
+        })
       })(),
       /* A photograph is on the day of the stop it belongs to, at the hour its
          own caption line names.

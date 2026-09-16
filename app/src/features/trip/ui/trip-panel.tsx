@@ -1,18 +1,14 @@
-import type { ReactNode } from 'react'
-import { stopTimeLabel } from '../../../stop-time-core'
 import Icon from '../../../shared/ui/icon'
-import MediaThumb from '../../../shared/ui/media-thumb'
 import { SightsList, type SightsListProps } from '../../sights'
 import { SegmentChain } from '../../transport'
 import PanelPhotos from './panel-photos'
-import { photoItem, stopItem, type TripItem } from '../model/trip-items'
+import Timeline from './timeline'
+import type { TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
 import ChatPanel, { type ChatProps } from './panel-chat'
 import type { Segment } from '../../../segments-core'
-import { legLabel } from '../../../legs-core'
 import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
-import { groupByDay } from '../../../trip-days-core'
 
 interface PanelProps {
   view: TripView
@@ -38,6 +34,10 @@ interface PanelProps {
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>
+  /** adding a stop to a day from the timeline; absent for a follower */
+  onAddOnDay?: (iso: string) => void
+  /** opening a leg of the journey from the timeline, in the Travel view */
+  onTravel?: (segment: Segment) => void
   /** the family's room — see panel-chat */
   chat?: ChatProps
   /** the getting-there chain: the Travel view is its home */
@@ -56,7 +56,10 @@ interface PanelProps {
 }
 
 const HEADINGS: Record<string, [string, string]> = {
-  timeline: ['Timeline', 'Every stop in order, with what everyone photographed along the way.'],
+  timeline: [
+    'Timeline',
+    'The day in order — what was planned, and when everyone actually got there.',
+  ],
   travel: [
     'Getting there',
     'Every leg of the journey — deadlines, seats and documents in one chain.',
@@ -139,7 +142,17 @@ export default function TripPanel(props: PanelProps) {
             ? 'pb-6 max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]'
             : 'px-2 pb-4 pt-2 max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))]')
         }>
-        {props.view === 'timeline' && <Timeline {...props} />}
+        {props.view === 'timeline' && (
+          <Timeline
+            {...props}
+            now={props.transport?.now}
+            segments={props.transport?.segments}
+            /* A journey's home is the Travel view, where its seats, deadlines
+               and documents are. The timeline says when it leaves; it does not
+               try to become a second place to read a boarding pass. */
+            onTravel={props.onTravel}
+          />
+        )}
         {props.view === 'travel' && <Travel {...props} />}
         {props.view === 'chat' && props.chat && <ChatPanel {...props.chat} />}
         {props.view === 'photos' && <PanelPhotos {...props} />}
@@ -149,38 +162,6 @@ export default function TripPanel(props: PanelProps) {
         )}
       </div>
     </aside>
-  )
-}
-
-function Row({
-  time,
-  icon,
-  title,
-  detail,
-  selected,
-  onClick,
-}: {
-  time: string
-  icon: ReactNode
-  title: string
-  detail: string
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ' +
-        (selected ? 'bg-accent-soft' : 'hover:bg-raised2')
-      }>
-      <span className="tnum w-10 flex-none text-[11px] text-faint">{time}</span>
-      {icon}
-      <span className="min-w-0 flex-1">
-        <b className="block truncate text-sm font-semibold">{title}</b>
-        <span className="block truncate text-xs text-muted">{detail}</span>
-      </span>
-    </button>
   )
 }
 
@@ -201,91 +182,5 @@ function Travel({ transport }: PanelProps) {
     <div className="px-3 pt-3">
       <SegmentChain {...transport} />
     </div>
-  )
-}
-
-function Timeline({ stops, photos, selected, onSelect, legs }: PanelProps) {
-  /* Grouped the same way the day chips are, by date — so a stop with no day at
-     all still belongs to a heading and is still drawn. */
-  const groups = groupByDay(stops)
-  const byStop = new Map(stops.map(stop => [stop.id, stop]))
-  if (!stops.length)
-    return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>
-
-  return (
-    <>
-      {groups.map(group => {
-        const here = group.things
-        return (
-          <div key={group.day?.iso ?? 'undated'}>
-            <div
-              className="flex items-baseline gap-2 px-3 pb-1.5 pt-3.5 text-[11px] font-bold
-                            uppercase tracking-[.1em] text-faint">
-              <b className={group.day ? 'text-ink' : 'text-muted'}>
-                {group.day?.label ?? 'No date yet'}
-              </b>
-              <span>
-                {here.length} stop{here.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            {here.map(stop => {
-              const taken = photos.filter(photo => photo.stopId === stop.id)
-              return (
-                <div key={stop.id}>
-                  <Row
-                    time={stopTimeLabel(stop)}
-                    title={stop.name || 'Untitled stop'}
-                    detail={stop.note || stop.kind || ''}
-                    selected={selected === stop.id}
-                    onClick={() => onSelect(stopItem(stop))}
-                    icon={
-                      <span
-                        className={
-                          'grid size-[30px] flex-none place-items-center rounded-lg ' +
-                          'bg-raised ' +
-                          (stop.status === 'done' ? 'text-accent' : 'text-muted')
-                        }>
-                        <Icon n={stop.status === 'done' ? 'check' : stop.icon || 'pin'} s={14} />
-                      </span>
-                    }
-                  />
-                  {taken.map(photo => (
-                    <Row
-                      key={photo.id}
-                      time=""
-                      title={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
-                      detail={[photo.by, photo.when].filter(Boolean).join(' · ')}
-                      selected={selected === photo.id}
-                      onClick={() => onSelect(photoItem(photo, byStop.get(stop.id)))}
-                      icon={
-                        <span className="size-[30px] flex-none overflow-hidden rounded-lg">
-                          {/* No length at 30px: the play mark alone says it
-                              moves, and a timestamp there is unreadable. */}
-                          <MediaThumb
-                            item={photo}
-                            w={90}
-                            h={90}
-                            badge={14}
-                            className="size-full object-cover"
-                          />
-                        </span>
-                      }
-                    />
-                  ))}
-                  {legs?.has(stop.id) && (
-                    /* The road between this stop and the next, in the gap
-                       between their rows — a fact of the world, not a row of
-                       the plan, so it is quiet and unclickable. */
-                    <div className="pl-[52px] pr-3 pb-1 text-[11px] text-faint">
-                      ↓ {legLabel(legs.get(stop.id)!)}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )
-      })}
-    </>
   )
 }

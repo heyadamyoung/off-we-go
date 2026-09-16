@@ -307,6 +307,22 @@ export default function useTripPage({
     [editing, stops, placing, patch, setDraft],
   )
 
+  /* Planning a day from the day itself, which is what the timeline's own
+     heading offers. The page should not have to know that this means three
+     things — choose the chip, get out of the way, hand the map over — because
+     the moment a fourth is needed it would be three screens that each learned
+     two of them.
+
+     A place is still chosen with a pin, deliberately. A stop with no point is
+     a stop nothing can draw, and the map is where points come from. */
+  const planOnDay = useCallback(
+    (iso: string) => {
+      patch({ day: iso, view: undefined, sel: undefined })
+      setPlacing({})
+    },
+    [patch],
+  )
+
   const onMapClicked = useCallback(
     (point: Coordinates) => {
       if (placing) {
@@ -360,7 +376,7 @@ export default function useTripPage({
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   return {
     theme, toggleTheme, trip, route, stops, family, me, viewers,
-    placing, setPlacing, photoBy, setPhotoBy, streetNames, toggleStreetNames,
+    placing, setPlacing, planOnDay, photoBy, setPhotoBy, streetNames, toggleStreetNames,
     attraction, setAttractionCard, asking, setAsking, assistant,
     view, setView, selected, query, day, days, toast,
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
