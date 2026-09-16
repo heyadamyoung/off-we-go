@@ -1,5 +1,4 @@
 import { createPostgresRepository } from './postgres.js'
-import { createReplayStore } from './replay-store.js'
 import { createDiskFileStore } from './files.js'
 import { createS3FileStore } from './s3-store.js'
 import { createSmtpMailer } from './mailer.js'
@@ -131,8 +130,6 @@ const app = await buildServer({
   oauthSecret: required('WAYFARE_OAUTH_SECRET'),
   identityProvider: createOidcIdentityProvider(oidcConfig),
   appleTeamId: required('APPLE_TEAM_ID'),
-  replayStore: createReplayStore({ directory: process.env.REPLAY_DIR || '/data/replays' }),
-  adminEmail: required('WAYFARE_ADMIN_EMAIL'),
   /* Optional: with no Azure application configured the connector routes say so
      and the screen offers nothing, rather than sending somebody to a sign-in
      that cannot work. */
@@ -209,20 +206,6 @@ const prunePositions = () =>
 await prunePositions()
 const pruneTimer = setInterval(prunePositions, 6 * 60 * 60 * 1000)
 pruneTimer.unref?.()
-
-/* Replays keep their privacy promise by dying young: a fortnight, then gone.
-   Swept on boot and daily, the same rhythm as the GPS prune above. */
-const replaySweep = createReplayStore({ directory: process.env.REPLAY_DIR || '/data/replays' })
-const pruneReplays = () =>
-  replaySweep
-    .sweep()
-    .then(removed => {
-      app.log.info({ evt: 'prune.replays', removed }, 'replay prune ran')
-    })
-    .catch(error => app.log.warn({ err: error }, 'replay prune failed'))
-await pruneReplays()
-const replayTimer = setInterval(pruneReplays, 24 * 60 * 60 * 1000)
-replayTimer.unref?.()
 
 const stop = async signal => {
   app.log.info({ signal }, 'shutting down')
