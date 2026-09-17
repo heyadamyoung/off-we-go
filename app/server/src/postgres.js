@@ -2673,7 +2673,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async flightSnapshot(segmentId) {
       const result = await pool.query(
-        'select info, fetched_at, updated_at from flight_snapshots where segment_id=$1',
+        'select info, fetched_at, note, updated_at from flight_snapshots where segment_id=$1',
         [segmentId],
       )
       const row = result.rows[0]
@@ -2681,16 +2681,17 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         ? {
             info: row.info,
             fetchedAt: new Date(row.fetched_at).toISOString(),
+            note: row.note ?? null,
             updatedAt: new Date(row.updated_at).toISOString(),
           }
         : null
     },
-    async saveFlightSnapshot(segmentId, { info, fetchedAt }) {
+    async saveFlightSnapshot(segmentId, { info, fetchedAt, note = null }) {
       await pool.query(
-        `insert into flight_snapshots (segment_id, info, fetched_at, updated_at)
-        values ($1, $2, $3, now())
-        on conflict (segment_id) do update set info=$2, fetched_at=$3, updated_at=now()`,
-        [segmentId, JSON.stringify(info), fetchedAt],
+        `insert into flight_snapshots (segment_id, info, fetched_at, note, updated_at)
+        values ($1, $2, $3, $4, now())
+        on conflict (segment_id) do update set info=$2, fetched_at=$3, note=$4, updated_at=now()`,
+        [segmentId, JSON.stringify(info), fetchedAt, note],
       )
     },
     async recordFlightEvents(segmentId, events) {

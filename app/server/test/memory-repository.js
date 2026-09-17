@@ -1144,10 +1144,11 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       const held = flightSnapshots.get(segmentId)
       return held ? { ...held } : null
     },
-    async saveFlightSnapshot(segmentId, { info, fetchedAt }) {
+    async saveFlightSnapshot(segmentId, { info, fetchedAt, note = null }) {
       flightSnapshots.set(segmentId, {
         info: JSON.parse(JSON.stringify(info)),
         fetchedAt,
+        note,
         updatedAt: new Date().toISOString(),
       })
     },

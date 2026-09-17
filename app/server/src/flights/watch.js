@@ -129,10 +129,15 @@ const NOTE_ORDER = [
   'AircraftChanged',
 ]
 
-export function noteFor(events, { flight, zone, sourceName, at }) {
-  const said = [...events].sort(
-    (a, b) => NOTE_ORDER.indexOf(a.type) - NOTE_ORDER.indexOf(b.type),
-  )[0]
+const GONE_FOR_GOOD = new Set(['departed', 'landed', 'arrived'])
+
+export function noteFor(events, { flight, zone, sourceName, at, status = null }) {
+  /* "Delayed by six minutes" about a flight that has left is history; the
+     leaving is the news. The delay is still an event, just not the note. */
+  const worth = GONE_FOR_GOOD.has(status)
+    ? events.filter(one => !['FlightDelayed', 'FlightRescheduled'].includes(one.type))
+    : events
+  const said = [...worth].sort((a, b) => NOTE_ORDER.indexOf(a.type) - NOTE_ORDER.indexOf(b.type))[0]
   if (!said) return null
   const clock = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
@@ -226,14 +231,22 @@ export async function watchFlights({
       const events = detectFlightEvents(previous, view)
       const changes = changesFor(leg, view)
       const zone = from?.zone || to?.zone
+      /* The status note is the traveller's unless it is still the watch's
+         own last sentence: a note somebody typed is never written over. */
+      let note = snapshot?.note ?? null
+      const ours = !leg.statusNote || leg.statusNote === note
       if (events.length) {
-        const note = noteFor(events, {
+        const next = noteFor(events, {
           flight: number,
           zone,
           sourceName: sourceNameOf(view.sources?.[0] || view.source),
           at: now,
+          status: view.status,
         })
-        if (note) changes.statusNote = note
+        if (next && ours) {
+          changes.statusNote = next
+          note = next
+        }
       }
 
       if (Object.keys(changes).length) {
@@ -252,6 +265,7 @@ export async function watchFlights({
       await repository.saveFlightSnapshot(leg.id, {
         info: view,
         fetchedAt: new Date(now).toISOString(),
+        note,
       })
       if (events.length || Object.keys(changes).length) announce(leg.tripId, 'segments')
     } catch (error) {

@@ -15,6 +15,10 @@ create table if not exists flight_snapshots (
   segment_id uuid primary key references segments(id) on delete cascade,
   info jsonb not null,
   fetched_at timestamptz not null,
+  /* The last sentence the watch wrote into the leg's status note. A note
+     the traveller typed themselves is never overwritten; only a note that
+     is still the watch's own is replaced by the next thing the board says. */
+  note text,
   updated_at timestamptz not null default now()
 );
 

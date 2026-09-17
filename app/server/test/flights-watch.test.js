@@ -355,3 +355,61 @@ test('the first comparison is the leg as typed; the boards merge with the later 
   )
   assert.equal(noteFor([], { flight: 'AC872' }), null)
 })
+
+test('a note the traveller typed is never written over; a note that is the watch’s own is', async () => {
+  const theirs = store({ legs: [leg({ statusNote: 'Meet at the Tim Hortons by gate C' })] })
+  await watchFlights({
+    theirs,
+    repository: theirs,
+    sources: sourcesWith({ boards: { 'YYZ:departure': [boardRow({ gate: 'D12' })] } }),
+    now: NOW,
+  })
+  assert.equal(theirs.applied[0].changes.gate, 'D12', 'the gate still moves')
+  assert.equal(theirs.applied[0].changes.statusNote, undefined, 'their words stay')
+  assert.equal(theirs.events.length, 1, 'and the event is still kept')
+  assert.equal(theirs.snapshots[0].note, null)
+
+  const ours = store({
+    legs: [
+      leg({
+        gate: 'D12',
+        statusNote: 'AC872 has moved from gate C34 to D12. Toronto Pearson, 13:00.',
+      }),
+    ],
+    snapshot: {
+      info: mergeBoards(boardRow({ gate: 'D12' }), null),
+      fetchedAt: '2026-09-20T17:00:00.000Z',
+      note: 'AC872 has moved from gate C34 to D12. Toronto Pearson, 13:00.',
+    },
+  })
+  await watchFlights({
+    repository: ours,
+    sources: sourcesWith({ boards: { 'YYZ:departure': [boardRow({ gate: 'E3' })] } }),
+    now: NOW,
+  })
+  assert.equal(
+    ours.applied[0].changes.statusNote,
+    'AC872 has moved from gate D12 to E3. Toronto Pearson, 13:30.',
+  )
+  assert.equal(
+    ours.snapshots[0].note,
+    'AC872 has moved from gate D12 to E3. Toronto Pearson, 13:30.',
+  )
+})
+
+test('once the flight has left, a late departure is history and the leaving is the note', () => {
+  const note = noteFor(
+    [
+      { type: 'FlightDelayed', minutes: 6, newValue: '2026-09-20T22:41:00.000Z' },
+      { type: 'FlightDeparted', newValue: '2026-09-20T22:41:00.000Z' },
+    ],
+    {
+      flight: 'AC872',
+      zone: 'America/Toronto',
+      sourceName: 'Toronto Pearson',
+      at: Date.parse('2026-09-20T22:45:00.000Z'),
+      status: 'departed',
+    },
+  )
+  assert.equal(note, 'AC872 has departed at 18:41. Toronto Pearson, 18:45.')
+})
