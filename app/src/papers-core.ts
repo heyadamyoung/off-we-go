@@ -72,6 +72,28 @@ const paperFrom = (
   }
 }
 
+/* One home's worth, read as things a person reaches for. A leg and a stop
+   differ only in what a row says under the name and in what orders it, so the
+   card on a travel leg and the tab that gathers the whole trip draw the same
+   Paper rather than two hopefully-similar shapes. */
+export function papersOfSegment(segment: Segment): Paper[] {
+  const about = {
+    for: segmentName(segment),
+    at: instant(segment?.departsAt),
+    segmentId: segment?.id,
+  }
+  return (segment?.documents || [])
+    .map(doc => paperFrom(doc, about))
+    .filter((paper): paper is Paper => !!paper)
+}
+
+export function papersOfStop(stop: Stop): Paper[] {
+  const about = { for: stop?.name || 'A stop', at: stopAt(stop), stopId: stop?.id }
+  return (stop?.documents || [])
+    .map(doc => paperFrom(doc, about))
+    .filter((paper): paper is Paper => !!paper)
+}
+
 /**
  * Every document on a trip, in the order somebody reaches for them.
  *
@@ -85,24 +107,8 @@ export function papersOnTrip(
   now: number = Date.now(),
 ): Paper[] {
   const papers: Paper[] = []
-  for (const segment of segments)
-    for (const doc of segment?.documents || []) {
-      const paper = paperFrom(doc, {
-        for: segmentName(segment),
-        at: instant(segment.departsAt),
-        segmentId: segment.id,
-      })
-      if (paper) papers.push(paper)
-    }
-  for (const stop of stops)
-    for (const doc of stop?.documents || []) {
-      const paper = paperFrom(doc, {
-        for: stop.name || 'A stop',
-        at: stopAt(stop),
-        stopId: stop.id,
-      })
-      if (paper) papers.push(paper)
-    }
+  for (const segment of segments) papers.push(...papersOfSegment(segment))
+  for (const stop of stops) papers.push(...papersOfStop(stop))
 
   /* Three piles rather than one comparison, because "soonest first" and "most
      recent first" run in opposite directions and a single sort key that does

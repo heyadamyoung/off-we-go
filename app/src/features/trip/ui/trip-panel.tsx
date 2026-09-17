@@ -56,8 +56,10 @@ interface PanelProps {
     onAdd: () => void
     onShowGate: (segment: Segment) => void
     onAttach: (segment: Segment, file: File) => void
-    onEditDoc?: (documentId: string, changes: { name?: string; note?: string }) => void
-    onRemoveDoc?: (documentId: string) => void
+    /* Every document opens the same full-screen paper, whichever of the three
+       doors it was tapped through — the leg's own card, a stop's sheet, or the
+       Papers tab. */
+    onOpenPaper?: (paper: Paper) => void
   }
 }
 

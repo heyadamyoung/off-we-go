@@ -2,9 +2,10 @@ import { memo } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { dueLabel } from '../../../live-stop-progress-core'
+import { papersOfStop, type Paper } from '../../../papers-core'
 import type { TripNow } from '../../../trip-now-core'
 import type { Notice } from '../../../trip-notices-core'
-import type { Stop, StopDocument, TripPhoto } from '../../../shared/model/types'
+import type { Stop, TripPhoto } from '../../../shared/model/types'
 
 /* What is happening, opened out.
  *
@@ -23,8 +24,8 @@ import type { Stop, StopDocument, TripPhoto } from '../../../shared/model/types'
  * facts either way — trip-now-core gathers them once — and the difference is
  * only which of them leads.
  */
-/* The same glyphs the documents sheet uses: a boarding pass should look like
-   the same object wherever it turns up. */
+/* The same glyphs the papers list uses: a boarding pass should look like the
+   same object wherever it turns up. */
 const DOT: Record<string, string> = {
   landed: 'ncndot land',
   arrived: 'ncndot on',
@@ -49,6 +50,7 @@ export default memo(function NowCard({
   onStop,
   onFollow,
   onPhotos,
+  onPaper,
   onClose,
 }: {
   now: TripNow<Stop, TripPhoto>
@@ -69,6 +71,8 @@ export default memo(function NowCard({
   onPhotos: (photo: TripPhoto) => void
   /** Go to where a notice happened, and count the lot of them as read. */
   onNotice: (notice: Notice) => void
+  /** Open the paper itself, full screen — the same view every other door uses. */
+  onPaper: (paper: Paper) => void
   onClose: () => void
 }) {
   const { next, done, fresh, todayCount } = now
@@ -83,7 +87,7 @@ export default memo(function NowCard({
      under the flight it belongs to is filed correctly and reached slowly, and
      the one moment it is wanted is the moment somebody is at a desk with a
      queue behind them. */
-  const papers: StopDocument[] = next?.stop.documents || []
+  const papers: Paper[] = next ? papersOfStop(next.stop) : []
 
   const nextBlock = next && (
     <div className="ncnext">
@@ -100,17 +104,19 @@ export default memo(function NowCard({
       </button>
       {travelling && papers.length > 0 && (
         <div className="ncpapers">
-          {papers.map(doc => (
-            <a
-              key={doc.id}
+          {/* In the app, not out of it. These used to be links into another
+              tab, which is a tab with no offline copy of the document in it —
+              so the one paper somebody taps from the map was the one paper
+              that needed signal. */}
+          {papers.map(paper => (
+            <button
+              key={paper.id}
               className="ncpaper"
-              href={doc.src}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open ${doc.name}`}>
-              <span aria-hidden="true">{PAPER_GLYPH[doc.kind] || PAPER_GLYPH.other}</span>
-              <span className="truncate">{doc.name}</span>
-            </a>
+              onClick={() => onPaper(paper)}
+              aria-label={`Open ${paper.name}`}>
+              <span aria-hidden="true">{PAPER_GLYPH[paper.kind] || PAPER_GLYPH.other}</span>
+              <span className="truncate">{paper.name}</span>
+            </button>
           ))}
         </div>
       )}

@@ -1355,3 +1355,22 @@
 }
 .ppvpaper img { max-width: 100%; max-height: 100%; object-fit: contain }
 .ppvfile { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center }
+/* A fixed grey, not a token: this sits on the forced-white sheet above, where
+   the theme's own ink is white on white half the time. */
+.ppvgone { margin: 0; padding: 0 24px; color: #6b7280; font-size: 13px; text-align: center }
+.ppvx.is-on { background: var(--c-accent-soft); color: var(--c-accent) }
+/* The tidying, under the bar and above the paper: still the smaller half of
+   the screen, because the document is what somebody came here for. */
+.ppvtidy {
+  flex: none; display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 14px 12px; border-bottom: 1px solid var(--c-line);
+  background: var(--c-raised);
+}
+.ppvin {
+  width: 100%; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--c-line); background: var(--c-canvas);
+  color: var(--c-ink); font-size: 14px; font-weight: 600; outline: none;
+}
+.ppvin:focus { border-color: var(--c-accent) }
+.ppvin-note { font-size: 12px; font-weight: 400; color: var(--c-muted) }
+.ppvtidy .vdel { align-self: flex-end }

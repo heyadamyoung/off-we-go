@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import Icon from '../../../shared/ui/icon'
+import PaperRow from '../../../shared/ui/paper-row'
 import { papersOnTrip, type Paper } from '../../../papers-core'
 import type { Segment } from '../../../segments-core'
 import type { Stop } from '../../../shared/model/types'
@@ -13,21 +13,10 @@ import type { Stop } from '../../../shared/model/types'
  * you, "which leg did I file the boarding pass on" is a slower question than
  * searching your email.
  *
- * So this is a list, in the order somebody reaches for them, and the row IS
- * the document: tapping anywhere on it opens the thing. The sheet that existed
- * before was a filing cabinet — an editable name, an editable note, a
- * hold-to-delete, and a thirty-two-pixel chevron to actually see the paper.
- * That is the right furniture for tidying up at home and exactly the wrong
- * furniture for standing at a gate.
+ * So this is a list, in the order somebody reaches for them, and the row is
+ * the document: see paper-row, which the leg's own card and the stop's sheet
+ * now draw too.
  */
-
-const KIND_GLYPH: Record<string, string> = {
-  pass: '🎫',
-  ticket: '🎟️',
-  receipt: '🧾',
-  visa: '🛂',
-  other: '📄',
-}
 
 export interface PapersProps {
   stops: Stop[]
@@ -59,31 +48,5 @@ export default function PanelPapers({ stops, segments, now = Date.now(), onOpen 
         <PaperRow key={paper.id} paper={paper} onOpen={onOpen} />
       ))}
     </div>
-  )
-}
-
-function PaperRow({
-  paper,
-  lead,
-  onOpen,
-}: {
-  paper: Paper
-  lead?: boolean
-  onOpen: (paper: Paper) => void
-}) {
-  return (
-    <button className={lead ? 'pprow lead' : 'pprow'} onClick={() => onOpen(paper)}>
-      <span className="ppglyph" aria-hidden="true">
-        {KIND_GLYPH[paper.kind] || KIND_GLYPH.other}
-      </span>
-      <span className="ppbody">
-        <b>{paper.name}</b>
-        <span className="ppfor">{paper.for}</span>
-        {paper.note && <span className="ppnote">{paper.note}</span>}
-      </span>
-      <span className="ppgo" aria-hidden="true">
-        <Icon n="chevron" s={14} />
-      </span>
-    </button>
   )
 }

@@ -50,21 +50,32 @@ test('the paper for the next thing is on the next thing', async ({ page }) => {
   await expect(paper).toHaveText(/Timed entry ticket/)
 })
 
-test('a paper opens the document, not a screen about the document', async ({ page }) => {
-  /* Three taps to a ticket is three taps too many with a queue behind you. */
+test('a paper opens in the app, which is where the kept copy is', async ({ page }) => {
+  /* This used to be a link with target=_blank, and that is the one thing it
+     must not be. A new tab is a page of ours with none of this one's state:
+     the Cache the offline pack fills is read by app code, not by a service
+     worker, so a document opened outside the app is a document fetched over
+     the network — at the one desk, in the one queue, with the one dead signal
+     this whole feature exists for. */
   await openTrip(page)
   await page.locator('.nowpill').click()
   const paper = page.locator('.nowcard .ncpaper')
-  await expect(paper).toHaveAttribute('href', /\.pdf$/)
-  await expect(paper).toHaveAttribute('target', '_blank')
+  await expect(paper).toHaveCount(1)
+  expect(await paper.evaluate(node => node.tagName)).toBe('BUTTON')
 
+  await paper.click()
+  await expect(page.locator('.ppview')).toBeVisible()
+
+  /* And what it hands over is the document itself, whichever copy it found. */
+  const link = page.locator('.ppview .ppvfile a')
+  await expect(link).toBeVisible()
   const opened = await page.evaluate(async () => {
-    const href = document.querySelector('.nowcard .ncpaper')?.getAttribute('href')
+    const href = document.querySelector('.ppview .ppvfile a')?.getAttribute('href')
     if (!href) return 'no link'
     const answer = await fetch(href)
     return answer.ok ? (await answer.text()).slice(0, 8) : `status ${answer.status}`
   })
-  expect(opened, 'the ticket link goes nowhere').toMatch(/^%PDF/)
+  expect(opened, 'the ticket goes nowhere').toMatch(/^%PDF/)
 })
 
 test('the demo has paperwork on it at all', async ({ page }) => {

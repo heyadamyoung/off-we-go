@@ -3,9 +3,11 @@ import { StopEditor } from '../../itinerary'
 import { SegmentEditor } from '../../transport'
 import { AttractionCard } from '../../sights'
 import DetailCard from './detail-card'
+import PaperView from './paper-view'
 import { EditHint, PlaceHint } from './trip-chrome'
 import type useTripPage from '../model/use-trip-page'
 
+import type usePapers from '../model/use-papers'
 import type { RouteToStop } from '../model/use-route-to-stop'
 import type { StopDocTools } from '../model/use-stop-docs'
 
@@ -14,6 +16,8 @@ interface TripCardsProps {
   canEdit: boolean
   patch: (changes: Record<string, unknown>) => void
   stopDocs: StopDocTools
+  /** the paper on screen and the doors to it — see use-papers */
+  papers: ReturnType<typeof usePapers>
   /** distance and both gaits' minutes from the person to the open stop */
   stats: RouteToStop | null
 }
@@ -21,7 +25,14 @@ interface TripCardsProps {
 /* The floating layer over the map: the stop card, the stop editor, the editor
    for a leg of the journey, the placement and route hints, and the attraction
    card. The page decides what exists; this layer decides how it hovers. */
-export default function TripCards({ page, canEdit, patch, stopDocs, stats }: TripCardsProps) {
+export default function TripCards({
+  page,
+  canEdit,
+  patch,
+  stopDocs,
+  papers,
+  stats,
+}: TripCardsProps) {
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     draft, selectedItem, panelOpen, here, openViewer, startEditing, setDraft,
@@ -73,6 +84,7 @@ export default function TripCards({ page, canEdit, patch, stopDocs, stats }: Tri
               : undefined
           }
           docs={stopDocs}
+          onOpenPaper={papers.open}
           stats={stats}
         />
       )}
@@ -134,6 +146,20 @@ export default function TripCards({ page, canEdit, patch, stopDocs, stats }: Tri
                         text-xs text-muted">
           Finding attractions… {attrCount}
         </div>
+      )}
+
+      {/* The paper itself, above every other thing that floats here. At a desk
+          with a queue behind you the document IS the interface, so nothing on
+          this screen is allowed over it. Keyed, so a second paper is a second
+          screen: the cache lookup and whether the picture loaded are both per
+          document. */}
+      {papers.paper && (
+        <PaperView
+          key={papers.paper.id}
+          paper={papers.paper}
+          editing={papers.editing}
+          onClose={papers.close}
+        />
       )}
     </>
   )

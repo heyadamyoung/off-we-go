@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   DEADLINE_LABELS,
   delayLabel,
@@ -10,8 +10,9 @@ import {
   type Segment,
   type SegmentDeadlines,
 } from '../../../segments-core'
+import { papersOfSegment, type Paper } from '../../../papers-core'
 import { parseSeat } from '../../../seatmap-core'
-import DocumentsSheet from '../../../shared/ui/documents-sheet'
+import PaperRow from '../../../shared/ui/paper-row'
 import SeatMap from './seat-map'
 
 /* One leg, wearing the face the clock chooses. future: a quiet line.
@@ -32,8 +33,7 @@ export default function SegmentCard({
   onEdit,
   onShowGate,
   onAttach,
-  onEditDoc,
-  onRemoveDoc,
+  onOpenPaper,
 }: {
   segment: Segment
   now: number
@@ -41,8 +41,8 @@ export default function SegmentCard({
   onEdit?: (segment: Segment) => void
   onShowGate?: (segment: Segment) => void
   onAttach?: (segment: Segment, file: File) => void
-  onEditDoc?: (documentId: string, changes: { name?: string; note?: string }) => void
-  onRemoveDoc?: (documentId: string) => void
+  /** the paper itself, full screen — the only thing a document tap ever does */
+  onOpenPaper?: (paper: Paper) => void
 }) {
   const face = segmentFace(segment, now)
   const moved = delayLabel(segment)
@@ -54,9 +54,14 @@ export default function SegmentCard({
   })
   const upcoming = nextDeadline(segment, now)
   const [seats, setSeats] = useState(false)
-  const [papers, setPapers] = useState(false)
   const hasSeatMap = segment.mode === 'flight' && segment.passengers.some(p => parseSeat(p.seat))
-  const paperCount = segment.documents?.length || 0
+  const papers = useMemo(() => papersOfSegment(segment), [segment])
+  const picker = useRef<HTMLInputElement>(null)
+  const pick = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) onAttach?.(segment, file)
+  }
 
   if (face === 'future' || face === 'past') {
     return (
@@ -129,17 +134,6 @@ export default function SegmentCard({
       </div>
 
       {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
-      {papers && (
-        <DocumentsSheet
-          title={`Papers — ${title}`}
-          documents={segment.documents || []}
-          canEdit={canEdit}
-          onClose={() => setPapers(false)}
-          onAdd={onAttach ? file => onAttach(segment, file) : undefined}
-          onEdit={onEditDoc}
-          onRemove={onRemoveDoc}
-        />
-      )}
       <div className="flex flex-wrap gap-1.5 px-3 pt-2 text-[11px]">
         {segment.gate && (
           <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
@@ -207,17 +201,15 @@ export default function SegmentCard({
         </div>
       )}
 
-      {(segment.documents?.length || 0) > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3 pt-1.5 text-[11px]">
-          {segment.documents?.map(doc => (
-            <a
-              key={doc.id}
-              className="rounded-md border border-line bg-canvas px-2 py-0.5 text-ink no-underline"
-              href={doc.src}
-              target="_blank"
-              rel="noreferrer">
-              📎 {doc.name}
-            </a>
+      {/* The papers, on the card, as papers. They used to be drawn twice — a
+          row of paperclip chips that opened the file in another tab, and a
+          Papers button onto a sheet of text inputs whose chevron did the same
+          — so the leg had two doors to the same document and neither of them
+          was in this app. One door now, and it opens here. */}
+      {papers.length > 0 && onOpenPaper && (
+        <div className="ppl px-1.5 pb-0 pt-2">
+          {papers.map(paper => (
+            <PaperRow key={paper.id} paper={paper} showFor={false} onOpen={onOpenPaper} />
           ))}
         </div>
       )}
@@ -234,12 +226,21 @@ export default function SegmentCard({
             Show gate on the map
           </button>
         )}
-        {(canEdit || paperCount > 0) && (
-          <button
-            className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
-            onClick={() => setPapers(true)}>
-            Papers{paperCount ? ` · ${paperCount}` : ''}
-          </button>
+        {canEdit && onAttach && (
+          <>
+            <input
+              ref={picker}
+              type="file"
+              accept="image/*,application/pdf"
+              hidden
+              onChange={pick}
+            />
+            <button
+              className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
+              onClick={() => picker.current?.click()}>
+              Add a paper
+            </button>
+          </>
         )}
         {canEdit && onEdit && (
           <button
