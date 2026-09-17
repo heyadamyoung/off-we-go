@@ -53,14 +53,20 @@ const offCentre = (page, which, box) =>
   page.evaluate(
     ({ selector, left, width }) => {
       const mid = left + width / 2
-      let nearest = 0
+      /* null, not 0, and an explicit test for it. Zero is the answer this
+         function exists to see — a picture sitting exactly in the middle —
+         and `!nearest` reads that as "nothing found yet", so the next
+         photograph along, a full stage width out, replaced it. A settle that
+         landed perfectly then measured 390 instead of 0 and the test failed
+         for the app behaving exactly as asked. */
+      let nearest = null
       for (const image of document.querySelectorAll(`${selector} img`)) {
         const at = image.getBoundingClientRect()
         if (!at.width) continue
         const off = at.x + at.width / 2 - mid
-        if (!nearest || Math.abs(off) < Math.abs(nearest)) nearest = off
+        if (nearest === null || Math.abs(off) < Math.abs(nearest)) nearest = off
       }
-      return Math.abs(nearest)
+      return Math.abs(nearest ?? 0)
     },
     { selector: which, left: box.x, width: box.width },
   )
