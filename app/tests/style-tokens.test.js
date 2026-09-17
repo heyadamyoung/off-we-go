@@ -30,7 +30,7 @@ const SHEET = new URL('../src/styles.css', import.meta.url)
 const strip = css => css.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '))
 
 /** Every property referenced without a fallback that nothing declares. */
-export function danglingProperties(source) {
+function danglingProperties(source) {
   const css = strip(source)
   const defined = new Set()
   for (const [, name] of css.matchAll(/(?:^|[;{]|\s)(--[\w-]+)\s*:/g)) defined.add(name)
