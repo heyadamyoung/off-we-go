@@ -1,0 +1,1058 @@
+<?xml version="1.0"?>
+<MAIN>
+    <FLIGHTS>
+        <FLIGHT DISPLAY="AC8192">
+            <DISPLAY>AC8192</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>8192</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="16" MIN="41"></TIME>
+            <SCHEDTIME HOUR="16" MIN="59"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3817">
+            <DISPLAY>WS3817</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3817</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="17" MIN="12"></TIME>
+            <SCHEDTIME HOUR="17" MIN="20"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>3</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Minneapolis-Saint Paul</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="MSP" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Minneapolis-Saint Paul</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3366">
+            <DISPLAY>WS3366</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3366</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="18" MIN="18"></TIME>
+            <SCHEDTIME HOUR="18" MIN="25"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1117">
+            <DISPLAY>AC1117</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1117</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="19" MIN="32"></TIME>
+            <SCHEDTIME HOUR="19" MIN="05"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>Delayed</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3404">
+            <DISPLAY>WS3404</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3404</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="19" MIN="45"></TIME>
+            <SCHEDTIME HOUR="19" MIN="45"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Edmonton</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YEG" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Edmonton</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3368">
+            <DISPLAY>WS3368</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3368</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="20" MIN="30"></TIME>
+            <SCHEDTIME HOUR="20" MIN="30"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="UA5056">
+            <DISPLAY>UA5056</DISPLAY>
+            <CARRIER>
+                <NAME>United</NAME>
+                <ABBREV>UA</ABBREV>
+            </CARRIER>
+            <NUMBER>5056</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="21" MIN="30"></TIME>
+            <SCHEDTIME HOUR="21" MIN="30"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>3</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Denver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="DEN" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Denver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS396">
+            <DISPLAY>WS396</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>396</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="17"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="17"></DATE>
+            <TIME HOUR="23" MIN="20"></TIME>
+            <SCHEDTIME HOUR="23" MIN="20"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1104">
+            <DISPLAY>AC1104</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1104</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="00" MIN="27"></TIME>
+            <SCHEDTIME HOUR="00" MIN="27"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS755">
+            <DISPLAY>WS755</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>755</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="00" MIN="35"></TIME>
+            <SCHEDTIME HOUR="00" MIN="35"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS398">
+            <DISPLAY>WS398</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>398</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="01" MIN="10"></TIME>
+            <SCHEDTIME HOUR="01" MIN="10"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1921">
+            <DISPLAY>AC1921</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1921</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="09" MIN="00"></TIME>
+            <SCHEDTIME HOUR="09" MIN="00"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3360">
+            <DISPLAY>WS3360</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3360</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="09" MIN="45"></TIME>
+            <SCHEDTIME HOUR="09" MIN="45"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC8221">
+            <DISPLAY>AC8221</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>8221</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="10" MIN="45"></TIME>
+            <SCHEDTIME HOUR="10" MIN="45"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Montreal</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YUL" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Montreal</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS392">
+            <DISPLAY>WS392</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>392</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="10" MIN="50"></TIME>
+            <SCHEDTIME HOUR="10" MIN="50"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3402">
+            <DISPLAY>WS3402</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3402</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="11" MIN="15"></TIME>
+            <SCHEDTIME HOUR="11" MIN="15"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Edmonton</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YEG" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Edmonton</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1100">
+            <DISPLAY>AC1100</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1100</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="11" MIN="50"></TIME>
+            <SCHEDTIME HOUR="11" MIN="50"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS680">
+            <DISPLAY>WS680</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>680</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="11" MIN="55"></TIME>
+            <SCHEDTIME HOUR="11" MIN="55"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS428">
+            <DISPLAY>WS428</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>428</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="12" MIN="35"></TIME>
+            <SCHEDTIME HOUR="12" MIN="35"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3441">
+            <DISPLAY>WS3441</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3441</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="12" MIN="50"></TIME>
+            <SCHEDTIME HOUR="12" MIN="50"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Winnipeg</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YWG" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Winnipeg</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1923">
+            <DISPLAY>AC1923</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1923</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="13" MIN="15"></TIME>
+            <SCHEDTIME HOUR="13" MIN="15"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3364">
+            <DISPLAY>WS3364</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3364</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="15" MIN="40"></TIME>
+            <SCHEDTIME HOUR="15" MIN="40"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC8192">
+            <DISPLAY>AC8192</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>8192</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="16" MIN="59"></TIME>
+            <SCHEDTIME HOUR="16" MIN="59"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3817">
+            <DISPLAY>WS3817</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3817</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="17" MIN="20"></TIME>
+            <SCHEDTIME HOUR="17" MIN="20"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>3</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Minneapolis-Saint Paul</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="MSP" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Minneapolis-Saint Paul</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3366">
+            <DISPLAY>WS3366</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3366</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="18" MIN="25"></TIME>
+            <SCHEDTIME HOUR="18" MIN="25"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1117">
+            <DISPLAY>AC1117</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1117</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="19" MIN="05"></TIME>
+            <SCHEDTIME HOUR="19" MIN="05"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3404">
+            <DISPLAY>WS3404</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3404</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="19" MIN="45"></TIME>
+            <SCHEDTIME HOUR="19" MIN="45"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Edmonton</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YEG" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Edmonton</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3368">
+            <DISPLAY>WS3368</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3368</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="20" MIN="30"></TIME>
+            <SCHEDTIME HOUR="20" MIN="30"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="UA5056">
+            <DISPLAY>UA5056</DISPLAY>
+            <CARRIER>
+                <NAME>United</NAME>
+                <ABBREV>UA</ABBREV>
+            </CARRIER>
+            <NUMBER>5056</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="21" MIN="30"></TIME>
+            <SCHEDTIME HOUR="21" MIN="30"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>3</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Denver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="DEN" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Denver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS396">
+            <DISPLAY>WS396</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>396</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="18"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="18"></DATE>
+            <TIME HOUR="23" MIN="20"></TIME>
+            <SCHEDTIME HOUR="23" MIN="20"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1104">
+            <DISPLAY>AC1104</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1104</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="00" MIN="27"></TIME>
+            <SCHEDTIME HOUR="00" MIN="27"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS755">
+            <DISPLAY>WS755</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>755</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="00" MIN="35"></TIME>
+            <SCHEDTIME HOUR="00" MIN="35"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS398">
+            <DISPLAY>WS398</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>398</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="01" MIN="10"></TIME>
+            <SCHEDTIME HOUR="01" MIN="10"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1921">
+            <DISPLAY>AC1921</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1921</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="09" MIN="00"></TIME>
+            <SCHEDTIME HOUR="09" MIN="00"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS392">
+            <DISPLAY>WS392</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>392</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="10" MIN="50"></TIME>
+            <SCHEDTIME HOUR="10" MIN="50"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1100">
+            <DISPLAY>AC1100</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1100</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="11" MIN="50"></TIME>
+            <SCHEDTIME HOUR="11" MIN="50"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Vancouver</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YVR" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Vancouver</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3362">
+            <DISPLAY>WS3362</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3362</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="12" MIN="45"></TIME>
+            <SCHEDTIME HOUR="12" MIN="45"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="AC1115">
+            <DISPLAY>AC1115</DISPLAY>
+            <CARRIER>
+                <NAME>Air Canada</NAME>
+                <ABBREV>AC</ABBREV>
+            </CARRIER>
+            <NUMBER>1115</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="13" MIN="25"></TIME>
+            <SCHEDTIME HOUR="13" MIN="25"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>2</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Toronto</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYZ" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Toronto</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+        <FLIGHT DISPLAY="WS3364">
+            <DISPLAY>WS3364</DISPLAY>
+            <CARRIER>
+                <NAME>WestJet</NAME>
+                <ABBREV>WS</ABBREV>
+            </CARRIER>
+            <NUMBER>3364</NUMBER>
+            <CODESHARES>
+            </CODESHARES>
+            <SCHEDDATE YEAR="2026" MONTH="09" DAY="19"></SCHEDDATE>
+            <MODE TYPE="A"></MODE>
+            <DATE YEAR="2026" MONTH="09" DAY="19"></DATE>
+            <TIME HOUR="15" MIN="40"></TIME>
+            <SCHEDTIME HOUR="15" MIN="40"></SCHEDTIME>
+            <GATE></GATE>
+            <BRIDGE></BRIDGE>
+            <TERMINAL></TERMINAL>
+            <CAROUSEL>1</CAROUSEL>
+            <STATUS>On Time</STATUS>
+            <COMMENT></COMMENT>
+            <OPERATE></OPERATE>
+            <CITIES>Calgary</CITIES>
+            <CITYCODES>
+                <CITYCODE IATA="YYC" CITYTEMP="" CITYWTR="" CITYWTRTEXT="">Calgary</CITYCODE>
+            </CITYCODES>
+            <AIRCRAFT></AIRCRAFT>
+        </FLIGHT>
+    </FLIGHTS>
+</MAIN>

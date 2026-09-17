@@ -43,6 +43,37 @@ const JSON_HEADERS = {
   'accept-language': BROWSER_HEADERS['accept-language'],
 }
 
+/* The cookies each host set, sent back to it from then on — what a browser
+   does, and what a bot manager that challenged the second cookie-less
+   request in a minute is checking for. */
+const jar = new Map()
+function remember(url, cookies) {
+  let host
+  try {
+    host = new URL(url).host
+  } catch {
+    return
+  }
+  const held = jar.get(host) || new Map()
+  for (const cookie of cookies || []) {
+    const [pair] = String(cookie).split(';')
+    const eq = pair.indexOf('=')
+    if (eq > 0) held.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim())
+  }
+  jar.set(host, held)
+}
+function withCookies(probe) {
+  let host
+  try {
+    host = new URL(probe.url).host
+  } catch {
+    return probe.headers
+  }
+  const held = jar.get(host)
+  if (!held?.size) return probe.headers
+  return { ...probe.headers, cookie: [...held].map(([k, v]) => `${k}=${v}`).join('; ') }
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000
 const today = new Date().toISOString().slice(0, 10)
 const tomorrow = new Date(Date.now() + DAY_MS).toISOString().slice(0, 10)
@@ -107,6 +138,10 @@ const PROBES = [
   // {list: [...]}, getflightsearch?term= and getflightsearchbykey?flightkey=
   // beside it. Asked first in the run, as a browser on the departures page
   // would, because the bot manager challenges a second visit.
+  // The first answer was the list (522 departures, 296 KB); the second and
+  // third requests, sent without the cookies the first had set, drew the bot
+  // manager's captcha. So the cookies a response sets are sent back to its
+  // host from then on, as a browser would, and the list is printed whole.
   ...['DEP', 'ARR'].map(type => ({
     id: `yyz-site-list-${type.toLowerCase()}`,
     url: `https://www.torontopearson.com/api/flightsapidata/getflightlist?type=${type}&day=today&useScheduleTimeOnly=false`,
@@ -119,15 +154,32 @@ const PROBES = [
     },
     bigHeaders: true,
     full: true,
+    fullLimit: 400_000,
   })),
   {
     id: 'yyz-site-search',
     url: 'https://www.torontopearson.com/api/flightsapidata/getflightsearch?term=AC872',
     kind: 'json',
     method: 'GET',
-    headers: { ...JSON_HEADERS, referer: 'https://www.torontopearson.com/en/departures' },
+    headers: {
+      ...JSON_HEADERS,
+      referer: 'https://www.torontopearson.com/en/departures',
+      'x-requested-with': 'XMLHttpRequest',
+    },
     bigHeaders: true,
     full: true,
+  },
+  {
+    id: 'yyz-site-list-tomorrow',
+    url: 'https://www.torontopearson.com/api/flightsapidata/getflightlist?type=DEP&day=tomorrow&useScheduleTimeOnly=false',
+    kind: 'json',
+    method: 'GET',
+    headers: {
+      ...JSON_HEADERS,
+      referer: 'https://www.torontopearson.com/en/departures',
+      'x-requested-with': 'XMLHttpRequest',
+    },
+    bigHeaders: true,
   },
   json('yyz-cdn-departures', `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`, YYZ),
 
@@ -213,7 +265,7 @@ async function fetchOne(probe) {
   try {
     const response = await fetch(probe.url, {
       method: probe.method || 'GET',
-      headers: probe.headers,
+      headers: withCookies(probe),
       body: probe.body,
       redirect: 'follow',
       signal: controller.signal,
@@ -244,7 +296,7 @@ function httpsGet(probe, at, hops = 0) {
       probe.url,
       {
         method: probe.method || 'GET',
-        headers: probe.headers,
+        headers: withCookies(probe),
         maxHeaderSize: 1 << 20,
         timeout: 30_000,
       },
@@ -371,6 +423,7 @@ async function record(probe) {
     summary.push({ id: probe.id, status: 'ERR', type: '', bytes: 0, ms: result.ms })
     return null
   }
+  remember(result.url, result.cookies)
   const contentType = result.headers.get('content-type') || ''
   console.log(
     `status ${result.status} ${result.statusText}  ${result.ms} ms  ${result.bytes.length} bytes  final url: ${result.url}`,
@@ -394,9 +447,17 @@ async function record(probe) {
   const ext = extensionFor(contentType, probe.kind)
   await writeFile(path.join(OUT, `${probe.id}.${ext}`), result.bytes)
 
-  if (probe.full && result.status === 200 && text.length <= 120_000) {
+  if (probe.full && result.status === 200 && text.length <= (probe.fullLimit || 120_000)) {
+    /* Pretty-printed when it is JSON, so no line of the log is a whole
+       board long; the artifact keeps the bytes as served. */
+    let shown = text
+    if (ext === 'json') {
+      try {
+        shown = JSON.stringify(JSON.parse(text), null, 1)
+      } catch {}
+    }
     console.log(`FULL BODY (${text.length} chars) >>>`)
-    console.log(text)
+    console.log(shown)
     console.log('<<< END FULL BODY')
   }
   if (probe.quote && result.status === 200) {

@@ -32,6 +32,8 @@ import { createIndoorCache } from './airport-indoor.js'
 import { mergeWalkways } from './airport-walkways.js'
 import { createMailboxReader } from './mailbox-read.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
+import { createFlightSources } from './flights/registry.js'
+import { registerFlightRoutes } from './flights/routes.js'
 import {
   contentDisposition,
   isPlaylistPath,
@@ -150,6 +152,9 @@ export async function buildServer({
      and the nightly backup copies every byte of it. */
   maxImageBytes = MAX_IMAGE_BYTES,
   maxVideoBytes = MAX_VIDEO_BYTES,
+  /* The airports' boards. Built here from the network unless a test hands
+     in its own, so the routes and the watch read the same cached boards. */
+  flights = null,
   /* Whether this deployment can convert film to something every device
      plays. Optional like every other integration: without it the app says so
      at /api/health rather than quietly storing videos half the trip cannot
@@ -292,6 +297,9 @@ export async function buildServer({
     if (kind) touched(tripId, kind)
   })
   app.decorate('announceMediaReady', announceMediaReady)
+  /* For the timers in index.js that change a trip without a request: the
+     flight watch writing what a board said onto a leg. */
+  app.decorate('announceTrip', touched)
 
   /* One shape for the positions whether they are asked for or pushed, so a
      browser cannot tell the two apart beyond how quickly they arrived. */
@@ -3405,6 +3413,12 @@ export async function buildServer({
      where the timers live. Handed out rather than started here: a server built
      for a test should not begin reading anybody's mail because it exists. */
   app.decorate('mailboxReader', mailboxReader)
+
+  /* The airports' boards: the routes here, the watch in index.js, one set of
+     cached boards between them. */
+  const flightSources = flights || createFlightSources()
+  registerFlightRoutes(app, { repository, sources: flightSources, authenticated })
+  app.decorate('flightSources', flightSources)
 
   return app
 }

@@ -4,6 +4,8 @@ import { createS3FileStore } from './s3-store.js'
 import { createSmtpMailer } from './mailer.js'
 import { buildServer } from './app.js'
 import { startTravelWatch } from './travel-watch.js'
+import { createFlightSources } from './flights/registry.js'
+import { startFlightWatch } from './flights/watch.js'
 import { writeFile } from 'node:fs/promises'
 import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
@@ -166,6 +168,9 @@ const app = await buildServer({
     .map(value => value.trim())
     .filter(Boolean),
   logger: productionLoggerOptions(process.env.LOG_LEVEL || 'info'),
+  /* The airports' boards, read from here — the routes and the watch share
+     the cache, so ten legs at Dublin are one request a minute, not ten. */
+  flights: createFlightSources({ env: process.env }),
 })
 
 /* The conversion worker. In-process today because this is one box; it claims
@@ -242,11 +247,23 @@ const travelWatch = app.mailboxReader
   ? startTravelWatch({ repository, reader: app.mailboxReader, log: app.log })
   : null
 
+/* The airports, looking at the trip's legs without being asked. Public
+   boards, every leg whose airport has one, once a minute; what they say is
+   written onto the leg and announced to whoever is watching the trip. The
+   rule is in flights/watch.js; this is the clock. */
+const flightWatch = startFlightWatch({
+  repository,
+  sources: app.flightSources,
+  announce: app.announceTrip,
+  log: app.log,
+})
+
 const stop = async signal => {
   app.log.info({ signal }, 'shutting down')
   clearInterval(pruneTimer)
   clearInterval(stampTimer)
   travelWatch?.stop()
+  flightWatch.stop()
   await app.close().catch(() => {})
   await repository.close().catch(() => {})
   process.exit(0)
