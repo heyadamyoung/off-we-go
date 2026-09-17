@@ -7,9 +7,10 @@
  * cached and rate-limited, the shape of the body, and a couple of records —
  * then, for an HTML page, reads the scripts the page loads, quotes the code
  * around anything that looks like a flight endpoint, a status vocabulary or
- * an API key, and fetches the likeliest endpoints too. Feeds small enough to
- * be fixtures are printed whole. The full bodies go to probe-out/ for the
- * artifact.
+ * an API key, follows a bundle's lazy chunks when one is named after the
+ * flight listing, and fetches the likeliest endpoints too. Feeds small
+ * enough to be fixtures are printed whole. The full bodies go to probe-out/
+ * for the artifact.
  *
  * Nothing here is a parser. A parser is written against what this prints,
  * and not before.
@@ -41,9 +42,9 @@ const JSON_HEADERS = {
 const DAY_MS = 24 * 60 * 60 * 1000
 const today = new Date().toISOString().slice(0, 10)
 const tomorrow = new Date(Date.now() + DAY_MS).toISOString().slice(0, 10)
-const nowSeconds = Math.floor(Date.now() / 1000)
 
 const DUB = { origin: 'https://www.dublinairport.com', referer: 'https://www.dublinairport.com/' }
+const DUB_LISTING = 'https://api.dublinairport.com/dap/flight-listing'
 const YYZ = { origin: 'https://www.torontopearson.com', referer: 'https://www.torontopearson.com/' }
 const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
 
@@ -52,104 +53,104 @@ const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
    "public code" means a public repository requests it today; "probe" means
    an earlier run of this script found it. */
 const PROBES = [
-  // Dublin — daa. A Next.js site over a JSON API at api.dublinairport.com,
-  // first seen in public code (odinglyn0/eidw-times) and confirmed by probe:
-  // {content: [...], pagination: {...}, lastUpdated}, 30 s public cache.
+  // Dublin — daa. A Next.js site over a JSON API at api.dublinairport.com;
+  // the front end's own table of endpoints, quoted by an earlier run, names
+  // flight-listing/{departures,arrivals}, flight-listing (single flight),
+  // search, weather and get-security-times. Today's listing starts at "now"
+  // and a full day is more than one page of 200; the parameters that turn
+  // the page are not in the URL the page itself uses, so they are guessed
+  // here from the names the response echoes.
   html('dub-departures-page', 'https://www.dublinairport.com/flight-information/live-departures'),
+  json('dub-departures-today', `${DUB_LISTING}/departures?date=${today}&limit=200`, DUB, {
+    full: true,
+  }),
+  json('dub-arrivals-today', `${DUB_LISTING}/arrivals?date=${today}&limit=200`, DUB, {
+    full: true,
+  }),
   json(
-    'dub-api-departures-today',
-    `https://api.dublinairport.com/dap/flight-listing/departures?date=${today}&limit=200`,
-    DUB,
-    { full: true },
-  ),
-  json(
-    'dub-api-arrivals-today',
-    `https://api.dublinairport.com/dap/flight-listing/arrivals?date=${today}&limit=200`,
-    DUB,
-    { full: true },
-  ),
-  json(
-    'dub-api-departures-tomorrow',
-    `https://api.dublinairport.com/dap/flight-listing/departures?date=${tomorrow}&limit=200`,
-    DUB,
-    { full: true },
-  ),
-  json(
-    'dub-api-arrivals-tomorrow',
-    `https://api.dublinairport.com/dap/flight-listing/arrivals?date=${tomorrow}&limit=200`,
-    DUB,
-  ),
-  // Pagination guesses: the response echoes earliestTimestamp/latestTimestamp
-  // and hasPrevious, so the listing is a window that may start at "now".
-  json(
-    'dub-api-departures-from-midnight',
-    `https://api.dublinairport.com/dap/flight-listing/departures?date=${today}&limit=200&earliestTimestamp=${today}T00:00:00.000Z`,
+    'dub-departures-tomorrow-1000',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=1000`,
     DUB,
   ),
   json(
-    'dub-api-departures-previous',
-    `https://api.dublinairport.com/dap/flight-listing/departures?date=${today}&limit=200&direction=previous`,
+    'dub-departures-tomorrow-page-latestId',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&latestId=139993`,
     DUB,
   ),
   json(
-    'dub-api-flight-search',
-    `https://api.dublinairport.com/dap/flight-listing/departures?date=${today}&limit=200&search=EI`,
+    'dub-departures-tomorrow-page-earliestId',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&earliestId=139993`,
+    DUB,
+  ),
+  json(
+    'dub-departures-tomorrow-page-after',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&after=139993`,
+    DUB,
+  ),
+  json(
+    'dub-departures-tomorrow-page-cursor',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&cursor=139993`,
+    DUB,
+  ),
+  json(
+    'dub-departures-tomorrow-page-2',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&page=2`,
+    DUB,
+  ),
+  json(
+    'dub-departures-tomorrow-offset',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&offset=200`,
+    DUB,
+  ),
+  json(
+    'dub-departures-tomorrow-from',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&from=${tomorrow}T12:00:00.000Z`,
+    DUB,
+  ),
+  json(
+    'dub-departures-tomorrow-time',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&time=12:00`,
+    DUB,
+  ),
+  json(
+    'dub-search-flightNumber',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&flightNumber=EI`,
+    DUB,
+  ),
+  json('dub-search-flight', `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&flight=EI`, DUB),
+  json('dub-search-q', `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&q=EI`, DUB),
+  json('dub-search-bff', `https://api.dublinairport.com/dap/search?q=EI`, DUB),
+  json('dub-single-flight-id', `${DUB_LISTING}/FR457-${tomorrow.replaceAll('-', '')}`, DUB),
+  json(
+    'dub-single-flight-path',
+    `${DUB_LISTING}/departures/FR457-${tomorrow.replaceAll('-', '')}`,
+    DUB,
+  ),
+  json(
+    'dub-single-flight-query',
+    `${DUB_LISTING}?flightId=FR457-${tomorrow.replaceAll('-', '')}`,
     DUB,
   ),
 
-  // Toronto Pearson — GTAA. The board pages answer with headers too large
-  // for Node's default fetch (an earlier probe died on UND_ERR_HEADERS_OVERFLOW),
-  // so they go through node:https with a large limit; the CDN endpoint from
-  // memory now answers 401, so the page's scripts are read for the header
-  // it wants and the endpoint retried with anything they give away.
-  html('yyz-departures-page', 'https://www.torontopearson.com/en/departures', { bigHeaders: true }),
-  html('yyz-arrivals-page', 'https://www.torontopearson.com/en/arrivals', { bigHeaders: true }),
+  // Toronto Pearson — GTAA. A Sitecore site behind Radware Bot Manager (a
+  // second page in the same minute drew a captcha), whose flight listing is
+  // a lazily loaded webpack chunk named "flight-listing" in body.bundle.js.
+  // The chunk is where the CDN endpoint's missing header must be, so the
+  // bundle is printed whole and its chunk table followed.
+  html('yyz-departures-page', 'https://www.torontopearson.com/en/departures', {
+    bigHeaders: true,
+    printScripts: /body\.bundle/,
+    followChunks: true,
+  }),
   json('yyz-cdn-departures', `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`, YYZ),
-  json('yyz-cdn-arrivals', `${PEARSON_LIST}?type=ARR&day=today&useScheduleTimeOnly=false`, YYZ),
 
   // Regina — Regina Airport Authority. A WordPress page whose theme script
   // fetches the display vendor's public XML feed (found by probe).
-  html('yqr-departures-page', 'https://www.yqr.ca/en/passengers/flights/departures'),
-  {
-    id: 'yqr-simpleway-departures',
-    url: 'https://yqr.simpleway.cloud/data-feed/public/departure-web',
-    kind: 'xml',
-    method: 'GET',
-    headers: {
-      ...JSON_HEADERS,
-      accept: 'application/xml, text/xml, */*',
-      referer: 'https://www.yqr.ca/',
-    },
-    full: true,
-  },
-  {
-    id: 'yqr-simpleway-arrivals',
-    url: 'https://yqr.simpleway.cloud/data-feed/public/arrivals-web',
-    kind: 'xml',
-    method: 'GET',
-    headers: {
-      ...JSON_HEADERS,
-      accept: 'application/xml, text/xml, */*',
-      referer: 'https://www.yqr.ca/',
-    },
-    full: true,
-  },
+  xml('yqr-simpleway-departures', 'https://yqr.simpleway.cloud/data-feed/public/departure-web'),
+  xml('yqr-simpleway-arrivals', 'https://yqr.simpleway.cloud/data-feed/public/arrivals-web'),
 
-  // Community ADS-B. Positions only — no gates — but an aircraft that has
-  // left the ground is the one fact no board can be wrong about. adsb.lol
-  // answered without a key; airplanes.live wants an email first; OpenSky
-  // allows 400 anonymous calls a day.
-  json('adsblol-point-yyz', 'https://api.adsb.lol/v2/point/43.6777/-79.6248/25'),
-  json('adsblol-callsign', 'https://api.adsb.lol/v2/callsign/ACA872'),
-  json('adsblol-hex-sample', 'https://api.adsb.lol/v2/hex/4caa58'),
-  json(
-    'opensky-states-yqr',
-    'https://opensky-network.org/api/states/all?lamin=50.30&lomin=-104.85&lamax=50.55&lomax=-104.45',
-  ),
-  json(
-    'opensky-departures-eidw',
-    `https://opensky-network.org/api/flights/departure?airport=EIDW&begin=${nowSeconds - 6 * 3600}&end=${nowSeconds}`,
-  ),
+  // Community ADS-B: adsb.lol answers by callsign and by hex without a key.
+  json('adsblol-callsign', 'https://api.adsb.lol/v2/callsign/RYR37MH'),
 ]
 
 function html(id, url, extra = {}) {
@@ -164,6 +165,21 @@ function json(id, url, extraHeaders = {}, extra = {}) {
     method: 'GET',
     headers: { ...JSON_HEADERS, ...extraHeaders },
     ...extra,
+  }
+}
+
+function xml(id, url) {
+  return {
+    id,
+    url,
+    kind: 'xml',
+    method: 'GET',
+    headers: {
+      ...JSON_HEADERS,
+      accept: 'application/xml, text/xml, */*',
+      referer: 'https://www.yqr.ca/',
+    },
+    full: true,
   }
 }
 
@@ -202,16 +218,18 @@ const URL_LITERAL =
   /(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s"'`<>)]*)?|(?:^|["'`(])(\/[a-z0-9_./-]*(?:api|flight|json|graphql|feed|fids)[a-z0-9_./?=&%-]*)/gi
 
 /* Code worth quoting from a bundle: where the flight endpoints are called,
-   what the statuses are called, and any key that goes in a header. */
+   what the statuses are called, how a page is turned, and any key that goes
+   in a header. */
 const CODE_HINTS = [
-  /flight-listing|flights\/list|azureedge|simpleway|data-feed/gi,
-  /statusMessage|GO TO GATE|FINAL CALL|GATE CLOSED|BOARDING|LANDED|DEPARTED|CANCELLED|DIVERTED|EXPECTED|useScheduleTimeOnly/g,
-  /earliestTimestamp|latestTimestamp|hasNext|hasPrevious|pageSize|direction=/g,
-  /Ocp-Apim-Subscription-Key|x-api-key|apikey|subscription[-_]?key|x-functions-key|authorization/gi,
+  /flight-listing\/|flights\/list|azureedge|simpleway|data-feed|waittimeapidata/gi,
+  /statusMessage|GO TO GATE|FINAL CALL|GATE CLOSED|NOW BOARDING|LANDED|DEPARTED|CANCELLED|DIVERTED|useScheduleTimeOnly/g,
+  /latestId|earliestId|hasNext|hasPrevious|pageSize|\?date=|&limit=/g,
+  /Ocp-Apim-Subscription-Key|x-api-key|apikey|subscription[-_]?key|x-functions-key|authorization|bearer/gi,
+  /publicPath|chunkFilename|"flight-listing"|2382/g,
 ]
 
 const KEY_LITERAL =
-  /["'](Ocp-Apim-Subscription-Key|x-api-key|apikey|x-functions-key|subscription-key)["']\s*[:,]\s*["']([A-Za-z0-9._~+/=-]{16,})["']/gi
+  /["'](Ocp-Apim-Subscription-Key|x-api-key|apikey|x-functions-key|subscription-key|Authorization)["']\s*[:,]\s*["']([A-Za-z0-9._~+/= -]{16,})["']/gi
 
 const started = Date.now()
 const summary = []
@@ -369,13 +387,6 @@ function describeHtml(text, baseUrl) {
   const hints = urlHints(text, baseUrl)
   lines.push(`endpoint-looking strings in the page (${hints.length}):`)
   for (const hint of hints.slice(0, 60)) lines.push(`  ${hint}`)
-  const inlineJson = [
-    ...text.matchAll(
-      /<script[^>]+type=["']application\/(?:ld\+)?json["'][^>]*>([\s\S]{0,4000}?)<\/script>/gi,
-    ),
-  ]
-  if (inlineJson.length)
-    lines.push(`inline JSON blocks: ${inlineJson.length}; first: ${inlineJson[0][1].slice(0, 400)}`)
   const inline = [...text.matchAll(/<script(?![^>]+src=)[^>]*>([\s\S]*?)<\/script>/gi)]
     .map(m => m[1])
     .join('\n')
@@ -414,7 +425,7 @@ function urlHints(text, baseUrl) {
 }
 
 /* The code around the words that matter, deduplicated, bounded. */
-function snippets(text, radius = 320, max = 24) {
+function snippets(text, radius = 320, max = 30) {
   const out = []
   const seen = new Set()
   for (const pattern of CODE_HINTS) {
@@ -438,6 +449,34 @@ function keysIn(text) {
   return found
 }
 
+/* A webpack runtime names its lazy chunks in a table of id → hash and a
+   template that makes a file name of them. For every chunk whose name says
+   "flight", the candidate file names under every script directory the
+   bundle mentions — fetched, and the ones that exist quoted like scripts. */
+function chunkCandidates(code, bundleUrl) {
+  const names = new Map()
+  for (const match of code.matchAll(/(\d{2,6}):"([a-z0-9-]*flight[a-z0-9-]*)"/gi)) {
+    names.set(match[1], match[2])
+  }
+  const hashes = new Map()
+  for (const match of code.matchAll(/(\d{2,6}):"([0-9a-f]{8,32})"/g)) hashes.set(match[1], match[2])
+  const roots = new Set([new URL('.', bundleUrl).toString()])
+  for (const match of code.matchAll(/["'](https?:\/\/[^"']+\/)["']/g)) {
+    if (/torontopearson|cdn\./.test(match[1])) roots.add(match[1])
+  }
+  const out = []
+  for (const [id, name] of names) {
+    const hash = hashes.get(id)
+    for (const root of roots) {
+      out.push(`${root}${id}.js`, `${root}${name}.js`)
+      if (hash) {
+        out.push(`${root}${id}.${hash}.js`, `${root}${name}.${hash}.js`, `${root}${hash}.js`)
+      }
+    }
+  }
+  return { names: [...names.entries()], candidates: [...new Set(out)].slice(0, 30) }
+}
+
 async function record(probe) {
   const result = await fetchOne(probe)
   console.log(
@@ -458,8 +497,9 @@ async function record(probe) {
     const value = result.headers.get(name)
     if (value) console.log(`  ${name}: ${String(value).slice(0, 200)}`)
   }
-  if (result.cookies.length)
+  if (result.cookies.length) {
     console.log(`  set-cookie names: ${result.cookies.map(c => c.split('=')[0]).join(', ')}`)
+  }
   summary.push({
     id: probe.id,
     status: result.status,
@@ -491,47 +531,69 @@ async function record(probe) {
   return { kind: 'text' }
 }
 
+async function readScript(pageId, src, baseUrl, { print = false } = {}) {
+  const result = await fetchOne({
+    id: `${pageId}-script`,
+    url: src,
+    headers: BROWSER_HEADERS,
+    bigHeaders: /torontopearson/.test(src),
+  })
+  if (result.error || result.status !== 200) {
+    console.log(
+      `  script ${src}: ${result.error ? `unreachable (${result.error.message})` : result.status}`,
+    )
+    return null
+  }
+  if (result.bytes.length > 4_000_000) {
+    console.log(`  script ${src}: ${result.bytes.length} bytes, skipped (too large)`)
+    return null
+  }
+  const code = result.bytes.toString('utf8')
+  const hints = urlHints(code, baseUrl)
+  const quoted = snippets(code)
+  console.log(
+    `  script ${src}: ${result.bytes.length} bytes, ${hints.length} endpoint-looking strings, ${quoted.length} quotable places`,
+  )
+  for (const one of quoted) console.log(`    … ${one} …`)
+  if (print && code.length <= 60_000) {
+    console.log(`  FULL SCRIPT ${src} (${code.length} chars) >>>`)
+    console.log(code)
+    console.log('  <<< END FULL SCRIPT')
+  }
+  return { code, hints, keys: keysIn(code) }
+}
+
 /* The scripts an HTML page loads, read for the endpoints the page's own
-   JavaScript calls, the words it uses for a status, and any key it carries.
-   A bundle is a few megabytes at most; sixteen per page. */
-async function readScripts(pageId, scripts, baseUrl) {
+   JavaScript calls, the words it uses for a status, and any key it carries;
+   then the lazy chunks a bundle names after the flight listing. */
+async function readScripts(probe, scripts, baseUrl) {
   const found = new Set()
   const keys = []
   let read = 0
   for (const src of scripts) {
     if (read >= 16) break
     if (
-      /googletagmanager|google-analytics|doubleclick|facebook|hotjar|cookielaw|onetrust|recaptcha|gstatic|jquery/i.test(
+      /googletagmanager|google-analytics|doubleclick|facebook|hotjar|cookielaw|onetrust|recaptcha|gstatic|jquery|html5shiv/i.test(
         src,
       )
     )
       continue
     read += 1
-    const result = await fetchOne({
-      id: `${pageId}-script`,
-      url: src,
-      headers: BROWSER_HEADERS,
-      bigHeaders: /torontopearson/.test(src),
-    })
-    if (result.error || result.status !== 200) {
-      console.log(
-        `  script ${src}: ${result.error ? `unreachable (${result.error.message})` : result.status}`,
-      )
-      continue
+    const one = await readScript(probe.id, src, baseUrl, { print: probe.printScripts?.test(src) })
+    if (!one) continue
+    for (const hint of one.hints) found.add(hint)
+    keys.push(...one.keys)
+    if (probe.followChunks) {
+      const { names, candidates } = chunkCandidates(one.code, src)
+      if (names.length)
+        console.log(`  chunks named after flights in ${src}: ${JSON.stringify(names)}`)
+      for (const candidate of candidates) {
+        const chunk = await readScript(`${probe.id}-chunk`, candidate, baseUrl, { print: true })
+        if (!chunk) continue
+        for (const hint of chunk.hints) found.add(hint)
+        keys.push(...chunk.keys)
+      }
     }
-    if (result.bytes.length > 4_000_000) {
-      console.log(`  script ${src}: ${result.bytes.length} bytes, skipped (too large)`)
-      continue
-    }
-    const code = result.bytes.toString('utf8')
-    const hints = urlHints(code, baseUrl)
-    const quoted = snippets(code)
-    console.log(
-      `  script ${src}: ${result.bytes.length} bytes, ${hints.length} endpoint-looking strings, ${quoted.length} quotable places`,
-    )
-    for (const one of quoted) console.log(`    … ${one} …`)
-    for (const hint of hints) found.add(hint)
-    keys.push(...keysIn(code))
   }
   return { hints: [...found], keys }
 }
@@ -548,9 +610,9 @@ function worthFetching(hints, seen) {
         /api|json|graphql|feed|fids|azure|xml/i.test(hint),
     )
     .filter(hint => !/\.(?:js|css|html?)(?:\?|$)/i.test(hint))
-    .filter(hint => !/oembed|wp-json\/wp\/v2/i.test(hint))
+    .filter(hint => !/oembed|wp-json\/wp\/v2|dublinairport\.com\/api\/v2|getUserLite/i.test(hint))
     .filter(hint => !seen.has(hint))
-    .slice(0, 10)
+    .slice(0, 8)
 }
 
 await mkdir(OUT, { recursive: true })
@@ -562,15 +624,16 @@ const foundKeys = []
 for (const probe of PROBES) {
   const result = await record(probe)
   if (result?.kind === 'html') {
-    const fromScripts = await readScripts(probe.id, result.scripts, result.baseUrl)
+    const fromScripts = await readScripts(probe, result.scripts, result.baseUrl)
     const all = [...new Set([...result.hints, ...fromScripts.hints])]
     console.log(`endpoint-looking strings from page + scripts (${all.length}):`)
     for (const hint of all.slice(0, 120)) console.log(`  ${hint}`)
     const keys = [...keysIn(result.inline || ''), ...fromScripts.keys]
     if (keys.length) {
       console.log(`API KEYS IN THE FRONT END (${keys.length}):`)
-      for (const one of keys)
+      for (const one of keys) {
         console.log(`  ${one.header}: ${one.value.slice(0, 6)}…(${one.value.length} chars)`)
+      }
       foundKeys.push(...keys.map(one => ({ ...one, from: probe.id })))
     }
     for (const url of worthFetching(all, seen)) {
@@ -593,18 +656,16 @@ for (const probe of PROBES) {
 
 /* Pearson's endpoint, retried with whatever key the front end gave away,
    under each header name it might be expected in. */
-if (foundKeys.length) {
-  for (const key of foundKeys.filter(one => /yyz/.test(one.from)).slice(0, 4)) {
-    for (const header of new Set([key.header, 'Ocp-Apim-Subscription-Key', 'x-api-key'])) {
-      discovered.push({
-        id: `yyz-cdn-departures-with-${header.toLowerCase()}-${discovered.length + 1}`,
-        url: `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`,
-        kind: 'json',
-        method: 'GET',
-        headers: { ...JSON_HEADERS, ...YYZ, [header]: key.value },
-        full: true,
-      })
-    }
+for (const key of foundKeys.filter(one => /yyz/.test(one.from)).slice(0, 4)) {
+  for (const header of new Set([key.header, 'Ocp-Apim-Subscription-Key', 'x-api-key'])) {
+    discovered.push({
+      id: `yyz-cdn-departures-with-${header.toLowerCase()}-${discovered.length + 1}`,
+      url: `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`,
+      kind: 'json',
+      method: 'GET',
+      headers: { ...JSON_HEADERS, ...YYZ, [header]: key.value },
+      full: true,
+    })
   }
 }
 
