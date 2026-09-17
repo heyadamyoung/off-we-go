@@ -10,13 +10,17 @@
  * code, a terminal, the codeshares (ids) and the far airport (routes), the
  * belt (carousel), the check-in zone and the stand.
  *
- * The site sits behind Radware Bot Manager, which answered the second
- * cookie-less request in a minute with a captcha. So this is read through
- * flights/http.js — a browser-like client with a cookie jar and a large
- * header budget — and a challenge is reported as one, by name, into the
- * source's health, never parsed as a board. If the site ever closes this
- * door, the GTAA's partner programme on developer.torontopearson.com is the
- * proper one, and the parser below is the only thing that would change.
+ * The site sits behind Radware Bot Manager. In every probe the first
+ * request from a fresh address was answered with the list and every one
+ * after it — half a second later, half a minute later, with the first
+ * answer's cookies or without — with a captcha on another host. So this is
+ * read through flights/http.js (a browser-like client with a large header
+ * budget) slowly and with a long back-off, and a challenge is reported as
+ * one, by name, into the source's health, never parsed as a board. From a
+ * server's fixed address this may amount to one list every ten minutes or
+ * to none; either way the leg's other end and ADS-B still speak. The
+ * GTAA's partner programme on developer.torontopearson.com is the proper
+ * door, and the parser below is the only thing that would change.
  *
  * The status is a short code. The ones the probe has seen are mapped; any
  * other is kept as its code and reported 'unknown' rather than guessed. */

@@ -138,11 +138,10 @@ const PROBES = [
   // {list: [...]}, getflightsearch?term= and getflightsearchbykey?flightkey=
   // beside it. Asked first in the run, as a browser on the departures page
   // would, because the bot manager challenges a second visit.
-  // The first answer was the list (522 departures, 296 KB); the second and
-  // third requests drew the bot manager's captcha, with the first answer's
-  // cookies sent back or not. So the question now is pace: the arrivals
-  // list is asked half a minute after the departures list, and the search
-  // half a minute after that.
+  // The first answer was the list (522 departures, 296 KB); every request
+  // after it drew the bot manager's captcha — half a second later, half a
+  // minute later, with the first answer's cookies sent back or not. The
+  // pacing here is kept so a later run can tell if that ever changes.
   ...['DEP', 'ARR'].map((type, index) => ({
     id: `yyz-site-list-${type.toLowerCase()}`,
     url: `https://www.torontopearson.com/api/flightsapidata/getflightlist?type=${type}&day=today&useScheduleTimeOnly=false`,

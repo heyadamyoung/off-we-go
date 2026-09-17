@@ -9,11 +9,12 @@ import {
   updateSegment,
   uploadSegmentDocument,
 } from '../../../backend'
+import { airportsWord, type SaidNotes } from '../../../flight-word-core'
 import type { Segment } from '../../../segments-core'
 import { track } from '../../../shared/lib/telemetry'
 import { appErrorMessage } from '../../../user-messages-core'
 import type { Id } from '../../../shared/model/types'
-import { scheduleSegmentNotifications } from './notify'
+import { sayTheAirportsWord, scheduleSegmentNotifications } from './notify'
 
 /* The trip's travel legs, kept in step with the server: fetched on mount,
    refetched when the trip stream announces a segments change from anywhere —
@@ -22,6 +23,9 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
   const [segments, setSegments] = useState<Segment[]>([])
   const [loadFailed, setLoadFailed] = useState(false)
   const warned = useRef(false)
+  /* What each leg's board had said the last time this phone looked, so a
+     new word from an airport is said once, as it arrives. */
+  const heard = useRef<SaidNotes | null>(null)
 
   const refetch = useCallback(() => {
     loadSegments(tripId)
@@ -31,6 +35,9 @@ export default function useSegments(tripId: Id, toast: (m: string, t?: 'error') 
         warned.current = false
         // The phone in a pocket is the real UI on travel day.
         scheduleSegmentNotifications(found)
+        const { said, notes } = airportsWord(heard.current, found)
+        heard.current = notes
+        if (said.length) sayTheAirportsWord(said)
       })
       .catch(error => {
         /* An empty Travel tab must never be a silent lie: the failure is
