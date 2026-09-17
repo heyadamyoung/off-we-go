@@ -6,6 +6,7 @@ export const VIEWS: Array<[TripView, string, string]> = [
   ['map', 'Map', 'map'],
   ['timeline', 'Timeline', 'list'],
   ['travel', 'Travel', 'plane'],
+  ['papers', 'Papers', 'note'],
   ['chat', 'Chat', 'comment'],
   ['photos', 'Photos', 'grid'],
   ['sights', 'Sights', 'star'],

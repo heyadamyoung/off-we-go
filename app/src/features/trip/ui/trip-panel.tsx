@@ -2,10 +2,12 @@ import Icon from '../../../shared/ui/icon'
 import { SightsList, type SightsListProps } from '../../sights'
 import { MakeIt, SegmentChain } from '../../transport'
 import PanelPhotos from './panel-photos'
+import PanelPapers from './panel-papers'
 import Timeline from './timeline'
 import type { TripItem } from '../model/trip-items'
 import PeopleList from './panel-people'
 import ChatPanel, { type ChatProps } from './panel-chat'
+import type { Paper } from '../../../papers-core'
 import type { Segment } from '../../../segments-core'
 import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
@@ -38,6 +40,8 @@ interface PanelProps {
   onAddOnDay?: (iso: string) => void
   /** opening a leg of the journey from the timeline, in the Travel view */
   onTravel?: (segment: Segment) => void
+  /** the papers view: everything the trip is carrying, in one place */
+  papers?: { onOpen: (paper: Paper) => void }
   /** the family's room — see panel-chat */
   chat?: ChatProps
   /** the getting-there chain: the Travel view is its home */
@@ -66,6 +70,7 @@ const HEADINGS: Record<string, [string, string]> = {
     'Getting there',
     'Every leg of the journey — deadlines, seats and documents in one chain.',
   ],
+  papers: ['Papers', 'Every ticket, pass and booking you are carrying — the next one first.'],
   chat: ['Chat', 'The whole crew, one room — travellers and followers alike.'],
   photos: ['Photos', ''],
   sights: ['Sights nearby', 'Places worth a detour, from where the map is looking.'],
@@ -156,6 +161,14 @@ export default function TripPanel(props: PanelProps) {
           />
         )}
         {props.view === 'travel' && <Travel {...props} />}
+        {props.view === 'papers' && props.papers && (
+          <PanelPapers
+            stops={props.stops}
+            segments={props.transport?.segments}
+            now={props.transport?.now}
+            onOpen={props.papers.onOpen}
+          />
+        )}
         {props.view === 'chat' && props.chat && <ChatPanel {...props.chat} />}
         {props.view === 'photos' && <PanelPhotos {...props} />}
         {props.view === 'sights' && <SightsList {...props.sights} />}

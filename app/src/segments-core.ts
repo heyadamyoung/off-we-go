@@ -256,6 +256,25 @@ export function delayLabel(segment: Pick<Segment, 'departsAt' | 'departsWas'>): 
   return `${spelt} ${moved > 0 ? 'later' : 'earlier'}`
 }
 
+/**
+ * What to call a leg, in the words that go on its row.
+ *
+ * `KL 677 · Amsterdam → Calgary`. The carrier is dropped when the number
+ * already carries it, because "KLM KL 677" is the app saying the airline twice
+ * — which is what all three surfaces that spell this out were doing, each in
+ * its own copy of the same two lines.
+ */
+export function segmentName(segment: Partial<Segment> | null | undefined): string {
+  const number = String(segment?.number ?? '').trim()
+  const carrier = String(segment?.carrier ?? '').trim()
+  const said =
+    carrier && number.toLowerCase().startsWith(carrier.toLowerCase().slice(0, 2))
+      ? number
+      : [carrier, number].filter(Boolean).join(' ')
+  const where = [segment?.fromName, segment?.toName].filter(Boolean).join(' → ')
+  return [said, where].filter(Boolean).join(' · ') || segment?.mode || 'Journey'
+}
+
 export function localTime(iso: string | null | undefined, tz?: string | null) {
   if (!iso) return ''
   try {

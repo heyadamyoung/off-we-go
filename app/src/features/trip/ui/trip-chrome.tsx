@@ -2,6 +2,7 @@ import { memo, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { PhoneMarker } from '../../../live-markers-core'
 import type { Segment } from '../../../segments-core'
 import Icon from '../../../shared/ui/icon'
+import OfflineNote from '../../../shared/ui/offline-note'
 import type { Attraction, Coordinates } from '../../../shared/model/types'
 import { MakeIt } from '../../transport'
 
@@ -32,6 +33,48 @@ export function Advisories({
         now={now}
       />
     </div>
+  )
+}
+
+/* What the screen is quietly saying about itself, stacked in one corner.
+ *
+ * None of these are about the trip: they are the app admitting to its own
+ * state — edits it is holding until there is a signal, how long it has been
+ * without one, and that this is the sample rather than somebody's real
+ * holiday. They shared an anchor and a z-index in three separate places on the
+ * page; they are one thing and they belong with the rest of the chrome. */
+export function StandingNotices({
+  waitingEdits,
+  offlineAt,
+  sample,
+}: {
+  waitingEdits: number
+  offlineAt: number | null | undefined
+  sample: boolean
+}) {
+  return (
+    <>
+      {waitingEdits > 0 && (
+        <div
+          className="glass pointer-events-none absolute bottom-[var(--trip-4)]
+                        left-4 z-[3] flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px]
+                        font-semibold text-muted">
+          <Icon n="clock" s={12} />
+          {waitingEdits} change{waitingEdits === 1 ? '' : 's'} waiting for a signal
+        </div>
+      )}
+      {offlineAt != null && (
+        <OfflineNote at={offlineAt} className="absolute bottom-[var(--trip-3)] left-4 z-[3]" />
+      )}
+      {sample && (
+        <div
+          className="pointer-events-none absolute bottom-[var(--trip-3)] left-4 z-[3] rounded-full
+                        bg-accent-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em]
+                        text-accent">
+          Sample trip
+        </div>
+      )}
+    </>
   )
 }
 

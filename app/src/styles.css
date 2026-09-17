@@ -1311,3 +1311,47 @@
 /* A landing: the loudest notice there is. A family who have watched a plane
    cross an ocean are not looking for it among the photographs. */
 .ncndot.land { background: var(--c-accent-bright); box-shadow: 0 0 0 3px var(--c-accent-soft) }
+
+/* The papers list, and the paper itself.
+ *
+ * The row IS the document: the whole of it opens the thing. The sheet this
+ * replaces put an editable name, an editable note and a hold-to-delete on top
+ * of a thirty-two-pixel chevron, which is the right furniture for tidying up
+ * at home and exactly the wrong furniture for standing at a gate. */
+.ppl { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 4px }
+.pprow {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 11px 12px; border-radius: 14px; border: 1px solid var(--c-line);
+  background: var(--c-raised);
+}
+.pprow:hover { background: var(--c-raised2) }
+/* The first one is what this screen was opened for — it is for the next thing
+   that happens. It gets the room to say so. */
+.pprow.lead { border-color: var(--c-accent); background: var(--c-accent-soft) }
+.ppglyph { flex: none; font-size: 19px; line-height: 1 }
+.ppbody { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 }
+.ppbody b { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ppfor, .ppnote { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ppfor { color: var(--c-muted) }
+.ppnote { color: var(--c-faint) }
+.ppgo { flex: none; color: var(--c-faint) }
+
+.ppview {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+  background: var(--c-canvas);
+}
+.ppvbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+  border-bottom: 1px solid var(--c-line); flex: none;
+}
+.ppvx { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 999px; color: var(--c-muted) }
+/* White, whatever the app's theme is. What is being shown is very often a
+   barcode, and a scanner reading a dark page through phone glass is a scanner
+   that beeps twice and a queue that does not move. */
+.ppvpaper {
+  flex: 1; min-height: 0; display: grid; place-items: center;
+  background: #fff; padding: 8px;
+}
+.ppvpaper img { max-width: 100%; max-height: 100%; object-fit: contain }
+.ppvfile { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center }

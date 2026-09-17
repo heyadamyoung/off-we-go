@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   DEADLINE_LABELS,
   delayLabel,
+  segmentName,
   localTime,
   MODE_GLYPH,
   nextDeadline,
@@ -46,7 +47,11 @@ export default function SegmentCard({
   const face = segmentFace(segment, now)
   const moved = delayLabel(segment)
   const glyph = MODE_GLYPH[segment.mode]
-  const title = [segment.carrier, segment.number].filter(Boolean).join(' ') || segment.mode
+  const title = segmentName({
+    carrier: segment.carrier,
+    number: segment.number,
+    mode: segment.mode,
+  })
   const upcoming = nextDeadline(segment, now)
   const [seats, setSeats] = useState(false)
   const [papers, setPapers] = useState(false)
