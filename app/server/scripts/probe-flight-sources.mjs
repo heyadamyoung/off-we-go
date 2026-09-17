@@ -52,23 +52,6 @@ const DUB_LISTING = 'https://api.dublinairport.com/dap/flight-listing'
 const YYZ = { origin: 'https://www.torontopearson.com', referer: 'https://www.torontopearson.com/' }
 const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
 
-/* Pearson's webpack runtime (read whole by an earlier run) names its lazy
-   chunks `${name}.${hash}.chunk.gen.js` under a public path the page may
-   override; these are the ones about flights, from its own table. */
-const PEARSON_CHUNKS = [
-  'flight-listing.28a52217f1fea6cfb117',
-  'real-time-data.7cf982873984b2212e15',
-  'main.46276d96d08587db6952',
-  '6303.7222474004e7810b6b51',
-  'find-flight.2b7f708b52d8788c61c8',
-  'flight-search.d85045ba64b17d2b2332',
-  'flight-subscription.d8b99922bab39fb80406',
-]
-const PEARSON_ROOTS = [
-  'https://cdn.torontopearson.com/scripts/pearson/',
-  'https://www.torontopearson.com/Scripts/Pearson/',
-]
-
 /* Every candidate, with where the idea of it came from. "memory" means it
    was seen in a browser's network tab at some point and may have moved;
    "public code" means a public repository requests it today; "probe" means
@@ -97,27 +80,55 @@ const PROBES = [
     DUB,
   ),
   json(
+    'dub-departures-filter-spaced',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&filter=${encodeURIComponent('FR 457')}`,
+    DUB,
+  ),
+  json(
+    'dub-departures-filter-digits',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&filter=457`,
+    DUB,
+  ),
+  json(
+    'dub-departures-filter-city',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&filter=Leeds`,
+    DUB,
+  ),
+  json(
     'dub-departures-terminal',
     `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&terminal=T2`,
     DUB,
   ),
   json('dub-search-bff', 'https://api.dublinairport.com/dap/search?q=FR457', DUB, { full: true }),
 
-  // Toronto Pearson — GTAA. A Sitecore site behind Radware Bot Manager whose
-  // flight listing is a lazily loaded chunk; the chunks are fetched by their
-  // exact names from both roots and quoted for the request shape and the
-  // field names. No page fetch this run, because a second drew a captcha.
-  ...PEARSON_CHUNKS.flatMap(chunk =>
-    PEARSON_ROOTS.map((root, index) => ({
-      id: `yyz-chunk-${chunk.split('.')[0]}-${index}`,
-      url: `${root}${chunk}.chunk.gen.js`,
-      kind: 'js',
-      method: 'GET',
-      headers: BROWSER_HEADERS,
-      bigHeaders: index === 1,
-      quote: true,
-    })),
-  ),
+  // Toronto Pearson — GTAA. Its real-time-data chunk (read by an earlier
+  // run) calls the site's own origin, not the CDN host: /api/flightsapidata/
+  // getflightlist?type=DEP|ARR&day=today&useScheduleTimeOnly=false answers
+  // {list: [...]}, getflightsearch?term= and getflightsearchbykey?flightkey=
+  // beside it. Asked first in the run, as a browser on the departures page
+  // would, because the bot manager challenges a second visit.
+  ...['DEP', 'ARR'].map(type => ({
+    id: `yyz-site-list-${type.toLowerCase()}`,
+    url: `https://www.torontopearson.com/api/flightsapidata/getflightlist?type=${type}&day=today&useScheduleTimeOnly=false`,
+    kind: 'json',
+    method: 'GET',
+    headers: {
+      ...JSON_HEADERS,
+      referer: 'https://www.torontopearson.com/en/departures',
+      'x-requested-with': 'XMLHttpRequest',
+    },
+    bigHeaders: true,
+    full: true,
+  })),
+  {
+    id: 'yyz-site-search',
+    url: 'https://www.torontopearson.com/api/flightsapidata/getflightsearch?term=AC872',
+    kind: 'json',
+    method: 'GET',
+    headers: { ...JSON_HEADERS, referer: 'https://www.torontopearson.com/en/departures' },
+    bigHeaders: true,
+    full: true,
+  },
   json('yyz-cdn-departures', `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`, YYZ),
 
   // Regina — Regina Airport Authority. A WordPress page whose theme script
