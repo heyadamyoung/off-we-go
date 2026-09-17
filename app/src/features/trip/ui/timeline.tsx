@@ -12,7 +12,7 @@ import {
   type StopRow,
   type TravelRow,
 } from '../../../timeline-core'
-import type { Segment } from '../../../segments-core'
+import { segmentName, type Segment } from '../../../segments-core'
 import type { Id, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
 
 /* The day, in order, in time — and the one place where the plan and what
@@ -239,7 +239,9 @@ const MODE_ICON: Record<string, string> = {
 
 function Travel({ row, onOpen }: { row: TravelRow; onOpen?: (segment: Segment) => void }) {
   const { segment } = row
-  const called = [segment.carrier, segment.number].filter(Boolean).join(' ')
+  /* Codes rather than names in a 390px row, but the same rule about not
+     saying the airline twice — see segmentName. */
+  const called = segmentName({ carrier: segment.carrier, number: segment.number })
   const where = `${segment.fromCode || segment.fromName} → ${segment.toCode || segment.toName}`
   return (
     <button

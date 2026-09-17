@@ -44,6 +44,10 @@ export function assistantPrompt({
   trip,
   canEdit = false,
   mailboxes = 0,
+  /* Whether this deployment has a mailbox connector at all. A box with no
+     Azure application configured registers no mailbox tools and shows no
+     connector screen, so pointing somebody at one would send them nowhere. */
+  connector = false,
   travelTimes = false,
   now = new Date(),
   messages,
@@ -72,6 +76,18 @@ export function assistantPrompt({
           '  guessing from distances.',
         ]
       : []),
+    /* No mailbox, but this box has a connector: say what is missing and where
+       it is fixed. "I cannot read your email" is true and useless; the useful
+       sentence is the one that names the remedy, and the assistant can only
+       say it if it is told there is one. */
+    ...(mailboxes === 0 && connector
+      ? [
+          '- No mailbox is connected, so you cannot read their email or pull a',
+          '  document off one. If they ask you to, say so plainly and tell them',
+          '  they can connect Outlook in Settings → Connectors, after which you',
+          '  can find their bookings and file the attachments onto the trip.',
+        ]
+      : []),
     ...(mailboxes > 0
       ? [
           '- search_mailbox / read_mailbox_message — this traveller’s own connected',
@@ -90,11 +106,21 @@ export function assistantPrompt({
           '  update_trip its title, crew and dates.',
           '- replace_route redraws the hand-drawn route as ordered [lng, lat] pairs.',
           '- add_segment / update_segment / remove_segment shape the travel legs.',
-          '  Build them from booking emails (search_mailbox finds them; give',
-          '  departsAt in UTC and deadlines derive per mode); when an airline or',
-          '  rail email announces a delay or gate change, amend the segment and',
-          '  cite the email in statusNote. attach_mail_document files a boarding',
-          '  pass or rail PDF from an email onto its leg, byte-for-byte.',
+          '  Give departsAt in UTC; the deadlines derive per mode.',
+          /* Only when the tools are actually registered. Naming them otherwise
+             sent the assistant reaching for something that was not there, and
+             what came back — "I cannot fetch documents from email" — was an
+             honest report of a promise this prompt had made on the server's
+             behalf and the server had not kept. */
+          ...(mailboxes > 0
+            ? [
+                '  Build them from booking emails (search_mailbox finds them); when',
+                '  an airline or rail email announces a delay or gate change, amend',
+                '  the segment and cite the email in statusNote.',
+                '  attach_mail_document files a boarding pass or rail PDF from an',
+                '  email onto its leg or stop, byte-for-byte.',
+              ]
+            : []),
           '- add_airport_walkway lays a walking segment inside an airport terminal —',
           '  ordered [lng, lat] points on one level — where OSM has no corridor and',
           '  a gate route refuses; list_airport_walkways / remove_airport_walkway',

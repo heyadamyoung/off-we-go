@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
@@ -19,13 +19,20 @@ import useMapAsk from '../model/use-map-ask'
 import TripNow from './trip-now'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
-import { Advisories, MapChrome, MapControls, ScopeToggle, TripTitle } from './trip-chrome'
+import {
+  Advisories,
+  MapChrome,
+  MapControls,
+  ScopeToggle,
+  StandingNotices,
+  TripTitle,
+} from './trip-chrome'
 import { TripCluster } from './trip-cluster'
-import Icon from '../../../shared/ui/icon'
-import OfflineNote from '../../../shared/ui/offline-note'
 import TripBar from './trip-bar'
+import PaperView from './paper-view'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
+import type { Paper } from '../../../papers-core'
 import type { Coordinates, TripData } from '../../../shared/model/types'
 import { dayLabelOf } from '../../../day-label-core'
 
@@ -52,6 +59,11 @@ function Trip({
   busyEditing: React.MutableRefObject<boolean>
   reload: () => void
 }) {
+  /* The paper on screen, when one is. Held here rather than in the URL: a
+     document is a thing you are holding up to somebody, not a place you
+     navigated to, and a back button that closed the boarding pass mid-scan
+     would be exactly the wrong behaviour. */
+  const [paper, setPaper] = useState<Paper | null>(null)
   const search = routeApi.useSearch()
   const navigate = useNavigate()
   const notify = useToast()
@@ -183,6 +195,7 @@ function Trip({
           legs={legs}
           onAddOnDay={canEdit ? planOnDay : undefined}
           onTravel={() => patch({ view: 'travel' })}
+          papers={{ onOpen: setPaper }}
           chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
@@ -205,6 +218,11 @@ function Trip({
           }}
         />
       )}
+
+      {/* The paper itself, over everything. At a desk with a queue behind you
+          the document IS the interface, so nothing else on this screen is
+          allowed above it. */}
+      {paper && <PaperView paper={paper} onClose={() => setPaper(null)} />}
 
       <TripCards
         page={page}
@@ -370,28 +388,11 @@ function Trip({
         />
       )}
 
-      {waitingEdits > 0 && (
-        <div
-          className="glass pointer-events-none absolute bottom-[var(--trip-4)]
-                        left-4 z-[3] flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px]
-                        font-semibold text-muted">
-          <Icon n="clock" s={12} />
-          {waitingEdits} change{waitingEdits === 1 ? '' : 's'} waiting for a signal
-        </div>
-      )}
-
-      {offlineAt != null && (
-        <OfflineNote at={offlineAt} className="absolute bottom-[var(--trip-3)] left-4 z-[3]" />
-      )}
-
-      {data.source === 'sample' && (
-        <div
-          className="pointer-events-none absolute bottom-[var(--trip-3)] left-4 z-[3] rounded-full
-                        bg-accent-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em]
-                        text-accent">
-          Sample trip
-        </div>
-      )}
+      <StandingNotices
+        waitingEdits={waitingEdits}
+        offlineAt={offlineAt}
+        sample={data.source === 'sample'}
+      />
     </div>
   )
 }

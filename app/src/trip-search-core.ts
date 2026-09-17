@@ -7,6 +7,11 @@ export const TRIP_VIEWS = [
   'map',
   'timeline',
   'travel',
+  /* The noun this app did not have. Every document was reachable only through
+     the stop or the leg it hangs off, so finding a boarding pass was a memory
+     test followed by five taps — and if you have to remember where you filed
+     it, your email is just as fast. */
+  'papers',
   'chat',
   'photos',
   'sights',

@@ -1080,6 +1080,11 @@ export async function buildServer({
             trip,
             canEdit,
             mailboxes: mailboxes.length,
+            /* Whether this box could read a mailbox at all, as against whether
+               this traveller has connected one. The difference decides between
+               "connect Outlook in Settings" and saying nothing, and sending
+               somebody to a screen that offers nothing is worse than a no. */
+            connector: connectorReady,
             travelTimes: !!routing,
             now: clock(),
             messages,

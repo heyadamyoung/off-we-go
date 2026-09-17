@@ -6,6 +6,7 @@ import {
   delayMinutes,
   deriveDeadlines,
   makeIt,
+  segmentName,
   nextDeadline,
   segmentDay,
   segmentFace,
@@ -147,4 +148,35 @@ test('under an hour reads in minutes, the way anybody would say it', () => {
 test('nonsense either side is no claim rather than a wrong one', () => {
   assert.equal(delayMinutes({ departsAt: 'soon', departsWas: '2026-09-19T16:10:00.000Z' }), null)
   assert.equal(delayLabel({ departsAt: '2026-09-19T16:10:00.000Z', departsWas: 'earlier' }), '')
+})
+
+/* What to call a leg, in one place.
+ *
+ * Three surfaces spelled this out — the card, the timeline row and the papers
+ * list — each in its own copy of the same two lines, and all three said the
+ * airline twice: "KLM KL 677". A flight number already carries its carrier.
+ */
+
+test('the airline is not said twice', () => {
+  assert.equal(
+    segmentName({ carrier: 'KLM', number: 'KL 677', fromName: 'Amsterdam', toName: 'Calgary' }),
+    'KL 677 · Amsterdam → Calgary',
+  )
+})
+
+test('a carrier the number does not carry is kept', () => {
+  /* "NS Intercity IC 3155" — the operator's name is not in the service
+     number, and dropping it would lose which railway it is. */
+  assert.equal(segmentName({ carrier: 'NS Intercity', number: 'IC 3155' }), 'NS Intercity IC 3155')
+})
+
+test('whatever a leg actually has is what it is called', () => {
+  assert.equal(segmentName({ number: 'KL 677' }), 'KL 677')
+  assert.equal(segmentName({ fromName: 'Amsterdam', toName: 'Calgary' }), 'Amsterdam → Calgary')
+  assert.equal(segmentName({ mode: 'ferry' }), 'ferry')
+})
+
+test('a leg with nothing on it still has a name rather than an empty row', () => {
+  assert.equal(segmentName({}), 'Journey')
+  assert.equal(segmentName(null), 'Journey')
 })

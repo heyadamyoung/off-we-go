@@ -63,6 +63,25 @@ function sampleSegments(): Segment[] {
       { name: 'Alex', seat: '31B' },
     ],
     bags: { checked: '1 × 23 kg', carryOn: '1 × 12 kg', personal: true },
+    /* Two passes, because a family travels with more than one and the pile is
+       the whole point of the Papers screen — a demo carrying a single document
+       demonstrates a folder, not a wallet. */
+    documents: [
+      {
+        id: 'd-demo-3',
+        name: 'Boarding pass — Maya',
+        kind: 'pass',
+        mime: 'application/pdf',
+        src: '/demo/boarding-pass.pdf',
+      },
+      {
+        id: 'd-demo-4',
+        name: 'Boarding pass — Alex',
+        kind: 'pass',
+        mime: 'application/pdf',
+        src: '/demo/boarding-pass.pdf',
+      },
+    ],
     deadlines: deriveDeadlines('flight', at(25, 30)),
     costAmount: 1284,
     costCurrency: 'EUR',
