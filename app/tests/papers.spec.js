@@ -78,23 +78,31 @@ test('the whole row opens the document, not a chevron in the corner', async ({ p
   await expect(page.locator('.ppview')).toBeVisible()
 })
 
-test('a PDF is handed over rather than pretended at', async ({ page }) => {
-  /* Drawing one needs a renderer this app does not carry, and a grey box with
-     a spinner would be worse than the browser's own viewer. */
+test('a PDF is drawn on the screen, not handed to another tab', async ({ page }) => {
+  /* This is the case the whole screen exists for and the one it used to fail:
+     a ticket is very often a PDF, and what stood here was a black screen, the
+     sentence "this one is a PDF — it opens in its own viewer", and the
+     filename again as a link OUT of the app — into a tab with no offline copy
+     of anything and no way back. */
   await openPapers(page)
   await page.locator('.pprow').first().click()
   const view = page.locator('.ppview')
   await expect(view).toBeVisible()
-  /* Either copy: the signed link, or the blob the offline pack already holds.
-     Which one it found is not this test's business; that the bytes are a real
-     PDF is. */
-  const opened = await page.evaluate(async () => {
-    const href = document.querySelector('.ppview .ppvfile a')?.getAttribute('href')
-    if (!href) return 'no link'
-    const answer = await fetch(href)
-    return answer.ok ? (await answer.text()).slice(0, 8) : `status ${answer.status}`
-  })
-  expect(opened).toMatch(/^%PDF/)
+
+  const pages = view.locator('.ppvpdfpages canvas')
+  await expect(pages.first()).toBeVisible({ timeout: 20000 })
+  // Every page, stacked — the demo ticket has its conditions on the back.
+  await expect(pages).toHaveCount(2, { timeout: 20000 })
+  await expect(view.locator('.ppvfile'), 'still offering a way out of the app').toHaveCount(0)
+
+  /* Filling the sheet rather than sitting in the middle of it as a thumbnail.
+     How many device pixels that is per CSS pixel is pageScale's rule and is
+     held to account in tests/paper-kind.test.js; a browser Playwright drives
+     runs at a density of one, so it cannot be asked here. */
+  const first = await pages.first().boundingBox()
+  const sheet = await view.locator('.ppvpdfpages').boundingBox()
+  expect(first.width).toBeCloseTo(sheet.width, 0)
+  expect(first.height, 'a page with no height is a page nobody can read').toBeGreaterThan(300)
 })
 
 test('the paper closes and leaves the trip where it was', async ({ page }) => {

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import HoldToDelete from '../../../shared/ui/hold-delete'
 import Icon from '../../../shared/ui/icon'
 import usePaperSource from '../model/use-paper-source'
+import { paperKind } from '../../../paper-kind-core'
+import PdfPages from './pdf-pages'
 import type { Paper } from '../../../papers-core'
 
 /* The paper, as the thing itself.
@@ -14,15 +16,16 @@ import type { Paper } from '../../../papers-core'
  * where every row looks like every other row is how a boarding pass ends up
  * named after a hotel.
  *
- * A picture is drawn as a picture, as big as the screen allows, on white.
- * White because the thing being shown is very often a barcode, and a scanner
- * reading a dark-themed page through a phone's glass is a scanner that beeps
- * twice and a queue that does not move. The app's own dark theme is right
- * everywhere except here.
+ * A picture is drawn as a picture and a PDF is drawn as its pages, both as
+ * big as the screen allows, both on white. White because the thing being shown
+ * is very often a barcode, and a scanner reading a dark-themed page through a
+ * phone's glass is a scanner that beeps twice and a queue that does not move.
+ * The app's own dark theme is right everywhere except here.
  *
- * A PDF is handed over rather than pretended at: drawing one needs a renderer
- * this app does not carry, and a viewer that shows a grey box with a spinner
- * would be worse than the browser's own.
+ * Handing a PDF to another tab, which is what this did until somebody looked
+ * at it on a phone, is the one behaviour the screen exists to replace: that
+ * tab has no offline copy of anything and no way back. It is the fallback now,
+ * for a file we genuinely cannot read — see pdf-pages.
  */
 
 export interface PaperEditing {
@@ -42,6 +45,13 @@ export default function PaperView({
 }) {
   const [tidying, setTidying] = useState(false)
   const [broken, setBroken] = useState(false)
+  /* The name is evidence too: plenty of real attachments arrive as
+     octet-stream with the answer in the filename. See paper-kind-core. */
+  const kind = paperKind(paper.mime, paper.name)
+  /* Stable, because it is a dependency of the renderer's effect: a fresh
+     function on every render of this component restarts the PDF load, and a
+     load that keeps restarting never finishes. */
+  const giveUp = useCallback(() => setBroken(true), [])
   /* The copy on the phone before the one on the network. Everything about this
      screen assumes no signal; asking the internet for bytes already in the
      offline pack would make that assumption a lie. */
@@ -88,26 +98,36 @@ export default function PaperView({
 
       {editing && tidying && <Tidy paper={paper} editing={editing} onClose={onClose} />}
 
-      {paper.showable ? (
+      {kind === 'image' && !broken && (
         <div className="ppvpaper">
           {/* Nothing is drawn until the cache has answered, and a picture that
               will not load says so: a broken-image glyph at a gate reads as
               "the app is wrong" rather than "this one was never kept". */}
-          {url && !broken && <img src={url} alt={paper.name} onError={() => setBroken(true)} />}
-          {broken && (
-            <p className="ppvgone">
-              This one would not load{held ? '' : ' — there is no copy of it on this phone yet'}.
-            </p>
-          )}
+          {url && <img src={url} alt={paper.name} onError={() => setBroken(true)} />}
         </div>
-      ) : (
+      )}
+
+      {kind === 'pdf' && !broken && url && (
+        <PdfPages src={url} name={paper.name} onGiveUp={giveUp} />
+      )}
+
+      {/* The last resort, and now only that: a file this app cannot read, or a
+          renderer it could not reach. One line saying what happened and one
+          button, rather than a black screen apologising for itself. */}
+      {(kind === 'file' || broken) && (
         <div className="ppvfile">
+          <p className="ppvfileglyph" aria-hidden="true">
+            📄
+          </p>
           <p className="m-0 text-sm text-muted">
-            This one is a {paper.mime.includes('pdf') ? 'PDF' : 'file'} — it opens in its own
-            viewer.
+            {broken
+              ? held
+                ? 'This one would not open here.'
+                : 'This one is not on your phone yet, so it needs signal.'
+              : 'Off We Go cannot draw this kind of file.'}
           </p>
           <a className="btn pri" href={url || paper.src} target="_blank" rel="noreferrer">
-            Open {paper.name}
+            Open it anyway
           </a>
         </div>
       )}

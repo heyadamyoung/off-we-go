@@ -33,6 +33,8 @@ export interface Paper {
   id: string
   name?: string
   src: string
+  /** carried through so the pack knows whether a renderer is needed too */
+  mime?: string | null
 }
 
 /* Loose on purpose: a stop's document and a segment's document are the same
@@ -42,6 +44,7 @@ interface LooseDocument {
   id: string
   name?: string
   src?: string | null
+  mime?: string | null
 }
 
 interface PaperHolder {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { keepPapers, paperStore, papersOf } from '../../../offline-papers-core'
+import { paperKind } from '../../../paper-kind-core'
 import type { Segment } from '../../../segments-core'
 import type { Stop } from '../../../shared/model/types'
 
@@ -15,6 +16,25 @@ import type { Stop } from '../../../shared/model/types'
  * the server for the same handful of files every time a position arrives would
  * spend somebody's data on an answer we already have.
  */
+
+/* And the thing that draws them, when any of them needs it.
+ *
+ * pdf.js is loaded on demand, which is right — most sessions never open a PDF
+ * and it is the largest thing this app could ship. But "on demand" for a
+ * traveller means at a check-in desk with no signal, where a chunk that was
+ * never fetched is a ticket that does not open. So the bytes are pulled while
+ * there is still a network, exactly as the documents themselves are, and the
+ * service worker keeps what the page fetches. Nothing is constructed: this is
+ * a download, not a renderer starting up. */
+async function keepRenderer() {
+  try {
+    const worker = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&url')
+    await Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'), fetch(worker.default)])
+  } catch {
+    /* No network, or a browser that will not keep it. The renderer still loads
+       the moment somebody opens a document with signal. */
+  }
+}
 export default function useOfflinePapers({
   tripId,
   stops,
@@ -40,6 +60,8 @@ export default function useOfflinePapers({
       const store = await paperStore()
       if (!store || !alive) return
       await keepPapers(store, papers, (...args) => fetch(...args))
+      if (alive && papers.some(paper => paperKind(paper.mime, paper.name) === 'pdf'))
+        await keepRenderer()
     })()
     return () => {
       alive = false
