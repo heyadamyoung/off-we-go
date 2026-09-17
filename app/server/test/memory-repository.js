@@ -25,6 +25,8 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const segments = new Map()
   const segmentMail = new Map()
   const segmentDocuments = new Map()
+  const flightSnapshots = new Map()
+  const flightEvents = []
   const stopDocuments = new Map()
   const fakeUuid = (namespace, value) =>
     `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
@@ -1124,6 +1126,66 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async markTravelMailSeen(id, at) {
       for (const row of mailboxes.values()) if (row.id === id) row.travelSeenAt = at
     },
+    /* ---- flights: the postgres contract, in Maps ------------------------- */
+    async flightLegsToWatch({ now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = now - (afterMs ?? 4 * 60 * 60 * 1000)
+      const to = now + (beforeMs ?? 30 * 60 * 60 * 1000)
+      return [...segments.values()]
+        .filter(row => row.mode === 'flight' && !['cancelled', 'done'].includes(row.status))
+        .filter(row => {
+          const departs = new Date(row.departsAt).getTime()
+          const arrives = row.arrivesAt ? new Date(row.arrivesAt).getTime() : departs
+          return departs <= to && arrives >= from
+        })
+        .sort((a, b) => new Date(a.departsAt) - new Date(b.departsAt))
+        .map(row => ({ ...row }))
+    },
+    async flightSnapshot(segmentId) {
+      const held = flightSnapshots.get(segmentId)
+      return held ? { ...held } : null
+    },
+    async saveFlightSnapshot(segmentId, { info, fetchedAt, note = null }) {
+      flightSnapshots.set(segmentId, {
+        info: JSON.parse(JSON.stringify(info)),
+        fetchedAt,
+        note,
+        updatedAt: new Date().toISOString(),
+      })
+    },
+    async recordFlightEvents(segmentId, events) {
+      for (const one of events) {
+        flightEvents.push({
+          id: `fe-${flightEvents.length + 1}`,
+          segmentId,
+          type: one.type,
+          oldValue: one.oldValue ?? null,
+          newValue: one.newValue ?? null,
+          minutes: Number.isFinite(one.minutes) ? one.minutes : null,
+          text: one.text || one.type,
+          source: one.source || null,
+          at: one.at || new Date().toISOString(),
+        })
+      }
+      return events.length
+    },
+    async applyFlightUpdate(segmentId, changes) {
+      const row = segments.get(segmentId)
+      return row ? this.writeSegment(row.tripId, segmentId, changes) : null
+    },
+    async flightForSegment(user, tripId, segmentId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const row = segments.get(segmentId)
+      if (!row || row.tripId !== tripId) return null
+      return {
+        snapshot: await this.flightSnapshot(segmentId),
+        events: flightEvents
+          .filter(one => one.segmentId === segmentId)
+          .slice(-50)
+          .reverse()
+          .map(({ segmentId: _, ...rest }) => rest),
+      }
+    },
+
     async segmentsForMailbox(userId, { now = Date.now(), beforeMs, afterMs } = {}) {
       const from = now - (afterMs ?? 6 * 60 * 60 * 1000)
       const to = now + (beforeMs ?? 48 * 60 * 60 * 1000)
@@ -1337,6 +1399,9 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async updateSegment(user, tripId, segmentId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
+      return this.writeSegment(tripId, segmentId, changes)
+    },
+    async writeSegment(tripId, segmentId, changes) {
       const row = segments.get(segmentId)
       if (!row || row.tripId !== tripId) return null
       if (changes.gate !== undefined && changes.gate !== row.gate) row.gateWas = row.gate

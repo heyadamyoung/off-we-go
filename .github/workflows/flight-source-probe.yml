@@ -1,0 +1,42 @@
+name: Flight source probe
+
+# Looks at what the airports and the community ADS-B feeds actually serve,
+# from a runner with open internet, and keeps the bodies as an artifact. It
+# is how the flight parsers were written against real responses rather than
+# remembered ones, and it is the canary to run when one of them stops
+# parsing: a site that changed shows up here first.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/flight-source-probe.yml'
+      - 'app/server/scripts/probe-flight-sources.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: Probe every candidate source
+        run: node server/scripts/probe-flight-sources.mjs --out "$RUNNER_TEMP/probe-out"
+
+      - name: Keep the bodies
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: flight-source-probe
+          path: ${{ runner.temp }}/probe-out
+          retention-days: 7
+          if-no-files-found: warn

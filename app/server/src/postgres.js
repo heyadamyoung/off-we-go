@@ -1207,6 +1207,12 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async updateSegment(user, tripId, segmentId, changes) {
       if (!(await this.canEditTrip(user.id, tripId))) return null
+      return this.writeSegment(tripId, segmentId, changes)
+    },
+    /* The write behind updateSegment, without the question of who is asking:
+       the flight watch applies what an airport's board said, and a board is
+       nobody's editor. Never reached from a route. */
+    async writeSegment(tripId, segmentId, changes) {
       const current = await pool.query('select * from segments where id=$1 and trip_id=$2', [
         segmentId,
         tripId,
@@ -2650,6 +2656,100 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     /* The legs worth watching a mailbox for: on trips this person can edit,
        departing near enough that a change would still change what they do.
        The window is the watcher's, so it is asked for rather than assumed. */
+    /* ---- flights: what the airports said about a leg ---------------------
+       See migration 037. The watch runs as the system, over every trip: the
+       boards are public and nothing of anybody's is read. */
+    async flightLegsToWatch({ now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = new Date(now - (afterMs ?? 4 * 60 * 60 * 1000)).toISOString()
+      const to = new Date(now + (beforeMs ?? 30 * 60 * 60 * 1000)).toISOString()
+      const result = await pool.query(
+        `select * from segments
+        where mode = 'flight' and status not in ('cancelled', 'done')
+          and departs_at <= $2 and coalesce(arrives_at, departs_at) >= $1
+        order by departs_at`,
+        [from, to],
+      )
+      return result.rows.map(row => segmentRow({ ...row, documents: undefined }))
+    },
+    async flightSnapshot(segmentId) {
+      const result = await pool.query(
+        'select info, fetched_at, note, updated_at from flight_snapshots where segment_id=$1',
+        [segmentId],
+      )
+      const row = result.rows[0]
+      return row
+        ? {
+            info: row.info,
+            fetchedAt: new Date(row.fetched_at).toISOString(),
+            note: row.note ?? null,
+            updatedAt: new Date(row.updated_at).toISOString(),
+          }
+        : null
+    },
+    async saveFlightSnapshot(segmentId, { info, fetchedAt, note = null }) {
+      await pool.query(
+        `insert into flight_snapshots (segment_id, info, fetched_at, note, updated_at)
+        values ($1, $2, $3, $4, now())
+        on conflict (segment_id) do update set info=$2, fetched_at=$3, note=$4, updated_at=now()`,
+        [segmentId, JSON.stringify(info), fetchedAt, note],
+      )
+    },
+    async recordFlightEvents(segmentId, events) {
+      let kept = 0
+      for (const one of events) {
+        const result = await pool.query(
+          `insert into flight_events
+          (segment_id, type, old_value, new_value, minutes, text, source, noted_at)
+          values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [
+            segmentId,
+            one.type,
+            one.oldValue == null ? null : String(one.oldValue),
+            one.newValue == null ? null : String(one.newValue),
+            Number.isFinite(one.minutes) ? one.minutes : null,
+            one.text || one.type,
+            one.source || null,
+            one.at || new Date().toISOString(),
+          ],
+        )
+        kept += result.rowCount
+      }
+      return kept
+    },
+    async applyFlightUpdate(segmentId, changes) {
+      const found = await pool.query('select trip_id from segments where id=$1', [segmentId])
+      const tripId = found.rows[0]?.trip_id
+      return tripId ? this.writeSegment(tripId, segmentId, changes) : null
+    },
+    /* The snapshot and the trail behind one leg, for its card. */
+    async flightForSegment(user, tripId, segmentId) {
+      if (!(await this.canReadTrip(user.id, tripId))) return null
+      const owned = await pool.query('select id from segments where id=$1 and trip_id=$2', [
+        segmentId,
+        tripId,
+      ])
+      if (!owned.rows[0]) return null
+      const snapshot = await this.flightSnapshot(segmentId)
+      const events = await pool.query(
+        `select id, type, old_value, new_value, minutes, text, source, noted_at
+        from flight_events where segment_id=$1 order by noted_at desc limit 50`,
+        [segmentId],
+      )
+      return {
+        snapshot,
+        events: events.rows.map(row => ({
+          id: row.id,
+          type: row.type,
+          oldValue: row.old_value,
+          newValue: row.new_value,
+          minutes: row.minutes,
+          text: row.text,
+          source: row.source,
+          at: new Date(row.noted_at).toISOString(),
+        })),
+      }
+    },
+
     async segmentsForMailbox(userId, { now = Date.now(), beforeMs, afterMs } = {}) {
       const from = new Date(now - (afterMs ?? 6 * 60 * 60 * 1000)).toISOString()
       const to = new Date(now + (beforeMs ?? 48 * 60 * 60 * 1000)).toISOString()

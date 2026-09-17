@@ -22,6 +22,30 @@ const idFor = (segmentId: string, key: string) => {
 
 let lastIds: number[] = []
 
+/* What an airport's board just said about a leg — a gate that moved, a
+   delay, a cancellation — said on the phone as it happens. Decided in
+   flight-word-core; this is the plugin call, which cannot run outside a
+   phone. Ids are hashes of the words, so the same word is never said twice. */
+export async function sayTheAirportsWord(
+  words: readonly { segmentId: string; title: string; body: string }[],
+) {
+  if (!isNativeApp || !words.length) return
+  try {
+    const granted = await LocalNotifications.checkPermissions()
+    if (granted.display !== 'granted') return
+    await LocalNotifications.schedule({
+      notifications: words.map(word => ({
+        id: idFor(word.segmentId, 'word:' + word.body),
+        title: word.title,
+        body: word.body,
+        schedule: { at: new Date(Date.now() + 1000) },
+      })),
+    })
+  } catch {
+    /* a courtesy; the card says it anyway */
+  }
+}
+
 export async function scheduleSegmentNotifications(segments: Segment[]) {
   if (!isNativeApp) return
   try {

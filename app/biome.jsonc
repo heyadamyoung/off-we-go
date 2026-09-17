@@ -20,7 +20,10 @@
       "!fastlane",
       "!dist",
       "!test-results",
-      "!.tanstack"
+      "!.tanstack",
+      // Recorded responses from the airports' own boards, kept byte for byte
+      // as they were served; a reflowed recording is no longer a recording.
+      "!server/test/fixtures"
     ]
   },
   "formatter": {
