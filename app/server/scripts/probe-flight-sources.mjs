@@ -5,12 +5,16 @@
  * development sandbox cannot reach any of these hosts). For every candidate
  * source it records the status, the headers that say how the response is
  * cached and rate-limited, the shape of the body, and a couple of records —
- * then, for an HTML page, reads the scripts the page loads, quotes the code
- * around anything that looks like a flight endpoint, a status vocabulary or
- * an API key, follows a bundle's lazy chunks when one is named after the
- * flight listing, and fetches the likeliest endpoints too. Feeds small
- * enough to be fixtures are printed whole. The full bodies go to probe-out/
- * for the artifact.
+ * then reads the scripts behind a board page and quotes the code around
+ * anything that looks like a flight endpoint, a field name or a status
+ * vocabulary, so a parser can be written against what the page itself
+ * reads. Feeds small enough to be fixtures are printed whole. The full
+ * bodies go to probe-out/ for the artifact.
+ *
+ * It reads what a browser is served and nothing else: no credential is
+ * looked for, extracted or used. A board that wants one is reported as
+ * wanting one, and the door for that is the airport's own developer
+ * programme.
  *
  * Nothing here is a parser. A parser is written against what this prints,
  * and not before.
@@ -48,114 +52,79 @@ const DUB_LISTING = 'https://api.dublinairport.com/dap/flight-listing'
 const YYZ = { origin: 'https://www.torontopearson.com', referer: 'https://www.torontopearson.com/' }
 const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
 
+/* Pearson's webpack runtime (read whole by an earlier run) names its lazy
+   chunks `${name}.${hash}.chunk.gen.js` under a public path the page may
+   override; these are the ones about flights, from its own table. */
+const PEARSON_CHUNKS = [
+  'flight-listing.28a52217f1fea6cfb117',
+  'real-time-data.7cf982873984b2212e15',
+  'main.46276d96d08587db6952',
+  '6303.7222474004e7810b6b51',
+  'find-flight.2b7f708b52d8788c61c8',
+  'flight-search.d85045ba64b17d2b2332',
+  'flight-subscription.d8b99922bab39fb80406',
+]
+const PEARSON_ROOTS = [
+  'https://cdn.torontopearson.com/scripts/pearson/',
+  'https://www.torontopearson.com/Scripts/Pearson/',
+]
+
 /* Every candidate, with where the idea of it came from. "memory" means it
    was seen in a browser's network tab at some point and may have moved;
    "public code" means a public repository requests it today; "probe" means
    an earlier run of this script found it. */
 const PROBES = [
-  // Dublin — daa. A Next.js site over a JSON API at api.dublinairport.com;
-  // the front end's own table of endpoints, quoted by an earlier run, names
-  // flight-listing/{departures,arrivals}, flight-listing (single flight),
-  // search, weather and get-security-times. Today's listing starts at "now"
-  // and a full day is more than one page of 200; the parameters that turn
-  // the page are not in the URL the page itself uses, so they are guessed
-  // here from the names the response echoes.
-  html('dub-departures-page', 'https://www.dublinairport.com/flight-information/live-departures'),
+  // Dublin — daa. A Next.js site over a JSON API at api.dublinairport.com.
+  // Its listing component (quoted whole by an earlier run) builds
+  // ?date=&limit=10, turns the page with after=<latestTimestamp> and
+  // after-id=<latestId> (before/before-id the other way), narrows with
+  // terminal=T1|T2 and filter=<text>; the API refuses limit above 200.
   json('dub-departures-today', `${DUB_LISTING}/departures?date=${today}&limit=200`, DUB, {
     full: true,
+    pageOn: 'departures',
   }),
   json('dub-arrivals-today', `${DUB_LISTING}/arrivals?date=${today}&limit=200`, DUB, {
     full: true,
   }),
   json(
-    'dub-departures-tomorrow-1000',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=1000`,
+    'dub-departures-filter',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&filter=EI`,
     DUB,
   ),
   json(
-    'dub-departures-tomorrow-page-latestId',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&latestId=139993`,
+    'dub-departures-filter-number',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&filter=FR457`,
     DUB,
   ),
   json(
-    'dub-departures-tomorrow-page-earliestId',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&earliestId=139993`,
+    'dub-departures-terminal',
+    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&terminal=T2`,
     DUB,
   ),
-  json(
-    'dub-departures-tomorrow-page-after',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&after=139993`,
-    DUB,
-  ),
-  json(
-    'dub-departures-tomorrow-page-cursor',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&cursor=139993`,
-    DUB,
-  ),
-  json(
-    'dub-departures-tomorrow-page-2',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&page=2`,
-    DUB,
-  ),
-  json(
-    'dub-departures-tomorrow-offset',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&offset=200`,
-    DUB,
-  ),
-  json(
-    'dub-departures-tomorrow-from',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&from=${tomorrow}T12:00:00.000Z`,
-    DUB,
-  ),
-  json(
-    'dub-departures-tomorrow-time',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&time=12:00`,
-    DUB,
-  ),
-  json(
-    'dub-search-flightNumber',
-    `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&flightNumber=EI`,
-    DUB,
-  ),
-  json('dub-search-flight', `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&flight=EI`, DUB),
-  json('dub-search-q', `${DUB_LISTING}/departures?date=${tomorrow}&limit=200&q=EI`, DUB),
-  json('dub-search-bff', `https://api.dublinairport.com/dap/search?q=EI`, DUB),
-  json('dub-single-flight-id', `${DUB_LISTING}/FR457-${tomorrow.replaceAll('-', '')}`, DUB),
-  json(
-    'dub-single-flight-path',
-    `${DUB_LISTING}/departures/FR457-${tomorrow.replaceAll('-', '')}`,
-    DUB,
-  ),
-  json(
-    'dub-single-flight-query',
-    `${DUB_LISTING}?flightId=FR457-${tomorrow.replaceAll('-', '')}`,
-    DUB,
-  ),
+  json('dub-search-bff', 'https://api.dublinairport.com/dap/search?q=FR457', DUB, { full: true }),
 
-  // Toronto Pearson — GTAA. A Sitecore site behind Radware Bot Manager (a
-  // second page in the same minute drew a captcha), whose flight listing is
-  // a lazily loaded webpack chunk named "flight-listing" in body.bundle.js.
-  // The chunk is where the CDN endpoint's missing header must be, so the
-  // bundle is printed whole and its chunk table followed.
-  html('yyz-departures-page', 'https://www.torontopearson.com/en/departures', {
-    bigHeaders: true,
-    printScripts: /body\.bundle/,
-    followChunks: true,
-  }),
+  // Toronto Pearson — GTAA. A Sitecore site behind Radware Bot Manager whose
+  // flight listing is a lazily loaded chunk; the chunks are fetched by their
+  // exact names from both roots and quoted for the request shape and the
+  // field names. No page fetch this run, because a second drew a captcha.
+  ...PEARSON_CHUNKS.flatMap(chunk =>
+    PEARSON_ROOTS.map((root, index) => ({
+      id: `yyz-chunk-${chunk.split('.')[0]}-${index}`,
+      url: `${root}${chunk}.chunk.gen.js`,
+      kind: 'js',
+      method: 'GET',
+      headers: BROWSER_HEADERS,
+      bigHeaders: index === 1,
+      quote: true,
+    })),
+  ),
   json('yyz-cdn-departures', `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`, YYZ),
 
   // Regina — Regina Airport Authority. A WordPress page whose theme script
   // fetches the display vendor's public XML feed (found by probe).
   xml('yqr-simpleway-departures', 'https://yqr.simpleway.cloud/data-feed/public/departure-web'),
   xml('yqr-simpleway-arrivals', 'https://yqr.simpleway.cloud/data-feed/public/arrivals-web'),
-
-  // Community ADS-B: adsb.lol answers by callsign and by hex without a key.
-  json('adsblol-callsign', 'https://api.adsb.lol/v2/callsign/RYR37MH'),
 ]
-
-function html(id, url, extra = {}) {
-  return { id, url, kind: 'html', method: 'GET', headers: BROWSER_HEADERS, ...extra }
-}
 
 function json(id, url, extraHeaders = {}, extra = {}) {
   return {
@@ -212,24 +181,13 @@ const HEADERS_OF_INTEREST = [
   'x-robots-tag',
 ]
 
-const ENDPOINT_HINT =
-  /api|flight|json|graphql|feed|fids|azure|sitecore|status|board|arrival|depart/i
-const URL_LITERAL =
-  /(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s"'`<>)]*)?|(?:^|["'`(])(\/[a-z0-9_./-]*(?:api|flight|json|graphql|feed|fids)[a-z0-9_./?=&%-]*)/gi
-
 /* Code worth quoting from a bundle: where the flight endpoints are called,
-   what the statuses are called, how a page is turned, and any key that goes
-   in a header. */
+   what the fields are called, what the statuses are called. */
 const CODE_HINTS = [
-  /flight-listing\/|flights\/list|azureedge|simpleway|data-feed|waittimeapidata/gi,
-  /statusMessage|GO TO GATE|FINAL CALL|GATE CLOSED|NOW BOARDING|LANDED|DEPARTED|CANCELLED|DIVERTED|useScheduleTimeOnly/g,
-  /latestId|earliestId|hasNext|hasPrevious|pageSize|\?date=|&limit=/g,
-  /Ocp-Apim-Subscription-Key|x-api-key|apikey|subscription[-_]?key|x-functions-key|authorization|bearer/gi,
-  /publicPath|chunkFilename|"flight-listing"|2382/g,
+  /flight-listing\/|flights\/list|azureedge|simpleway|data-feed|waittimeapidata|gtaa/gi,
+  /useScheduleTimeOnly|carousel|codeshare|latestTm|schedTm|"routes"|"terminal"|"gate"/g,
+  /GO TO GATE|FINAL CALL|GATE CLOSED|NOW BOARDING|LANDED|DEPARTED|CANCELLED|DIVERTED/g,
 ]
-
-const KEY_LITERAL =
-  /["'](Ocp-Apim-Subscription-Key|x-api-key|apikey|x-functions-key|subscription-key|Authorization)["']\s*[:,]\s*["']([A-Za-z0-9._~+/= -]{16,})["']/gi
 
 const started = Date.now()
 const summary = []
@@ -321,7 +279,7 @@ function extensionFor(contentType, kind) {
   if (type.includes('html')) return 'html'
   if (type.includes('xml')) return 'xml'
   if (type.includes('javascript')) return 'js'
-  return kind === 'json' ? 'json' : kind === 'xml' ? 'xml' : 'txt'
+  return kind === 'json' ? 'json' : kind === 'xml' ? 'xml' : kind === 'js' ? 'js' : 'txt'
 }
 
 function describeJson(text) {
@@ -329,7 +287,9 @@ function describeJson(text) {
   try {
     value = JSON.parse(text)
   } catch (error) {
-    return `not JSON (${error.message}); first bytes: ${JSON.stringify(text.slice(0, 300))}`
+    return {
+      text: `not JSON (${error.message}); first bytes: ${JSON.stringify(text.slice(0, 300))}`,
+    }
   }
   const lines = []
   const describe = (node, label) => {
@@ -357,7 +317,7 @@ function describeJson(text) {
     }
   }
   describe(value, 'body')
-  return lines.join('\n')
+  return { text: lines.join('\n'), value }
 }
 
 const keysOf = node =>
@@ -367,65 +327,8 @@ const short = value => {
   return text.length > 3500 ? `${text.slice(0, 3500)} …(${text.length} chars)` : text
 }
 
-function describeHtml(text, baseUrl) {
-  const lines = []
-  const title = /<title[^>]*>([^<]*)<\/title>/i.exec(text)?.[1]?.trim()
-  lines.push(`title: ${title || '(none)'}`)
-  const tableRows = (text.match(/<tr\b/gi) || []).length
-  lines.push(
-    `table rows: ${tableRows}; occurrences of "flight": ${(text.match(/flight/gi) || []).length}`,
-  )
-  const scripts = [...text.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)].map(m =>
-    resolve(m[1], baseUrl),
-  )
-  lines.push(`scripts (${scripts.length}):`)
-  for (const src of scripts.slice(0, 40)) lines.push(`  ${src}`)
-  const iframes = [...text.matchAll(/<iframe[^>]+src=["']([^"']+)["']/gi)].map(m =>
-    resolve(m[1], baseUrl),
-  )
-  if (iframes.length) lines.push(`iframes: ${iframes.join(' | ')}`)
-  const hints = urlHints(text, baseUrl)
-  lines.push(`endpoint-looking strings in the page (${hints.length}):`)
-  for (const hint of hints.slice(0, 60)) lines.push(`  ${hint}`)
-  const inline = [...text.matchAll(/<script(?![^>]+src=)[^>]*>([\s\S]*?)<\/script>/gi)]
-    .map(m => m[1])
-    .join('\n')
-  const quoted = snippets(inline)
-  if (quoted.length) {
-    lines.push(`inline script, around the interesting words (${quoted.length}):`)
-    for (const one of quoted) lines.push(`  … ${one} …`)
-  }
-  return { text: lines.join('\n'), scripts, hints, inline }
-}
-
-function resolve(candidate, baseUrl) {
-  try {
-    return new URL(candidate, baseUrl).toString()
-  } catch {
-    return candidate
-  }
-}
-
-function urlHints(text, baseUrl) {
-  const found = new Set()
-  for (const match of text.matchAll(URL_LITERAL)) {
-    const literal = (match[1] || match[0]).replace(/^["'`(]/, '')
-    if (!ENDPOINT_HINT.test(literal)) continue
-    if (/\.(?:png|jpe?g|gif|svg|webp|woff2?|ttf|css|ico|mp4)(?:\?|$)/i.test(literal)) continue
-    if (
-      /googletagmanager|google-analytics|doubleclick|facebook|hotjar|cookielaw|onetrust|fonts\.g|whatsapp|linkedin|ctfassets/i.test(
-        literal,
-      )
-    )
-      continue
-    found.add(resolve(literal, baseUrl))
-    if (found.size >= 300) break
-  }
-  return [...found]
-}
-
 /* The code around the words that matter, deduplicated, bounded. */
-function snippets(text, radius = 320, max = 30) {
+function snippets(text, radius = 360, max = 40) {
   const out = []
   const seen = new Set()
   for (const pattern of CODE_HINTS) {
@@ -443,39 +346,7 @@ function snippets(text, radius = 320, max = 30) {
   return out
 }
 
-function keysIn(text) {
-  const found = []
-  for (const match of text.matchAll(KEY_LITERAL)) found.push({ header: match[1], value: match[2] })
-  return found
-}
-
-/* A webpack runtime names its lazy chunks in a table of id → hash and a
-   template that makes a file name of them. For every chunk whose name says
-   "flight", the candidate file names under every script directory the
-   bundle mentions — fetched, and the ones that exist quoted like scripts. */
-function chunkCandidates(code, bundleUrl) {
-  const names = new Map()
-  for (const match of code.matchAll(/(\d{2,6}):"([a-z0-9-]*flight[a-z0-9-]*)"/gi)) {
-    names.set(match[1], match[2])
-  }
-  const hashes = new Map()
-  for (const match of code.matchAll(/(\d{2,6}):"([0-9a-f]{8,32})"/g)) hashes.set(match[1], match[2])
-  const roots = new Set([new URL('.', bundleUrl).toString()])
-  for (const match of code.matchAll(/["'](https?:\/\/[^"']+\/)["']/g)) {
-    if (/torontopearson|cdn\./.test(match[1])) roots.add(match[1])
-  }
-  const out = []
-  for (const [id, name] of names) {
-    const hash = hashes.get(id)
-    for (const root of roots) {
-      out.push(`${root}${id}.js`, `${root}${name}.js`)
-      if (hash) {
-        out.push(`${root}${id}.${hash}.js`, `${root}${name}.${hash}.js`, `${root}${hash}.js`)
-      }
-    }
-  }
-  return { names: [...names.entries()], candidates: [...new Set(out)].slice(0, 30) }
-}
+const pages = []
 
 async function record(probe) {
   const result = await fetchOne(probe)
@@ -517,161 +388,73 @@ async function record(probe) {
     console.log(text)
     console.log('<<< END FULL BODY')
   }
+  if (probe.quote && result.status === 200) {
+    const quoted = snippets(text)
+    console.log(`${quoted.length} quotable places:`)
+    for (const one of quoted) console.log(`    … ${one} …`)
+    return { kind: 'js' }
+  }
   const trimmed = text.trim()
   if (ext === 'json' || trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    console.log(describeJson(text))
-    return { kind: 'json' }
-  }
-  if (ext === 'html') {
-    const described = describeHtml(text, result.url)
+    const described = describeJson(text)
     console.log(described.text)
-    return { kind: 'html', ...described, baseUrl: result.url }
+    if (probe.pageOn && described.value?.pagination) pages.push({ probe, body: described.value })
+    return { kind: 'json', value: described.value }
   }
   if (!probe.full) console.log(`first bytes: ${JSON.stringify(text.slice(0, 1500))}`)
   return { kind: 'text' }
 }
 
-async function readScript(pageId, src, baseUrl, { print = false } = {}) {
-  const result = await fetchOne({
-    id: `${pageId}-script`,
-    url: src,
-    headers: BROWSER_HEADERS,
-    bigHeaders: /torontopearson/.test(src),
-  })
-  if (result.error || result.status !== 200) {
-    console.log(
-      `  script ${src}: ${result.error ? `unreachable (${result.error.message})` : result.status}`,
-    )
-    return null
-  }
-  if (result.bytes.length > 4_000_000) {
-    console.log(`  script ${src}: ${result.bytes.length} bytes, skipped (too large)`)
-    return null
-  }
-  const code = result.bytes.toString('utf8')
-  const hints = urlHints(code, baseUrl)
-  const quoted = snippets(code)
-  console.log(
-    `  script ${src}: ${result.bytes.length} bytes, ${hints.length} endpoint-looking strings, ${quoted.length} quotable places`,
-  )
-  for (const one of quoted) console.log(`    … ${one} …`)
-  if (print && code.length <= 60_000) {
-    console.log(`  FULL SCRIPT ${src} (${code.length} chars) >>>`)
-    console.log(code)
-    console.log('  <<< END FULL SCRIPT')
-  }
-  return { code, hints, keys: keysIn(code) }
-}
-
-/* The scripts an HTML page loads, read for the endpoints the page's own
-   JavaScript calls, the words it uses for a status, and any key it carries;
-   then the lazy chunks a bundle names after the flight listing. */
-async function readScripts(probe, scripts, baseUrl) {
-  const found = new Set()
-  const keys = []
-  let read = 0
-  for (const src of scripts) {
-    if (read >= 16) break
-    if (
-      /googletagmanager|google-analytics|doubleclick|facebook|hotjar|cookielaw|onetrust|recaptcha|gstatic|jquery|html5shiv/i.test(
-        src,
-      )
-    )
-      continue
-    read += 1
-    const one = await readScript(probe.id, src, baseUrl, { print: probe.printScripts?.test(src) })
-    if (!one) continue
-    for (const hint of one.hints) found.add(hint)
-    keys.push(...one.keys)
-    if (probe.followChunks) {
-      const { names, candidates } = chunkCandidates(one.code, src)
-      if (names.length)
-        console.log(`  chunks named after flights in ${src}: ${JSON.stringify(names)}`)
-      for (const candidate of candidates) {
-        const chunk = await readScript(`${probe.id}-chunk`, candidate, baseUrl, { print: true })
-        if (!chunk) continue
-        for (const hint of chunk.hints) found.add(hint)
-        keys.push(...chunk.keys)
-      }
-    }
-  }
-  return { hints: [...found], keys }
-}
-
-/* Of everything the page and its scripts mention, the few worth a GET:
-   flight-ish JSON or XML on any host. Bounded, and never a page already
-   fetched. */
-function worthFetching(hints, seen) {
-  return hints
-    .filter(hint => /^https?:\/\//.test(hint))
-    .filter(
-      hint =>
-        /flight|departure|arrival|fids|board|data-feed/i.test(hint) &&
-        /api|json|graphql|feed|fids|azure|xml/i.test(hint),
-    )
-    .filter(hint => !/\.(?:js|css|html?)(?:\?|$)/i.test(hint))
-    .filter(hint => !/oembed|wp-json\/wp\/v2|dublinairport\.com\/api\/v2|getUserLite/i.test(hint))
-    .filter(hint => !seen.has(hint))
-    .slice(0, 8)
-}
-
 await mkdir(OUT, { recursive: true })
 console.log(`flight source probe — ${new Date().toISOString()} — node ${process.version}`)
 
-const seen = new Set(PROBES.map(probe => probe.url))
-const discovered = []
-const foundKeys = []
-for (const probe of PROBES) {
-  const result = await record(probe)
-  if (result?.kind === 'html') {
-    const fromScripts = await readScripts(probe, result.scripts, result.baseUrl)
-    const all = [...new Set([...result.hints, ...fromScripts.hints])]
-    console.log(`endpoint-looking strings from page + scripts (${all.length}):`)
-    for (const hint of all.slice(0, 120)) console.log(`  ${hint}`)
-    const keys = [...keysIn(result.inline || ''), ...fromScripts.keys]
-    if (keys.length) {
-      console.log(`API KEYS IN THE FRONT END (${keys.length}):`)
-      for (const one of keys) {
-        console.log(`  ${one.header}: ${one.value.slice(0, 6)}…(${one.value.length} chars)`)
-      }
-      foundKeys.push(...keys.map(one => ({ ...one, from: probe.id })))
-    }
-    for (const url of worthFetching(all, seen)) {
-      seen.add(url)
-      discovered.push({
-        id: `${probe.id}-discovered-${discovered.length + 1}`,
-        url,
-        kind: 'json',
-        method: 'GET',
-        headers: {
-          ...JSON_HEADERS,
-          referer: result.baseUrl,
-          origin: new URL(result.baseUrl).origin,
-        },
-        full: /simpleway|data-feed/.test(url),
-      })
-    }
+for (const probe of PROBES) await record(probe)
+
+/* Dublin, turned a page each way with the names its listing uses, and one
+   flight looked up by the id its listing gives. */
+const followUps = []
+for (const { probe, body } of pages) {
+  const { pagination, content } = body
+  if (pagination.hasNext && pagination.latestTimestamp) {
+    followUps.push(
+      json(
+        `${probe.id}-next-page`,
+        `${DUB_LISTING}/${probe.pageOn}?date=${today}&limit=200&after=${encodeURIComponent(pagination.latestTimestamp)}&after-id=${pagination.latestId}`,
+        DUB,
+      ),
+    )
+  }
+  if (pagination.hasPrevious && pagination.earliestTimestamp) {
+    followUps.push(
+      json(
+        `${probe.id}-previous-page`,
+        `${DUB_LISTING}/${probe.pageOn}?date=${today}&limit=200&before=${encodeURIComponent(pagination.earliestTimestamp)}&before-id=${pagination.earliestId}`,
+        DUB,
+        { full: true },
+      ),
+    )
+  }
+  const id = content?.[0]?.internalFlightId
+  if (id) {
+    followUps.push(
+      json(`${probe.id}-single-by-id`, `${DUB_LISTING}/${encodeURIComponent(id)}`, DUB),
+      json(
+        `${probe.id}-single-by-path`,
+        `${DUB_LISTING}/${probe.pageOn}/${encodeURIComponent(id)}`,
+        DUB,
+      ),
+      json(
+        `${probe.id}-single-by-query`,
+        `${DUB_LISTING}/${probe.pageOn}?date=${today}&limit=200&filter=${encodeURIComponent(id.split('-')[0])}`,
+        DUB,
+      ),
+    )
   }
 }
 
-/* Pearson's endpoint, retried with whatever key the front end gave away,
-   under each header name it might be expected in. */
-for (const key of foundKeys.filter(one => /yyz/.test(one.from)).slice(0, 4)) {
-  for (const header of new Set([key.header, 'Ocp-Apim-Subscription-Key', 'x-api-key'])) {
-    discovered.push({
-      id: `yyz-cdn-departures-with-${header.toLowerCase()}-${discovered.length + 1}`,
-      url: `${PEARSON_LIST}?type=DEP&day=today&useScheduleTimeOnly=false`,
-      kind: 'json',
-      method: 'GET',
-      headers: { ...JSON_HEADERS, ...YYZ, [header]: key.value },
-      full: true,
-    })
-  }
-}
-
-if (discovered.length) {
-  console.log(`\n${'#'.repeat(78)}\nDISCOVERED ENDPOINTS (${discovered.length})\n${'#'.repeat(78)}`)
-  for (const probe of discovered) await record(probe)
+if (followUps.length) {
+  console.log(`\n${'#'.repeat(78)}\nFOLLOW-UPS (${followUps.length})\n${'#'.repeat(78)}`)
+  for (const probe of followUps) await record(probe)
 }
 
 console.log(
