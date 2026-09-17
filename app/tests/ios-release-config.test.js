@@ -121,21 +121,126 @@ test('the iOS app declares that it does not use non-exempt encryption', async ()
   assert.match(infoPlist, /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/)
 })
 
-test('every native iOS build configuration supports iOS 15 or later', async () => {
+test('the app supports iOS 15, and only the Lock Screen card asks for more', async () => {
+  /* Live Activities exist from iOS 16.2. The app itself still runs on 15 —
+     the plugin says no politely there — so only the extension that draws the
+     card may raise its floor, and nothing else in the project may drift. */
   const { readFile } = await import('node:fs/promises')
   const [podfile, project] = await Promise.all([
     readFile(path.join(appRoot, 'ios/App/Podfile'), 'utf8'),
     readFile(path.join(appRoot, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8'),
   ])
 
-  const podfileTarget = podfile.match(/platform :ios, '(\d+(?:\.\d+)*)'/)?.[1]
-  const projectTargets = [
-    ...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = (\d+(?:\.\d+)*);/g),
-  ].map(match => match[1])
+  assert.equal(podfile.match(/platform :ios, '(\d+(?:\.\d+)*)'/)?.[1], '15.0')
 
-  assert.equal(podfileTarget, '15.0')
-  assert.ok(projectTargets.length > 0, 'The Xcode project must declare an iOS deployment target')
-  assert.deepEqual([...new Set(projectTargets)], ['15.0'])
+  const configurations = project.split(/isa = XCBuildConfiguration;/).slice(1)
+  const floors = configurations
+    .map(block => ({
+      extension: block.includes('PRODUCT_BUNDLE_IDENTIFIER = ai.threadway.wayfare.TravelActivity;'),
+      floor: block.match(/IPHONEOS_DEPLOYMENT_TARGET = (\d+(?:\.\d+)*);/)?.[1],
+    }))
+    .filter(row => row.floor)
+  assert.ok(floors.length >= 4, 'The Xcode project must declare iOS deployment targets')
+  assert.deepEqual(
+    [...new Set(floors.filter(row => !row.extension).map(row => row.floor))],
+    ['15.0'],
+  )
+  assert.deepEqual(
+    [...new Set(floors.filter(row => row.extension).map(row => row.floor))],
+    ['16.2'],
+    'the Lock Screen card is drawn by ActivityKit, which begins at iOS 16.2',
+  )
+})
+
+test('an embedded extension is signed with a profile of its own', async () => {
+  /* An app extension is its own bundle with its own identifier, and the
+     export refuses an archive that maps the app's profile onto it. */
+  const { createExportOptions } = await import('../scripts/iosReleaseCore.mjs')
+
+  const plist = createExportOptions({
+    teamId: 'R65UN25Q64',
+    bundleId: 'ai.threadway.wayfare',
+    profileName: 'Wayfare App Store CI',
+    extensions: [
+      {
+        bundleId: 'ai.threadway.wayfare.TravelActivity',
+        profileName: 'Wayfare Activity App Store CI',
+      },
+    ],
+  })
+
+  assert.match(plist, /<key>ai\.threadway\.wayfare<\/key>\s*<string>Wayfare App Store CI<\/string>/)
+  assert.match(
+    plist,
+    /<key>ai\.threadway\.wayfare\.TravelActivity<\/key>\s*<string>Wayfare Activity App Store CI<\/string>/,
+  )
+})
+
+test('the export configuration CLI takes the extension after the distribution', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      'scripts/iosReleaseCore.mjs',
+      'R65UN25Q64',
+      'ai.threadway.wayfare',
+      'Wayfare App Store CI',
+      'app-store',
+      'ai.threadway.wayfare.TravelActivity',
+      'Wayfare Activity App Store CI',
+    ],
+    { cwd: appRoot, encoding: 'utf8' },
+  )
+
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  assert.match(result.stdout, /<string>Wayfare Activity App Store CI<\/string>/)
+})
+
+test('the Lock Screen card is embedded in the app and signed on release', async () => {
+  const project = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8'),
+  )
+
+  assert.match(project, /productType = "com\.apple\.product-type\.app-extension"/)
+  assert.match(project, /Embed Foundation Extensions/, 'built but never embedded is not shipped')
+  assert.match(project, /PROVISIONING_PROFILE_SPECIFIER = "Wayfare Activity App Store CI"/)
+  /* And the app's own target depends on it, so the scheme CI builds it. */
+  assert.match(
+    project,
+    /isa = PBXTargetDependency;[^}]*target = [0-9A-F]+ \/\* TravelActivity \*\//,
+  )
+})
+
+test('the app declares Live Activities and registers the plugin that starts them', async () => {
+  /* Two silent failure modes. Without the Info.plist key ActivityKit refuses
+     every request. Without the storyboard naming the app's own view
+     controller, the plugin is never registered and the web side's calls
+     vanish into "not implemented" — a card that never appears and no error. */
+  const { readFile } = await import('node:fs/promises')
+  const [infoPlist, storyboard] = await Promise.all([
+    readFile(path.join(appRoot, 'ios/App/App/Info.plist'), 'utf8'),
+    readFile(path.join(appRoot, 'ios/App/App/Base.lproj/Main.storyboard'), 'utf8'),
+  ])
+
+  assert.match(infoPlist, /<key>NSSupportsLiveActivities<\/key>\s*<true\/>/)
+  assert.match(storyboard, /customClass="OffWeGoViewController" customModule="App"/)
+})
+
+test('the extension is a WidgetKit extension with the app’s version on it', async () => {
+  /* App Store validation rejects an extension whose version differs from the
+     app's, so both read the same build settings rather than their own copy. */
+  const plist = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(path.join(appRoot, 'ios/App/TravelActivity/Info.plist'), 'utf8'),
+  )
+
+  assert.match(plist, /<string>com\.apple\.widgetkit-extension<\/string>/)
+  assert.match(
+    plist,
+    /<key>CFBundleShortVersionString<\/key>\s*<string>\$\(MARKETING_VERSION\)<\/string>/,
+  )
+  assert.match(
+    plist,
+    /<key>CFBundleVersion<\/key>\s*<string>\$\(CURRENT_PROJECT_VERSION\)<\/string>/,
+  )
 })
 
 test('the native app uses Capacitor HTTP so authentication survives WebView suspension', async () => {

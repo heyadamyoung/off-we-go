@@ -28,5 +28,17 @@ platform :ios do
       output_path: ENV.fetch('RUNNER_TEMP'),
       api_key: api_key
     )
+    # The Lock Screen card is an extension with a bundle of its own, and the
+    # devices have to be on its profile as much as on the app's.
+    get_provisioning_profile(
+      adhoc: true,
+      force: true,
+      app_identifier: "#{ENV.fetch('IOS_BUNDLE_ID')}.TravelActivity",
+      team_id: ENV.fetch('APPLE_TEAM_ID'),
+      provisioning_name: ENV.fetch('IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME'),
+      filename: 'Wayfare_Activity_Ad_Hoc.mobileprovision',
+      output_path: ENV.fetch('RUNNER_TEMP'),
+      api_key: api_key
+    )
   end
 end
