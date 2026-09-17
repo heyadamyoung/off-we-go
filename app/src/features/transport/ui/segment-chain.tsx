@@ -1,3 +1,4 @@
+import type { Paper } from '../../../papers-core'
 import { connectionGap, type Segment } from '../../../segments-core'
 import SegmentCard from './segment-card'
 
@@ -12,8 +13,7 @@ export default function SegmentChain({
   onEdit,
   onShowGate,
   onAttach,
-  onEditDoc,
-  onRemoveDoc,
+  onOpenPaper,
 }: {
   segments: Segment[]
   now: number
@@ -23,8 +23,7 @@ export default function SegmentChain({
   onAdd: () => void
   onShowGate: (segment: Segment) => void
   onAttach: (segment: Segment, file: File) => void
-  onEditDoc?: (documentId: string, changes: { name?: string; note?: string }) => void
-  onRemoveDoc?: (documentId: string) => void
+  onOpenPaper?: (paper: Paper) => void
 }) {
   if (!segments.length) return null
 
@@ -54,8 +53,7 @@ export default function SegmentChain({
                 onEdit={onEdit}
                 onShowGate={onShowGate}
                 onAttach={onAttach}
-                onEditDoc={onEditDoc}
-                onRemoveDoc={onRemoveDoc}
+                onOpenPaper={onOpenPaper}
               />
             </div>
           )

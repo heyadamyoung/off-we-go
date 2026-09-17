@@ -85,7 +85,16 @@ test('a PDF is handed over rather than pretended at', async ({ page }) => {
   await page.locator('.pprow').first().click()
   const view = page.locator('.ppview')
   await expect(view).toBeVisible()
-  await expect(view.locator('.ppvfile a')).toHaveAttribute('href', /\.pdf$/)
+  /* Either copy: the signed link, or the blob the offline pack already holds.
+     Which one it found is not this test's business; that the bytes are a real
+     PDF is. */
+  const opened = await page.evaluate(async () => {
+    const href = document.querySelector('.ppview .ppvfile a')?.getAttribute('href')
+    if (!href) return 'no link'
+    const answer = await fetch(href)
+    return answer.ok ? (await answer.text()).slice(0, 8) : `status ${answer.status}`
+  })
+  expect(opened).toMatch(/^%PDF/)
 })
 
 test('the paper closes and leaves the trip where it was', async ({ page }) => {
@@ -96,4 +105,49 @@ test('the paper closes and leaves the trip where it was', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(page.locator('.ppview')).toHaveCount(0)
   expect(page.url(), 'holding up a document is not a place you navigated to').toBe(before)
+})
+
+test('renaming a paper happens where you can see which paper it is', async ({ page }) => {
+  /* The sheet this replaced was a column of identical text inputs: every row
+     an editable name over an editable note, with the document itself behind a
+     32px chevron. That is how a boarding pass ends up named after a hotel.
+     The tidying is on the paper's own screen now, behind one control, with
+     the thing being renamed still on it. */
+  await openPapers(page)
+  await page.locator('.pprow').first().click()
+  const view = page.locator('.ppview')
+  await expect(view).toBeVisible()
+
+  await expect(view.getByLabel('Document name')).toHaveCount(0)
+  await view.getByRole('button', { name: 'Rename, note or remove' }).click()
+  await expect(view.getByLabel('Document name')).toHaveValue('Timed entry ticket')
+  await expect(view.getByLabel('Document note')).toBeVisible()
+})
+
+test('the tidying is a toggle, so the paper is what the screen is by default', async ({ page }) => {
+  /* Open on the inputs and this is the filing cabinet again, wearing a
+     different shape. */
+  await openPapers(page)
+  await page.locator('.pprow').first().click()
+  const view = page.locator('.ppview')
+  const pencil = view.getByRole('button', { name: 'Rename, note or remove' })
+  await pencil.click()
+  await expect(view.getByLabel('Document name')).toBeVisible()
+  await pencil.click()
+  await expect(view.getByLabel('Document name')).toHaveCount(0)
+})
+
+test('a pass that is a picture is drawn on white, whatever the theme is', async ({ page }) => {
+  /* The one rule on this screen with a consequence. What is being shown is
+     very often a barcode, and a scanner reading a dark-themed page through a
+     phone's glass is a scanner that beeps twice and a queue that does not
+     move — so the app's own theme, right everywhere else, is wrong here. */
+  await openPapers(page)
+  await page.locator('.pprow').filter({ hasText: 'Boarding pass — Maya' }).click()
+  const sheet = page.locator('.ppview .ppvpaper')
+  await expect(sheet).toBeVisible()
+  await expect(sheet.locator('img')).toBeVisible()
+  expect(await sheet.evaluate(node => getComputedStyle(node).backgroundColor)).toBe(
+    'rgb(255, 255, 255)',
+  )
 })

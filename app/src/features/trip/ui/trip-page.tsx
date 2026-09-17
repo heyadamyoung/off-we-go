@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
 import { clamp } from '../../../shared/lib/numbers'
@@ -17,6 +17,7 @@ import useTripChat from '../model/use-trip-chat'
 import { withFace } from '../model/faces'
 import useMapAsk from '../model/use-map-ask'
 import TripNow from './trip-now'
+import usePapers from '../model/use-papers'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
 import {
@@ -29,10 +30,8 @@ import {
 } from './trip-chrome'
 import { TripCluster } from './trip-cluster'
 import TripBar from './trip-bar'
-import PaperView from './paper-view'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
-import type { Paper } from '../../../papers-core'
 import type { Coordinates, TripData } from '../../../shared/model/types'
 import { dayLabelOf } from '../../../day-label-core'
 
@@ -59,11 +58,6 @@ function Trip({
   busyEditing: React.MutableRefObject<boolean>
   reload: () => void
 }) {
-  /* The paper on screen, when one is. Held here rather than in the URL: a
-     document is a thing you are holding up to somebody, not a place you
-     navigated to, and a back button that closed the boarding pass mid-scan
-     would be exactly the wrong behaviour. */
-  const [paper, setPaper] = useState<Paper | null>(null)
   const search = routeApi.useSearch()
   const navigate = useNavigate()
   const notify = useToast()
@@ -79,6 +73,8 @@ function Trip({
   )
 
   const page = useTripPage({ data, busyEditing, search, patch, notify, reload })
+  // The paper on screen, and where a rename to it is sent — see use-papers.
+  const papers = usePapers(canEdit, page.transport, stopDocs)
   // biome-ignore format: one bag of names; the grouped lines scan better than one name per line
   const {
     theme, toggleTheme, trip, stops, family, me, viewers, placing, setPlacing, planOnDay, photoBy, setPhotoBy,
@@ -195,7 +191,7 @@ function Trip({
           legs={legs}
           onAddOnDay={canEdit ? planOnDay : undefined}
           onTravel={() => patch({ view: 'travel' })}
-          papers={{ onOpen: setPaper }}
+          papers={{ onOpen: papers.open }}
           chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
@@ -213,22 +209,17 @@ function Trip({
             onAdd: () => setSegmentEditing('new'),
             onShowGate: showGate,
             onAttach: (segment, file) => transport.attachDocument(segment.id, file, {}),
-            onEditDoc: transport.editDocument,
-            onRemoveDoc: transport.removeDocument,
+            onOpenPaper: papers.open,
           }}
         />
       )}
-
-      {/* The paper itself, over everything. At a desk with a queue behind you
-          the document IS the interface, so nothing else on this screen is
-          allowed above it. */}
-      {paper && <PaperView paper={paper} onClose={() => setPaper(null)} />}
 
       <TripCards
         page={page}
         canEdit={canEdit}
         patch={patch}
         stopDocs={stopDocs}
+        papers={papers}
         stats={ask.stats}
       />
 
@@ -271,6 +262,7 @@ function Trip({
               openViewer(photos, at < 0 ? 0 : at)
             }}
             onTravel={() => patch({ view: 'travel' })}
+            onPaper={papers.open}
           />
         )}
         <AssistantButton on={asking} onClick={() => setAsking(value => !value)} />

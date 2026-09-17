@@ -65,14 +65,16 @@ function sampleSegments(): Segment[] {
     bags: { checked: '1 × 23 kg', carryOn: '1 × 12 kg', personal: true },
     /* Two passes, because a family travels with more than one and the pile is
        the whole point of the Papers screen — a demo carrying a single document
-       demonstrates a folder, not a wallet. */
+       demonstrates a folder, not a wallet. One of each kind, too: a pass is a
+       picture about as often as it is a PDF, and the picture is the one the
+       app can draw itself, on white, as a barcode a desk can read. */
     documents: [
       {
         id: 'd-demo-3',
         name: 'Boarding pass — Maya',
         kind: 'pass',
-        mime: 'application/pdf',
-        src: '/demo/boarding-pass.pdf',
+        mime: 'image/svg+xml',
+        src: '/demo/boarding-pass.svg',
       },
       {
         id: 'd-demo-4',

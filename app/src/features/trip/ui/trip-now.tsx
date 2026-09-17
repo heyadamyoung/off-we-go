@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import NowCard from './now-card'
+import type { Paper } from '../../../papers-core'
 import { NowCapsule } from './trip-chrome'
 import { tripNow } from '../../../trip-now-core'
 import useTripNotices from '../model/use-trip-notices'
@@ -33,6 +34,7 @@ export default function TripNow({
   onFollow,
   onPhotos,
   onTravel,
+  onPaper,
 }: {
   tripId: string
   progressCopy: {
@@ -57,6 +59,8 @@ export default function TripNow({
   onPhotos: (photo: TripPhoto) => void
   /** where a landing opens: the leg it belongs to */
   onTravel: () => void
+  /** the paper itself, full screen, without leaving the app */
+  onPaper: (paper: Paper) => void
 }) {
   const [open, setOpen] = useState(false)
 
@@ -146,6 +150,7 @@ export default function TripNow({
           }}
           onStop={shut(onSelect)}
           onPhotos={shut(onPhotos)}
+          onPaper={shut(onPaper)}
           onClose={() => setOpen(false)}
         />
       )}

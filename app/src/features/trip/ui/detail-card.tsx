@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import DocumentsSheet from '../../../shared/ui/documents-sheet'
 import { clockLabel } from '../../../day-label-core'
+import { papersOfStop, type Paper } from '../../../papers-core'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import type { RouteToStop } from '../model/use-route-to-stop'
@@ -13,6 +14,8 @@ interface DetailCardProps {
   canEdit: boolean
   photoCount: number
   docs?: StopDocTools
+  /** the paper itself, full screen — the one thing a document tap ever does */
+  onOpenPaper?: (paper: Paper) => void
   /** how far and how long, both gaits — drawn on the map too */
   stats?: RouteToStop | null
   onClose: () => void
@@ -74,7 +77,8 @@ export default function DetailCard(props: DetailCardProps) {
   const { item, stats } = props
   const stop = item.stop
   const [papers, setPapers] = useState(false)
-  const paperCount = stop?.documents?.length || 0
+  const stopPapers = useMemo(() => (stop ? papersOfStop(stop) : []), [stop])
+  const paperCount = stopPapers.length
   /* All four the editor offers, not three. 'next' fell through to 'Planned',
      so setting a stop to Up next changed the card not at all — the same
      complaint as the status being painted over, from the other end. */
@@ -166,15 +170,14 @@ export default function DetailCard(props: DetailCardProps) {
         )}
       </div>
 
-      {papers && stop && (
+      {papers && stop && props.onOpenPaper && (
         <DocumentsSheet
           title={`Papers — ${stop.name}`}
-          documents={stop.documents || []}
+          papers={stopPapers}
           canEdit={props.canEdit && !!props.docs}
           onClose={() => setPapers(false)}
+          onOpen={props.onOpenPaper}
           onAdd={props.docs ? file => props.docs?.attach(stop.id, file) : undefined}
-          onEdit={props.docs?.edit}
-          onRemove={props.docs?.remove}
         />
       )}
 

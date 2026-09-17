@@ -80,3 +80,32 @@ test('a leg that never moved is not decorated with a delay it did not have', asy
   await expect(flight).not.toContainText('earlier')
   await expect(flight.locator('s')).toHaveCount(0)
 })
+
+/* The papers on a leg.
+ *
+ * They used to be drawn twice on the same card: a row of paperclip chips that
+ * opened the file in another tab, and a "Papers · 2" button onto a sheet whose
+ * rows were an editable name, an editable note, a hold-to-delete and a 32px
+ * chevron — the smallest target on the row being the only one that produced
+ * the document. Two doors to one thing, and neither of them stayed in the app,
+ * which means neither of them could use the copy already on the phone.
+ */
+
+test('a leg draws its papers once, as papers', async ({ page }) => {
+  await openTravel(page)
+  const flight = page.locator('.rounded-xl').filter({ hasText: 'KL 677' }).first()
+  await expect(flight.locator('.pprow')).toHaveCount(2)
+  await expect(flight, 'the paperclip chips are the second door').not.toContainText('📎')
+  await expect(flight.getByRole('button', { name: 'Papers', exact: true })).toHaveCount(0)
+})
+
+test('a paper opened from a leg is the same screen as everywhere else', async ({ page }) => {
+  /* Three doors — this card, a stop's sheet, the Papers tab — and one room
+     behind them. Three doors that behave differently is how somebody learns
+     not to trust any of them. */
+  await openTravel(page)
+  const flight = page.locator('.rounded-xl').filter({ hasText: 'KL 677' }).first()
+  await flight.locator('.pprow').first().click()
+  await expect(page.locator('.ppview')).toBeVisible()
+  await expect(page.locator('.ppview .ppvbar b')).toContainText('Boarding pass')
+})
