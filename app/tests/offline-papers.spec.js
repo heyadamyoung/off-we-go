@@ -66,16 +66,11 @@ test('a paper opens in the app, which is where the kept copy is', async ({ page 
   await paper.click()
   await expect(page.locator('.ppview')).toBeVisible()
 
-  /* And what it hands over is the document itself, whichever copy it found. */
-  const link = page.locator('.ppview .ppvfile a')
-  await expect(link).toBeVisible()
-  const opened = await page.evaluate(async () => {
-    const href = document.querySelector('.ppview .ppvfile a')?.getAttribute('href')
-    if (!href) return 'no link'
-    const answer = await fetch(href)
-    return answer.ok ? (await answer.text()).slice(0, 8) : `status ${answer.status}`
+  /* And it draws the ticket rather than offering to send you somewhere that
+     can. */
+  await expect(page.locator('.ppview .ppvpdfpages canvas').first()).toBeVisible({
+    timeout: 20000,
   })
-  expect(opened, 'the ticket goes nowhere').toMatch(/^%PDF/)
 })
 
 test('the demo has paperwork on it at all', async ({ page }) => {

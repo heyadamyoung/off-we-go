@@ -30,15 +30,9 @@ export interface Paper {
   for: string
   /** the moment that thing happens, for ordering; null when nothing says */
   at: number | null
-  /** whether it can be drawn as itself rather than handed to a file viewer */
-  showable: boolean
   segmentId?: string
   stopId?: string
 }
-
-/* Pictures open as the thing itself, full screen, at a desk. A PDF cannot
-   without a renderer, so it is honestly handed over instead of pretended at. */
-const SHOWABLE = /^image\//
 
 const instant = (value: unknown): number | null => {
   const when = value ? Date.parse(String(value)) : Number.NaN
@@ -67,7 +61,6 @@ const paperFrom = (
     mime,
     src: doc.src,
     note: doc.note ?? null,
-    showable: SHOWABLE.test(mime),
     ...about,
   }
 }

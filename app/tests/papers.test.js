@@ -185,22 +185,6 @@ test('a document with nowhere to fetch it from is not a paper', () => {
   assert.deepEqual(found, [])
 })
 
-test('a picture is known to be one, so it can be shown rather than downloaded', () => {
-  /* The difference between a wallet and a file browser: an image opens as the
-     thing itself, full screen. A PDF cannot without a renderer. */
-  const found = papersOnTrip(
-    {
-      segments: [
-        leg('g1', {
-          documents: [
-            doc('d1', 'Screenshot', { mime: 'image/png' }),
-            doc('d2', 'Booking', { mime: 'application/pdf' }),
-          ],
-        }),
-      ],
-    },
-    NOW,
-  )
-  assert.equal(found[0].showable, true)
-  assert.equal(found[1].showable, false)
-})
+/* What a paper gets drawn AS is not this module's question — a picture, a
+   rendered PDF or an honest handover is paper-kind-core's rule, and it is
+   tested there. This one only says what a trip is carrying and in what order. */
