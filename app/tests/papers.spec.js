@@ -151,3 +151,26 @@ test('a pass that is a picture is drawn on white, whatever the theme is', async 
     'rgb(255, 255, 255)',
   )
 })
+
+test('the paper covers the screen rather than floating over the trip', async ({ page }) => {
+  /* It shipped transparent. Every rule on .ppview worked — fixed, inset 0, the
+     bar, the centred handover — except its background, which named a property
+     nobody declares: var(--c-canvas) is the Tailwind utility's name, and the
+     property is --c-bg. An unresolvable var() takes the whole declaration with
+     it and says nothing, so a boarding pass was drawn over a live map with the
+     trip's own title showing through the top of it. */
+  await openPapers(page)
+  await page.locator('.pprow').first().click()
+  const view = page.locator('.ppview')
+  await expect(view).toBeVisible()
+
+  const paint = await view.evaluate(node => getComputedStyle(node).backgroundColor)
+  expect(paint, 'you can read the trip through the document').not.toMatch(/transparent|,\s*0\)$/)
+
+  const box = await view.boundingBox()
+  const screen = page.viewportSize()
+  expect(box.height, 'a band at the top of a screen is not a screen').toBeGreaterThanOrEqual(
+    screen.height - 1,
+  )
+  expect(box.width).toBeGreaterThanOrEqual(screen.width - 1)
+})

@@ -1256,7 +1256,7 @@
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 0 10px; border-radius: 12px; text-align: left;
 }
-.trow:hover { background: var(--c-raised2) }
+.trow:hover { background: var(--c-raised-2) }
 .trow.on { background: var(--c-accent-soft) }
 .ttime {
   flex: none; width: 52px; display: flex; flex-direction: column; gap: 1px;
@@ -1324,7 +1324,7 @@
   padding: 11px 12px; border-radius: 14px; border: 1px solid var(--c-line);
   background: var(--c-raised);
 }
-.pprow:hover { background: var(--c-raised2) }
+.pprow:hover { background: var(--c-raised-2) }
 /* The first one is what this screen was opened for — it is for the next thing
    that happens. It gets the room to say so. */
 .pprow.lead { border-color: var(--c-accent); background: var(--c-accent-soft) }
@@ -1336,9 +1336,14 @@
 .ppnote { color: var(--c-faint) }
 .ppgo { flex: none; color: var(--c-faint) }
 
+/* The whole screen, opaque. It shipped reaching for var(--c-canvas), which is
+   the Tailwind utility's name and not a property anybody declares — so the
+   background declaration was invalid, every other rule here worked, and a
+   boarding pass was drawn over a live map. tests/style-tokens.test.js now
+   refuses the spelling. */
 .ppview {
   position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
-  background: var(--c-canvas);
+  background: var(--c-bg);
 }
 .ppvbar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -1368,7 +1373,7 @@
 }
 .ppvin {
   width: 100%; padding: 8px 10px; border-radius: 10px;
-  border: 1px solid var(--c-line); background: var(--c-canvas);
+  border: 1px solid var(--c-line); background: var(--c-bg);
   color: var(--c-ink); font-size: 14px; font-weight: 600; outline: none;
 }
 .ppvin:focus { border-color: var(--c-accent) }
