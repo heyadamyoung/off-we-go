@@ -32,6 +32,7 @@ import { TripCluster } from './trip-cluster'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
 import TripCards from './trip-cards'
+import { TravelDayActivity } from '../../transport'
 import type { Coordinates, TripData } from '../../../shared/model/types'
 import { dayLabelOf } from '../../../day-label-core'
 
@@ -223,6 +224,14 @@ function Trip({
         stats={ask.stats}
       />
 
+      {/* The Lock Screen card: the same legs, positions and clock the meter
+          reads, kept true from here whether or not any panel is open. */}
+      <TravelDayActivity
+        segments={transport.segments}
+        markers={markers}
+        fixes={fixes}
+        now={clock}
+      />
       {!panelOpen && <Advisories segments={transport.segments} markers={markers} now={clock} />}
 
       <MapChrome>

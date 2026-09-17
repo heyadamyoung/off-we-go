@@ -45,6 +45,8 @@
 	<string>Off We Go shares your trip position with members of your private trip, including while the screen is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Off We Go uses your position to place you and your photos on your private trip map.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Off We Go lets you select trip photos from Apple Photos to upload to your private trip.</string>
 	<key>UIBackgroundModes</key>
