@@ -265,22 +265,34 @@ export async function watchFlights({
 const SOURCE_NAMES = {
   'api.dublinairport.com': 'Dublin Airport',
   'yqr.simpleway.cloud': 'Regina Airport',
+  'www.torontopearson.com': 'Toronto Pearson',
   'gtaa-fl-prod.azureedge.net': 'Toronto Pearson',
   'api.adsb.lol': 'ADS-B',
 }
 export const sourceNameOf = source => SOURCE_NAMES[source] || source || 'the airport'
 
-/** The timer, started once on boot beside the others. */
+/** The timer, started once on boot beside the others. A pass still running
+    when the next tick comes is left to finish: a board that is being asked
+    slowly must not be asked twice at once. */
 export function startFlightWatch({ repository, sources, announce, log, every = WATCH_EVERY_MS }) {
   const asked = new Map()
-  const run = () =>
-    span('flights.watch', {}, () => watchFlights({ repository, sources, announce, log, asked }))
+  let running = null
+  const run = () => {
+    if (running) return running
+    running = span('flights.watch', {}, () =>
+      watchFlights({ repository, sources, announce, log, asked }),
+    )
       .then(stats => {
         if (stats.changed || stats.events) {
           log?.info?.({ evt: 'flights.watch', ...stats }, 'the airports said something')
         }
       })
       .catch(error => log?.warn?.({ err: error }, 'flight watch failed'))
+      .finally(() => {
+        running = null
+      })
+    return running
+  }
   const timer = setInterval(run, every)
   timer.unref?.()
   return { run, stop: () => clearInterval(timer) }

@@ -139,22 +139,24 @@ const PROBES = [
   // beside it. Asked first in the run, as a browser on the departures page
   // would, because the bot manager challenges a second visit.
   // The first answer was the list (522 departures, 296 KB); the second and
-  // third requests, sent without the cookies the first had set, drew the bot
-  // manager's captcha. So the cookies a response sets are sent back to its
-  // host from then on, as a browser would, and the list is printed whole.
-  ...['DEP', 'ARR'].map(type => ({
+  // third requests drew the bot manager's captcha, with the first answer's
+  // cookies sent back or not. So the question now is pace: the arrivals
+  // list is asked half a minute after the departures list, and the search
+  // half a minute after that.
+  ...['DEP', 'ARR'].map((type, index) => ({
     id: `yyz-site-list-${type.toLowerCase()}`,
     url: `https://www.torontopearson.com/api/flightsapidata/getflightlist?type=${type}&day=today&useScheduleTimeOnly=false`,
     kind: 'json',
     method: 'GET',
     headers: {
       ...JSON_HEADERS,
-      referer: 'https://www.torontopearson.com/en/departures',
+      referer: `https://www.torontopearson.com/en/${type === 'ARR' ? 'arrivals' : 'departures'}`,
       'x-requested-with': 'XMLHttpRequest',
     },
     bigHeaders: true,
-    full: true,
+    full: type === 'ARR',
     fullLimit: 400_000,
+    waitBeforeMs: index * 30_000,
   })),
   {
     id: 'yyz-site-search',
@@ -168,6 +170,7 @@ const PROBES = [
     },
     bigHeaders: true,
     full: true,
+    waitBeforeMs: 30_000,
   },
   {
     id: 'yyz-site-list-tomorrow',
@@ -480,7 +483,13 @@ async function record(probe) {
 await mkdir(OUT, { recursive: true })
 console.log(`flight source probe — ${new Date().toISOString()} — node ${process.version}`)
 
-for (const probe of PROBES) await record(probe)
+for (const probe of PROBES) {
+  if (probe.waitBeforeMs) {
+    console.log(`\n(waiting ${probe.waitBeforeMs / 1000} s before ${probe.id})`)
+    await new Promise(resolve => setTimeout(resolve, probe.waitBeforeMs))
+  }
+  await record(probe)
+}
 
 /* Dublin, turned a page each way with the names its listing uses, and one
    flight looked up by the id its listing gives. */

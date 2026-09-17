@@ -170,7 +170,7 @@ const app = await buildServer({
   logger: productionLoggerOptions(process.env.LOG_LEVEL || 'info'),
   /* The airports' boards, read from here — the routes and the watch share
      the cache, so ten legs at Dublin are one request a minute, not ten. */
-  flights: createFlightSources({ env: process.env }),
+  flights: createFlightSources(),
 })
 
 /* The conversion worker. In-process today because this is one box; it claims

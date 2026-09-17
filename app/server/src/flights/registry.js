@@ -6,6 +6,7 @@
  * the health endpoint and the report. */
 
 import { createBoardCache } from './board-cache.js'
+import { createBoardHttp } from './http.js'
 import { createAdsbProvider } from './providers/adsb.js'
 import { createDublinProvider } from './providers/dublin.js'
 import { createPearsonProvider } from './providers/pearson.js'
@@ -13,27 +14,22 @@ import { createReginaProvider } from './providers/regina.js'
 
 /**
  * @param {object} [options]
- * @param {typeof fetch} [options.fetch]
+ * @param {typeof fetch} [options.fetch]  for the boards fetch can read
+ * @param {Function} [options.http]  the browser-like client for the one it cannot (flights/http.js)
  * @param {() => number} [options.now]
- * @param {Record<string, string|undefined>} [options.env]
  * @param {number} [options.cacheTtlMs]  how long a board is served without asking again
  */
 export function createFlightSources({
   fetch = globalThis.fetch,
+  http = null,
   now = () => Date.now(),
-  env = process.env,
   cacheTtlMs = 60_000,
 } = {}) {
   const providers = new Map()
   for (const provider of [
     createDublinProvider({ fetch, now }),
     createReginaProvider({ fetch, now }),
-    createPearsonProvider({
-      fetch,
-      now,
-      header: env.PEARSON_FLIGHTS_HEADER || '',
-      key: env.PEARSON_FLIGHTS_KEY || '',
-    }),
+    createPearsonProvider({ fetch: http || createBoardHttp(), now }),
   ]) {
     providers.set(provider.airportCode, provider)
   }

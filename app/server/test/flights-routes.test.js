@@ -54,7 +54,7 @@ async function serve(sources) {
 test('the airports with a board, and their health, behind a login', async () => {
   const sources = createFlightSources({
     fetch: boards().fetch,
-    env: {},
+    http: boards().fetch,
     now: () => Date.parse('2026-09-17T22:33:00.000Z'),
   })
   const { app, repository } = await serve(sources)
@@ -71,14 +71,15 @@ test('the airports with a board, and their health, behind a login', async () => 
   const codes = response.json().airports.map(one => one.code)
   assert.deepEqual(codes, ['DUB', 'YQR', 'YYZ'])
   const yyz = response.json().airports.find(one => one.code === 'YYZ')
-  assert.equal(yyz.configured, false)
+  assert.equal(yyz.configured, true)
+  assert.equal(yyz.source, 'www.torontopearson.com')
   await app.close()
 })
 
 test('a board is served normalized, an unknown airport is a 404, a dead board a 503 that says why', async () => {
   const sources = createFlightSources({
     fetch: boards({ dublin: false }).fetch,
-    env: {},
+    http: boards().fetch,
     now: () => Date.parse('2026-09-17T22:33:00.000Z'),
   })
   const { app, repository } = await serve(sources)
@@ -126,7 +127,7 @@ test('a board is served normalized, an unknown airport is a 404, a dead board a 
 test('a flight is looked up on its board, either side, or said not to be there', async () => {
   const sources = createFlightSources({
     fetch: boards().fetch,
-    env: {},
+    http: boards().fetch,
     now: () => Date.parse('2026-09-17T22:33:00.000Z'),
   })
   const { app, repository } = await serve(sources)
@@ -179,7 +180,7 @@ test('a flight is looked up on its board, either side, or said not to be there',
 })
 
 test('a leg’s snapshot and trail are the trip’s members’ to read', async () => {
-  const sources = createFlightSources({ fetch: boards().fetch, env: {} })
+  const sources = createFlightSources({ fetch: boards().fetch, http: boards().fetch })
   const { app, repository } = await serve(sources)
   const owner = await authenticate(repository, 'owner@example.com')
   const stranger = await authenticate(repository, 'stranger@example.com')

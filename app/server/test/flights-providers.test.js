@@ -8,7 +8,12 @@ import {
   parseDublinBoard,
   readDublinStatus,
 } from '../src/flights/providers/dublin.js'
-import { createPearsonProvider, parsePearsonBoard } from '../src/flights/providers/pearson.js'
+import {
+  createPearsonProvider,
+  parsePearsonBoard,
+  pearsonDayFor,
+  readPearsonStatus,
+} from '../src/flights/providers/pearson.js'
 import { createReginaProvider, parseReginaBoard } from '../src/flights/providers/regina.js'
 import { createFlightSources } from '../src/flights/registry.js'
 
@@ -358,56 +363,154 @@ test('Dublin: the provider says what went wrong, by name', async () => {
   await assert.rejects(shapeless.departures('2026-09-18'), /no content array/)
 })
 
-test('Pearson: without a credential from the GTAA programme the provider says so and asks nobody', async () => {
-  let asked = 0
-  const provider = createPearsonProvider({
-    fetch: async () => {
-      asked += 1
-      return { ok: true, status: 200, json: async () => ({ list: [] }) }
+/* The first row the probe read off the GTAA's list on 17 September 2026,
+   verbatim: a cancelled American departure sold under three other numbers. */
+const PEARSON_ROW = {
+  key: 'A0916AAL1111YYZDFW',
+  id: 'AAL1111',
+  id2: 'AA1111',
+  type: 'DEP',
+  schTime: '2026-09-16T18:15:00-04:00',
+  latestTm: '2026-09-17T07:00:00-04:00',
+  gate: 'A10',
+  status: 'CAN',
+  term: 'T3',
+  al: 'American Airlines',
+  alCode: 'AAL',
+  ids: [
+    { id: 'POE6046', id2: 'PD6046', alName: 'Porter Airlines' },
+    { id: 'QFA4371', id2: 'QF4371', alName: 'Qantas' },
+    { id: 'QTR2334', id2: 'QR2334', alName: 'Qatar Airways' },
+  ],
+  routes: [
+    {
+      code: 'DFW',
+      name: 'Dallas Fort Worth International Airport',
+      short: '',
+      city: 'Dallas-Fort Worth',
+      cnty: 'USA',
+      region: '',
     },
-    header: '',
-    key: '',
+  ],
+  carousel: null,
+  termzone: 'USA',
+  svctype: 'J',
+  aisle: null,
+  zone: '169-182',
+  stand: 'B10',
+}
+
+test('Pearson: the list becomes rows, with the IATA number, the codeshares and the times as instants', () => {
+  const body = {
+    lastUpdate: '2026-09-17T18:59:30-04:00',
+    serverTime: '2026-09-17T19:00:01-04:00',
+    today: '2026-09-17',
+    tomorrow: '2026-09-18',
+    yesterday: '2026-09-16',
+    list: [
+      PEARSON_ROW,
+      { ...PEARSON_ROW, type: 'ARR', id2: 'AC873', id: 'ACA873', status: 'LND', carousel: '7' },
+    ],
+  }
+  const rows = parsePearsonBoard(body, 'departure', { fetchedAt: AT })
+  assert.equal(rows.length, 1, 'the arrival row is not on the departures side')
+  const [row] = rows
+  assert.equal(row.flightNumber, 'AA1111')
+  assert.equal(row.carrierCode, 'AA')
+  assert.equal(row.carrierName, 'American Airlines')
+  assert.equal(row.origin, 'YYZ')
+  assert.equal(row.destination, 'DFW')
+  assert.equal(row.destinationName, 'Dallas-Fort Worth')
+  assert.equal(
+    row.scheduledDeparture,
+    '2026-09-16T22:15:00.000Z',
+    'the list’s own offset, honoured',
+  )
+  assert.equal(row.estimatedDeparture, '2026-09-17T11:00:00.000Z')
+  assert.equal(row.status, 'cancelled')
+  assert.equal(row.statusText, 'CAN')
+  assert.equal(row.terminal, '3')
+  assert.equal(row.gate, 'A10')
+  assert.equal(row.baggageBelt, null)
+  assert.deepEqual(row.codeshares, ['PD6046', 'QF4371', 'QR2334'])
+  assert.equal(row.lastUpdated, '2026-09-17T22:59:30.000Z', 'the list’s own stamp')
+  assert.deepEqual(row.extra, {
+    key: 'A0916AAL1111YYZDFW',
+    icao: 'AAL1111',
+    stand: 'B10',
+    checkinZone: '169-182',
+    region: 'USA',
+    serviceType: 'J',
+    farAirportName: 'Dallas Fort Worth International Airport',
   })
-  assert.equal(provider.configured, false)
-  await assert.rejects(provider.departures(), error => error.code === 'unavailable')
-  assert.equal(asked, 0)
+
+  const [landed] = parsePearsonBoard(body, 'arrival', { fetchedAt: AT })
+  assert.equal(landed.flightNumber, 'AC873')
+  assert.equal(landed.status, 'landed')
+  assert.equal(
+    landed.actualArrival,
+    '2026-09-17T11:00:00.000Z',
+    'a landed flight’s latest time is the actual',
+  )
+  assert.equal(landed.baggageBelt, '7')
+  assert.deepEqual(parsePearsonBoard({ unexpected: true }, 'departure'), [])
 })
 
-test('Pearson: the parser is a best guess at remembered field names and says so by being tested as one', () => {
-  const rows = parsePearsonBoard(
-    {
-      list: [
-        {
-          flt: 'AC872',
-          al: 'AC',
-          alName: 'Air Canada',
-          routes: [{ code: 'DUB', name: 'Dublin' }],
-          schedTm: '2026-09-20T18:35:00',
-          latestTm: '2026-09-20T19:30:00',
-          status: 'Delayed',
-          terminal: '1',
-          gate: 'D12',
-          carousel: null,
-          codeshares: ['LH6801'],
-        },
-      ],
+test('Pearson: a code the list has not been seen to use is kept as its code and reported unknown', () => {
+  assert.deepEqual(readPearsonStatus('BRD'), { status: 'boarding', boardingStatus: 'boarding' })
+  assert.deepEqual(readPearsonStatus('Departed'), { status: 'departed', boardingStatus: null })
+  assert.deepEqual(readPearsonStatus('XYZ'), { status: 'unknown', boardingStatus: null })
+  assert.deepEqual(readPearsonStatus(''), { status: 'unknown', boardingStatus: null })
+})
+
+test('Pearson: the list knows three days by Toronto’s calendar, and a captcha is reported as one', async () => {
+  const now = Date.parse('2026-09-17T23:30:00.000Z') // 19:30 in Toronto, still the 17th
+  assert.equal(pearsonDayFor('2026-09-17', now), 'today')
+  assert.equal(pearsonDayFor('2026-09-18', now), 'tomorrow')
+  assert.equal(pearsonDayFor('2026-09-16', now), 'yesterday')
+  assert.equal(pearsonDayFor('2026-09-20', now), null)
+  assert.equal(pearsonDayFor(null, now), 'today')
+
+  const asked = []
+  const provider = createPearsonProvider({
+    fetch: async (url, options) => {
+      asked.push({ url, headers: options.headers })
+      return {
+        ok: true,
+        status: 200,
+        challenged: false,
+        json: async () => ({ list: [PEARSON_ROW] }),
+      }
     },
-    'departure',
-    { fetchedAt: AT },
+    now: () => now,
+  })
+  assert.equal(provider.configured, true)
+  assert.equal((await provider.departures('2026-09-17')).length, 1)
+  assert.deepEqual(
+    await provider.departures('2026-09-25'),
+    [],
+    'a day the list does not know is empty, not an error',
   )
-  assert.equal(rows.length, 1)
-  assert.equal(rows[0].flightNumber, 'AC872')
-  assert.equal(rows[0].destination, 'DUB')
+  assert.equal(asked.length, 1)
   assert.equal(
-    rows[0].scheduledDeparture,
-    '2026-09-20T22:35:00.000Z',
-    'Toronto wall-clock, made UTC',
+    asked[0].url,
+    'https://www.torontopearson.com/api/flightsapidata/getflightlist?type=DEP&day=today&useScheduleTimeOnly=false',
   )
-  assert.equal(rows[0].estimatedDeparture, '2026-09-20T23:30:00.000Z')
-  assert.equal(rows[0].status, 'delayed')
-  assert.equal(rows[0].gate, 'D12')
-  assert.deepEqual(rows[0].codeshares, ['LH6801'])
-  assert.deepEqual(parsePearsonBoard({ unexpected: true }, 'departure'), [])
+  assert.equal(asked[0].headers.referer, 'https://www.torontopearson.com/en/departures')
+
+  const challenged = createPearsonProvider({
+    fetch: async () => ({ ok: false, status: 302, challenged: true, json: async () => ({}) }),
+  })
+  await assert.rejects(challenged.arrivals(), /asked for a captcha/)
+  const shapeless = createPearsonProvider({
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      challenged: false,
+      json: async () => ({ html: true }),
+    }),
+  })
+  await assert.rejects(shapeless.departures(), /no list array/)
 })
 
 test('ADS-B: a callsign is the ICAO code and the number, and a position is a verdict', () => {
@@ -460,13 +563,19 @@ test('the registry knows three airports, and reads each board through one cache'
       json: async () => JSON.parse(fixture('dublin-arrivals-evening.json')),
     }
   }
-  const sources = createFlightSources({ fetch, env: {}, now: () => Date.parse(AT) })
+  const http = async () => ({
+    ok: true,
+    status: 200,
+    challenged: false,
+    json: async () => ({ list: [PEARSON_ROW] }),
+  })
+  const sources = createFlightSources({ fetch, http, now: () => Date.parse(AT) })
   assert.deepEqual(
     sources.airports().map(one => [one.code, one.configured]),
     [
       ['DUB', true],
       ['YQR', true],
-      ['YYZ', false],
+      ['YYZ', true],
     ],
   )
   const first = await sources.board('yqr', 'departure')
@@ -477,8 +586,80 @@ test('the registry knows three airports, and reads each board through one cache'
   const dublin = await sources.board('DUB', 'arrival', '2026-09-17')
   assert.equal(dublin.value.length, 24)
   assert.equal(await sources.board('LHR', 'arrival'), null)
-  const pearson = await sources.board('YYZ', 'departure')
-  assert.equal(pearson.value, null)
-  assert.match(pearson.error.message, /credential/)
-  assert.equal(sources.health()['gtaa-fl-prod.azureedge.net'].failures, 1)
+  const pearson = await sources.board('YYZ', 'departure', '2026-09-17')
+  assert.equal(pearson.value.length, 1, 'read through the browser-like client, not fetch')
+  assert.equal(pearson.value[0].source, 'www.torontopearson.com')
+  assert.equal(sources.health()['www.torontopearson.com'].failures, 0)
+  /* Regina once, Dublin's first page and the two it walks back from a
+     listing that says it has earlier flights; Pearson never through fetch. */
+  assert.equal(fetches, 4)
+})
+
+test('Pearson: a whole day off the list, as served on 17 September 2026', () => {
+  const body = JSON.parse(fixture('pearson-departures.json'))
+  const rows = parsePearsonBoard(body, 'departure', { fetchedAt: AT })
+  assert.equal(rows.length, 522)
+  const statuses = {}
+  for (const row of rows) statuses[row.status] = (statuses[row.status] || 0) + 1
+  assert.deepEqual(statuses, { cancelled: 16, departed: 373, delayed: 27, scheduled: 106 })
+  assert.ok(rows.every(row => row.terminal === '1' || row.terminal === '3'))
+  assert.equal(rows.filter(row => row.gate).length, 519)
+  assert.equal(
+    rows[0].lastUpdated,
+    '2026-09-17T23:00:00.029Z',
+    'the list’s stamp, with its seven fractional digits, still parses',
+  )
+  const departed = rows.find(row => row.flightNumber === 'BA98')
+  assert.equal(departed.status, 'departed')
+  assert.equal(departed.scheduledDeparture, '2026-09-17T02:00:00.000Z')
+  assert.equal(
+    departed.actualDeparture,
+    '2026-09-17T04:17:00.000Z',
+    'a departed flight’s latest time is the actual',
+  )
+  assert.equal(departed.estimatedDeparture, null)
+  assert.deepEqual(departed.codeshares, ['AY5998', 'EI8798', 'IB3532', 'AA6921'])
+  assert.equal(departed.destinationName, 'London')
+})
+
+test('Pearson: the list is asked slowly, one board at a time, and a captcha means silence for a while', async () => {
+  let clock = Date.parse('2026-09-17T23:30:00.000Z')
+  const slept = []
+  const asked = []
+  let challenge = false
+  const provider = createPearsonProvider({
+    fetch: async url => {
+      asked.push({ url, at: clock })
+      if (challenge) return { ok: false, status: 302, challenged: true, json: async () => ({}) }
+      return {
+        ok: true,
+        status: 200,
+        challenged: false,
+        json: async () => ({ list: [PEARSON_ROW] }),
+      }
+    },
+    now: () => clock,
+    sleep: async ms => {
+      slept.push(ms)
+      clock += ms
+    },
+    spacingMs: 30_000,
+    backoffMs: 600_000,
+  })
+  const [departures, arrivals] = await Promise.all([provider.departures(), provider.arrivals()])
+  assert.equal(departures.length, 1)
+  assert.equal(arrivals.length, 0, 'the recorded row is a departure, so the arrivals side is empty')
+  assert.deepEqual(slept, [30_000], 'the second board waited its turn')
+  assert.equal(asked[1].at - asked[0].at, 30_000)
+
+  challenge = true
+  clock += 31_000
+  await assert.rejects(provider.departures(), /asked for a captcha$/)
+  clock += 60_000
+  await assert.rejects(provider.arrivals(), /not asking again for 9 min/)
+  assert.equal(asked.length, 3, 'a challenged door is not knocked on again')
+
+  clock += 600_000
+  challenge = false
+  assert.equal((await provider.departures()).length, 1)
 })
