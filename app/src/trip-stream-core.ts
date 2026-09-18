@@ -6,8 +6,23 @@ import type { LiveFix } from './shared/model/types'
    incremental and cheap; everything else — a stop moved, a photograph added, a
    comment posted — says only what changed, and the page asks for that slice.
 
+   A held-open connection dies quietly. A phone that went to another app for
+   a minute, or walked off the terminal's Wi-Fi onto the mobile network,
+   keeps a socket with nobody on the other end: no error, no end, nothing —
+   and the gate the airport named while it was away reached the leg and never
+   reached the screen until somebody reloaded. So the server comments every
+   twenty-five seconds, and silence for longer than that is read here as a
+   dead connection: dropped, and opened again. Coming back to the foreground,
+   or back online, does the same at once rather than waiting the silence out.
+   And every connection after the first tells its listeners so, because what
+   changed while the last one was dead was announced to nobody: they ask
+   again, the way they do for any change.
+
    Written as a factory over its dependencies so the dispatch can be tested
    without a server, a socket, or a browser. */
+
+/** The server comments every 25 s; this is that, and room for a slow network. */
+export const STREAM_SILENCE_MS = 70_000
 
 export interface TripStreamDeps {
   /** Opens the stream. Rejects if it cannot be opened. */
@@ -21,12 +36,19 @@ export interface TripStreamDeps {
   asFix: (value: unknown) => LiveFix
   retryDelay: (failures: number) => number
   pollEvery?: number
+  /** How long the stream may say nothing before it is presumed dead. */
+  silenceMs?: number
+  /** The moments a page comes back — to the foreground, online — and the
+      way to stop listening for them. */
+  onWake?: (run: () => void) => () => void
   setTimer?: (run: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
 }
 
 export interface Listener {
   onFix?: (fix: LiveFix) => void
+  /** What changed: a kind the server named, 'poll' for a round of asking,
+      or 'resume' — the connection was re-made, and anything may have. */
   onChange?: (kind: string) => void
   onState?: (state: 'ready' | 'error') => void
   cursor?: number
@@ -37,6 +59,7 @@ export function createTripStreams(deps: TripStreamDeps) {
   const setTimer = deps.setTimer || ((run: () => void, ms: number) => setTimeout(run, ms))
   const clearTimer = deps.clearTimer || ((handle: unknown) => clearTimeout(handle as never))
   const pollEvery = deps.pollEvery ?? 15_000
+  const silenceMs = deps.silenceMs ?? STREAM_SILENCE_MS
   const streams = new Map<string, ReturnType<typeof openStream>>()
 
   function openStream(tripId: string) {
@@ -44,9 +67,22 @@ export function createTripStreams(deps: TripStreamDeps) {
     let cursor = 0
     let hours = 24
     let stopped = false
+    let started = false
     let failures = 0
     let polling: unknown = null
     let abort: AbortController | null = null
+    /* Whether a connection has ever been held: the first has nothing to catch
+       up on, every one after it does. */
+    let held = false
+    /* Set when this side drops the connection on purpose — silence, a wake —
+       so the drop is followed by a reconnect and not by a back-off. */
+    let dropped = false
+    let watchdog: unknown = null
+    let retry: unknown = null
+    let unwake: (() => void) | null = null
+    /* The reader on the open body: cancelled as well as aborted when this
+       side lets go, so a body that outlives its request still ends. */
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
     const tell = (run: (listener: Listener) => void) => {
       for (const listener of [...listeners]) {
@@ -90,6 +126,35 @@ export function createTripStreams(deps: TripStreamDeps) {
       }
     }
 
+    /* Silence past the server's heartbeat is a dead socket, not a quiet
+       evening: the connection is dropped and made again. */
+    const expectSomething = () => {
+      if (watchdog) clearTimer(watchdog)
+      watchdog = setTimer(() => {
+        watchdog = null
+        drop()
+      }, silenceMs)
+    }
+    const expectNothing = () => {
+      if (watchdog) clearTimer(watchdog)
+      watchdog = null
+    }
+
+    /* Drop whatever connection there is, or whatever wait there is, and
+       connect now. */
+    const drop = () => {
+      if (stopped || !started || dropped) return
+      dropped = true
+      if (retry) {
+        clearTimer(retry)
+        retry = null
+        connect()
+        return
+      }
+      abort?.abort()
+      reader?.cancel().catch(() => {})
+    }
+
     const consume = (text: string, carry: string) => {
       const { frames, rest } = readFrames(carry + text)
       for (const frame of frames) {
@@ -111,38 +176,51 @@ export function createTripStreams(deps: TripStreamDeps) {
 
     const connect = async () => {
       if (stopped) return
-      abort = new AbortController()
+      retry = null
+      dropped = false
+      const controller = new AbortController()
+      abort = controller
       try {
         const response = await deps.open(
           `${deps.path(tripId)}/live/stream?hours=${hours}&cursor=${cursor}`,
-          abort.signal,
+          controller.signal,
         )
         if (!response.body) throw new Error('This browser cannot read a stream')
         stopPolling()
         failures = 0
         state('ready')
+        if (held) tell(listener => listener.onChange?.('resume'))
+        held = true
 
-        const reader = response.body.getReader()
+        reader = response.body.getReader()
         const decoder = new TextDecoder()
         let carry = ''
+        expectSomething()
         for (;;) {
           const { value, done } = await reader.read()
           if (done || stopped) break
+          expectSomething()
           carry = consume(decoder.decode(value, { stream: true }), carry)
         }
         if (!stopped) throw new Error('the stream ended')
       } catch (error) {
-        if (stopped || (error as Error)?.name === 'AbortError') return
+        reader = null
+        expectNothing()
+        if (stopped) return
+        if (dropped) {
+          /* Our own doing: straight back, with nothing to report. */
+          retry = setTimer(connect, 0)
+          return
+        }
+        if ((error as Error)?.name === 'AbortError') return
         failures += 1
         state('error')
         // Twice in a row and something in the middle does not want a held-open
         // connection. Ask until it changes its mind.
         if (failures >= 2) startPolling()
-        setTimer(connect, deps.retryDelay(failures))
+        retry = setTimer(connect, deps.retryDelay(failures))
       }
     }
-
-    let started = false
 
     return {
       /* Not before the first listener: it brings the cursor to resume from,
@@ -150,6 +228,7 @@ export function createTripStreams(deps: TripStreamDeps) {
       start() {
         if (started || stopped) return
         started = true
+        unwake = deps.onWake?.(drop) || null
         connect()
       },
       add(listener: Listener) {
@@ -164,7 +243,13 @@ export function createTripStreams(deps: TripStreamDeps) {
       stop() {
         stopped = true
         stopPolling()
+        expectNothing()
+        if (retry) clearTimer(retry)
+        retry = null
+        unwake?.()
+        unwake = null
         abort?.abort()
+        reader?.cancel().catch(() => {})
       },
       get listeners() {
         return listeners.size

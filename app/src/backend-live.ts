@@ -1,5 +1,6 @@
 import { authClient, isSample, tripPath } from './backend-base'
 import { isStill } from './shared/lib/still'
+import { onWake } from './shared/lib/wake'
 import { asDevice, asFix, liveRetryDelay, type DeviceWire } from './live-positions-core'
 import { sampleLiveHistory, sampleLiveNow } from './sample-live-core'
 import { sampleResult } from './sample-trip-core'
@@ -14,11 +15,14 @@ const tripStreams = createTripStreams({
   path: tripPath,
   asFix: value => asFix(value as never),
   retryDelay: liveRetryDelay,
+  onWake,
 })
 
 /* The kind rides through so a listener can be choosy: the chat refetches its
    own slice on 'chat' and the trip loader deliberately ignores it — a busy
-   evening of messages must not re-download the whole trip per bubble. */
+   evening of messages must not re-download the whole trip per bubble. A
+   'resume' means the connection was re-made and anything may have changed
+   while it was dead; everyone asks again. */
 export function subscribeToTrip(tripId: Id, onChange: (kind: string) => void) {
   if (isSample(tripId)) return () => {}
   return tripStreams.watch(String(tripId), { onChange })

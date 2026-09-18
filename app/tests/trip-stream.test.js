@@ -159,3 +159,138 @@ test('the cursor a listener brings is where the stream starts', async () => {
   assert.match(opened[0], /hours=48/)
   stop()
 })
+
+/* A held-open connection dies quietly — a phone in another app, a walk off
+   the Wi-Fi — and a page that keeps reading a dead socket hears nothing for
+   the rest of the day. */
+test('a connection that goes quiet is dropped, made again, and the page told to ask again', async () => {
+  let opened = 0
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        opened += 1
+        return fakeStream() // says nothing, ever
+      },
+      silenceMs: 5,
+    }),
+  )
+  const changes = []
+  const stop = streams.watch('trip-a', { onChange: kind => changes.push(kind) })
+  await new Promise(resolve => setTimeout(resolve, 40))
+  stop()
+
+  assert.ok(opened >= 2, `silence should have been read as a dead connection (opened ${opened})`)
+  assert.ok(changes.includes('resume'), 'the listeners should be told to ask again')
+})
+
+test('a connection that keeps talking is left alone', async () => {
+  let opened = 0
+  let socket = null
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        opened += 1
+        socket = fakeStream()
+        return socket
+      },
+      silenceMs: 15,
+    }),
+  )
+  const changes = []
+  const stop = streams.watch('trip-a', { onChange: kind => changes.push(kind) })
+  for (let beat = 0; beat < 6; beat += 1) {
+    await new Promise(resolve => setTimeout(resolve, 5))
+    socket.write(':\n\n') // the server's heartbeat: a comment, not an event
+  }
+  stop()
+
+  assert.equal(opened, 1, 'a heartbeat within the silence is a live connection')
+  assert.deepEqual(changes, [])
+})
+
+test('coming back to the foreground reconnects at once and asks again', async () => {
+  let opened = 0
+  let wake = null
+  let unlistened = 0
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        opened += 1
+        return fakeStream()
+      },
+      onWake: run => {
+        wake = run
+        return () => {
+          unlistened += 1
+        }
+      },
+    }),
+  )
+  const changes = []
+  const stop = streams.watch('trip-a', { onChange: kind => changes.push(kind) })
+  await settle()
+  assert.equal(opened, 1)
+  assert.deepEqual(changes, [], 'the first connection has nothing to catch up on')
+
+  wake()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(opened, 2, 'a wake is a new connection')
+  assert.deepEqual(changes, ['resume'])
+
+  stop()
+  assert.equal(unlistened, 1, 'stopping stops listening for wakes')
+})
+
+test('a wake during the wait after a failure does not wait it out', async () => {
+  let opened = 0
+  let wake = null
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        opened += 1
+        if (opened === 1) throw new Error('refused')
+        return fakeStream()
+      },
+      retryDelay: () => 60_000,
+      onWake: run => {
+        wake = run
+        return () => {}
+      },
+    }),
+  )
+  const states = []
+  const stop = streams.watch('trip-a', { onState: value => states.push(value) })
+  await settle()
+  assert.equal(opened, 1)
+  assert.deepEqual(states, ['error'])
+
+  wake()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  stop()
+  assert.equal(opened, 2, 'the minute-long back-off should have been cut short')
+  assert.deepEqual(states, ['error', 'ready'])
+})
+
+test('a stream the server ended is made again, and the page asks again', async () => {
+  let socket = null
+  let opened = 0
+  const streams = createTripStreams(
+    deps({
+      open: async () => {
+        opened += 1
+        socket = fakeStream()
+        return socket
+      },
+      retryDelay: () => 1,
+    }),
+  )
+  const changes = []
+  const stop = streams.watch('trip-a', { onChange: kind => changes.push(kind) })
+  await settle()
+  socket.end() // the server restarted under a deploy
+  await new Promise(resolve => setTimeout(resolve, 20))
+  stop()
+
+  assert.equal(opened, 2)
+  assert.deepEqual(changes, ['resume'])
+})
