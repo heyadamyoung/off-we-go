@@ -17,27 +17,48 @@ export default defineConfig({
      command; picked up here it would run against the sample build with
      nothing listening, and fail for reasons that are not about the app. */
   testIgnore: '**/live/**',
-  fullyParallel: false,
-  /* Half the cores, and never more. Every worker holds a map drawn in
-     software, and a worker per core left each browser a second or more
-     behind on a round trip: gestures measured by the clock — a double tap,
-     a flick — arrived too slowly to be what they were, and a drag across the
-     map spent its whole test timeout waiting on frames. The runner on CI is
-     two cores and two workers and has never shown it; a bigger box is not
-     faster at four. */
-  workers: process.env.CI ? 2 : Math.max(1, Math.floor(os.cpus().length / 2)),
+  /* Every test opens its own page, so every test can run anywhere: the
+     sixty-eight in trip.spec.js are spread across the workers rather than
+     run one after another on whichever worker drew the file. */
+  fullyParallel: true,
+  /* One worker per core. An idle page used to burn a core and a half on
+     compositor animations, so a worker per core left every browser a second
+     behind; with motion reduced (see tests/fixture.js) a waiting page costs
+     nothing, and the count stops mattering. */
+  workers: process.env.CI ? 2 : os.cpus().length,
   /* CI only, one retry: the sights and place-search specs lean on live
      Wikipedia, which throttles GitHub's runner addresses in waves — the same
      two tests failed different runs on different afternoons with the code
      untouched. Locally a failure stays loud. */
   retries: process.env.CI ? 1 : 0,
-  timeout: 90_000,
-  expect: { timeout: 15_000 },
+  /* The suite is done in three minutes or it is broken: the run stops at
+     the first failure and is cut off at the budget, so a slow suite is a
+     red suite and not a slow one. The budget binds at a desk; the two-core
+     runner that gates a deploy is not held to it until the suite fits,
+     because a deploy that never runs is worse than a slow one. */
+  maxFailures: 1,
+  globalTimeout: process.env.CI ? 0 : 180_000,
+  timeout: process.env.CI ? 90_000 : 30_000,
+  expect: { timeout: process.env.CI ? 15_000 : 8_000 },
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: 'http://localhost:4180',
-    viewport: { width: 1600, height: 950 },
-    trace: 'retain-on-failure',
+    /* Desktop layout (the widest breakpoint is 1024) at half the pixels of
+       the old 1600×950: every pixel of a headless map is rasterised in
+       software, on every page a test opens. */
+    viewport: { width: 1100, height: 700 },
+    /* Half the device pixels: every pixel of a headless map is rasterised in
+       software on every page a test opens, and no test reads a pixel. CSS
+       pixels — every box a test measures — are unchanged. */
+    deviceScaleFactor: 0.5,
+    /* Tracing screenshots every action, and a screenshot of a software-drawn
+       map is a raster pass: it was a quarter of the suite's time. A failure on
+       CI records its trace on the retry; at a desk, `--trace on` when needed. */
+    trace: process.env.CI ? 'on-first-retry' : 'off',
+    /* The pulses and halos are compositor animations, and a headless
+       compositor is software: at sixty frames a second an idle page was a
+       core and a half. The stylesheet honours the preference already. */
+    reducedMotion: 'reduce',
   },
   projects: [
     {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
 /* What happened while you were not looking.

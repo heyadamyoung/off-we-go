@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { buildServer } from '../server/src/app.js'
 import { createMemoryRepository } from '../server/test/memory-repository.js'
 

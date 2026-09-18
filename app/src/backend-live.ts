@@ -1,4 +1,5 @@
 import { authClient, isSample, tripPath } from './backend-base'
+import { isStill } from './shared/lib/still'
 import { asDevice, asFix, liveRetryDelay, type DeviceWire } from './live-positions-core'
 import { sampleLiveHistory, sampleLiveNow } from './sample-live-core'
 import { sampleResult } from './sample-trip-core'
@@ -136,7 +137,7 @@ export function subscribeToPositions(
        nondeterminism a CI runner trips over at its own pace. A global set
        before navigation, not a query param: the router normalises unknown
        search keys away before this code ever runs. */
-    const still = (globalThis as { __offwegoStill?: boolean }).__offwegoStill === true
+    const still = isStill()
     onState?.('ready')
     if (still) return () => {}
     const tick = () => {

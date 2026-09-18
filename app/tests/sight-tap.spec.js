@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
+
+/* This one is about the cartography, so it draws the real style. */
+test.use({ mapStyle: 'real' })
 import { atDemoTime } from './demo-clock'
 import { serveWikipedia } from './wikipedia-fixture.js'
 
@@ -32,8 +35,6 @@ async function open(page) {
     await follow.click()
     await expect(follow).toHaveCount(0)
   }
-  await page.evaluate(() => window.__offwegoMap?.stop())
-  await page.waitForTimeout(1100)
   await page.evaluate(() => window.__offwegoMap?.stop())
   await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
 }

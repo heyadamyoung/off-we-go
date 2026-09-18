@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
 /* The grid only puts the rows somebody can see in the document, which is what

@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
+
+/* The basemap being kept on the device is the subject, so it is the real one. */
+test.use({ mapStyle: 'real' })
 import { atDemoTime } from './demo-clock'
 import { serveBasemap } from './basemap-fixture.js'
 
@@ -26,8 +29,8 @@ test('the app opens and the map draws with the network cut', async ({ page, cont
      since nothing below reads a stop, a day or a destination. */
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 15000 })
-  // Long enough for the worker to take over and be told what the page loaded.
-  await page.waitForTimeout(6000)
+  // The poll below is the wait: the worker takes over and is told what the
+  // page loaded, and the shell count climbs past five when it has.
   await expect
     .poll(
       () =>

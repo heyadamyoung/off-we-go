@@ -1,4 +1,16 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
+
+/* Settled: nothing left to load, the fonts in, and two frames drawn. The
+   network is sealed and motion is reduced for every test, so this is what
+   the sleeps that used to sit here were waiting for. */
+async function settled(page) {
+  await page.waitForLoadState('networkidle')
+  await page.evaluate(() =>
+    document.fonts.ready.then(
+      () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
+    ),
+  )
+}
 import { atDemoTime } from './demo-clock'
 
 test.beforeEach(async ({ page }) => {
@@ -77,7 +89,7 @@ const STATES = [
     'main',
     async page => {
       await page.goto('/')
-      await page.waitForTimeout(2500)
+      await settled(page)
     },
   ],
   [
@@ -85,7 +97,7 @@ const STATES = [
     'main',
     async page => {
       await page.goto('/profile')
-      await page.waitForTimeout(1200)
+      await settled(page)
     },
   ],
   [
@@ -93,7 +105,7 @@ const STATES = [
     'main',
     async page => {
       await page.goto('/new')
-      await page.waitForTimeout(1000)
+      await settled(page)
     },
   ],
   [
@@ -101,7 +113,7 @@ const STATES = [
     'main',
     async page => {
       await page.goto('/past')
-      await page.waitForTimeout(1000)
+      await settled(page)
     },
   ],
   [
@@ -109,7 +121,7 @@ const STATES = [
     'main',
     async page => {
       await page.goto('/invitations')
-      await page.waitForTimeout(1000)
+      await settled(page)
     },
   ],
   [
@@ -119,14 +131,14 @@ const STATES = [
       await atDemoTime(page)
       await page.goto('/trips/sample')
       await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
-      await page.waitForTimeout(1500)
+      await settled(page)
     },
   ],
   [
     'the day bar',
     '.fdays',
     async page => {
-      await page.waitForTimeout(200)
+      await settled(page)
     },
   ],
   [
@@ -142,7 +154,7 @@ const STATES = [
     'aside',
     async page => {
       await page.getByRole('button', { name: 'Photos', exact: true }).click()
-      await page.waitForTimeout(600)
+      await settled(page)
     },
   ],
   [
@@ -155,7 +167,7 @@ const STATES = [
       await page.keyboard.press('Escape')
       await expect(page).not.toHaveURL(/view=/)
       await page.getByRole('button', { name: 'People', exact: true }).click()
-      await page.waitForTimeout(600)
+      await settled(page)
     },
   ],
   [
@@ -163,7 +175,7 @@ const STATES = [
     '.detailcard',
     async page => {
       await page.getByRole('button', { name: 'Map', exact: true }).click()
-      await page.waitForTimeout(400)
+      await settled(page)
       await page.locator('.fcard').first().click()
       await expect(page.locator('.detailcard')).toBeVisible()
     },
@@ -181,7 +193,7 @@ const STATES = [
     '.dlg',
     async page => {
       await page.keyboard.press('Escape')
-      await page.waitForTimeout(300)
+      await settled(page)
       await page.getByRole('button', { name: 'More tools' }).click()
       await page.getByRole('menuitem', { name: 'Trip settings' }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
@@ -192,7 +204,7 @@ const STATES = [
     '.dlg',
     async page => {
       await page.locator('.dlg').getByRole('button', { name: 'People', exact: true }).click()
-      await page.waitForTimeout(500)
+      await settled(page)
     },
   ],
   [
@@ -200,7 +212,7 @@ const STATES = [
     '.dlg',
     async page => {
       await page.locator('.dlg').getByRole('button', { name: 'Location', exact: true }).click()
-      await page.waitForTimeout(500)
+      await settled(page)
     },
   ],
   [
@@ -208,7 +220,7 @@ const STATES = [
     '.dlg',
     async page => {
       await page.locator('.dlgfoot').getByRole('button', { name: 'Close', exact: true }).click()
-      await page.waitForTimeout(400)
+      await settled(page)
       await page.getByRole('button', { name: 'Add photos' }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
     },
@@ -234,7 +246,7 @@ test('the pencil is not offered where the things it unlocks are hidden', async (
   await expect(pin(), 'the one control that does add a stop on a phone has gone too').toBeVisible()
 
   await page.setViewportSize({ width: 1024, height: 800 })
-  await page.waitForTimeout(300)
+  await settled(page)
   await expect(
     pencil(),
     'the pencil is missing where the hint bar it belongs to is shown',
@@ -244,7 +256,7 @@ test('the pencil is not offered where the things it unlocks are hidden', async (
   await pencil().click()
   await expect(page.locator('.edithint')).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.waitForTimeout(300)
+  await settled(page)
   await expect(
     page.getByRole('button', { name: 'Done editing' }),
     'edit mode is on with no way to turn it off',
@@ -259,7 +271,7 @@ test('the strips that scroll sideways do not also scroll up and down', async ({ 
   await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
-  await page.waitForTimeout(1500)
+  await settled(page)
 
   const strips = await page.evaluate(() => {
     const found = [
@@ -291,7 +303,7 @@ test('a card on the day bar shows its whole name', async ({ page }) => {
   await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 20_000 })
-  await page.waitForTimeout(1500)
+  await settled(page)
 
   const cards = await page.evaluate(() => {
     const row = document.querySelector('.fcard').parentElement.getBoundingClientRect()

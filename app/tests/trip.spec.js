@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { atDemoTime, demoDay } from './demo-clock'
 import { serveOverpass } from './overpass-fixture.js'
 import { serveWikipedia } from './wikipedia-fixture.js'
@@ -58,14 +58,10 @@ async function open(page) {
     await follow.click()
     await expect(follow).toHaveCount(0)
   }
-  // Cancel the initial follow animation as well as disabling future ones. If it
-  // is left running, its moveend can race a camera action performed by a test.
-  await page.evaluate(() => window.__offwegoMap?.stop())
-  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
-  /* On a slow runner the follow effect can have been QUEUED before the toggle
-     above and only issue its ease after the stop — a 900ms glide that starts
-     under the test's feet. Outlive it, then kill anything that started. */
-  await page.waitForTimeout(1100)
+  /* With the page told to hold still, the camera jumps where it would ease
+     (see shared/lib/still.ts), so nothing can start moving under a test's
+     feet after this — the second-long grace this used to sleep through was
+     for an ease that can no longer be queued. */
   await page.evaluate(() => window.__offwegoMap?.stop())
   await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
 }

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
 /* Two things the stop editor claimed to do and did not. Both were reported

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
 /* The timeline, as the one screen where the plan and what happened meet.

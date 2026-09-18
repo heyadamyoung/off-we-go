@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
+
+/* This one is about the cartography, so it draws the real style. */
+test.use({ mapStyle: 'real' })
 import { atDemoTime } from './demo-clock'
 
 /* The map's own words.
