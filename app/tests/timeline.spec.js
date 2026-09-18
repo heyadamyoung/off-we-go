@@ -215,5 +215,5 @@ test('a journey opens where its seats and its boarding pass are', async ({ page 
     if (scroller) scroller.scrollTop = scroller.scrollHeight
   })
   await page.locator('.trow.tgo').first().click()
-  await expect(page.getByRole('heading', { name: 'Getting there' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
 })

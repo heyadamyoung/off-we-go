@@ -34,6 +34,8 @@ const ADSB_EVERY_MS = 10 * 60_000
 
 const SEGMENT_STATUS = { cancelled: 'cancelled', done: 'arrived', delayed: 'delayed' }
 const SETTLED = new Set(['departed', 'landed', 'arrived', 'cancelled', 'diverted'])
+const LANDED = new Set(['landed', 'arrived'])
+const ENDED = new Set(['cancelled', 'diverted'])
 
 /** The leg as the traveller typed it, in the board's shape, for a first comparison. */
 export function baselineFromSegment(segment) {
@@ -123,29 +125,49 @@ const NOTE_ORDER = [
   'TerminalChanged',
   'BoardingStarted',
   'BoardingEnded',
-  'FlightDeparted',
+  /* Landed before departed: a first look at a flight that has already
+     landed is news of a landing, and the leaving is history. */
   'FlightLanded',
+  'FlightDeparted',
   'ArrivalEstimateChanged',
   'BaggageUpdated',
   'AircraftChanged',
 ]
 
 const GONE_FOR_GOOD = new Set(['departed', 'landed', 'arrived'])
+/* The far end's news: said by the arrivals board, in the far end's clock. */
+export const ARRIVAL_SIDE = new Set(['FlightLanded', 'ArrivalEstimateChanged', 'BaggageUpdated'])
 
-export function noteFor(events, { flight, zone, sourceName, at, status = null }) {
+export function noteFor(
+  events,
+  {
+    flight,
+    zone,
+    sourceName,
+    at,
+    status = null,
+    arrivalZone = zone,
+    arrivalSourceName = sourceName,
+  },
+) {
   /* "Delayed by six minutes" about a flight that has left is history; the
-     leaving is the news. The delay is still an event, just not the note. */
-  const worth = GONE_FOR_GOOD.has(status)
-    ? events.filter(one => !['FlightDelayed', 'FlightRescheduled'].includes(one.type))
-    : events
+     leaving is the news. The delay is still an event, just not the note.
+     A belt named before the flight has left — Pearson assigns carousels
+     hours ahead — is on the ticket, and is not the sentence either. */
+  const worth = events.filter(one => {
+    if (GONE_FOR_GOOD.has(status)) return !['FlightDelayed', 'FlightRescheduled'].includes(one.type)
+    return one.type !== 'BaggageUpdated'
+  })
   const said = [...worth].sort((a, b) => NOTE_ORDER.indexOf(a.type) - NOTE_ORDER.indexOf(b.type))[0]
   if (!said) return null
+  const far = ARRIVAL_SIDE.has(said.type)
   const clock = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: zone || 'UTC',
+    timeZone: (far ? arrivalZone : zone) || 'UTC',
   }).format(new Date(at))
-  return `${describeFlightEvent(said, { flight, zone })} ${sourceName}, ${clock}.`
+  const where = far ? arrivalSourceName : sourceName
+  return `${describeFlightEvent(said, { flight, zone: far ? arrivalZone : zone })} ${where}, ${clock}.`
 }
 
 /**
@@ -198,8 +220,30 @@ export async function watchFlights({
       const arrival = matchFlight(arrivalBoard?.value, number, leg.arrivesAt || leg.departsAt)
       let view = mergeBoards(departure, arrival)
 
-      /* A board that should have said "departed" and has not: ask the sky. */
       const snapshot = await repository.flightSnapshot(leg.id)
+      /* A belt does not un-assign because the board that named it has gone
+         quiet — Pearson answers once and then challenges — and a flight the
+         far board has landed does not take off again because only the near
+         board answered this minute. What the arrivals board last said about
+         the far end is kept until it says otherwise. */
+      if (view && !arrival && snapshot?.info) {
+        const was = snapshot.info
+        const settled =
+          LANDED.has(was.status) && !LANDED.has(view.status) && !ENDED.has(view.status)
+        view = {
+          ...view,
+          baggageBelt: view.baggageBelt || was.baggageBelt || null,
+          arrivalTerminal: view.arrivalTerminal || was.arrivalTerminal || null,
+          estimatedArrival: view.estimatedArrival || was.estimatedArrival || null,
+          actualArrival: view.actualArrival || was.actualArrival || null,
+          ...(settled ? { status: was.status, statusText: was.statusText } : {}),
+          sources: [
+            ...(view.sources || []),
+            ...(was.sources || []).filter(one => !(view.sources || []).includes(one)),
+          ],
+        }
+      }
+      /* A board that should have said "departed" and has not: ask the sky. */
       const known = view || snapshot?.info || null
       const leaves = bestDeparture(known) || leg.departsAt
       const silent =
@@ -249,13 +293,17 @@ export async function watchFlights({
          own last sentence: a note somebody typed is never written over. */
       let note = snapshot?.note ?? null
       const ours = !leg.statusNote || leg.statusNote === note
+      const nearSource = view.sources?.[0] || view.source
+      const farSource = arrival?.source || null
       if (events.length) {
         const next = noteFor(events, {
           flight: number,
           zone,
-          sourceName: sourceNameOf(view.sources?.[0] || view.source),
+          sourceName: sourceNameOf(nearSource),
           at: now,
           status: view.status,
+          arrivalZone: to?.zone || zone,
+          arrivalSourceName: sourceNameOf(farSource || nearSource),
         })
         if (next && ours) {
           changes.statusNote = next
@@ -268,12 +316,15 @@ export async function watchFlights({
         stats.changed += 1
       }
       if (events.length) {
-        const stamped = events.map(one => ({
-          ...one,
-          text: describeFlightEvent(one, { flight: number, zone }),
-          source: view.sources?.[0] || view.source,
-          at: new Date(now).toISOString(),
-        }))
+        const stamped = events.map(one => {
+          const far = ARRIVAL_SIDE.has(one.type)
+          return {
+            ...one,
+            text: describeFlightEvent(one, { flight: number, zone: far ? to?.zone || zone : zone }),
+            source: far && farSource ? farSource : nearSource,
+            at: new Date(now).toISOString(),
+          }
+        })
         stats.events += await repository.recordFlightEvents(leg.id, stamped)
       }
       await repository.saveFlightSnapshot(leg.id, {

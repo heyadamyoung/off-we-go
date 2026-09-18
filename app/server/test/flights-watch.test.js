@@ -466,3 +466,104 @@ test('the security queue at the terminal the leg leaves from rides on the snapsh
     'another terminal’s queue is not this leg’s',
   )
 })
+
+test('the far board’s news names the far board, in the far end’s clock', async () => {
+  const repository = store()
+  await watchFlights({
+    repository,
+    sources: sourcesWith({
+      boards: {
+        'YYZ:departure': [
+          boardRow({ status: 'departed', actualDeparture: '2026-09-20T22:41:00.000Z' }),
+        ],
+        'DUB:arrival': [
+          boardRow({
+            airportCode: 'DUB',
+            direction: 'arrival',
+            source: 'api.dublinairport.com',
+            status: 'landed',
+            scheduledDeparture: null,
+            scheduledArrival: '2026-09-21T05:25:00.000Z',
+            actualArrival: '2026-09-21T05:10:00.000Z',
+            baggageBelt: '8',
+            terminal: '2',
+            gate: null,
+          }),
+        ],
+      },
+    }),
+    now: NOW,
+  })
+  assert.equal(
+    repository.applied[0].changes.statusNote,
+    'AC872 has landed at 06:10. Dublin Airport, 18:30.',
+    'said by Dublin, in Dublin’s clock — not by Toronto at 13:30',
+  )
+  const belt = repository.events.find(one => one.type === 'BaggageUpdated')
+  assert.equal(belt.source, 'api.dublinairport.com')
+  const left = repository.events.find(one => one.type === 'FlightDeparted')
+  assert.equal(left.source, 'gtaa-fl-prod.azureedge.net')
+  assert.equal(left.text, 'AC872 has departed at 18:41.')
+})
+
+test('a belt named before the flight has left is on the ticket and is not the sentence', () => {
+  const early = noteFor([{ type: 'BaggageUpdated', newValue: '8' }], {
+    flight: 'AC872',
+    zone: 'America/Toronto',
+    sourceName: 'Toronto Pearson',
+    at: NOW,
+    status: 'scheduled',
+  })
+  assert.equal(early, null)
+  const down = noteFor([{ type: 'BaggageUpdated', newValue: '8' }], {
+    flight: 'AC872',
+    zone: 'America/Toronto',
+    sourceName: 'Toronto Pearson',
+    at: NOW,
+    status: 'landed',
+    arrivalZone: 'Europe/Dublin',
+    arrivalSourceName: 'Dublin Airport',
+  })
+  assert.equal(down, 'Bags from AC872 are on belt 8. Dublin Airport, 18:30.')
+})
+
+test('what the far board last said is kept when it goes quiet: the belt stays, a landed flight stays landed', async () => {
+  const both = mergeBoards(
+    boardRow({ status: 'departed', actualDeparture: '2026-09-20T22:41:00.000Z' }),
+    boardRow({
+      airportCode: 'DUB',
+      direction: 'arrival',
+      source: 'api.dublinairport.com',
+      status: 'landed',
+      scheduledDeparture: null,
+      scheduledArrival: '2026-09-21T05:25:00.000Z',
+      actualArrival: '2026-09-21T05:10:00.000Z',
+      baggageBelt: '8',
+      terminal: '2',
+      gate: null,
+    }),
+  )
+  const repository = store({
+    legs: [leg({ gate: 'C34' })],
+    snapshot: { info: both, fetchedAt: '2026-09-21T05:12:00.000Z', note: null },
+  })
+  const stats = await watchFlights({
+    repository,
+    /* Only the near board answers this minute; the far one has gone quiet. */
+    sources: sourcesWith({
+      boards: {
+        'YYZ:departure': [
+          boardRow({ status: 'departed', actualDeparture: '2026-09-20T22:41:00.000Z' }),
+        ],
+      },
+    }),
+    now: Date.parse('2026-09-21T05:20:00.000Z'),
+  })
+  assert.equal(stats.matched, 1)
+  assert.equal(stats.events, 0, 'nothing changed, so nothing is news')
+  const kept = repository.snapshots[0].info
+  assert.equal(kept.baggageBelt, '8')
+  assert.equal(kept.status, 'landed')
+  assert.equal(kept.actualArrival, '2026-09-21T05:10:00.000Z')
+  assert.deepEqual(kept.sources, ['gtaa-fl-prod.azureedge.net', 'api.dublinairport.com'])
+})

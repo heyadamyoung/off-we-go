@@ -1320,7 +1320,7 @@ test('a flight with seats shows where everyone sits, on a drawn cabin', async ({
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Travel', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Getting there' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
   // The sample legs are built relative to now, so the demo's travel day is
   // forever tomorrow: the train to Schiphol, then the KLM flight home.
   await expect(page.getByText('IC 3155')).toBeVisible()
