@@ -89,7 +89,9 @@ export default function TripCards({
         />
       )}
 
-      {indoor.active && <IndoorChrome indoor={indoor} />}
+      {/* The terminal's floor picker and walking line belong to the map; with
+          a panel open they were still floating over it. */}
+      {indoor.active && !panelOpen && <IndoorChrome indoor={indoor} />}
 
       {draft && (
         <StopEditor
