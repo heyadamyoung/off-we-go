@@ -185,7 +185,7 @@ describe('the ladder', { concurrency: true }, () => {
       .split('\n')
       .map(line => line.trim())
       .filter(line => line && !line.startsWith('#'))
-    assert.ok(variants.length > 1, `a 720p film should offer a choice, got ${variants.length}`)
+    assert.ok(variants.length > 1, `a 500p film should offer a choice, got ${variants.length}`)
 
     const durations = []
     for (const uri of variants) {

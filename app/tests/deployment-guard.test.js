@@ -254,7 +254,7 @@ test('the release images are built beside the tests, and the deploy waits for th
     'utf8',
   )
   assert.match(workflow, /image: \[api, web\]/)
-  assert.match(workflow, /needs: \[checks, server, entrypoint, browser, live, images\]/)
+  assert.match(workflow, /needs: \[checks, server, browser, live, images\]/)
   assert.match(workflow, /packages: write/)
   assert.match(
     workflow,
