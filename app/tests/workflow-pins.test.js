@@ -24,13 +24,36 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const workflowRoot = path.join(repoRoot, '.github', 'workflows')
+const actionRoot = path.join(repoRoot, '.github', 'actions')
+
+/** The workflows, and the repository's own composite actions, which run
+    actions of their own and are pinned by the same rules. */
+async function workflowFiles() {
+  const files = (await readdir(workflowRoot))
+    .filter(name => /\.ya?ml$/.test(name))
+    .map(name => path.join(workflowRoot, name))
+  const actions = await readdir(actionRoot).catch(() => [])
+  for (const action of actions) {
+    for (const name of ['action.yml', 'action.yaml']) {
+      const file = path.join(actionRoot, action, name)
+      if (
+        await readFile(file, 'utf8').then(
+          () => true,
+          () => false,
+        )
+      )
+        files.push(file)
+    }
+  }
+  return files
+}
 
 /** Every `uses:` across every workflow, with the file it came from. */
 async function pinned() {
-  const files = (await readdir(workflowRoot)).filter(name => /\.ya?ml$/.test(name))
   const used = []
-  for (const file of files) {
-    const contents = await readFile(path.join(workflowRoot, file), 'utf8')
+  for (const found of await workflowFiles()) {
+    const file = path.relative(repoRoot, found)
+    const contents = await readFile(found, 'utf8')
     for (const [, action, ref, comment] of contents.matchAll(
       /uses:\s*([\w.-]+\/[\w.-]+)@(\S+)(?:\s*#\s*(\S+))?/g,
     ))
@@ -104,13 +127,10 @@ test('the Android SDK is asked for the packages it wants, not the action’s def
      A default that names a package nobody can install any more is a default
      to stop taking, and the same removal will come for others: what this
      build needs is short, and it should say so. */
-  const files = (await readdir(workflowRoot)).filter(name => /\.ya?ml$/.test(name))
   const wrong = []
-  for (const file of files) {
-    const step = stepFor(
-      await readFile(path.join(workflowRoot, file), 'utf8'),
-      'android-actions/setup-android',
-    )
+  for (const found of await workflowFiles()) {
+    const file = path.relative(repoRoot, found)
+    const step = stepFor(await readFile(found, 'utf8'), 'android-actions/setup-android')
     if (!step) continue
     const asked = /\n\s*packages:\s*(.*)/
       .exec(step)?.[1]

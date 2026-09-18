@@ -254,7 +254,7 @@ test('the release images are built beside the tests, and the deploy waits for th
     'utf8',
   )
   assert.match(workflow, /image: \[api, web\]/)
-  assert.match(workflow, /needs: \[checks, server, browser, live, images\]/)
+  assert.match(workflow, /needs: \[checks, server, entrypoint, browser, live, images\]/)
   assert.match(workflow, /packages: write/)
   assert.match(workflow, /--cache-to "type=registry,ref=\$repo\/\$IMAGE:buildcache,mode=max"/)
   assert.match(workflow, /--tag "\$repo\/\$IMAGE:\$GITHUB_SHA"/)
@@ -633,6 +633,10 @@ const runEntrypoint = (script, { mc, seconds = 1 }) => {
       APP_SECRET: 'an-app-secret',
       APP_KEY: 'offwego-api',
       BUCKET: 'offwego-media',
+      /* The real entrypoint gives the store a minute to answer. A setup that
+         cannot answer here is the point of two of these tests, and waiting
+         the full minute for it was sixty seconds of every unit run. */
+      SETUP_TRIES: '2',
     },
     encoding: 'utf8',
     timeout: 90_000,

@@ -1,0 +1,24 @@
+name: Node with the dependencies installed
+description: >-
+  pnpm through corepack, Node 22 with the pnpm store cached by lockfile, and a
+  frozen install of app/. Every job that runs anything of the app starts here.
+runs:
+  using: composite
+  steps:
+    # Before setup-node, whose cache of the pnpm store needs pnpm on the path.
+    - name: Enable pnpm
+      shell: bash
+      run: |
+        corepack enable
+        corepack prepare pnpm@10.6.5 --activate
+
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: app/pnpm-lock.yaml
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: app
+      run: pnpm install --frozen-lockfile

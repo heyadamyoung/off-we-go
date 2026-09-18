@@ -206,7 +206,7 @@ services:
         tries=0;
         until mc alias set box http://127.0.0.1:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" 2>/dev/null; do
         tries=$$((tries + 1));
-        [ $$tries -gt 60 ] && echo "the object store never answered; the bucket was not made" >&2 && exit 1;
+        [ $$tries -gt $${SETUP_TRIES:-60} ] && echo "the object store never answered; the bucket was not made" >&2 && exit 1;
         sleep 1;
         done;
         mc mb --ignore-existing "box/$$BUCKET" || exit 1;

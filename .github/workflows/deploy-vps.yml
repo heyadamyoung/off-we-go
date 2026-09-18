@@ -6,6 +6,7 @@ on:
     paths:
       - 'app/**'
       - '.github/workflows/deploy-vps.yml'
+      - '.github/actions/**'
   workflow_dispatch:
 
 permissions:
@@ -16,52 +17,36 @@ concurrency:
   cancel-in-progress: false
 
 # Jobs side by side rather than one chain: pushed to live was ten and a half
-# minutes, of which nine and a half were one runner doing everything in turn
-# — four and a half of them the browser suite on two workers. Each job below
-# sets itself up in half a minute and does its one thing; the longest is a
-# browser shard, and the deploy waits on all of them. What a job needs it
-# installs itself: ffmpeg where video is converted, a browser where one is
-# driven, postgres where the server is tested. The release images are built
-# here too, beside the tests rather than on the box after them, so the deploy
-# is a pull and a restart.
+# minutes, of which nine and a half were one runner doing everything in turn.
+# Each job below sets itself up in a few seconds — the shared steps live in
+# .github/actions, and what they fetch (the pnpm store, the browser, ffmpeg)
+# comes out of the cache rather than off the network — and does its one thing.
+# The deploy waits on all of them, so the test phase is the longest job and
+# nothing else: the browser suite is cut four ways, the deployment entrypoint
+# has a runner of its own rather than a minute on the end of the server tests,
+# and the release images are built here beside the tests, so the deploy is a
+# pull and a restart.
 jobs:
   checks:
-    name: Lint, unit tests and the web build
+    name: Lint and unit tests
     runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # Before setup-node, whose cache of the pnpm store needs pnpm on the path.
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.6.5 --activate
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/node
 
       - name: Lint and format check
         run: pnpm lint
 
+      # The web build is not repeated here: the web image job builds the very
+      # bundle that ships, from the same tree, and fails the run if it cannot.
       - name: Run unit tests
-        run: pnpm test:unit
-
-      - name: Build the web app
-        env:
-          VITE_API_URL: /api
-        run: pnpm build
+        run: time pnpm test:unit
 
   server:
-    name: Server tests and the deployment entrypoint
+    name: Server tests
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -75,27 +60,19 @@ jobs:
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
+        # A test database lives for the job and is never read back after it, so
+        # its files go on memory rather than the runner's disk, and readiness is
+        # polled every two seconds rather than five: the first check after the
+        # server comes up used to wait most of an interval for nothing.
         options: >-
+          --tmpfs /var/lib/postgresql/data
           --health-cmd "pg_isready -U postgres -d offwego_test"
-          --health-interval 5s
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 20
+          --health-retries 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.6.5 --activate
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/node
 
       # Without it every video test quietly SKIPS. They have been skipping here
       # since they were written — "ok … # SKIP ffmpeg is not installed on this
@@ -103,20 +80,34 @@ jobs:
       # ladder and the whole of the object-storage path have only ever been
       # proved on somebody's laptop. The api image installs ffmpeg; the runner
       # that tests it should have it too.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: ./.github/actions/ffmpeg
 
       - name: Run server tests
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/offwego_test
-        run: pnpm test:server
+        run: time pnpm test:server
+
+  entrypoint:
+    name: The deployment entrypoint
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Node alone: the guard imports nothing but node itself, so there is no
+      # install to wait for before it runs.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
 
       - name: Test the restricted deployment entrypoint
         # This runner has docker, so the compose check must run rather than skip.
         run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
 
   browser:
-    name: Browser tests (${{ matrix.shard }} of 2)
+    name: Browser tests (${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -124,31 +115,16 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.6.5 --activate
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/node
+      - uses: ./.github/actions/browser
 
       # The suite builds the sample-mode bundle itself (see playwright.config).
-      # Half the tests each, spread across the runner's cores.
+      # A quarter of the tests each, spread across the runner's cores.
       - name: Run browser tests
-        run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
+        run: time pnpm exec playwright test --shard=${{ matrix.shard }}/4
 
       # A CI-only flake with no trace is unfixable folklore; a failure here
       # hands its Playwright traces and DOM snapshots to the run page instead.
@@ -169,33 +145,16 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.6.5 --activate
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      - uses: ./.github/actions/node
       # This stack converts real video.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/ffmpeg
+      - uses: ./.github/actions/browser
 
       # The sample-mode suite runs in the shards above, where uploads never
       # leave the tab. This one has a real server behind it, so "does a film
       # actually upload" is a question CI can answer rather than infer.
       - name: Run browser tests against a real server
-        run: pnpm test:live
+        run: time pnpm test:live
 
       - name: Keep the failure traces
         if: failure()
@@ -258,7 +217,7 @@ jobs:
 
   deploy:
     name: Deploy production
-    needs: [checks, server, browser, live, images]
+    needs: [checks, server, entrypoint, browser, live, images]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
