@@ -70,10 +70,9 @@ const HEADINGS: Record<string, [string, string]> = {
     'Timeline',
     'The day in order — what was planned, and when everyone actually got there.',
   ],
-  travel: [
-    'Getting there',
-    'Every leg of the journey — deadlines, seats and documents in one chain.',
-  ],
+  /* Just the name. The tab underneath already says what this is, and a
+     sentence explaining a screen is a sentence in the way of it. */
+  travel: ['Travel', ''],
   papers: ['Papers', 'Every ticket, pass and booking you are carrying — the next one first.'],
   chat: ['Chat', 'The whole crew, one room — travellers and followers alike.'],
   photos: ['Photos', ''],
@@ -102,8 +101,12 @@ export default function TripPanel(props: PanelProps) {
         Invite someone
       </button>
     ) : props.view === 'travel' && props.transport?.canEdit ? (
-      <button className="mini mini-accent" onClick={props.transport.onAdd}>
-        Add a leg
+      <button
+        className="mini mini-accent grid size-8 place-items-center !px-0"
+        onClick={props.transport.onAdd}
+        title="Add a leg"
+        aria-label="Add a leg">
+        <Icon n="plus" s={15} />
       </button>
     ) : null
 

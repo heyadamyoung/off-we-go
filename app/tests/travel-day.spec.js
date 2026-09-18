@@ -45,7 +45,7 @@ async function openTrip(page, { travelDay = false } = {}) {
 async function openTravel(page, options) {
   await openTrip(page, options)
   await page.getByRole('button', { name: 'Travel', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Getting there' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
 }
 
 const ticketOf = (page, text) => page.locator('.ticket').filter({ hasText: text }).first()
@@ -119,7 +119,7 @@ test('the pill over the map leads with the live leg, and the card opens on the t
   await expect(leg).toContainText('Schiphol · 2 min ago')
   await expect(leg.locator('.ncpaper')).toHaveCount(2)
   await leg.locator('.ncrow').click()
-  await expect(page.getByRole('heading', { name: 'Getting there' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
 })
 
 test('on any other day the pill says where the phones are, as before', async ({ page }) => {

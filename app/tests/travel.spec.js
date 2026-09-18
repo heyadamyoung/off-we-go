@@ -37,7 +37,7 @@ async function openTravel(page, size = PHONE) {
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
   await page.evaluate(() => window.__offwegoMap?.stop())
   await page.getByRole('button', { name: 'Travel', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Getting there' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
 }
 
 test('a departure that moved says so, and says by how much', async ({ page }) => {
