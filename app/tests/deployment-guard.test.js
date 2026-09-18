@@ -256,7 +256,12 @@ test('the release images are built beside the tests, and the deploy waits for th
   assert.match(workflow, /image: \[api, web\]/)
   assert.match(workflow, /needs: \[checks, server, entrypoint, browser, live, images\]/)
   assert.match(workflow, /packages: write/)
-  assert.match(workflow, /--cache-to "type=registry,ref=\$repo\/\$IMAGE:buildcache,mode=max"/)
+  assert.match(
+    workflow,
+    /--cache-to "type=registry,ref=\$repo\/\$IMAGE:buildcache,mode=max,compression=zstd"/,
+  )
+  // And only when the layers it is made of changed; source alone never is.
+  assert.match(workflow, /git diff --name-only HEAD~1 HEAD -- package\.json pnpm-lock\.yaml/)
   assert.match(workflow, /--tag "\$repo\/\$IMAGE:\$GITHUB_SHA"/)
   // The box is told which images the release is, by commit, and handed the
   // pipeline's own token to pull them with — into the file the deploy script

@@ -43,8 +43,8 @@ const HOW_MANY = 6
 const chooseSix = page =>
   page.locator('.dlg input[type="file"]').evaluate(async (input, count) => {
     const canvas = document.createElement('canvas')
-    canvas.width = 1400
-    canvas.height = 1000
+    canvas.width = 700
+    canvas.height = 500
     const context = canvas.getContext('2d')
     const transfer = new DataTransfer()
     for (let index = 0; index < count; index++) {

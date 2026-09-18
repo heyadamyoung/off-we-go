@@ -184,6 +184,10 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The parent too, to tell whether this release changed anything the
+          # layer cache is made of.
+          fetch-depth: 2
 
       - name: Sign in to the registry
         env:
@@ -194,6 +198,12 @@ jobs:
       # and pushed by commit. The layer cache lives in the registry too, so a
       # release that changed only source rebuilds only the layers that copy
       # source, and the box pulls only those.
+      #
+      # The cache is written back only when something it is made of changed:
+      # the dependencies, the lockfile, a Dockerfile. Every other release
+      # changes source alone, and the layers that copy source are never a
+      # cache hit for the next commit — exporting them was thirty seconds of
+      # recompressing the dependency layers for nothing, on every push.
       - name: Build and push
         env:
           IMAGE_REPO: ghcr.io/${{ github.repository }}
@@ -204,13 +214,18 @@ jobs:
             api) file=server/Dockerfile ;;
             web) file=Dockerfile.web ;;
           esac
+          cache_to=()
+          if ! git rev-parse --verify --quiet HEAD~1 >/dev/null \
+            || [ -n "$(git diff --name-only HEAD~1 HEAD -- package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web .dockerignore)" ]; then
+            cache_to=(--cache-to "type=registry,ref=$repo/$IMAGE:buildcache,mode=max,compression=zstd")
+          fi
           docker buildx create --use --name release >/dev/null
           docker buildx build \
             --file "$file" \
             --build-arg VITE_API_URL=/api \
             --build-arg "VITE_APP_SHA=$GITHUB_SHA" \
             --cache-from "type=registry,ref=$repo/$IMAGE:buildcache" \
-            --cache-to "type=registry,ref=$repo/$IMAGE:buildcache,mode=max" \
+            "${cache_to[@]}" \
             --tag "$repo/$IMAGE:$GITHUB_SHA" \
             --tag "$repo/$IMAGE:latest" \
             --push .
