@@ -21,11 +21,13 @@ export default defineConfig({
      sixty-eight in trip.spec.js are spread across the workers rather than
      run one after another on whichever worker drew the file. */
   fullyParallel: true,
-  /* One worker per core. An idle page used to burn a core and a half on
-     compositor animations, so a worker per core left every browser a second
-     behind; with motion reduced (see tests/fixture.js) a waiting page costs
-     nothing, and the count stops mattering. */
-  workers: process.env.CI ? 2 : os.cpus().length,
+  /* One worker per core, everywhere: the suite is bound by the machine's
+     cores (a boot is two and a half core-seconds of software rendering and
+     compiling), so this is the count. It was two on CI, from the days an idle
+     page burned a core and a half on compositor animations and every browser
+     ran a second behind; with motion reduced (see tests/fixture.js) a waiting
+     page costs nothing. */
+  workers: os.cpus().length,
   /* CI only, one retry: the sights and place-search specs lean on live
      Wikipedia, which throttles GitHub's runner addresses in waves — the same
      two tests failed different runs on different afternoons with the code
@@ -33,8 +35,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   /* The suite is done in three minutes or it is broken: the run stops at
      the first failure and is cut off at the budget, so a slow suite is a
-     red suite and not a slow one. The budget binds at a desk; the two-core
-     runner that gates a deploy is not held to it until the suite fits,
+     red suite and not a slow one. The budget binds at a desk; the runner
+     that gates a deploy runs half the suite per shard and is not cut off,
      because a deploy that never runs is worse than a slow one. */
   maxFailures: 1,
   globalTimeout: process.env.CI ? 0 : 180_000,
