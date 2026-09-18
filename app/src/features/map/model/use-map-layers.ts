@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { GeoJSONSource, Map as MapGL, MapMouseEvent } from 'maplibre-gl'
 import { lineOf } from '../../../shared/lib/geo'
+import { motionMs } from '../../../shared/lib/motion'
 import { ACCENT, ACCENT_BRIGHT, linesOf } from './map-style'
 import { nearestTap } from './tap-target'
 import { EMPTY_FC } from './use-attractions'
@@ -146,8 +147,9 @@ export default function useMapLayers({
           paint: {
             'background-color': tintRef.current.color,
             'background-opacity': tintRef.current.alpha,
-            'background-color-transition': { duration: 2000, delay: 0 },
-            'background-opacity-transition': { duration: 2000, delay: 0 },
+            // Two seconds: the sky changing, not a switch thrown. None, for less motion.
+            'background-color-transition': { duration: motionMs(2000), delay: 0 },
+            'background-opacity-transition': { duration: motionMs(2000), delay: 0 },
           },
         })
       }

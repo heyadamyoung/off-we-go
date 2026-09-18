@@ -43,14 +43,6 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: 'http://localhost:4180',
-    /* Desktop layout (the widest breakpoint is 1024) at half the pixels of
-       the old 1600×950: every pixel of a headless map is rasterised in
-       software, on every page a test opens. */
-    viewport: { width: 1100, height: 700 },
-    /* Half the device pixels: every pixel of a headless map is rasterised in
-       software on every page a test opens, and no test reads a pixel. CSS
-       pixels — every box a test measures — are unchanged. */
-    deviceScaleFactor: 0.5,
     /* Tracing screenshots every action, and a screenshot of a software-drawn
        map is a raster pass: it was a quarter of the suite's time. A failure on
        CI records its trace on the retry; at a desk, `--trace on` when needed. */
@@ -65,14 +57,33 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
+        /* After the device, which brings a pixel ratio of one: half the
+           device pixels. Every pixel of a headless map is rasterised in
+           software on every page a test opens, and no test reads one; CSS
+           pixels — every box a test measures — are unchanged. Set at the top
+           level this was quietly overridden by the device. The device's
+           1280×720 stays: the photo stacks group by screen cell, and the
+           zoom a narrower window frames at regroups them. */
+        deviceScaleFactor: 0.5,
+        /* No service worker unless a spec asks for one: every context is
+           new, so every test was registering the worker and filling its
+           cache with the app afresh. The offline specs, which are about the
+           worker, allow it on their own page. */
+        serviceWorkers: 'block',
         /* A machine that already has a browser can say so. Playwright resolves
            its own by exact build number, and a container with a different one
            pre-installed would otherwise be told to download one it cannot
            reach. Unset — as on CI, which installs its own — this changes
            nothing. */
-        ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-          ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } }
-          : {}),
+        launchOptions: {
+          ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+            ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
+            : {}),
+          /* A test's page lives for seconds: the optimising compilers spent
+             a sixth of every boot compiling code that would run a few times.
+             The interpreter and the baseline compiler are enough. */
+          args: ['--js-flags=--no-opt --no-maglev'],
+        },
       },
     },
   ],

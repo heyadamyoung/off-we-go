@@ -1,6 +1,9 @@
 import { test, expect } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
+/* The service worker is the subject here; the suite blocks it everywhere else. */
+test.use({ serviceWorkers: 'allow' })
+
 /* The papers, in reach.
  *
  * Documents existed, but only hanging off the stop or the flight they belonged

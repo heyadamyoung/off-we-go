@@ -79,10 +79,43 @@ export async function sealContext(context) {
   await serveBasemap(context)
 }
 
+/* Less motion and less transparency, said to every page rather than left to
+   the context option: with a browser build other than the one this
+   Playwright ships with, the option was silently not honoured, and the trail
+   drew itself in over 1.2 s on every boot — thirty software-rendered frames
+   a test. Said on the page, it holds on every build. Transparency because the
+   blur behind every glass panel is re-drawn through on every frame under it,
+   which a browser drawing in software spent a fifth of each test on; the
+   stylesheet honours the system setting with solid panels, as it should. */
+async function quieten(page, motion) {
+  await page.emulateMedia({ reducedMotion: motion })
+  /* Playwright knows nothing of the transparency preference, and re-sends
+     the media it does know on every new document, wiping anything set
+     beside it. So the preference is set straight on the page, again after
+     every navigation of the main frame. */
+  const session = await page.context().newCDPSession(page)
+  const plain = () =>
+    session
+      .send('Emulation.setEmulatedMedia', {
+        features: [
+          { name: 'prefers-reduced-motion', value: motion },
+          { name: 'prefers-reduced-transparency', value: 'reduce' },
+        ],
+      })
+      .catch(() => {})
+  page.on('framenavigated', frame => {
+    if (frame === page.mainFrame()) plain()
+  })
+  await plain()
+}
+
 export const test = base.extend({
   /** 'tiny' (the default) or 'real': which basemap style the map is given. */
   mapStyle: ['tiny', { option: true }],
-  context: async ({ context, mapStyle }, use) => {
+  /** 'reduce' (the default) or 'no-preference': a test about an animation
+      asks for the motion back with `test.use({ motion: 'no-preference' })`. */
+  motion: ['reduce', { option: true }],
+  context: async ({ context, mapStyle, motion }, use) => {
     await sealContext(context)
     /* Every page holds still: the demo's live position is frozen where it
        loaded, the camera jumps rather than eases, and the home page draws
@@ -95,7 +128,12 @@ export const test = base.extend({
         route.fulfill({ contentType: 'application/json', body: TINY_STYLE }),
       )
     }
+    context.on('page', page => quieten(page, motion).catch(() => {}))
     await use(context)
+  },
+  page: async ({ page, motion }, use) => {
+    await quieten(page, motion)
+    await use(page)
   },
 })
 

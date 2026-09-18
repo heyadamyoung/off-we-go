@@ -1,5 +1,6 @@
 import type { ExpressionSpecification, Map as MapLibreMap } from 'maplibre-gl'
 import { ACCENT, ACCENT_BRIGHT } from './map-style'
+import { prefersReducedMotion } from '../../../shared/lib/motion'
 import type { Coordinates } from '../../../shared/model/types'
 
 /* The travelled line draws itself in the first time it appears — one
@@ -18,12 +19,7 @@ export default function makeTrailSweep({
   return (m: MapLibreMap) => {
     if (drawnIn || !m.getLayer('trail-line') || !trailRef.current.length) return
     drawnIn = true
-    if (
-      !interactive ||
-      (typeof window !== 'undefined' &&
-        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
-    )
-      return
+    if (!interactive || prefersReducedMotion()) return
     const t0 = performance.now()
     const ms = 1200
     const tick = () => {

@@ -1,6 +1,10 @@
 import { test, expect } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
+/* A test about an animation: the suite asks every page for less motion, and
+   the loading shimmer honours that. Here the shimmer is the subject. */
+test.use({ motion: 'no-preference' })
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.__offwegoStill = true

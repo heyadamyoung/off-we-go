@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
+/* The service worker is the subject here; the suite blocks it everywhere else. */
+test.use({ serviceWorkers: 'allow' })
+
 /* The on-device engine, end to end: real Valhalla-WASM, a real tile archive
    built by the production image (Andorra, ~3 MB), stored in OPFS the way the
    offline download stores it, routed in a worker. The fixture is not

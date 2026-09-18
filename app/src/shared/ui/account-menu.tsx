@@ -41,7 +41,7 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
   return (
     <div className="relative" ref={holder}>
       <button
-        className="glass flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5"
+        className="glass flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 max-sm:gap-0 max-sm:pr-1"
         aria-label="Account"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -49,7 +49,11 @@ export default function AccountMenu({ me }: { me?: Person | null }) {
         <span className="avatar bg-[#5B8DEF]">
           {me?.avatar ? <img src={me.avatar} alt="" /> : name.slice(0, 1).toUpperCase()}
         </span>
-        <Icon n="chevron" s={14} className={'transition-transform ' + (open ? 'rotate-90' : '')} />
+        <Icon
+          n="chevron"
+          s={14}
+          className={'transition-transform max-sm:hidden ' + (open ? 'rotate-90' : '')}
+        />
       </button>
       {open && (
         /* A surface, not a tint: this opens over a spinning planet and a trip

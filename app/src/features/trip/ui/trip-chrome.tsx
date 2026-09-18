@@ -83,16 +83,29 @@ export function StandingNotices({
    name — the words carry it. On a phone even the small caps go; the trip
    name is what the screen is about, and a long one truncates instead of
    running under the account menu. */
-export const TripTitle = memo(function TripTitle({ title, sub }: { title: string; sub: string }) {
+/* On a phone the open panel's name takes this row (see PanelHeader), so the
+   title steps aside there: two bands of chrome above the content, not three. */
+export const TripTitle = memo(function TripTitle({
+  title,
+  sub,
+  behindPanel,
+}: {
+  title: string
+  sub: string
+  behindPanel?: boolean
+}) {
   return (
-    <header className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+    <header
+      className={
+        'flex min-w-0 flex-1 items-center gap-3 sm:gap-4' + (behindPanel ? ' max-sm:hidden' : '')
+      }>
       <div className="flex min-w-0 flex-col gap-1">
         <div className="font-display text-[11px] font-bold uppercase tracking-[.16em] text-faint max-sm:hidden">
           Off we go<span className="text-accent">.</span>
         </div>
         <h1
           className="font-display m-0 truncate text-[34px] font-extrabold leading-tight tracking-[-.02em]
-                       max-sm:text-lg">
+                       max-sm:text-[17px]">
           {title}
         </h1>
         <div className="truncate text-sm text-muted max-sm:hidden">{sub}</div>

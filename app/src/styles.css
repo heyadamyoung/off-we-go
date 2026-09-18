@@ -220,6 +220,11 @@
      at 196 a system-level larger-text setting pushed the card titles off the
      bottom of the screen. */
   :root { --trip-bar: calc(208px + env(safe-area-inset-bottom, 0px)) }
+  /* Two rows of forty: the trip's name — or the open panel's, with its verbs —
+     and the tabs. At 116, with the panel's own title row under it, the chrome
+     took a third of a phone. */
+  :root { --trip-top: calc(94px + env(safe-area-inset-top, 0px)) }
+  .tbv, .tb.lbl { height: 40px; min-width: 46px; padding: 0 6px; gap: 2px }
   /* The bar collapsed to its peek: the grab handle and the day chips. The
      whole derived chain is re-declared here on purpose: a custom property is
      substituted where it is DEFINED, so :root's --trip-1 had :root's bar
@@ -286,6 +291,22 @@
     background: var(--c-panel-solid);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+
+  /* Reduce transparency, the system setting: glass becomes a surface. What
+     is behind a blurred panel is re-drawn through the blur on every frame
+     under it, which is what the setting is asking to be spared — and what a
+     browser drawing in software spends a fifth of its time on. */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass, .sheet {
+      background: var(--c-panel-solid);
+    }
+    /* Every blur, wherever it was written: a preference, not a style. The
+       standard property alone — given the prefixed one too, the build kept
+       only that, and the alias did not win over the utilities' blur. */
+    *, *::before, *::after {
+      backdrop-filter: none !important;
+    }
   }
 
   .btn {
