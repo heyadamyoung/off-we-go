@@ -17,15 +17,15 @@ export default defineConfig({
      command; picked up here it would run against the sample build with
      nothing listening, and fail for reasons that are not about the app. */
   testIgnore: '**/live/**',
-  fullyParallel: false,
-  /* Half the cores, and never more. Every worker holds a map drawn in
-     software, and a worker per core left each browser a second or more
-     behind on a round trip: gestures measured by the clock — a double tap,
-     a flick — arrived too slowly to be what they were, and a drag across the
-     map spent its whole test timeout waiting on frames. The runner on CI is
-     two cores and two workers and has never shown it; a bigger box is not
-     faster at four. */
-  workers: process.env.CI ? 2 : Math.max(1, Math.floor(os.cpus().length / 2)),
+  /* Every test opens its own page, so every test can run anywhere: the
+     sixty-eight in trip.spec.js are spread across the workers rather than
+     run one after another on whichever worker drew the file. */
+  fullyParallel: true,
+  /* One worker per core. An idle page used to burn a core and a half on
+     compositor animations, so a worker per core left every browser a second
+     behind; with motion reduced (see tests/fixture.js) a waiting page costs
+     nothing, and the count stops mattering. */
+  workers: process.env.CI ? 2 : os.cpus().length,
   /* CI only, one retry: the sights and place-search specs lean on live
      Wikipedia, which throttles GitHub's runner addresses in waves — the same
      two tests failed different runs on different afternoons with the code
@@ -38,6 +38,10 @@ export default defineConfig({
     baseURL: 'http://localhost:4180',
     viewport: { width: 1600, height: 950 },
     trace: 'retain-on-failure',
+    /* The pulses and halos are compositor animations, and a headless
+       compositor is software: at sixty frames a second an idle page was a
+       core and a half. The stylesheet honours the preference already. */
+    reducedMotion: 'reduce',
   },
   projects: [
     {

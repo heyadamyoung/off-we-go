@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixture.js'
 import { atDemoTime, demoDay } from './demo-clock'
 import { serveOverpass } from './overpass-fixture.js'
 import { serveWikipedia } from './wikipedia-fixture.js'

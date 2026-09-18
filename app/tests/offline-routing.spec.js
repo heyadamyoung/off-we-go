@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixture.js'
 import { atDemoTime } from './demo-clock'
 
 /* The on-device engine, end to end: real Valhalla-WASM, a real tile archive
