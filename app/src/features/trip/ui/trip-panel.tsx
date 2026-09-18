@@ -1,3 +1,5 @@
+import { type ReactNode, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from '../../../shared/ui/icon'
 import { SightsList, type SightsListProps } from '../../sights'
 import { MakeIt, SegmentChain } from '../../transport'
@@ -80,8 +82,62 @@ const HEADINGS: Record<string, [string, string]> = {
   people: ['People', 'Who is travelling, and who is following from home.'],
 }
 
+/* The panel's name and its verbs. On a desktop this is the panel's own first
+   row. On a phone it takes the trip title's row in the top bar instead — the
+   title, the tabs and then a panel title made three bands of chrome, a third
+   of the screen, above the thing somebody opened; the tabs under it already
+   say where you are, and the title comes back with the map. */
+export function PanelHeader({
+  title,
+  sub,
+  action,
+  onClose,
+  className = '',
+}: {
+  title: string
+  sub?: string
+  action: ReactNode
+  onClose: () => void
+  className?: string
+}) {
+  return (
+    <div
+      className={
+        'flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px] ' +
+        'max-sm:min-h-10 max-sm:items-center max-sm:border-0 max-sm:px-0 max-sm:py-0 ' +
+        className
+      }>
+      <div className="min-w-0">
+        <h2 className="m-0 truncate text-2xl font-extrabold tracking-[-.02em] max-sm:text-[17px]">
+          {title}
+        </h2>
+        {sub && <p className="mt-1 text-xs text-muted max-sm:hidden">{sub}</p>}
+      </div>
+      <div className="flex flex-none items-center gap-1.5">
+        {action}
+        <button
+          className="grid size-8 place-items-center rounded-lg text-muted hover:bg-raised2 hover:text-ink"
+          onClick={onClose}
+          title="Back to map"
+          aria-label="Back to map">
+          <Icon n="x" s={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* The top bar's row, found once it is in the document: the bar renders before
+   the panel, but nothing is in the DOM until the first commit. */
+function useTopBar() {
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => setSlot(document.getElementById('trip-top')), [])
+  return slot
+}
+
 export default function TripPanel(props: PanelProps) {
   const [title, sub] = HEADINGS[props.view] || ['', '']
+  const topBar = useTopBar()
   /* The gallery takes the screen. A wall of photographs in a 440px column is a
      column of photographs — three across, most of the screen given to a map
      nobody is looking at while they are looking at these. Everywhere else the
@@ -132,23 +188,26 @@ export default function TripPanel(props: PanelProps) {
           stacked on top of each other is two bands of chrome above the thing
           somebody actually opened. */}
       {!wide && (
-        <div className="flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
-          <div className="min-w-0">
-            <h2 className="m-0 truncate text-2xl font-extrabold tracking-[-.02em]">{title}</h2>
-            {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
-          </div>
-          <div className="flex flex-none items-center gap-1.5">
-            {action}
-            <button
-              className="grid size-8 place-items-center rounded-lg text-muted hover:bg-raised2 hover:text-ink"
-              onClick={props.onClose}
-              title="Back to map"
-              aria-label="Back to map">
-              <Icon n="x" s={16} />
-            </button>
-          </div>
-        </div>
+        <PanelHeader
+          title={title}
+          sub={sub}
+          action={action}
+          onClose={props.onClose}
+          className="max-sm:hidden"
+        />
       )}
+      {/* The gallery's own bar has the add button; up here it keeps its name
+          and the way back. */}
+      {topBar &&
+        createPortal(
+          <PanelHeader
+            title={title}
+            action={wide ? null : action}
+            onClose={props.onClose}
+            className="w-full sm:hidden"
+          />,
+          topBar,
+        )}
       <div
         className={
           'flex-1 overflow-y-auto ' +

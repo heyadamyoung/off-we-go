@@ -220,6 +220,11 @@
      at 196 a system-level larger-text setting pushed the card titles off the
      bottom of the screen. */
   :root { --trip-bar: calc(208px + env(safe-area-inset-bottom, 0px)) }
+  /* Two rows of forty: the trip's name — or the open panel's, with its verbs —
+     and the tabs. At 116, with the panel's own title row under it, the chrome
+     took a third of a phone. */
+  :root { --trip-top: calc(94px + env(safe-area-inset-top, 0px)) }
+  .tbv, .tb.lbl { height: 40px; min-width: 46px; padding: 0 6px; gap: 2px }
   /* The bar collapsed to its peek: the grab handle and the day chips. The
      whole derived chain is re-declared here on purpose: a custom property is
      substituted where it is DEFINED, so :root's --trip-1 had :root's bar

@@ -138,13 +138,14 @@ function Trip({
           the panels opening directly beneath it; above 640px it goes back to
           floating over the map, which is where there is room for it. */}
       <div
+        id="trip-top"
         className="absolute inset-x-0 top-0 z-20 flex h-[var(--trip-top)] flex-wrap
-                      items-center gap-2 border-b border-line bg-strong px-4 pb-2
-                      pt-[calc(0.75rem+env(safe-area-inset-top,0px))] backdrop-blur-[22px]
+                      items-center gap-1 border-b border-line bg-strong px-4 pb-1
+                      pt-[calc(0.375rem+env(safe-area-inset-top,0px))] backdrop-blur-[22px]
                       sm:inset-x-7 sm:top-6 sm:h-auto sm:flex-nowrap sm:items-start sm:gap-3
                       sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0 sm:backdrop-blur-none
                       sm:mx-auto sm:max-w-[1760px]">
-        <TripTitle title={trip.title} sub={subtitle} />
+        <TripTitle title={trip.title} sub={subtitle} behindPanel={view !== 'map'} />
 
         <div className="order-3 flex w-full min-w-0 items-center gap-2 sm:order-2 sm:w-auto">
           <TripCluster
@@ -169,7 +170,7 @@ function Trip({
           />
         </div>
 
-        <div className="order-2 sm:order-3">
+        <div className={'order-2 sm:order-3' + (view !== 'map' ? ' max-sm:hidden' : '')}>
           <AccountMenu me={me} />
         </div>
       </div>
