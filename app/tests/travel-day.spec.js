@@ -62,7 +62,9 @@ test('the ticket has its columns the evening before, with a dash where the board
   }
   await expect(column(flight, 'terminal')).toContainText('T3')
   await expect(column(flight, 'gate')).toContainText('E19')
-  await expect(column(flight, 'checkin')).toContainText('Zone 3 · Desks 13–20')
+  /* Two lines, the zone over the desks: one line was cut to "Des…" on a phone. */
+  await expect(column(flight, 'checkin')).toContainText('Zone 3')
+  await expect(column(flight, 'checkin')).toContainText('Desks 13–20')
   await expect(column(flight, 'belt')).toContainText('—')
   /* A train has the columns a train has. */
   const train = ticketOf(page, 'IC 3155')

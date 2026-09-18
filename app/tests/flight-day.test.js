@@ -164,6 +164,27 @@ test('past the departure with no board word, the app says what is due rather tha
   const said = flightHeadline(leg({ flight: null }), NOW + 3 * H)
   assert.equal(said.text, 'Due to land 23:00')
   assert.equal(flightHeadline(leg({ flight: null }), NOW + 10 * H).text, 'Due to have landed 23:00')
+  /* A train that was put back and has since left is not "delayed · leaves
+     14:20" for the rest of the day: it is due where it is going. */
+  const train = leg({
+    mode: 'train',
+    flight: null,
+    status: 'delayed',
+    departsAt: '2026-09-17T20:25:00.000Z',
+    departsWas: '2026-09-17T20:00:00.000Z',
+    arrivesAt: '2026-09-17T20:45:00.000Z',
+    arriveTz: 'Europe/Dublin',
+  })
+  assert.equal(flightHeadline(train, NOW + 2 * H).text, 'Delayed 25 min · leaves 21:25 · gate 406')
+  assert.equal(flightHeadline(train, NOW + 150 * M).text, 'Due to arrive 21:45')
+  assert.deepEqual(flightHeadline(train, NOW + 3 * H), {
+    text: 'Due to have arrived 21:45',
+    tone: 'done',
+  })
+  /* A board that still says scheduled about a flight past its time: the
+     board has not called it, and the app does not either. */
+  const quiet = leg({}, { status: 'scheduled', statusText: 'ON SCHEDULE' })
+  assert.equal(flightHeadline(quiet, NOW + 3 * H).text, 'Due to land 23:00')
 })
 
 test('the phases are the deadlines, the board’s go-to-gate, then leaving and landing as the board calls them', () => {
@@ -186,10 +207,16 @@ test('the phases are the deadlines, the board’s go-to-gate, then leaving and l
   assert.equal(phases[0].clock, '✓')
   assert.equal(phases[1].clock, '20:15', 'in the airport’s own clock')
   assert.equal(phases[6].clock, '23:00', 'in the far end’s clock')
-  /* The clock alone never marks a plane as gone; the board does. */
-  const late = flightPhases(leg({ flight: null }), NOW + 3 * H)
+  /* With a board, the clock alone never marks a plane as gone; the board
+     does. With no board at all — a train — the clock is all there is. */
+  const late = flightPhases(leg({}, { status: 'scheduled' }), NOW + 3 * H)
   assert.equal(late.find(one => one.key === 'departs').state, 'now')
   assert.equal(late.find(one => one.key === 'departs').label, 'Departs')
+  const train = flightPhases(leg({ mode: 'train', flight: null }), NOW + 3 * H)
+  assert.equal(train.find(one => one.key === 'departs').state, 'done')
+  assert.equal(train.find(one => one.key === 'departs').label, 'Departed')
+  assert.equal(train.find(one => one.key === 'lands').state, 'now')
+  assert.equal(train.find(one => one.key === 'lands').label, 'Lands')
   const gone = flightPhases(
     leg({}, { status: 'departed', actualDeparture: '2026-09-17T20:12:00.000Z' }),
     NOW + 3 * H,

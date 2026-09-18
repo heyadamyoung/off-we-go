@@ -18,13 +18,25 @@ export default function TicketColumns({ segment }: { segment: Segment }) {
           <div className="text-[9px] font-bold uppercase tracking-[.06em] text-faint">
             {column.label}
           </div>
+          {/* The check-in column carries two facts — the zone and the run of
+              desks — and on a phone they do not fit one line, so each gets
+              its own rather than the second being cut to "Des…". */}
           <div
             className={
-              'truncate text-[14px] font-extrabold leading-tight tracking-[-.01em] ' +
+              'text-[14px] font-extrabold leading-tight tracking-[-.01em] ' +
+              (column.key === 'checkin' ? '' : 'truncate ') +
               (column.value ? (column.key === 'gate' ? 'text-accent' : 'text-ink') : 'text-faint')
             }
             title={column.value ? undefined : 'Not announced yet'}>
-            {column.value ?? '—'}
+            {column.value
+              ? column.key === 'checkin'
+                ? column.value.split(' · ').map(line => (
+                    <div key={line} className="truncate">
+                      {line}
+                    </div>
+                  ))
+                : column.value
+              : '—'}
             {column.was && (
               <s className="ml-1.5 text-[11px] font-normal text-faint">{column.was}</s>
             )}

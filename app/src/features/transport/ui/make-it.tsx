@@ -1,4 +1,4 @@
-import { localTime, makeIt, segmentFace, type Segment } from '../../../segments-core'
+import { localTime, makeIt, segmentFace, segmentName, type Segment } from '../../../segments-core'
 
 /* The make-it meter: the next departure against everyone's live position.
    Only rendered on a travel day, only when the leg has coordinates and
@@ -23,7 +23,10 @@ export default function MakeIt({
   const verdicts = makeIt(next, travellers, now, { walkMinutes: next.flight?.walkMinutes ?? 0 })
   if (!verdicts || verdicts.minutesLeft > 6 * 60 || verdicts.minutesLeft < -30) return null
 
-  const label = [next.carrier, next.number].filter(Boolean).join(' ') || next.toName
+  /* "KL 677", not "KLM KL 677": the number carries the airline, and the
+     ticket and the pill already say it once. */
+  const said = segmentName({ carrier: next.carrier, number: next.number })
+  const label = said === 'Journey' ? next.toName : said
   const hours = Math.floor(Math.abs(verdicts.minutesLeft) / 60)
   const minutes = Math.abs(verdicts.minutesLeft) % 60
   const clock = `${hours ? `${hours} h ` : ''}${minutes} m`
