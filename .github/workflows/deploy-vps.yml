@@ -22,7 +22,7 @@ concurrency:
 # .github/actions, and what they fetch (the pnpm store, the browser, ffmpeg)
 # comes out of the cache rather than off the network — and does its one thing.
 # The deploy waits on all of them, so the test phase is the longest job and
-# nothing else: the browser suite is dealt six ways, the deployment entrypoint
+# nothing else: the browser suite is dealt eight ways, the deployment entrypoint
 # has a runner of its own rather than a minute on the end of the server tests,
 # and the release images are built here beside the tests, so the deploy is a
 # pull and a restart.
@@ -51,26 +51,19 @@ jobs:
     defaults:
       run:
         working-directory: app
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: offwego_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        # A test database lives for the job and is never read back after it, so
-        # its files go on memory rather than the runner's disk, and readiness is
-        # polled every two seconds rather than five: the first check after the
-        # server comes up used to wait most of an interval for nothing.
-        options: >-
-          --tmpfs /var/lib/postgresql/data
-          --health-cmd "pg_isready -U postgres -d offwego_test"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 40
     steps:
+      # The test database, started in the background before anything else so
+      # its pull and its first start overlap the checkout and the install
+      # rather than holding them up: as a service container it was nine
+      # seconds at the front of the job with the runner otherwise idle. It
+      # lives for the job and is never read back, so its files sit on memory.
+      - name: Start the test database
+        run: |
+          nohup docker run -d --name postgres -p 5432:5432 \
+            --tmpfs /var/lib/postgresql/data \
+            -e POSTGRES_DB=offwego_test -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+            postgres:17-alpine > /tmp/postgres-start.log 2>&1 &
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/node
 
@@ -81,6 +74,14 @@ jobs:
       # proved on somebody's laptop. The api image installs ffmpeg; the runner
       # that tests it should have it too.
       - uses: ./.github/actions/ffmpeg
+
+      - name: Wait for the test database
+        run: |
+          for _ in $(seq 60); do
+            docker exec postgres pg_isready -U postgres -d offwego_test > /dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "the test database never answered"; cat /tmp/postgres-start.log; docker logs postgres; exit 1
 
       - name: Run server tests
         env:
@@ -107,7 +108,7 @@ jobs:
         run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
 
   browser:
-    name: Browser tests (${{ matrix.shard }} of 6)
+    name: Browser tests (${{ matrix.shard }} of 8)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -115,19 +116,21 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/node
       - uses: ./.github/actions/browser
 
       # The suite builds the sample-mode bundle itself (see playwright.config).
-      # A sixth of the tests each, dealt round-robin so every shard holds the
-      # same mix of light and heavy (see scripts/shard-tests.mjs), spread
-      # across the runner's cores.
+      # An eighth of the tests each, dealt round-robin so every shard holds
+      # the same mix of light and heavy (see scripts/shard-tests.mjs), spread
+      # across the runner's cores. Eight because a shard's own setup is a
+      # dozen seconds and its tests were thirty-five: past this the setup is
+      # most of the job.
       - name: Run browser tests
         run: |
-          mapfile -t dealt < <(node scripts/shard-tests.mjs 6 ${{ matrix.shard }})
+          mapfile -t dealt < <(node scripts/shard-tests.mjs 8 ${{ matrix.shard }})
           time pnpm exec playwright test "${dealt[@]}"
 
       # A CI-only flake with no trace is unfixable folklore; a failure here
@@ -142,11 +145,27 @@ jobs:
           if-no-files-found: ignore
 
   live:
-    name: Browser tests against a real server
+    name: Browser tests against a real server (${{ matrix.half }})
     runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: app
+    strategy:
+      fail-fast: true
+      matrix:
+        # Two stacks rather than one: the bulk upload alone is half a minute
+        # of the server resizing, and every other spec was slowed by sharing
+        # the server with it. The upload specs get a stack of their own.
+        half: [uploads, everything-else]
+        include:
+          - half: uploads
+            specs: tests/live/bulk-upload-live.spec.js tests/live/upload-progress-live.spec.js
+          - half: everything-else
+            specs: >-
+              tests/live/day-bar-live.spec.js tests/live/download-live.spec.js
+              tests/live/map-photos-live.spec.js tests/live/photo-copies-live.spec.js
+              tests/live/photo-exif-live.spec.js tests/live/share-live.spec.js
+              tests/live/trip-days-live.spec.js tests/live/video-upload-live.spec.js
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/node
@@ -158,13 +177,13 @@ jobs:
       # leave the tab. This one has a real server behind it, so "does a film
       # actually upload" is a question CI can answer rather than infer.
       - name: Run browser tests against a real server
-        run: time pnpm test:live
+        run: time pnpm test:live -- ${{ matrix.specs }}
 
       - name: Keep the failure traces
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: live-test-results
+          name: live-test-results-${{ matrix.half }}
           path: app/test-results/
           retention-days: 7
           if-no-files-found: ignore
