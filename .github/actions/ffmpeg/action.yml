@@ -1,0 +1,38 @@
+name: A pinned static ffmpeg
+description: >-
+  ffmpeg and ffprobe 6.0 as one static binary each, fetched once by commit-pinned
+  release and checksum, kept in the cache, and put on the PATH ahead of anything
+  the distribution has. apt took twenty seconds a job; the restore takes two.
+runs:
+  using: composite
+  steps:
+    - name: Restore ffmpeg
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.ffmpeg-static
+        key: ffmpeg-static-6.0-linux-x64
+
+    # The build John Van Sickle publishes, as the ffmpeg-static package on npm
+    # ships it, by release tag. The checksums are the pin: a file that does not
+    # match is not installed and is not cached.
+    - name: Fetch ffmpeg
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.ffmpeg-static
+        cd ~/.ffmpeg-static
+        base=https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0
+        curl -fsSL --retry 3 -o ffmpeg "$base/ffmpeg-linux-x64"
+        curl -fsSL --retry 3 -o ffprobe "$base/ffprobe-linux-x64"
+        sha256sum -c <<'SUMS'
+        ed652b2f32e0851d1946894fb8333f5b677c1b2ce6b9d187910a67f8b99da028  ffmpeg
+        a339171d90f7482b2db02234e261b9e00d51526391f87fa633d5da7b98a28cf4  ffprobe
+        SUMS
+
+    - name: Put ffmpeg on the PATH
+      shell: bash
+      run: |
+        sudo install -m 755 ~/.ffmpeg-static/ffmpeg ~/.ffmpeg-static/ffprobe /usr/local/bin/
+        ffmpeg -hide_banner -version | head -1

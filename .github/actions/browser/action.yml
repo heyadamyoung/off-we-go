@@ -1,0 +1,27 @@
+name: Playwright's Chromium headless shell
+description: >-
+  The one browser the suites drive — the headless shell alone, not the full
+  Chromium beside it — kept in the cache by Playwright version, so a run restores
+  it in a few seconds rather than downloading it every time. The runner image
+  already carries every library it links against.
+runs:
+  using: composite
+  steps:
+    - name: Which Playwright
+      id: playwright
+      shell: bash
+      working-directory: app
+      run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the browser
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-shell-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+    - name: Install the browser
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: app
+      run: pnpm exec playwright install --only-shell chromium
