@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import test from 'node:test'
+import test, { after } from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import sharp from 'sharp'
@@ -50,6 +50,27 @@ test('brand UI: the badge stays vector where used, and chrome carries type only'
   const screen = renderToStaticMarkup(createElement(Screen, null, 'Loading'))
   assert.match(screen, /Off we go/)
   assert.doesNotMatch(screen, /<img\b/)
+})
+
+/* One run of the generator for every test that reads its output. It draws
+   dozens of launcher sizes from the vector — five seconds of sharp — and the
+   two tests below used to run it once each into directories of their own. */
+let generation = null
+const generated = () => {
+  generation ??= (async () => {
+    const outputRoot = await mkdtemp(path.join(tmpdir(), 'offwego-brand-icons-'))
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/generate-brand-icons.mjs', '--source', iconPath, '--output-root', outputRoot],
+      { cwd: appRoot, encoding: 'utf8' },
+    )
+    assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message)
+    return outputRoot
+  })()
+  return generation
+}
+after(async () => {
+  if (generation) await rm(await generation, { recursive: true, force: true })
 })
 
 function parseIco(buffer) {
@@ -173,17 +194,8 @@ test('renders the full lockup on its dark backdrop so the cream wordmark remains
   )
 })
 
-test('generates the approved brand icon for every web and native launcher surface', async t => {
-  const outputRoot = await mkdtemp(path.join(tmpdir(), 'offwego-brand-icons-'))
-  t.after(() => rm(outputRoot, { recursive: true, force: true }))
-
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/generate-brand-icons.mjs', '--source', iconPath, '--output-root', outputRoot],
-    { cwd: appRoot, encoding: 'utf8' },
-  )
-
-  assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message)
+test('generates the approved brand icon for every web and native launcher surface', async () => {
+  const outputRoot = await generated()
 
   const generatedSvg = await readFile(path.join(outputRoot, 'public', 'offwego-icon.svg'), 'utf8')
   assert.doesNotMatch(generatedSvg, /<image\b/, 'generated SVG must preserve vector paths')
@@ -352,15 +364,7 @@ test('generates the approved brand icon for every web and native launcher surfac
    first, twice a day, on a background that flashed to black the moment the
    webview arrived. */
 test('the mark survives every launcher mask, and the launch screen is ours', async t => {
-  const outputRoot = await mkdtemp(path.join(tmpdir(), 'offwego-brand-masks-'))
-  t.after(() => rm(outputRoot, { recursive: true, force: true }))
-
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/generate-brand-icons.mjs', '--source', iconPath, '--output-root', outputRoot],
-    { cwd: appRoot, encoding: 'utf8' },
-  )
-  assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message)
+  const outputRoot = await generated()
 
   const foregrounds = new Map([
     ['mdpi', 108],

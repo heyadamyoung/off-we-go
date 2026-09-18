@@ -1,19 +1,43 @@
 import { test, expect } from './fixture.js'
 
-/* Settled: nothing left to load, the fonts in, and two frames drawn. The
+import { atDemoTime } from './demo-clock'
+
+/* Settled: nothing in flight, the fonts in, and two frames drawn. The
    network is sealed and motion is reduced for every test, so this is what
-   the sleeps that used to sit here were waiting for. */
+   the sleeps that used to sit here were waiting for.
+
+   Counted from out here rather than asked of Playwright's networkidle, which
+   is half a second of silence by definition: nineteen times a sweep, most of
+   it spent watching a page that had nothing left to fetch. A tenth of a
+   second with nothing open is the same certainty on a sealed network. */
+const traffic = new WeakMap()
+function watch(page) {
+  const state = { open: 0, quietSince: Date.now() }
+  const done = () => {
+    state.open = Math.max(0, state.open - 1)
+    state.quietSince = Date.now()
+  }
+  page.on('request', () => {
+    state.open += 1
+  })
+  page.on('requestfinished', done)
+  page.on('requestfailed', done)
+  traffic.set(page, state)
+}
 async function settled(page) {
-  await page.waitForLoadState('networkidle')
+  const state = traffic.get(page)
+  await expect
+    .poll(() => state.open === 0 && Date.now() - state.quietSince >= 100, { timeout: 30_000 })
+    .toBe(true)
   await page.evaluate(() =>
     document.fonts.ready.then(
       () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
     ),
   )
 }
-import { atDemoTime } from './demo-clock'
 
 test.beforeEach(async ({ page }) => {
+  watch(page)
   // Freeze the demo's walking traveller: layout and offline assertions need a
   // world that holds still. Set before boot; the router strips query params.
   await page.addInitScript(() => {
@@ -323,24 +347,35 @@ test('a card on the day bar shows its whole name', async ({ page }) => {
   }
 })
 
+/* Two sweeps a phone rather than one: the first five screens are each a
+   page of their own, and the rest are one trip walked through state by
+   state, each built on the last. Apart, the two halves run on two workers
+   and neither is the longest test in the suite by a distance. */
+const SCREENS = [
+  ['the screens around the trip', STATES.slice(0, 5)],
+  ['the trip itself', STATES.slice(5)],
+]
+
 for (const [phone, width, height] of PHONES) {
-  test(`nothing sticks out or hides from a tap on ${phone}`, async ({ page }) => {
-    await page.setViewportSize({ width, height })
-    await page.route('https://en.wikipedia.org/**', route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
-      }),
-    )
+  for (const [which, states] of SCREENS) {
+    test(`nothing sticks out or hides from a tap on ${phone}: ${which}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await page.route('https://en.wikipedia.org/**', route =>
+        route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
+        }),
+      )
 
-    const trouble = []
-    for (const [what, scope, reach] of STATES) {
-      await reach(page)
-      for (const finding of await page.evaluate(SWEEP(scope))) {
-        trouble.push(`${what}: ${finding}`)
+      const trouble = []
+      for (const [what, scope, reach] of states) {
+        await reach(page)
+        for (const finding of await page.evaluate(SWEEP(scope))) {
+          trouble.push(`${what}: ${finding}`)
+        }
       }
-    }
 
-    expect(trouble, `${width}px is wider than these are behaving`).toEqual([])
-  })
+      expect(trouble, `${width}px is wider than these are behaving`).toEqual([])
+    })
+  }
 }
