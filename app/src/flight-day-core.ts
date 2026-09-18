@@ -241,6 +241,8 @@ export interface TicketColumn {
   /** null is drawn as a dash: the column is there before the board fills it */
   value: string | null
   was?: string | null
+  /** under a dash, when the board has said when it will fill it: "by 12:35" */
+  hint?: string | null
 }
 
 /* The columns a ticket has, whether or not anything is known for them yet.
@@ -268,7 +270,21 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
     const queue = flight?.securityWaitMinutes
     const columns: TicketColumn[] = [
       { key: 'terminal', label: 'Terminal', value: terminalWord },
-      { key: 'gate', label: 'Gate', value: gate, was: segment.gateWas || null },
+      {
+        key: 'gate',
+        label: 'Gate',
+        value: gate,
+        was: segment.gateWas || null,
+        /* Dublin names the gate when it calls passengers to it, and it says
+           when that will be hours ahead — so a dash with "by 12:35" under it
+           answers the question the dash raises, which is not "where" but
+           "when will I know". The airline's own app may know sooner; the
+           board is what this reads. */
+        hint:
+          !gate && flight?.goToGateTime
+            ? `by ${localTime(flight.goToGateTime, segment.departTz)}`
+            : null,
+      },
       {
         key: 'checkin',
         label: 'Check-in',

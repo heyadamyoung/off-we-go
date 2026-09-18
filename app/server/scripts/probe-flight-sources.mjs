@@ -26,6 +26,15 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import https from 'node:https'
 import path from 'node:path'
 
+/* One flight, looked up on the boards right now: `--flight TS231` adds the
+   Dublin listings narrowed to it, today and tomorrow, printed whole — the
+   full listing is capped in the log, so the one record somebody is asking
+   about is the one record it may leave out. */
+const FLIGHT = process.argv.includes('--flight')
+  ? String(process.argv[process.argv.indexOf('--flight') + 1] || '')
+      .toUpperCase()
+      .replace(/\s+/g, '')
+  : ''
 const OUT = process.argv.includes('--out')
   ? process.argv[process.argv.indexOf('--out') + 1]
   : 'probe-out'
@@ -87,7 +96,32 @@ const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
    was seen in a browser's network tab at some point and may have moved;
    "public code" means a public repository requests it today; "probe" means
    an earlier run of this script found it. */
+const tomorrowDay = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+const FLIGHT_PROBES = FLIGHT
+  ? [
+      json(
+        `dub-flight-${FLIGHT}-departures-today`,
+        `${DUB_LISTING}/departures?date=${today}&limit=200&filter=${FLIGHT}`,
+        DUB,
+        { full: true },
+      ),
+      json(
+        `dub-flight-${FLIGHT}-arrivals-today`,
+        `${DUB_LISTING}/arrivals?date=${today}&limit=200&filter=${FLIGHT}`,
+        DUB,
+        { full: true },
+      ),
+      json(
+        `dub-flight-${FLIGHT}-departures-tomorrow`,
+        `${DUB_LISTING}/departures?date=${tomorrowDay}&limit=200&filter=${FLIGHT}`,
+        DUB,
+        { full: true },
+      ),
+    ]
+  : []
+
 const PROBES = [
+  ...FLIGHT_PROBES,
   // Dublin — daa. A Next.js site over a JSON API at api.dublinairport.com.
   // Its listing component (quoted whole by an earlier run) builds
   // ?date=&limit=10, turns the page with after=<latestTimestamp> and

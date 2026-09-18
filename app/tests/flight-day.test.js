@@ -253,7 +253,7 @@ test('the ticket has its columns whether or not the board has filled them: a das
   const full = ticketColumns(leg({ gateWas: '404' }))
   assert.deepEqual(full, [
     { key: 'terminal', label: 'Terminal', value: 'T2' },
-    { key: 'gate', label: 'Gate', value: '406', was: '404' },
+    { key: 'gate', label: 'Gate', value: '406', was: '404', hint: null },
     { key: 'checkin', label: 'Check-in', value: 'Zone 15 · Desks 1501–1520' },
     { key: 'walk', label: 'Walk to gate', value: '12 min' },
     { key: 'security', label: 'Security', value: '9 min queue' },
@@ -271,6 +271,17 @@ test('the ticket has its columns whether or not the board has filled them: a das
     false,
     'not a column on a flight the board did not flag',
   )
+  /* No gate yet, but the board has said when it will call passengers to
+     it: the dash says when to look again. */
+  const later = ticketColumns(
+    leg(
+      { gate: null },
+      { status: 'scheduled', gate: null, goToGateTime: '2026-09-17T19:20:00.000Z' },
+    ),
+  )
+  assert.equal(later.find(one => one.key === 'gate').value, null)
+  assert.equal(later.find(one => one.key === 'gate').hint, 'by 20:20')
+  assert.equal(full.find(one => one.key === 'gate').hint, null, 'a gate needs no hint')
   const pearson = ticketColumns(
     leg({}, { status: 'scheduled', checkinZone: 'Aisle 5', checkinDesks: '169-182' }),
   )
