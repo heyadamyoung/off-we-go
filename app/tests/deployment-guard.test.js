@@ -261,7 +261,10 @@ test('the release images are built beside the tests, and the deploy waits for th
   // pipeline's own token to pull them with — into the file the deploy script
   // reads once and destroys, never into the release values it keeps.
   assert.match(workflow, /echo "IMAGE_TAG=\$GITHUB_SHA"/)
-  assert.match(workflow, /echo "REGISTRY_TOKEN=\$REGISTRY_TOKEN"\n\s*\} > app\/deploy\/registry\.env/)
+  assert.match(
+    workflow,
+    /echo "REGISTRY_TOKEN=\$REGISTRY_TOKEN"\n\s*\} > app\/deploy\/registry\.env/,
+  )
   assert.doesNotMatch(workflow, /REGISTRY_TOKEN[^\n]*release\.env/)
   // And every step of it signs out again.
   assert.match(workflow, /docker logout ghcr\.io/)
