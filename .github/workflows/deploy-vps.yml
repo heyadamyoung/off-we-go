@@ -94,9 +94,14 @@ jobs:
               tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$stamp" "$@"
             }
 
-            local node_image base caddy
+            # What the base is made of: its stage, the node image it starts
+            # from, the lockfile, and package.json without its scripts — a
+            # test added to the unit suite is not a reason to rebuild the
+            # runtime, and a rebuild is a minute.
+            local node_image runtime base caddy
             node_image=$(sed -n 's/^FROM \([^ ]*\) AS base$/\1/p' server/Dockerfile)
-            base="$repo/api-base:$(cat server/Dockerfile package.json pnpm-lock.yaml <(crane digest "$node_image") | sha256sum | cut -c1-16)"
+            runtime=$(node -p 'const p = require("./package.json"); delete p.scripts; JSON.stringify(p)')
+            base="$repo/api-base:$(cat server/Dockerfile pnpm-lock.yaml <(printf '%s' "$runtime") <(crane digest "$node_image") | sha256sum | cut -c1-16)"
             if ! crane manifest "$base" >/dev/null 2>&1; then
               echo "Building $base"
               docker buildx create --name release-base >/dev/null
@@ -224,9 +229,9 @@ jobs:
           path: app/covered.txt
           retention-days: 1
 
-      # A seventh of the tests each, dealt round-robin so every shard holds
-      # the same mix of light and heavy (see scripts/shard-tests.mjs), spread
-      # across the runner's cores.
+      # A seventh of the tests each, dealt by weight so every shard holds
+      # the same amount of work (see scripts/shard-tests.mjs), spread across
+      # the runner's cores.
       #
       # The sample-mode bundle (see playwright.config) is built here while the
       # tests are dealt — the deal is two seconds of one core that would

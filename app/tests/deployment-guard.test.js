@@ -274,9 +274,15 @@ test('the release images are put together beside the tests, and the deploy waits
     workflow,
     /sed -n 's\/\^FROM \\\(\[\^ \]\*\\\) AS base\$\/\\1\/p' server\/Dockerfile/,
   )
+  /* And the key is the dependencies, not the scripts beside them: a test
+     added to the unit suite must not rebuild the runtime. */
   assert.match(
     workflow,
-    /cat server\/Dockerfile package\.json pnpm-lock\.yaml <\(crane digest "\$node_image"\)/,
+    /runtime=\$\(node -p 'const p = require\("\.\/package\.json"\); delete p\.scripts; JSON\.stringify\(p\)'\)/,
+  )
+  assert.match(
+    workflow,
+    /cat server\/Dockerfile pnpm-lock\.yaml <\(printf '%s' "\$runtime"\) <\(crane digest "\$node_image"\)/,
   )
   assert.match(workflow, /--target base/)
   assert.match(workflow, /--transform 's,\^,app\/,' -cf \/tmp\/server\.tar server/)

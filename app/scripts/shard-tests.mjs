@@ -1,11 +1,14 @@
-/* Which browser tests a shard runs, dealt round-robin rather than cut in order.
+/* Which browser tests a shard runs, dealt by weight rather than cut in order.
 
    Playwright's own --shard cuts the ordered list of tests into consecutive
    pieces. The list is ordered by file, and the heavy tests — the sixty-odd in
    trip.spec.js, each a map boot and a walk through the trip — sit together at
    the end of it, so the last shard drew nearly all of them and ran half as
    long again as the first. Dealt one test at a time to each shard in turn,
-   every shard holds the same mix of light and heavy, and they finish together.
+   every shard held the same mix of light and heavy, and they finished within
+   eleven seconds of each other; dealt by weight — the heaviest first, each
+   to the shard with the least so far, with a file's tests weighed by what
+   they take — they finish together.
 
    The list comes from Playwright itself, so a test is never missed by a
    shard or run by two: every location is dealt to exactly one. A location is
@@ -28,12 +31,65 @@
 import { spawnSync } from 'node:child_process'
 import { isAbsolute, join, relative } from 'node:path'
 
-/** The locations dealt to shard `index` (from 1) of `count`. */
-export function deal(locations, count, index) {
+/** How long a test in each file takes, in seconds on the runner, from the
+    suite's own logs. A file not named here is an ordinary one. Approximate
+    is enough: this decides which shard a test lands on, and a weight a
+    second off moves the shards a second apart; the deal it replaced, which
+    counted every test as one, had them eleven apart. */
+export const WEIGHTS = {
+  'sight-tap.spec.js': 5.8,
+  'phone-layout.spec.js': 5.0,
+  'photo-zoom-swipe.spec.js': 4.9,
+  'offline.spec.js': 4.7,
+  'trip.spec.js': 4.5,
+  'photo-swipe-arc.spec.js': 4.4,
+  'media-loading.spec.js': 3.9,
+  'photo-scroll.spec.js': 3.8,
+  'stop-editing.spec.js': 3.6,
+  'airport-walk.spec.js': 3.6,
+  'video-upload.spec.js': 3.4,
+  'trip-notices.spec.js': 3.1,
+  'street-names.spec.js': 3.1,
+  'offline-papers.spec.js': 3.1,
+  'photo-select.spec.js': 2.9,
+  'papers.spec.js': 2.8,
+  'timeline.spec.js': 2.8,
+  'travel.spec.js': 2.7,
+  'photo-upload.spec.js': 2.7,
+  'now-card.spec.js': 2.5,
+  'travel-day.spec.js': 2.5,
+  'photo-grid.spec.js': 2.4,
+  'oauth-consent.spec.js': 2.1,
+  'navigation.spec.js': 1.6,
+  'offline-routing.spec.js': 0.3,
+}
+const ORDINARY = 3
+
+/** The seconds a location is expected to take, by its file. */
+export const weightOf = location => {
+  const file = location.replace(/:\d+$/, '').replace(/^.*\//, '')
+  return WEIGHTS[file] ?? ORDINARY
+}
+
+/** The locations dealt to shard `index` (from 1) of `count`: the heaviest
+    first, each to the shard with the least so far, so the shards finish
+    together. With every weight equal this is the round-robin it replaced —
+    the first location to shard 1, the second to shard 2 — and a location
+    is dealt to exactly one shard either way. */
+export function deal(locations, count, index, weigh = weightOf) {
   if (!(count >= 1) || !(index >= 1) || index > count) {
     throw new Error(`no shard ${index} of ${count}`)
   }
-  return locations.filter((_, at) => at % count === index - 1)
+  const plates = Array.from({ length: count }, () => ({ weight: 0, held: [] }))
+  const heaviestFirst = locations
+    .map((location, at) => ({ location, at, weight: weigh(location) }))
+    .sort((a, b) => b.weight - a.weight || a.at - b.at)
+  for (const { location, weight } of heaviestFirst) {
+    const plate = plates.reduce((least, plate) => (plate.weight < least.weight ? plate : least))
+    plate.held.push(location)
+    plate.weight += weight
+  }
+  return plates[index - 1].held
 }
 
 /** Shard `index`'s own deal, and its fixed share of each late shard's. */
