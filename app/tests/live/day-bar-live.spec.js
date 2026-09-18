@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { stack } from './stack.js'
 
 /* The day bar on a phone, on a trip the size of a real one.
  *
@@ -9,9 +8,6 @@ import { expect, test } from '@playwright/test'
  * labels, sorted by the date underneath — and a stop with no day at all, which
  * must not appear as a chip because "All days" already holds it.
  */
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(

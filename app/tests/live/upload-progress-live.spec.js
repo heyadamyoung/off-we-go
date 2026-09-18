@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* Uploading several photographs, against a real server, slowly.
 
@@ -14,10 +13,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
    What this holds to account is exactly what was complained about: that the
    bar exists, that it counts the batch, that it moves, that it goes when the
    last one lands — and that a few go at a time rather than one or twenty. */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 /* This spec plants photographs in a trip every other spec also reads. */
 leaveNoTrace(test, stack)

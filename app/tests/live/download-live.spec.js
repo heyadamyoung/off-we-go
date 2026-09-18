@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* Saving the photograph you are looking at.
  *
@@ -16,10 +16,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
  * query, the server scrubbed it into a Content-Disposition header, and the
  * browser read it back off the wire.
  */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 leaveNoTrace(test, stack)
 

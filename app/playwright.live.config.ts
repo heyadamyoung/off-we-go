@@ -15,8 +15,13 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './tests/live',
   testMatch: '**/*.spec.js',
-  fullyParallel: false,
-  workers: 1,
+  /* Side by side, four at a time, each worker on a trip of its own (see
+     tests/live/stack.js). One worker in a row was a minute and a quarter of
+     which the machine was busy for twenty seconds: the rest was waiting on
+     uploads, conversions and the server, which four can do at once. The
+     stack seeds as many trips as there are workers here. */
+  fullyParallel: true,
+  workers: 4,
   // No retries: a flake here is a finding, not something to paper over.
   retries: 0,
   timeout: 180_000,

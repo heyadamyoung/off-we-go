@@ -99,7 +99,6 @@ await repository.createSession({
    the path a real trip takes once its days are dates was never drawn in a
    browser at all. This is that trip. */
 const TRIP_DAYS = { startsOn: '2026-09-03', endsOn: '2026-09-10' }
-const trip = await repository.createTrip(user, { title: 'Live stack', ...TRIP_DAYS })
 
 /* Two stops, a kilometre or so apart: far enough that "nearest wins" has
    something to decide, and that somewhere between them belongs to neither.
@@ -115,8 +114,7 @@ const trip = await repository.createTrip(user, { title: 'Live stack', ...TRIP_DA
 
    Several stops still share the fourth of September, because "many stops, one
    chip" is the part that is still true. */
-const stops = []
-for (const stop of [
+const SEED_STOPS = [
   { name: 'Anne Frank House', lng: 4.8839, lat: 52.3752, day: '2026-09-04' },
   { name: 'Rijksmuseum', lng: 4.8852, lat: 52.36, day: '2026-09-04' },
   { name: 'Westerkerk', lng: 4.8836, lat: 52.3747, day: '2026-09-04' },
@@ -131,8 +129,21 @@ for (const stop of [
   { name: 'Haarlem', lng: 4.6462, lat: 52.3874, day: '2026-09-09' },
   { name: 'Schiphol', lng: 4.7639, lat: 52.3105, day: '2026-09-10' },
   { name: 'Nowhere in particular', lng: 4.9, lat: 52.37, day: '' },
-]) {
-  stops.push(await repository.createStop(user, trip.id, { ...stop, icon: 'pin' }))
+]
+
+/* One trip per worker, each seeded the same. The specs run side by side, and
+   a test that plants photographs on the trip another worker is counting
+   would be a flake by design — so every worker is handed a trip of its own
+   (tests/live/stack.js picks by the worker's index) and tidies within it. */
+const LANES = Number(process.env.LIVE_LANES || 4)
+const trips = []
+for (let lane = 1; lane <= LANES; lane++) {
+  const trip = await repository.createTrip(user, { title: `Live stack ${lane}`, ...TRIP_DAYS })
+  const stops = []
+  for (const stop of SEED_STOPS) {
+    stops.push(await repository.createStop(user, trip.id, { ...stop, icon: 'pin' }))
+  }
+  trips.push({ trip, stops })
 }
 
 /* Built against this API rather than the sample, then moved aside so the
@@ -146,7 +157,7 @@ await rename(join(root, 'dist', 'client'), join(root, 'dist', 'live-client'))
 await mkdir(join(root, 'dist'), { recursive: true })
 await writeFile(
   join(root, 'dist', 'live-stack.json'),
-  JSON.stringify({ webOrigin, apiOrigin, apiBase, accessToken, trip, stops, media }, null, 2),
+  JSON.stringify({ webOrigin, apiOrigin, apiBase, accessToken, trips, media }, null, 2),
 )
 
 /* One origin, the way Caddy serves it: the bundle from disk, /api proxied to
