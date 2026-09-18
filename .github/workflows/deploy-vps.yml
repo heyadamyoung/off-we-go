@@ -15,9 +15,51 @@ concurrency:
   group: off-we-go-production
   cancel-in-progress: false
 
+# Four jobs side by side rather than one chain: pushed to live was ten and a
+# half minutes, of which nine and a half were one runner doing everything in
+# turn — four and a half of them the browser suite on two workers. Each job
+# below sets itself up in half a minute and does its one thing; the longest
+# is a browser shard, and the deploy waits on all of them. What a job needs
+# it installs itself: ffmpeg where video is converted, a browser where one
+# is driven, postgres where the server is tested.
 jobs:
-  test:
-    name: Test production release
+  checks:
+    name: Lint, unit tests and the web build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Before setup-node, whose cache of the pnpm store needs pnpm on the path.
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.6.5 --activate
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint and format check
+        run: pnpm lint
+
+      - name: Run unit tests
+        run: pnpm test:unit
+
+      - name: Build the web app
+        env:
+          VITE_API_URL: /api
+        run: pnpm build
+
+  server:
+    name: Server tests and the deployment entrypoint
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -39,27 +81,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-
       - name: Enable pnpm
         run: |
           corepack enable
           corepack prepare pnpm@10.6.5 --activate
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Lint and format check
-        run: pnpm lint
-
-      - name: Run unit tests
-        run: pnpm test:unit
-
-      - name: Test the restricted deployment entrypoint
-        # This runner has docker, so the compose check must run rather than skip.
-        run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
 
       # Without it every video test quietly SKIPS. They have been skipping here
       # since they were written — "ok … # SKIP ffmpeg is not installed on this
@@ -75,22 +109,44 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/offwego_test
         run: pnpm test:server
 
-      - name: Build the web app
-        env:
-          VITE_API_URL: /api
-        run: pnpm build
+      - name: Test the restricted deployment entrypoint
+        # This runner has docker, so the compose check must run rather than skip.
+        run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
+
+  browser:
+    name: Browser tests (${{ matrix.shard }} of 2)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.6.5 --activate
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      # The suite builds the sample-mode bundle itself (see playwright.config).
+      # Half the tests each, spread across the runner's cores.
       - name: Run browser tests
-        run: pnpm test
-
-      # The suite above runs in sample mode, where uploads never leave the tab.
-      # This one has a real server behind it, so "does a film actually upload"
-      # is a question CI can answer rather than infer.
-      - name: Run browser tests against a real server
-        run: pnpm test:live
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
 
       # A CI-only flake with no trace is unfixable folklore; a failure here
       # hands its Playwright traces and DOM snapshots to the run page instead.
@@ -98,14 +154,59 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: browser-test-results
+          name: browser-test-results-${{ matrix.shard }}
+          path: app/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  live:
+    name: Browser tests against a real server
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.6.5 --activate
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # This stack converts real video.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The sample-mode suite runs in the shards above, where uploads never
+      # leave the tab. This one has a real server behind it, so "does a film
+      # actually upload" is a question CI can answer rather than infer.
+      - name: Run browser tests against a real server
+        run: pnpm test:live
+
+      - name: Keep the failure traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-test-results
           path: app/test-results/
           retention-days: 7
           if-no-files-found: ignore
 
   deploy:
     name: Deploy production
-    needs: test
+    needs: [checks, server, browser, live]
     runs-on: ubuntu-24.04
     environment:
       name: production
