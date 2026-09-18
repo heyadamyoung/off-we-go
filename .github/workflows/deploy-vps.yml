@@ -22,13 +22,12 @@ concurrency:
 # .github/actions, and what they fetch (the pnpm store, the browser, ffmpeg)
 # comes out of the cache rather than off the network — and does its one thing.
 # The deploy waits on all of them, so the test phase is the longest job and
-# nothing else: the browser suite is dealt eight ways, the deployment entrypoint
-# has a runner of its own rather than a minute on the end of the server tests,
-# and the release images are built here beside the tests, so the deploy is a
-# pull and a restart.
+# nothing else: the browser suite is dealt eight ways, the live suite runs on
+# two stacks, and the release images are built here beside the tests, so the
+# deploy is a pull and a restart.
 jobs:
   checks:
-    name: Lint and unit tests
+    name: Lint, unit tests and the deployment entrypoint
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -44,6 +43,12 @@ jobs:
       # bundle that ships, from the same tree, and fails the run if it cannot.
       - name: Run unit tests
         run: time pnpm test:unit
+
+      # This runner has docker, so the compose check must run rather than
+      # skip. Here rather than on a runner of its own: it is ten seconds, and
+      # every job the run asks for is a runner it may wait on.
+      - name: Test the restricted deployment entrypoint
+        run: REQUIRE_DOCKER=1 pnpm test:guard
 
   server:
     name: Server tests
@@ -89,25 +94,6 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/offwego_test
         run: time pnpm test:server
-
-  entrypoint:
-    name: The deployment entrypoint
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: app
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # Node alone: the guard imports nothing but node itself, so there is no
-      # install to wait for before it runs.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-
-      - name: Test the restricted deployment entrypoint
-        # This runner has docker, so the compose check must run rather than skip.
-        run: REQUIRE_DOCKER=1 node --test tests/deployment-guard.test.js
 
   browser:
     name: Browser tests (${{ matrix.shard }} of 8)
@@ -260,7 +246,7 @@ jobs:
 
   deploy:
     name: Deploy production
-    needs: [checks, server, entrypoint, browser, live, images]
+    needs: [checks, server, browser, live, images]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
