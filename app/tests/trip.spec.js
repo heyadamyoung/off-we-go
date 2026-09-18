@@ -339,8 +339,21 @@ test('double-tapping the photograph hearts it, and never un-hearts it', async ({
      hearted the picture instead of turning the page. */
   await openViewer(page)
 
+  /* The heart is on the screen for the length of its own animation and then
+     gone. Looked for from outside, each look is a round trip to a browser
+     that under a full suite can be a second behind, and a burst that came
+     and went between two looks read as no burst at all. So the page counts
+     its own hearts as they arrive, and the test asks for the count. */
+  await page.evaluate(() => {
+    window.__hearts = 0
+    new MutationObserver(records => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof Element && node.classList.contains('vheart')) window.__hearts += 1
+    }).observe(document.querySelector('.vbody'), { childList: true })
+  })
   await page.locator('.vpane.on .vmaintap').dblclick()
-  await expect(page.locator('.vheart')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__hearts)).toBeGreaterThan(0)
   await expect(page.locator('.vtop .acts button.liked')).toHaveCount(1)
 
   // Again pops the heart but the like survives — un-liking is the chrome
@@ -733,13 +746,17 @@ test('a pin selects its stop, a drag does not', async ({ page }) => {
   await expect(page.locator('.detailcard h3')).toHaveText(PHOTOLESS)
   const after = await page.locator('.detailcard h3').textContent()
 
-  // dragging must pan without selecting whatever was underneath
+  /* Dragging must pan without selecting whatever was underneath. Six moves,
+     each a stride: the map draws once per move, and on a machine running the
+     whole suite a software-rendered frame can take seconds — twenty-five of
+     them was a test timeout, not a drag. What is being claimed is that a
+     drag is not a click, and six strides of thirty pixels are a drag. */
   const box = await page.locator('.mapcanvas').boundingBox()
   const cx = box.x + box.width * 0.6,
     cy = box.y + box.height * 0.55
   await page.mouse.move(cx, cy)
   await page.mouse.down()
-  for (let i = 1; i <= 25; i++) await page.mouse.move(cx - i * 8, cy - i * 3)
+  for (let i = 1; i <= 6; i++) await page.mouse.move(cx - i * 32, cy - i * 12)
   await page.mouse.up()
   await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
   expect(await page.locator('.detailcard h3').textContent()).toBe(after)
@@ -1879,21 +1896,40 @@ test('the strip follows the finger, and carries on to the next one when let go',
       el.dataset.wasAlreadyHere = 'yes'
     })
 
-  /* Every frame the track passes through, recorded in the page.
+  /* Everywhere the track is SENT, recorded in the page as it is told.
 
      Reading a CSS property once, afterwards, is a race the test loses under a
      loaded machine — by the time it looks, the turn has finished and the
-     transition is gone. What is actually being claimed is about the movement,
-     so the movement is what gets recorded. */
+     transition is gone. Sampling the frames as they draw was the first
+     answer, and it has the same flaw one level down: a browser a second
+     behind draws no frames for the whole of a quarter-second turn, so the
+     recording showed the strip stopping under the finger and then at home,
+     with the carry-on between them never drawn at all.
+
+     What is actually being claimed is where the strip was told to go: under
+     the finger, then on to the next photograph in one eased movement, then
+     home with the new picture in the middle. The app says each of those by
+     writing the track's inline transform, and a mutation observer hears
+     every write whether or not a frame was ever drawn for it. */
   await page.evaluate(() => {
-    window.__frames = []
+    window.__sent = []
     const track = document.querySelector('.vtrack')
-    const tick = () => {
-      const t = getComputedStyle(track).transform
-      window.__frames.push(t === 'none' ? 0 : Number(t.split(',')[4] ?? 0))
-      if (window.__frames.length < 150) requestAnimationFrame(tick)
+    const width = track.getBoundingClientRect().width
+    /* The inline value as pixels: "-242px", "-100%" (one photograph on), or
+       "calc(-242px - 100%)" — see trackShift in swipe-core. */
+    const pixels = value => {
+      let total = 0
+      for (const [, number, unit] of value.matchAll(/(-?[\d.]+)(px|%)/g))
+        total += unit === '%' ? (Number(number) / 100) * width : Number(number)
+      return total
     }
-    requestAnimationFrame(tick)
+    const note = () =>
+      window.__sent.push({
+        to: pixels(track.style.transform),
+        eased: track.style.transition !== 'none' && track.style.transition !== '',
+      })
+    note()
+    new MutationObserver(note).observe(track, { attributes: true, attributeFilter: ['style'] })
   })
 
   /* A drag that carries far enough goes ON to the next one, easing as it
@@ -1909,26 +1945,28 @@ test('the strip follows the finger, and carries on to the next one when let go',
   await page.mouse.up()
 
   await expect.poll(at).not.toBe(first)
+  // And having arrived, the strip is centred again on the new photograph.
+  await expect.poll(shifted).toBe(0)
 
   /* Up to the commit, which is the one moment the track is allowed to jump —
      it returns to nought with the arriving photograph already in the middle,
      so nothing moves on the screen. */
-  const frames = await page.evaluate(() => window.__frames)
-  const moved = frames.findIndex(x => x < -4)
-  const back = frames.findIndex((x, i) => i > moved && moved >= 0 && x === 0)
-  const journey = frames.slice(moved, back > 0 ? back : undefined)
+  const sent = await page.evaluate(() => window.__sent)
+  const moved = sent.findIndex(one => one.to < -4)
+  const back = sent.findIndex((one, i) => i > moved && moved >= 0 && one.to === 0)
+  const journey = sent.slice(moved, back > 0 ? back : undefined)
 
   expect(journey.length, 'the track never moved at all').toBeGreaterThan(2)
+  const carriedOn = journey.find(one => one.to < -carried - 60)
   expect(
-    Math.min(...journey),
+    carriedOn,
     'the strip stopped where the finger did instead of carrying on to the next photograph',
-  ).toBeLessThan(-carried - 60)
+  ).toBeTruthy()
+  expect(carriedOn.eased, 'the strip jumped to the next photograph rather than easing').toBe(true)
   expect(
-    journey.every((x, i) => i === 0 || x <= journey[i - 1] + 1),
-    `the strip went backwards on its way: ${journey.map(Math.round).join(' ')}`,
+    journey.every((one, i) => i === 0 || one.to <= journey[i - 1].to + 1),
+    `the strip went backwards on its way: ${journey.map(one => Math.round(one.to)).join(' ')}`,
   ).toBe(true)
-  // And having arrived, the strip is centred again on the new photograph.
-  await expect.poll(shifted).toBe(0)
 
   expect(
     await page.locator('.vpane.on img').getAttribute('data-was-already-here'),
