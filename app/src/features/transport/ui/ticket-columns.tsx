@@ -40,6 +40,11 @@ export default function TicketColumns({ segment }: { segment: Segment }) {
             {column.was && (
               <s className="ml-1.5 text-[11px] font-normal text-faint">{column.was}</s>
             )}
+            {!column.value && column.hint && (
+              <span className="tkhint ml-1.5 text-[11px] font-normal text-faint">
+                {column.hint}
+              </span>
+            )}
           </div>
         </div>
       ))}

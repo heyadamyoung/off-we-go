@@ -7,6 +7,11 @@ name: Flight source probe
 # parsing: a site that changed shows up here first.
 on:
   workflow_dispatch:
+    inputs:
+      flight:
+        description: 'One flight to look up on the boards right now, e.g. TS231'
+        required: false
+        default: ''
   pull_request:
     paths:
       - '.github/workflows/flight-source-probe.yml'
@@ -30,7 +35,9 @@ jobs:
           node-version: 22
 
       - name: Probe every candidate source
-        run: node server/scripts/probe-flight-sources.mjs --out "$RUNNER_TEMP/probe-out"
+        env:
+          FLIGHT: ${{ inputs.flight }}
+        run: node server/scripts/probe-flight-sources.mjs --out "$RUNNER_TEMP/probe-out" --flight "$FLIGHT"
 
       - name: Keep the bodies
         if: always()

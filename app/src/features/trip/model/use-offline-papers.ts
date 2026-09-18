@@ -35,6 +35,23 @@ async function keepRenderer() {
        the moment somebody opens a document with signal. */
   }
 }
+
+/* Not in the first seconds. The renderer is the largest thing the app can
+   ship — a megabyte and a half — and pulling it the moment a trip opened
+   had it competing with the map and the photographs for the phone's radio
+   and its CPU, on every open, for a document nobody was opening yet. It
+   waits until the page has been quiet for a while; a trip open for a few
+   seconds still has it before anybody reaches a desk. */
+const RENDERER_AFTER_MS = 4000
+const whenQuiet = () =>
+  new Promise<void>(resolve => {
+    setTimeout(() => {
+      const idle = (globalThis as { requestIdleCallback?: (fn: () => void) => void })
+        .requestIdleCallback
+      if (idle) idle(() => resolve())
+      else resolve()
+    }, RENDERER_AFTER_MS)
+  })
 export default function useOfflinePapers({
   tripId,
   stops,
@@ -60,8 +77,9 @@ export default function useOfflinePapers({
       const store = await paperStore()
       if (!store || !alive) return
       await keepPapers(store, papers, (...args) => fetch(...args))
-      if (alive && papers.some(paper => paperKind(paper.mime, paper.name) === 'pdf'))
-        await keepRenderer()
+      if (!papers.some(paper => paperKind(paper.mime, paper.name) === 'pdf')) return
+      await whenQuiet()
+      if (alive) await keepRenderer()
     })()
     return () => {
       alive = false
