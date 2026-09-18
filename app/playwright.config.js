@@ -1,3 +1,4 @@
+import os from 'node:os'
 import { defineConfig, devices } from '@playwright/test'
 
 /* The suite runs against the production build in sample mode — no credentials,
@@ -17,7 +18,14 @@ export default defineConfig({
      nothing listening, and fail for reasons that are not about the app. */
   testIgnore: '**/live/**',
   fullyParallel: false,
-  workers: process.env.CI ? 2 : 4,
+  /* Half the cores, and never more. Every worker holds a map drawn in
+     software, and a worker per core left each browser a second or more
+     behind on a round trip: gestures measured by the clock — a double tap,
+     a flick — arrived too slowly to be what they were, and a drag across the
+     map spent its whole test timeout waiting on frames. The runner on CI is
+     two cores and two workers and has never shown it; a bigger box is not
+     faster at four. */
+  workers: process.env.CI ? 2 : Math.max(1, Math.floor(os.cpus().length / 2)),
   /* CI only, one retry: the sights and place-search specs lean on live
      Wikipedia, which throttles GitHub's runner addresses in waves — the same
      two tests failed different runs on different afternoons with the code
