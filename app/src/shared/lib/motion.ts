@@ -20,3 +20,10 @@ export const withoutTransitions = (
   _previous: StyleSpecification | undefined,
   next: StyleSpecification,
 ): StyleSpecification => ({ ...next, transition: { duration: 0, delay: 0 } })
+
+/** A duration, or none at all for a person who asked for less motion. */
+export const motionMs = (ms: number): number => (prefersReducedMotion() ? 0 : ms)
+
+/** What a map takes a style with, so its paint changes land at once for them. */
+export const styleSwap = (): { transformStyle?: typeof withoutTransitions } =>
+  prefersReducedMotion() ? { transformStyle: withoutTransitions } : {}
