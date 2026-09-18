@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { stack } from './stack.js'
 
 /* A trip whose days are dates, drawn by the real client against the real API.
 
@@ -16,10 +15,6 @@ import { expect, test } from '@playwright/test'
      '4'           what somebody typed before there was anywhere to pick
 
    Three of those are the fourth of September. One day, not four. */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
@@ -134,9 +129,18 @@ test('a stop added on a day is stored as that date and joins it', async ({ page 
         headers: { authorization: `Bearer ${token}` },
       })
       const body = await response.json()
-      return (body.stops || []).find(stop => stop.name === 'Added On The Fifth')?.day
+      const added = (body.stops || []).find(stop => stop.name === 'Added On The Fifth')
+      return added ? { id: added.id, day: added.day } : null
     },
     [stack.apiBase, stack.accessToken, stack.trip.slug],
   )
-  expect(stored).toBe('2026-09-05')
+  expect(stored?.day).toBe('2026-09-05')
+
+  /* Taken away again: the fifth has one stop on it, and the test above that
+     counts on that could run after this one on the same trip. */
+  const removed = await page.request.delete(
+    `${stack.apiBase}/trips/${stack.trip.id}/stops/${stored.id}`,
+    { headers: { authorization: `Bearer ${stack.accessToken}` } },
+  )
+  expect(removed.ok()).toBe(true)
 })

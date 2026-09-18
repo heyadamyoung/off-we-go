@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* A film, uploaded by the app, to a server.
 
@@ -10,10 +10,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
    the server half and builds its own multipart by hand. This is the join:
    the bundle's own `uploadPhoto`, its own FormData, its own poster field,
    against the real endpoint, with the real converter behind it. */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 /* This spec plants photographs in a trip every other spec also reads. */
 leaveNoTrace(test, stack)

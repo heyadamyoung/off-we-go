@@ -1,8 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import sharp from 'sharp'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* Where a photograph says it was taken, against where it was uploaded from.
  *
@@ -18,10 +17,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
  * the server has to read the file for itself. Only a real browser talking to a
  * real server exercises the pair.
  */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 const AMSTERDAM = { lat: 52.3620666, lng: 4.8852888 }
 const LONDON = { latitude: 51.5072, longitude: -0.1276 }

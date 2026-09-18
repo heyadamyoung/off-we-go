@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* Photographs on the map, including the ones that know nothing.
 
@@ -15,10 +14,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
    to a real server, read back by the real client, and drawn where the trip
    was on the day it was taken. Sample mode cannot ask any of it — nothing
    leaves the tab there, so nothing ever comes back with a day on it. */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 /* This spec plants photographs in a trip every other spec also reads. */
 leaveNoTrace(test, stack)

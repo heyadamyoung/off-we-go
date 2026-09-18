@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* One photograph, out of the trip and onto the open web.
  *
@@ -10,10 +9,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
  * table, the SQL that reads and revokes through it, and a public fetch that
  * carries no session at all.
  */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 leaveNoTrace(test, stack)
 

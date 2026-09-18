@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* Thirty at once, against a real server.
 
@@ -14,10 +13,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
    holds to account is the only thing that matters to somebody standing in a
    hotel lobby: that the tab is still alive at the end of it, and that all
    thirty are on the trip. */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 leaveNoTrace(test, stack)
 

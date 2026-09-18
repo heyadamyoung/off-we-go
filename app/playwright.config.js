@@ -21,13 +21,15 @@ export default defineConfig({
      sixty-eight in trip.spec.js are spread across the workers rather than
      run one after another on whichever worker drew the file. */
   fullyParallel: true,
-  /* One worker per core, everywhere: the suite is bound by the machine's
-     cores (a boot is two and a half core-seconds of software rendering and
-     compiling), so this is the count. It was two on CI, from the days an idle
-     page burned a core and a half on compositor animations and every browser
-     ran a second behind; with motion reduced (see tests/fixture.js) a waiting
-     page costs nothing. */
-  workers: os.cpus().length,
+  /* One worker per core at a desk, where the suite is bound by the cores.
+     On the runner, six on four: a shard's tests ran forty-five seconds with
+     the machine busy for half of it — each test spends as long waiting on the
+     browser, the network fixture and the server as it does computing, and
+     two more workers fill that gap without the timing of any one test
+     stretching past what the retry there absorbs. It was two on CI, from the
+     days an idle page burned a core and a half on compositor animations;
+     with motion reduced (see tests/fixture.js) a waiting page costs nothing. */
+  workers: process.env.CI ? 6 : os.cpus().length,
   /* CI only, one retry: the sights and place-search specs lean on live
      Wikipedia, which throttles GitHub's runner addresses in waves — the same
      two tests failed different runs on different afternoons with the code

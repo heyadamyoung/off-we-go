@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { leaveNoTrace } from './leave-no-trace.js'
+import { stack } from './stack.js'
 
 /* The right copy of a photograph, and the next one already on the screen.
  *
@@ -19,10 +19,6 @@ import { leaveNoTrace } from './leave-no-trace.js'
  * Sample mode cannot ask this. Nothing there has a second copy, because
  * nothing there has ever been to a server.
  */
-
-const stack = JSON.parse(
-  readFileSync(join(import.meta.dirname, '../../dist/live-stack.json'), 'utf8'),
-)
 
 leaveNoTrace(test, stack)
 
