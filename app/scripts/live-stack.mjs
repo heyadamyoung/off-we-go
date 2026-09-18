@@ -83,6 +83,10 @@ const worker = createMediaWorker({
   fileStore,
   logger: app.log,
   onFinished: job => app.announceMediaReady?.(job),
+  /* Looks for work every quarter of a second rather than the five the
+     production worker idles for: a test waiting on a film's conversion or a
+     photograph's copies was spending most of its wait on the worker's nap. */
+  idleMs: 250,
 })
 worker.start()
 
