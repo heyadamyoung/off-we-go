@@ -73,6 +73,22 @@ if [[ -f "$release_env" ]]; then
 fi
 shred -u -- "$release_env" 2>/dev/null || rm -f -- "$release_env"
 
+# The pipeline's own short-lived token, for pulling the images it built and
+# tested. Read from the staged copy, used once below, and destroyed: it never
+# reaches /opt/wayfare, and a release that carries none — install.sh, a hand
+# deploy — builds the images here from the same Dockerfiles instead.
+readonly registry_env="$staged_app/deploy/registry.env"
+registry_user=""
+registry_token=""
+if [[ -f "$registry_env" ]]; then
+  registry_user="$(sed -n 's/^REGISTRY_USER=//p' "$registry_env" | tail -n 1)"
+  registry_token="$(sed -n 's/^REGISTRY_TOKEN=//p' "$registry_env" | tail -n 1)"
+fi
+shred -u -- "$registry_env" 2>/dev/null || rm -f -- "$registry_env"
+rm -f -- "$APP_ROOT/deploy/registry.env"
+image_repo="$(sed -n 's/^IMAGE_REPO=//p' "$APP_ROOT/.env" | tail -n 1)"
+image_repo="${image_repo:-ghcr.io/heyadamyoung/off-we-go}"
+
 install -d -m 700 "$ROLLBACK_ROOT/source-current"
 rsync -a --delete \
   --exclude='/.env' \
@@ -84,15 +100,19 @@ rsync -a --delete \
 cd "$APP_ROOT"
 bash ./deploy/backup.sh
 
-if docker image inspect wayfare-api:latest >/dev/null 2>&1; then
-  docker tag wayfare-api:latest wayfare-api:rollback
-fi
-if docker image inspect wayfare-web:latest >/dev/null 2>&1; then
-  docker tag wayfare-web:latest wayfare-web:rollback
-fi
+# The way back is whatever is running now, by image rather than by tag: a
+# pulled release and a built one both leave it on the box, and a rollback
+# starts it again under this one name.
+for image in api web; do
+  running="$(docker compose images -q "$image" 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$running" ]]; then
+    docker tag "$running" "$image_repo/$image:rollback"
+  fi
+done
 
 rsync -a --delete \
   --exclude='/deploy/release.env' \
+  --exclude='/deploy/registry.env' \
   --exclude='/.env' \
   --exclude='/data/' \
   --exclude='/backups/' \
@@ -111,10 +131,12 @@ rollback() {
     --exclude='/.deployed-sha' \
     "$ROLLBACK_ROOT/source-current/" "$APP_ROOT/"
 
-  docker image inspect wayfare-api:rollback >/dev/null 2>&1 && docker tag wayfare-api:rollback wayfare-api:latest
-  docker image inspect wayfare-web:rollback >/dev/null 2>&1 && docker tag wayfare-web:rollback wayfare-web:latest
   cd "$APP_ROOT"
-  docker compose up -d --no-build --force-recreate --wait --wait-timeout 180 || true
+  # The images that were running, under the tag the release replaced; written
+  # to .env too, so the box and its file agree until the next release.
+  printf 'IMAGE_TAG=rollback\n' > "$ROLLBACK_ROOT/env-rollback"
+  bash ./deploy/merge-env.sh "$ROLLBACK_ROOT/env-rollback" "$APP_ROOT/.env" || true
+  IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate --wait --wait-timeout 180 || true
   exit "$exit_code"
 }
 trap rollback ERR
@@ -128,7 +150,19 @@ docker compose config --quiet
 # The release sha reaches the web build so browser telemetry can be sliced
 # by deploy.
 export RELEASE_SHA="$release_sha"
-docker compose up -d --build --wait --wait-timeout 180
+if [[ -n "$registry_token" ]]; then
+  # The images the pipeline built and tested, pulled rather than rebuilt here:
+  # building on this box was a minute and a half of every deploy, three on a
+  # cache miss. Signed in for the moment of the pull, and out again before
+  # anything else happens; only the layers that changed cross the wire.
+  printf '%s' "$registry_token" | docker login ghcr.io -u "$registry_user" --password-stdin
+  registry_token=""
+  docker compose pull --quiet api web
+  docker logout ghcr.io >/dev/null 2>&1 || true
+  docker compose up -d --no-build --wait --wait-timeout 180
+else
+  docker compose up -d --build --wait --wait-timeout 180
+fi
 bash ./deploy/configure-logto.sh
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
 if [[ -z "$deployment_domain" ]]; then
@@ -192,5 +226,12 @@ fi
 # survive — and the builder keeps a working set so rebuilds stay quick.
 docker image prune -f >/dev/null 2>&1 || true
 docker builder prune -f --keep-storage 8GB >/dev/null 2>&1 || true
+# Pulled releases are kept by commit; the newest two are the running one and
+# the way back, and the rest are disk.
+for image in api web; do
+  docker image ls --format '{{.Tag}}' "$image_repo/$image" 2>/dev/null \
+    | grep -E '^[0-9a-f]{40}$' | tail -n +3 \
+    | xargs -r -I{} docker image rm "$image_repo/$image:{}" >/dev/null 2>&1 || true
+done
 
 echo "Off We Go deployed at $release_sha."

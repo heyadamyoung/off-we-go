@@ -46,6 +46,10 @@ services:
         condition: service_healthy
 
   api:
+    # Built here at a desk (install.sh does the same); on the box, pulled by
+    # commit from the registry the pipeline pushed to — the same Dockerfile
+    # either way, so what was tested is what runs.
+    image: ${IMAGE_REPO:-ghcr.io/heyadamyoung/off-we-go}/api:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -227,6 +231,7 @@ services:
     # answered where it matters: the copy fails and media stays on the volume.
 
   web:
+    image: ${IMAGE_REPO:-ghcr.io/heyadamyoung/off-we-go}/web:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.web

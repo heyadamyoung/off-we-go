@@ -210,6 +210,59 @@ test('the object store is private, and the api is not its root user', {
   assert.equal(api.S3_ACCESS_KEY_ID === compose.services.minio.environment.MINIO_ROOT_USER, false)
 })
 
+/* The images the box runs are the ones the pipeline built and tested, named
+   by commit; a desk and install.sh still build the same Dockerfiles. */
+test("the api and web images are the pipeline's, by commit, and still buildable by hand", {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const result = renderCompose({ IMAGE_TAG: 'abc123' })
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  const compose = JSON.parse(result.stdout)
+  assert.equal(compose.services.api.image, 'ghcr.io/heyadamyoung/off-we-go/api:abc123')
+  assert.equal(compose.services.web.image, 'ghcr.io/heyadamyoung/off-we-go/web:abc123')
+  assert.equal(compose.services.api.build.dockerfile, 'server/Dockerfile')
+  assert.equal(compose.services.web.build.dockerfile, 'Dockerfile.web')
+})
+
+/* The deploy pulls those images with the pipeline's own short-lived token —
+   read from the staged copy, destroyed before anything else runs, never
+   copied onto the box — and builds them itself when no token came, which is
+   what install.sh and a hand deploy are. The way back is whatever was
+   running, tagged before the release touches anything. */
+test('the deploy pulls with a token it destroys, builds without one, and keeps the way back', () => {
+  const script = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  assert.match(script, /registry_env="\$staged_app\/deploy\/registry\.env"/)
+  assert.match(script, /shred -u -- "\$registry_env"/)
+  assert.match(script, /--exclude='\/deploy\/registry\.env'/)
+  assert.match(script, /rm -f -- "\$APP_ROOT\/deploy\/registry\.env"/)
+  assert.match(script, /docker login ghcr\.io -u "\$registry_user" --password-stdin/)
+  assert.match(script, /docker compose pull --quiet api web/)
+  assert.match(script, /docker logout ghcr\.io/)
+  assert.match(script, /docker compose up -d --no-build --wait --wait-timeout 180/)
+  assert.match(script, /docker compose up -d --build --wait --wait-timeout 180/)
+  assert.match(script, /docker tag "\$running" "\$image_repo\/\$image:rollback"/)
+  assert.match(script, /IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate/)
+  // Nothing about the token is ever echoed or left in a variable afterwards.
+  assert.match(script, /registry_token=""\n {2}docker compose pull/)
+  assert.doesNotMatch(script, /echo.*registry_token/)
+})
+
+test('the release images are built beside the tests, and the deploy waits for them', () => {
+  const workflow = readFileSync(
+    path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
+    'utf8',
+  )
+  assert.match(workflow, /image: \[api, web\]/)
+  assert.match(workflow, /needs: \[checks, server, browser, live, images\]/)
+  assert.match(workflow, /packages: write/)
+  assert.match(workflow, /--cache-to "type=registry,ref=\$repo\/\$IMAGE:buildcache,mode=max"/)
+  assert.match(workflow, /--tag "\$repo\/\$IMAGE:\$GITHUB_SHA"/)
+  // The box is told which images the release is, by commit.
+  assert.match(workflow, /echo "IMAGE_TAG=\$GITHUB_SHA"/)
+  // And every step of it signs out again.
+  assert.match(workflow, /docker logout ghcr\.io/)
+})
+
 test('production restore includes the Logto identity database', () => {
   const restore = readFileSync(path.join(appRoot, 'deploy', 'restore.sh'), 'utf8')
 

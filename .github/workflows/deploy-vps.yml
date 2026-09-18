@@ -15,13 +15,15 @@ concurrency:
   group: off-we-go-production
   cancel-in-progress: false
 
-# Four jobs side by side rather than one chain: pushed to live was ten and a
-# half minutes, of which nine and a half were one runner doing everything in
-# turn — four and a half of them the browser suite on two workers. Each job
-# below sets itself up in half a minute and does its one thing; the longest
-# is a browser shard, and the deploy waits on all of them. What a job needs
-# it installs itself: ffmpeg where video is converted, a browser where one
-# is driven, postgres where the server is tested.
+# Jobs side by side rather than one chain: pushed to live was ten and a half
+# minutes, of which nine and a half were one runner doing everything in turn
+# — four and a half of them the browser suite on two workers. Each job below
+# sets itself up in half a minute and does its one thing; the longest is a
+# browser shard, and the deploy waits on all of them. What a job needs it
+# installs itself: ffmpeg where video is converted, a browser where one is
+# driven, postgres where the server is tested. The release images are built
+# here too, beside the tests rather than on the box after them, so the deploy
+# is a pull and a restart.
 jobs:
   checks:
     name: Lint, unit tests and the web build
@@ -204,10 +206,63 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  images:
+    name: Build the ${{ matrix.image }} image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [api, web]
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Sign in to the registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # The same Dockerfiles the box used to build from, built here instead
+      # and pushed by commit. The layer cache lives in the registry too, so a
+      # release that changed only source rebuilds only the layers that copy
+      # source, and the box pulls only those.
+      - name: Build and push
+        env:
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          repo="${IMAGE_REPO,,}"
+          case "$IMAGE" in
+            api) file=server/Dockerfile ;;
+            web) file=Dockerfile.web ;;
+          esac
+          docker buildx create --use --name release >/dev/null
+          docker buildx build \
+            --file "$file" \
+            --build-arg VITE_API_URL=/api \
+            --build-arg "VITE_APP_SHA=$GITHUB_SHA" \
+            --cache-from "type=registry,ref=$repo/$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$repo/$IMAGE:buildcache,mode=max" \
+            --tag "$repo/$IMAGE:$GITHUB_SHA" \
+            --tag "$repo/$IMAGE:latest" \
+            --push .
+
+      - name: Sign out of the registry
+        if: always()
+        run: docker logout ghcr.io
+
   deploy:
     name: Deploy production
-    needs: [checks, server, browser, live]
+    needs: [checks, server, browser, live, images]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     environment:
       name: production
       url: https://offwego.to
@@ -241,6 +296,8 @@ jobs:
           # which leaves the compose defaults (luna, xhigh) in charge.
           WAYFARE_AI_MODEL: ${{ vars.WAYFARE_AI_MODEL }}
           WAYFARE_AI_REASONING: ${{ vars.WAYFARE_AI_REASONING }}
+          # Which images this release is: the ones the images job pushed.
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
         run: |
           umask 077
           {
@@ -252,6 +309,8 @@ jobs:
             echo "GRAFANA_LOKI_TOKEN=$GRAFANA_LOKI_TOKEN"
             echo "WAYFARE_AI_MODEL=$WAYFARE_AI_MODEL"
             echo "WAYFARE_AI_REASONING=$WAYFARE_AI_REASONING"
+            echo "IMAGE_REPO=${IMAGE_REPO,,}"
+            echo "IMAGE_TAG=$GITHUB_SHA"
           } > app/deploy/release.env
 
       - name: Stream release to the VPS
