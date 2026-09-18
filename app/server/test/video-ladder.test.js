@@ -177,7 +177,7 @@ describe('the ladder', { concurrency: true }, () => {
     // Big enough that the ladder has more than one rung to switch between.
     const row = await uploaded(
       place,
-      film(join(place.directory, 'big.mp4'), { width: 1280, height: 720, seconds: 8 }),
+      film(join(place.directory, 'big.mp4'), { width: 1280, height: 720, seconds: 6 }),
     )
 
     const masterText = await (await replay(place.origin, row.hlsSrc)).text()

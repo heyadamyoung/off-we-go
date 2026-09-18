@@ -44,7 +44,9 @@ export default defineConfig({
   globalTimeout: process.env.CI ? 0 : 180_000,
   timeout: process.env.CI ? 90_000 : 30_000,
   expect: { timeout: process.env.CI ? 15_000 : 8_000 },
-  reporter: process.env.CI ? 'github' : 'list',
+  /* On CI the annotations, and the list as well: what each test took is the
+     only way to see where a shard's time went from its log. */
+  reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL: 'http://localhost:4180',
     /* Tracing screenshots every action, and a screenshot of a software-drawn

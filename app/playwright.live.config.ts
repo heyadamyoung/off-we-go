@@ -26,7 +26,9 @@ export default defineConfig({
   retries: 0,
   timeout: 180_000,
   expect: { timeout: 30_000 },
-  reporter: process.env.CI ? 'github' : 'list',
+  /* On CI the annotations, and the list as well: what each test took is the
+     only way to see where a shard's time went from its log. */
+  reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL: 'http://localhost:4190',
     viewport: { width: 1600, height: 950 },

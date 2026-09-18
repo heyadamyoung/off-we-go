@@ -34,12 +34,14 @@ const HOW_MANY = 30
 /* Noise on a canvas, exported as a JPEG: an actual image, so it decodes, it
    resizes, and it does not compress away to nothing. A buffer of zeros
    between JPEG markers is a file the server refuses, which would prove
-   something else entirely. */
+   something else entirely. Noise is the worst case for every codec, so
+   these are kept small: thirty of them at fourteen hundred pixels across
+   had the server resizing for most of the test. */
 const chooseMany = (page, count) =>
   page.locator('.dlg input[type="file"]').evaluate(async (input, many) => {
     const canvas = document.createElement('canvas')
-    canvas.width = 1400
-    canvas.height = 1000
+    canvas.width = 700
+    canvas.height = 500
     const context = canvas.getContext('2d')
     const transfer = new DataTransfer()
     for (let index = 0; index < many; index++) {
