@@ -3,31 +3,42 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 SOURCE="${1:-}"
-if [[ -z "$SOURCE" || ! -f "$SOURCE/database.dump" || ! -f "$SOURCE/logto.dump" || ! -f "$SOURCE/uploads.tar.gz" ]]; then
+if [[ -z "$SOURCE" || ! -f "$SOURCE/database.dump" || ! -f "$SOURCE/logto.dump" ]]; then
   echo "Usage: $0 backups/YYYYMMDDTHHMMSSZ" >&2
   exit 1
 fi
-read -rp "This replaces Off We Go's current database, Logto identities, and uploads. Type RESTORE: " CONFIRM
+# A quick backup (the deploy's, see backup.sh) has the databases and no
+# uploads: it restores the databases and leaves the uploads as they are.
+HAS_UPLOADS=0
+if [[ -f "$SOURCE/uploads.tar.gz" ]]; then HAS_UPLOADS=1; fi
+if (( HAS_UPLOADS )); then
+  read -rp "This replaces Off We Go's current database, Logto identities, and uploads. Type RESTORE: " CONFIRM
+else
+  read -rp "This replaces Off We Go's current database and Logto identities (the uploads stay). Type RESTORE: " CONFIRM
+fi
 [[ "$CONFIRM" == "RESTORE" ]] || exit 1
 
-# Validate both archives before the live service is touched.
+# Validate the archives before the live service is touched.
 docker compose exec -T db pg_restore --list < "$SOURCE/database.dump" >/dev/null
 docker compose exec -T logto-db pg_restore --list < "$SOURCE/logto.dump" >/dev/null
-UPLOAD_LIST="$(mktemp)"
-trap 'rm -f "$UPLOAD_LIST"' EXIT
-tar -tzf "$SOURCE/uploads.tar.gz" > "$UPLOAD_LIST"
-if grep -Eq '(^/|(^|/)\.\.(/|$))' "$UPLOAD_LIST" || grep -Evq '^uploads(/|$)' "$UPLOAD_LIST"; then
-  echo "The upload archive contains an unsafe path." >&2
-  exit 1
-fi
-
 UPLOADS_DIR="$ROOT_DIR/data/uploads"
-[[ "$UPLOADS_DIR" == "$ROOT_DIR/data/uploads" && -d "$ROOT_DIR/data" ]] || exit 1
 STAGED_UPLOADS="$ROOT_DIR/data/uploads.restore.$$"
 OLD_UPLOADS="$ROOT_DIR/data/uploads.before-restore.$$"
-install -d -m 750 "$STAGED_UPLOADS"
-tar -C "$STAGED_UPLOADS" --strip-components=1 -xzf "$SOURCE/uploads.tar.gz"
-chown -R 1000:1000 "$STAGED_UPLOADS"
+UPLOAD_LIST=""
+if (( HAS_UPLOADS )); then
+  UPLOAD_LIST="$(mktemp)"
+  trap 'rm -f "$UPLOAD_LIST"' EXIT
+  tar -tzf "$SOURCE/uploads.tar.gz" > "$UPLOAD_LIST"
+  if grep -Eq '(^/|(^|/)\.\.(/|$))' "$UPLOAD_LIST" || grep -Evq '^uploads(/|$)' "$UPLOAD_LIST"; then
+    echo "The upload archive contains an unsafe path." >&2
+    exit 1
+  fi
+
+  [[ "$UPLOADS_DIR" == "$ROOT_DIR/data/uploads" && -d "$ROOT_DIR/data" ]] || exit 1
+  install -d -m 750 "$STAGED_UPLOADS"
+  tar -C "$STAGED_UPLOADS" --strip-components=1 -xzf "$SOURCE/uploads.tar.gz"
+  chown -R 1000:1000 "$STAGED_UPLOADS"
+fi
 
 # Restore into separate databases and prove both application schemas exist.
 docker compose exec -T db dropdb -U wayfare --if-exists wayfare_restore
@@ -53,8 +64,10 @@ select pg_terminate_backend(pid) from pg_stat_activity where datname='logto' and
 alter database logto rename to logto_before_restore;
 alter database logto_restore rename to logto;
 SQL
-mv "$UPLOADS_DIR" "$OLD_UPLOADS"
-mv "$STAGED_UPLOADS" "$UPLOADS_DIR"
+if (( HAS_UPLOADS )); then
+  mv "$UPLOADS_DIR" "$OLD_UPLOADS"
+  mv "$STAGED_UPLOADS" "$UPLOADS_DIR"
+fi
 docker compose up -d api logto >/dev/null
 
 READY=false
@@ -69,8 +82,10 @@ done
 if [[ "$READY" != true ]]; then
   echo "Restored service failed health checks; rolling back." >&2
   docker compose stop api logto >/dev/null || true
-  rm -rf -- "$UPLOADS_DIR"
-  mv "$OLD_UPLOADS" "$UPLOADS_DIR"
+  if (( HAS_UPLOADS )); then
+    rm -rf -- "$UPLOADS_DIR"
+    mv "$OLD_UPLOADS" "$UPLOADS_DIR"
+  fi
   docker compose exec -T db psql -U wayfare -d postgres -v ON_ERROR_STOP=1 <<'SQL'
 select pg_terminate_backend(pid) from pg_stat_activity where datname='wayfare' and pid<>pg_backend_pid();
 alter database wayfare rename to wayfare_failed_restore;
@@ -87,7 +102,9 @@ fi
 
 docker compose exec -T db dropdb -U wayfare wayfare_before_restore
 docker compose exec -T logto-db dropdb -U logto logto_before_restore
-rm -rf -- "$OLD_UPLOADS"
-rm -f "$UPLOAD_LIST"
+if (( HAS_UPLOADS )); then
+  rm -rf -- "$OLD_UPLOADS"
+  rm -f "$UPLOAD_LIST"
+fi
 trap - EXIT
 echo "Restore completed from $SOURCE"

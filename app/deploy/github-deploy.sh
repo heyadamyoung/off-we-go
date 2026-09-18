@@ -98,7 +98,11 @@ rsync -a --delete \
   "$APP_ROOT/" "$ROLLBACK_ROOT/source-current/"
 
 cd "$APP_ROOT"
-bash ./deploy/backup.sh
+# The databases, before anything is touched, without stopping anything: the
+# full backup with the uploads is the nightly run's, and taking the site down
+# for a minute and a half on every release to archive a volume was most of
+# the deploy.
+bash ./deploy/backup.sh quick
 
 # The way back is whatever is running now, by image rather than by tag: a
 # pulled release and a built one both leave it on the box, and a rollback
