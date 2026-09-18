@@ -4,6 +4,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { paddingOffset } from '../../../live-map-view-core'
+import { isStill } from '../../../shared/lib/still'
 import { dayLabelOf } from '../../../day-label-core'
 import { clusterPhotos } from '../../../photo-cluster-core'
 import useHeadingCamera from '../model/use-heading-camera'
@@ -175,7 +176,7 @@ const MapCanvas = memo(function MapCanvas({
   useEffect(() => {
     if (!map) return
     const pad = padding || 32
-    const ms = view.ms == null ? 420 : view.ms
+    const ms = isStill() ? 0 : view.ms == null ? 420 : view.ms
     if (view.bounds) {
       /* No dedupe here any more: the live layer only issues a new view when a
          phone actually moved (positions are content-keyed), so an identical

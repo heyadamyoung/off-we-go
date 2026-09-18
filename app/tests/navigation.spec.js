@@ -25,7 +25,10 @@ test('home leads with a trip and does not open it by itself', async ({ page }) =
 
   await expect(page.getByRole('heading', { name: 'Amsterdam Weekend' })).toBeVisible()
   await expect(page.locator('.mapcanvas')).toHaveCount(0, 'the globe is not the trip map')
-  await expect(page.locator('.world canvas')).toBeVisible({ timeout: MAP_READY })
+  /* The planet's place on the page, not the planet: every page in the suite
+     holds still, and a page holding still draws no globe — a full-page
+     canvas rasterised in software cost more than the rest of the test. */
+  await expect(page.locator('.world')).toBeVisible()
 
   await page.getByRole('link', { name: 'Open the trip' }).click()
   await expect(page).toHaveURL('/trips/sample')

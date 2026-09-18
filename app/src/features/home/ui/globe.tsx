@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Map as MapGL, setWorkerUrl, type StyleSpecification } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { MapMarker } from '../../map'
+import { isStill } from '../../../shared/lib/still'
 import {
   CLOUD_BOUNDS,
   CLOUD_DRIFT,
@@ -99,6 +100,12 @@ const Globe = memo(function Globe({ places = [], home, live, waiting }: GlobePro
   useEffect(() => {
     const box = holder.current
     if (!box) return
+    /* A page told to hold still gets no planet: the globe is a full-page
+       canvas drawn in software under a headless browser, and every scroll
+       re-rasterised it, which is what made a click on the page behind it
+       take seconds. The page keeps its background and its words, as it
+       does without WebGL. */
+    if (isStill()) return
     let created: MapGL | null = null
     try {
       created = new MapGL({

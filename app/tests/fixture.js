@@ -24,6 +24,30 @@ import { serveBasemap } from './basemap-fixture.js'
  * round trip a second behind. The stylesheet already honours the
  * preference; a test about an animation says so on its own page. */
 
+/* The cartography is not under test. The real style is a fork of CARTO's
+   dark matter — a hundred-odd layers, fonts and a sprite — and compiling it
+   in a software GL context cost most of a core-second on every page a test
+   opened. This one is a background and the water, on the same tile source,
+   so the map still asks for tiles (the offline suite counts them) and the
+   pins still have a map to sit on. A spec about the cartography itself asks
+   for the real thing with `test.use({ mapStyle: 'real' })`. */
+const TINY_STYLE = JSON.stringify({
+  version: 8,
+  sources: {
+    openmaptiles: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
+  },
+  layers: [
+    { id: 'background', type: 'background', paint: { 'background-color': '#0b0f14' } },
+    {
+      id: 'water',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'water',
+      paint: { 'fill-color': '#0e1a26' },
+    },
+  ],
+})
+
 const PIXEL = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
@@ -56,8 +80,21 @@ export async function sealContext(context) {
 }
 
 export const test = base.extend({
-  context: async ({ context }, use) => {
+  /** 'tiny' (the default) or 'real': which basemap style the map is given. */
+  mapStyle: ['tiny', { option: true }],
+  context: async ({ context, mapStyle }, use) => {
     await sealContext(context)
+    /* Every page holds still: the demo's live position is frozen where it
+       loaded, the camera jumps rather than eases, and the home page draws
+       no planet. The specs that open a trip set this themselves already. */
+    await context.addInitScript(() => {
+      window.__offwegoStill = true
+    })
+    if (mapStyle !== 'real') {
+      await context.route('**/map-*.json', route =>
+        route.fulfill({ contentType: 'application/json', body: TINY_STYLE }),
+      )
+    }
     await use(context)
   },
 })
