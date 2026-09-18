@@ -121,7 +121,6 @@ const FLIGHT_PROBES = FLIGHT
   : []
 
 const PROBES = [
-  ...FLIGHT_PROBES,
   // Dublin — daa. A Next.js site over a JSON API at api.dublinairport.com.
   // Its listing component (quoted whole by an earlier run) builds
   // ?date=&limit=10, turns the page with after=<latestTimestamp> and
@@ -223,6 +222,9 @@ const PROBES = [
   // fetches the display vendor's public XML feed (found by probe).
   xml('yqr-simpleway-departures', 'https://yqr.simpleway.cloud/data-feed/public/departure-web'),
   xml('yqr-simpleway-arrivals', 'https://yqr.simpleway.cloud/data-feed/public/arrivals-web'),
+  /* Last, so the one flight somebody asked about is at the end of the log,
+     which is the end that survives the size cap on reading it. */
+  ...FLIGHT_PROBES,
 ]
 
 function json(id, url, extraHeaders = {}, extra = {}) {
