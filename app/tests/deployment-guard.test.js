@@ -253,16 +253,17 @@ test('the release images are built beside the tests, and the deploy waits for th
     path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
     'utf8',
   )
-  assert.match(workflow, /image: \[api, web\]/)
+  assert.match(workflow, /build api server\/Dockerfile/)
+  assert.match(workflow, /build web Dockerfile\.web/)
   assert.match(workflow, /needs: \[checks, server, browser, live, images\]/)
   assert.match(workflow, /packages: write/)
   assert.match(
     workflow,
-    /--cache-to "type=registry,ref=\$repo\/\$IMAGE:buildcache,mode=max,compression=zstd"/,
+    /--cache-to "type=registry,ref=\$repo\/\$image:buildcache,mode=max,compression=zstd"/,
   )
   // And only when the layers it is made of changed; source alone never is.
   assert.match(workflow, /git diff --name-only HEAD~1 HEAD -- package\.json pnpm-lock\.yaml/)
-  assert.match(workflow, /--tag "\$repo\/\$IMAGE:\$GITHUB_SHA"/)
+  assert.match(workflow, /--tag "\$repo\/\$image:\$GITHUB_SHA"/)
   // The box is told which images the release is, by commit, and handed the
   // pipeline's own token to pull them with — into the file the deploy script
   // reads once and destroys, never into the release values it keeps.
