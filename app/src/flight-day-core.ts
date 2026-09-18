@@ -72,7 +72,7 @@ export function movedMinutes(segment: Segment): number | null {
 /**
  * The one line for a leg, and its tone. Lead with the answer, in words:
  * "On time · gate 106 · boarding in 42 min", "Delayed 55 min · leaves
- * 19:30", "Landed 23:28 · bags on belt 5". Never a raw status word.
+ * 19:30", "Landed 23:28 · baggage claim belt 5". Never a raw status word.
  */
 export function flightHeadline(segment: Segment, now: number): { text: string; tone: FlightTone } {
   const flight = segment.flight || null
@@ -84,7 +84,7 @@ export function flightHeadline(segment: Segment, now: number): { text: string; t
   if (status === 'diverted') return { text: 'Diverted', tone: 'late' }
   if (status && LANDED.has(status)) {
     const when = flight?.actualArrival || flight?.estimatedArrival || segment.arrivesAt
-    const belt = flight?.baggageBelt ? ` · bags on belt ${flight.baggageBelt}` : ''
+    const belt = flight?.baggageBelt ? ` · baggage claim belt ${flight.baggageBelt}` : ''
     return { text: `Landed ${localTime(when, segment.arriveTz)}${belt}`, tone: 'done' }
   }
   if (status === 'departed') {
@@ -207,7 +207,12 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
     })
   }
   if (flight?.baggageBelt)
-    rows.push({ key: 'belt', label: `Bags on belt ${flight.baggageBelt}`, at: null, done: down })
+    rows.push({
+      key: 'belt',
+      label: `Baggage claim, belt ${flight.baggageBelt}`,
+      at: null,
+      done: down,
+    })
 
   let nowFound = false
   return rows.map(row => {
@@ -300,9 +305,15 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
         label: 'Security',
         value: queue == null ? null : queue > 0 ? `${queue} min queue` : 'No queue',
       },
-      /* Said in full: the board's word alone, over a number, told nobody what
-         it was. It is where the bags come out at the far end. */
-      { key: 'belt', label: 'Bag belt', value: flight?.baggageBelt || null },
+      /* Named for what a traveller looks for at the far end, not for the
+         board's word: "Belt" over a number, and then "Bag belt", told nobody
+         what it was. Baggage claim is the sign they walk towards; the belt
+         is which one. */
+      {
+        key: 'belt',
+        label: 'Baggage claim',
+        value: flight?.baggageBelt ? `Belt ${flight.baggageBelt}` : null,
+      },
     ]
     if (flight?.preClearance)
       columns.push({ key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' })
@@ -331,9 +342,11 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
     pill or a card row: "T2 · gate 406 · Zone 15 · Desks 1501–1520". */
 export function ticketLine(segment: Segment): string {
   const said = (column: TicketColumn) =>
-    column.key === 'gate' || column.key === 'belt' || column.key === 'platform'
+    column.key === 'gate' || column.key === 'platform'
       ? `${column.label.toLowerCase()} ${column.value}`
-      : column.value
+      : column.key === 'belt'
+        ? `${column.label.toLowerCase()} ${column.value?.toLowerCase()}`
+        : column.value
   return ticketColumns(segment)
     .filter(
       column => column.value && !['walk', 'security', 'preclearance', 'stand'].includes(column.key),

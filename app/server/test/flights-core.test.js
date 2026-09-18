@@ -268,7 +268,7 @@ test('the sentence says what happened, in the traveller’s words and the airpor
   )
   assert.equal(
     describeFlightEvent({ type: 'BaggageUpdated', newValue: '5' }, { flight: 'FR3087' }),
-    'Bags from FR3087 are on belt 5.',
+    'Bags from FR3087 are at baggage claim, belt 5.',
   )
   assert.equal(
     describeFlightEvent(

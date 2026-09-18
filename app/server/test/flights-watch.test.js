@@ -524,7 +524,7 @@ test('a belt named before the flight has left is on the ticket and is not the se
     arrivalZone: 'Europe/Dublin',
     arrivalSourceName: 'Dublin Airport',
   })
-  assert.equal(down, 'Bags from AC872 are on belt 8. Dublin Airport, 18:30.')
+  assert.equal(down, 'Bags from AC872 are at baggage claim, belt 8. Dublin Airport, 18:30.')
 })
 
 test('what the far board last said is kept when it goes quiet: the belt stays, a landed flight stays landed', async () => {
