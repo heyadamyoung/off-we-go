@@ -22,7 +22,7 @@ concurrency:
 # .github/actions, and what they fetch (the pnpm store, the browser, ffmpeg)
 # comes out of the cache rather than off the network — and does its one thing.
 # The deploy waits on all of them, so the test phase is the longest job and
-# nothing else: the browser suite is dealt eight ways, the live suite runs on
+# nothing else: the browser suite is dealt six ways, the live suite runs on
 # two stacks, and the release images are built here beside the tests, so the
 # deploy is a pull and a restart.
 jobs:
@@ -103,7 +103,7 @@ jobs:
         run: time pnpm test:server
 
   browser:
-    name: Browser tests (${{ matrix.shard }} of 8)
+    name: Browser tests (${{ matrix.shard }} of 6)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -111,21 +111,21 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/node
       - uses: ./.github/actions/browser
 
       # The suite builds the sample-mode bundle itself (see playwright.config).
-      # An eighth of the tests each, dealt round-robin so every shard holds
-      # the same mix of light and heavy (see scripts/shard-tests.mjs), spread
-      # across the runner's cores. Eight because a shard's own setup is a
-      # dozen seconds and its tests were thirty-five: past this the setup is
-      # most of the job.
+      # A sixth of the tests each, dealt round-robin so every shard holds the
+      # same mix of light and heavy (see scripts/shard-tests.mjs), spread
+      # across the runner's cores. Six, not more: past a dozen jobs in a run
+      # the next one waited forty seconds for a machine, and a shard's tests
+      # are half a minute.
       - name: Run browser tests
         run: |
-          mapfile -t dealt < <(node scripts/shard-tests.mjs 8 ${{ matrix.shard }})
+          mapfile -t dealt < <(node scripts/shard-tests.mjs 6 ${{ matrix.shard }})
           time pnpm exec playwright test "${dealt[@]}"
 
       # A CI-only flake with no trace is unfixable folklore; a failure here

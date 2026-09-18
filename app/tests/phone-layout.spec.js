@@ -2,33 +2,32 @@ import { test, expect } from './fixture.js'
 
 import { atDemoTime } from './demo-clock'
 
-/* Settled: nothing in flight, the fonts in, and two frames drawn. The
+/* Settled: the network quiet, the fonts in, and two frames drawn. The
    network is sealed and motion is reduced for every test, so this is what
    the sleeps that used to sit here were waiting for.
 
-   Counted from out here rather than asked of Playwright's networkidle, which
+   Watched from out here rather than asked of Playwright's networkidle, which
    is half a second of silence by definition: nineteen times a sweep, most of
-   it spent watching a page that had nothing left to fetch. A tenth of a
-   second with nothing open is the same certainty on a sealed network. */
+   it spent watching a page that had nothing left to fetch. A quarter of a
+   second since the page last started or finished a request is the same
+   certainty on a sealed network. Silence rather than a count of what is
+   open: a request still in flight when the next screen is opened is torn
+   down with its frame and never reported as finished, and a count that
+   waited for it waited for ever. */
 const traffic = new WeakMap()
 function watch(page) {
-  const state = { open: 0, quietSince: Date.now() }
-  const done = () => {
-    state.open = Math.max(0, state.open - 1)
-    state.quietSince = Date.now()
+  const state = { lastEvent: Date.now() }
+  const seen = () => {
+    state.lastEvent = Date.now()
   }
-  page.on('request', () => {
-    state.open += 1
-  })
-  page.on('requestfinished', done)
-  page.on('requestfailed', done)
+  page.on('request', seen)
+  page.on('requestfinished', seen)
+  page.on('requestfailed', seen)
   traffic.set(page, state)
 }
 async function settled(page) {
   const state = traffic.get(page)
-  await expect
-    .poll(() => state.open === 0 && Date.now() - state.quietSince >= 100, { timeout: 30_000 })
-    .toBe(true)
+  await expect.poll(() => Date.now() - state.lastEvent >= 250, { timeout: 30_000 }).toBe(true)
   await page.evaluate(() =>
     document.fonts.ready.then(
       () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
