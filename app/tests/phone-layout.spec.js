@@ -349,32 +349,41 @@ test('a card on the day bar shows its whole name', async ({ page }) => {
 /* Two sweeps a phone rather than one: the first five screens are each a
    page of their own, and the rest are one trip walked through state by
    state, each built on the last. Apart, the two halves run on two workers
-   and neither is the longest test in the suite by a distance. */
-const SCREENS = [
-  ['the screens around the trip', STATES.slice(0, 5)],
-  ['the trip itself', STATES.slice(5)],
-]
+   and neither is the longest test in the suite by a distance.
 
-for (const [phone, width, height] of PHONES) {
-  for (const [which, states] of SCREENS) {
-    test(`nothing sticks out or hides from a tap on ${phone}: ${which}`, async ({ page }) => {
-      await page.setViewportSize({ width, height })
-      await page.route('https://en.wikipedia.org/**', route =>
-        route.fulfill({
-          contentType: 'application/json',
-          body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
-        }),
-      )
+   Four tests written out rather than made in a loop: the shards are dealt
+   by file and line (see scripts/shard-tests.mjs), and four tests on one
+   line are one card in that deal — every sweep, the heaviest tests in the
+   suite, landed on the same shard. */
+const AROUND = ['the screens around the trip', STATES.slice(0, 5)]
+const ITSELF = ['the trip itself', STATES.slice(5)]
+const [MODERN, SMALLEST] = PHONES
 
-      const trouble = []
-      for (const [what, scope, reach] of states) {
-        await reach(page)
-        for (const finding of await page.evaluate(SWEEP(scope))) {
-          trouble.push(`${what}: ${finding}`)
-        }
+const title = ([phone], [which]) => `nothing sticks out or hides from a tap on ${phone}: ${which}`
+
+const sweep =
+  ([, width, height], [, states]) =>
+  async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await page.route('https://en.wikipedia.org/**', route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ query: { pages: {}, geosearch: [] } }),
+      }),
+    )
+
+    const trouble = []
+    for (const [what, scope, reach] of states) {
+      await reach(page)
+      for (const finding of await page.evaluate(SWEEP(scope))) {
+        trouble.push(`${what}: ${finding}`)
       }
+    }
 
-      expect(trouble, `${width}px is wider than these are behaving`).toEqual([])
-    })
+    expect(trouble, `${width}px is wider than these are behaving`).toEqual([])
   }
-}
+
+test(title(MODERN, AROUND), sweep(MODERN, AROUND))
+test(title(MODERN, ITSELF), sweep(MODERN, ITSELF))
+test(title(SMALLEST, AROUND), sweep(SMALLEST, AROUND))
+test(title(SMALLEST, ITSELF), sweep(SMALLEST, ITSELF))
