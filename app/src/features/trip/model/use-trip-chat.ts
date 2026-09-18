@@ -37,7 +37,8 @@ export default function useTripChat({ tripId, toast }: { tripId: Id; toast: Toas
     alive.current = true
     refresh()
     const stop = subscribeToTrip(tripId, kind => {
-      if (kind === 'chat') refresh()
+      // A re-made connection may have missed messages, the same as a change.
+      if (kind === 'chat' || kind === 'resume') refresh()
     })
     return () => {
       alive.current = false
