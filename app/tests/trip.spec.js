@@ -1310,6 +1310,7 @@ test('flying to an airport draws its gates', async ({ page }) => {
 test('a flight with seats shows where everyone sits, on a drawn cabin', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Travel', exact: true }).click()
+  await page.getByRole('button', { name: /KL 677/ }).click() // folded under the train
   await page.getByRole('button', { name: 'Where we sit' }).click()
   const sheet = page.getByRole('dialog')
   await expect(sheet).toBeVisible()
@@ -1327,8 +1328,10 @@ test('the getting-there chain renders the travel legs with their countdowns', as
   // forever tomorrow: the train to Schiphol, then the KLM flight home.
   await expect(page.getByText('IC 3155')).toBeVisible()
   await expect(page.getByText('KL 677')).toBeVisible()
-  await expect(page.getByText('R7QWXZ')).toBeVisible()
   await expect(page.getByText(/to change —/)).toBeVisible()
+  // The flight is a folded line until tapped; its booking is on the ticket.
+  await page.getByRole('button', { name: /KL 677/ }).click()
+  await expect(page.getByText('R7QWXZ')).toBeVisible()
 })
 
 test('the compass button raises a facing beam at the browser fix', async ({ page }) => {

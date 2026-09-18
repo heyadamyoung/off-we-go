@@ -22,7 +22,9 @@ import TicketColumns from './ticket-columns'
 /* One leg, wearing the face the clock chooses. future: a quiet line.
    eve: the ticket — where, when, the columns the board fills in. day: the
    ticket with the answer on top of it, the phases, and the airport's word.
-   past: a line in the journal. Nobody configures this; the hour does. */
+   past: a line in the journal. Nobody configures this; the hour does. Opened
+   from its folded line in the chain, a future or past leg shows its ticket
+   too — that is what the tap asked for. */
 
 const STRIP_ORDER: Array<keyof SegmentDeadlines> = [
   'checkinClosesAt',
@@ -48,9 +50,12 @@ export default function SegmentCard({
   onShowGate,
   onAttach,
   onOpenPaper,
+  expanded = false,
 }: {
   segment: Segment
   now: number
+  /** the ticket whatever the face: the leg was opened from its folded line */
+  expanded?: boolean
   /** the trip the leg is on, for the airport's trail; the card works without */
   tripId?: string
   canEdit: boolean
@@ -80,7 +85,7 @@ export default function SegmentCard({
     if (file) onAttach?.(segment, file)
   }
 
-  if (face === 'future' || face === 'past') {
+  if (!expanded && (face === 'future' || face === 'past')) {
     return (
       <div
         className={

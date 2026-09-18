@@ -27,11 +27,15 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-async function openTravel(page, size = PHONE) {
+async function openTravel(page, { size = PHONE, travelDay = false } = {}) {
   await page.setViewportSize(size)
-  await page.addInitScript(() => {
-    window.__offwegoStill = true
-  })
+  await page.addInitScript(
+    ({ today }) => {
+      window.__offwegoStill = true
+      if (today) window.__offwegoTravelDay = true
+    },
+    { today: travelDay },
+  )
   await atDemoTime(page)
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: MAP_READY })
@@ -93,6 +97,8 @@ test('a leg that never moved is not decorated with a delay it did not have', asy
 
 test('a leg draws its papers once, as papers', async ({ page }) => {
   await openTravel(page)
+  // The evening before, the flight is folded under the train: open it.
+  await page.getByRole('button', { name: /KL 677/ }).click()
   const flight = page.locator('.rounded-xl').filter({ hasText: 'KL 677' }).first()
   await expect(flight.locator('.pprow')).toHaveCount(2)
   await expect(flight, 'the paperclip chips are the second door').not.toContainText('📎')
@@ -104,8 +110,56 @@ test('a paper opened from a leg is the same screen as everywhere else', async ({
      behind them. Three doors that behave differently is how somebody learns
      not to trust any of them. */
   await openTravel(page)
+  await page.getByRole('button', { name: /KL 677/ }).click()
   const flight = page.locator('.rounded-xl').filter({ hasText: 'KL 677' }).first()
   await flight.locator('.pprow').first().click()
   await expect(page.locator('.ppview')).toBeVisible()
   await expect(page.locator('.ppview .ppvbar b')).toContainText('Boarding pass')
+})
+
+/* The order of the tab.
+ *
+ * A travel day is read from where you are in it. The leg that matters now —
+ * the one you are on, or the next to leave — is on top as its ticket, and
+ * every other leg is a line: the ones still to come under it, the ones
+ * behind you under "Earlier". A line opens to its ticket on a tap and folds
+ * on another, so a past flight's belt or a future one's booking is a tap
+ * away and never in the way.
+ */
+
+test('the leg that matters now is on top, and the rest fold to a line', async ({ page }) => {
+  // The evening before: the train leaves first, so it is the ticket on top
+  // and the flight after it is one folded line.
+  await openTravel(page)
+  const cards = page.locator('.ticket, .legfold')
+  await expect(cards.first()).toHaveClass(/ticket/)
+  await expect(cards.first()).toContainText('IC 3155')
+  await expect(page.locator('.legfold')).toHaveCount(1)
+  await expect(page.locator('.legfold')).toContainText('KL 677')
+  await expect(page.locator('.legfold')).toContainText('AMS → YYC')
+  await expect(page.getByText('Earlier')).toHaveCount(0)
+  // The gap between them still judges itself, above the folded flight.
+  await expect(page.getByText(/to change —/)).toBeVisible()
+
+  const flight = page.getByRole('button', { name: /KL 677/ })
+  await expect(flight).toHaveAttribute('aria-expanded', 'false')
+  await flight.click()
+  await expect(flight).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.legfold .ticket')).toContainText('R7QWXZ')
+  await flight.click()
+  await expect(page.locator('.legfold .ticket')).toHaveCount(0)
+})
+
+test('on the day, the flight is on top and the train that has arrived is behind it', async ({
+  page,
+}) => {
+  await openTravel(page, { travelDay: true })
+  const cards = page.locator('.ticket, .legfold')
+  await expect(cards.first()).toHaveClass(/ticket/)
+  await expect(cards.first()).toContainText('KL 677')
+  await expect(page.getByText('Earlier')).toBeVisible()
+  const train = page.locator('.legfold').filter({ hasText: 'IC 3155' })
+  await expect(train).toHaveCount(1)
+  await train.getByRole('button').click()
+  await expect(train.locator('.ticket')).toContainText('14b')
 })

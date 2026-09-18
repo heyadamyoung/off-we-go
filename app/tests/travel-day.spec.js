@@ -55,6 +55,8 @@ test('the ticket has its columns the evening before, with a dash where the board
   page,
 }) => {
   await openTravel(page)
+  // The evening before, the flight is folded under the train that leaves first.
+  await page.getByRole('button', { name: /KL 677/ }).click()
   const flight = ticketOf(page, 'KL 677')
   await expect(flight).toHaveAttribute('data-face', 'eve')
   for (const key of ['terminal', 'gate', 'checkin', 'walk', 'security', 'belt']) {
