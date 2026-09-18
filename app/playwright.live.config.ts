@@ -33,20 +33,30 @@ export default defineConfig({
     baseURL: 'http://localhost:4190',
     viewport: { width: 1600, height: 950 },
     trace: 'retain-on-failure',
+    reducedMotion: 'reduce',
   },
   projects: [
     {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        /* A machine that already has a browser can say so. Playwright resolves
-           its own by exact build number, and a container with a different one
-           pre-installed would otherwise be told to download one it cannot
-           reach. Unset — as on CI, which installs its own — this changes
-           nothing. */
-        ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-          ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } }
-          : {}),
+        /* The same economies as the sample-mode suite (see playwright.config):
+           half the device pixels of a map nothing reads, no service worker
+           registering itself on every fresh context, and a browser that
+           neither optimises code that runs once nor hands each frame to
+           another process. The specs seal their contexts through
+           tests/fixture.js too, so the basemap and the encyclopaedia are
+           answered here rather than fetched over the internet on every page
+           a test opens — the server behind this suite is the real one, the
+           rest of the world need not be. */
+        deviceScaleFactor: 0.5,
+        serviceWorkers: 'block',
+        launchOptions: {
+          ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+            ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
+            : {}),
+          args: ['--js-flags=--no-opt --no-maglev', '--in-process-gpu'],
+        },
       },
     },
   ],

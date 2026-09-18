@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../fixture.js'
 import { stack } from './stack.js'
 
 /* A trip whose days are dates, drawn by the real client against the real API.

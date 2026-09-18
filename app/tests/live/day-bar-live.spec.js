@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../fixture.js'
 import { stack } from './stack.js'
 
 /* The day bar on a phone, on a trip the size of a real one.
