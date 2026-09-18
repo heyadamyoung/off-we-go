@@ -95,7 +95,17 @@ export const test = base.extend({
         route.fulfill({ contentType: 'application/json', body: TINY_STYLE }),
       )
     }
+    /* Less motion, said to every page rather than left to the context option:
+       with a browser build other than the one this Playwright ships with, the
+       option was silently not honoured, and the trail drew itself in over
+       1.2 s on every boot — thirty software-rendered frames a test. Said on
+       the page, it holds on every build. */
+    context.on('page', page => page.emulateMedia({ reducedMotion: 'reduce' }).catch(() => {}))
     await use(context)
+  },
+  page: async ({ page }, use) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await use(page)
   },
 })
 

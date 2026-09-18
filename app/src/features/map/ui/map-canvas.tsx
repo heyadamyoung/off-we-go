@@ -12,6 +12,7 @@ import useViewport from '../model/use-viewport'
 import useIndoorLayers from '../model/indoor-layers'
 import usePlaceTap from '../model/use-place-tap'
 import makeTrailSweep from '../model/trail-sweep'
+import { prefersReducedMotion, withoutTransitions } from '../../../shared/lib/motion'
 import useMapLabels from '../model/use-map-labels'
 import useMapLayers from '../model/use-map-layers'
 import { creditControl, STYLE } from '../model/map-style'
@@ -102,7 +103,6 @@ const MapCanvas = memo(function MapCanvas({
     const v = viewRef.current
     const m = new MapGL({
       container: holder.current,
-      style: STYLE[themeRef.current === 'light' ? 'light' : 'dark'],
       center: v.center,
       zoom: v.zoom,
       minZoom: 3,
@@ -116,6 +116,12 @@ const MapCanvas = memo(function MapCanvas({
     })
     /* "© OpenStreetMap" always readable, everything else on /credits.html
        behind More tools — the split each licence actually asks for. */
+    // The style goes on after construction, which is where a transform can
+    // ride along: paint changes land at once for a person who asked for
+    // less motion, on this style and on every theme swap after it.
+    m.setStyle(STYLE[themeRef.current === 'light' ? 'light' : 'dark'], {
+      transformStyle: prefersReducedMotion() ? withoutTransitions : undefined,
+    })
     m.addControl(creditControl(), 'bottom-right')
     m.touchZoomRotate?.disableRotation?.()
     setMap(m)
@@ -153,11 +159,16 @@ const MapCanvas = memo(function MapCanvas({
   // The inside of an airport terminal, when a stop has asked for it.
   useIndoorLayers(map, indoor, themeRef, placing ? undefined : onPickGate)
 
+  /* By value, not by object: the tint is recomputed as the camera moves, and
+     each set restarts a two-second fade — nine restarts through a boot kept
+     the map drawing every frame for a second after it had settled. */
+  const tintColor = tint?.color
+  const tintAlpha = tint?.alpha
   useEffect(() => {
-    if (!map || !tint || !map.getLayer('tod-tint')) return
-    map.setPaintProperty('tod-tint', 'background-color', tint.color)
-    map.setPaintProperty('tod-tint', 'background-opacity', tint.alpha)
-  }, [map, tint])
+    if (!map || tintColor == null || tintAlpha == null || !map.getLayer('tod-tint')) return
+    map.setPaintProperty('tod-tint', 'background-color', tintColor)
+    map.setPaintProperty('tod-tint', 'background-opacity', tintAlpha)
+  }, [map, tintColor, tintAlpha])
 
   /* ---- theme ------------------------------------------------------------ */
   const shownTheme = useRef(theme)
@@ -167,7 +178,10 @@ const MapCanvas = memo(function MapCanvas({
     // These basemaps have different sprite atlases. Reusing the old Style while
     // the new document loads can make an atlas update target the old texture's
     // dimensions, which ANGLE rejects as an overflowing texSubImage2D offset.
-    map.setStyle(STYLE[theme === 'light' ? 'light' : 'dark'], { diff: false })
+    map.setStyle(STYLE[theme === 'light' ? 'light' : 'dark'], {
+      diff: false,
+      transformStyle: prefersReducedMotion() ? withoutTransitions : undefined,
+    })
   }, [map, theme])
 
   /* ---- keep the camera in step with the app -----------------------------

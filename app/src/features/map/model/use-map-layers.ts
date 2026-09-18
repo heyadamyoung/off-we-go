@@ -1,10 +1,16 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { GeoJSONSource, Map as MapGL, MapMouseEvent } from 'maplibre-gl'
 import { lineOf } from '../../../shared/lib/geo'
+import { prefersReducedMotion } from '../../../shared/lib/motion'
 import { ACCENT, ACCENT_BRIGHT, linesOf } from './map-style'
 import { nearestTap } from './tap-target'
 import { EMPTY_FC } from './use-attractions'
 import type { MapCanvasProps } from './map-props'
+
+/* The time-of-day wash fades between its values over two seconds, which is
+   the sky changing and not a switch being thrown; for a person who asked for
+   less motion it simply changes. */
+const tintFadeMs = () => (prefersReducedMotion() ? 0 : 2000)
 
 /* Everything painted INTO the map document — the tint wash, the hand-drawn
    route, the walked trail, the attraction dots — rebuilt whenever a style
@@ -146,8 +152,8 @@ export default function useMapLayers({
           paint: {
             'background-color': tintRef.current.color,
             'background-opacity': tintRef.current.alpha,
-            'background-color-transition': { duration: 2000, delay: 0 },
-            'background-opacity-transition': { duration: 2000, delay: 0 },
+            'background-color-transition': { duration: tintFadeMs(), delay: 0 },
+            'background-opacity-transition': { duration: tintFadeMs(), delay: 0 },
           },
         })
       }
