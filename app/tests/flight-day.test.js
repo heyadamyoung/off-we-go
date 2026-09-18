@@ -231,7 +231,7 @@ test('the phases are the deadlines, the board’s go-to-gate, then leaving and l
   )
   assert.deepEqual(
     down.slice(-2).map(one => `${one.label}:${one.state}`),
-    ['Landed:done', 'Belt 5:done'],
+    ['Landed:done', 'Bags on belt 5:done'],
   )
 })
 
@@ -247,7 +247,7 @@ test('the ticket has its columns whether or not the board has filled them: a das
       'Check-in:null',
       'Walk to gate:null',
       'Security:null',
-      'Belt:null',
+      'Bag belt:null',
     ],
   )
   const full = ticketColumns(leg({ gateWas: '404' }))
@@ -257,7 +257,7 @@ test('the ticket has its columns whether or not the board has filled them: a das
     { key: 'checkin', label: 'Check-in', value: 'Zone 15 · Desks 1501–1520' },
     { key: 'walk', label: 'Walk to gate', value: '12 min' },
     { key: 'security', label: 'Security', value: '9 min queue' },
-    { key: 'belt', label: 'Belt', value: null },
+    { key: 'belt', label: 'Bag belt', value: null },
     { key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' },
   ])
   const arrived = ticketColumns(
