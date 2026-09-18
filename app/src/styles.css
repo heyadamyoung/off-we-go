@@ -288,6 +288,22 @@
     -webkit-backdrop-filter: none;
   }
 
+  /* Reduce transparency, the system setting: glass becomes a surface. What
+     is behind a blurred panel is re-drawn through the blur on every frame
+     under it, which is what the setting is asking to be spared — and what a
+     browser drawing in software spends a fifth of its time on. */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass, .sheet {
+      background: var(--c-panel-solid);
+    }
+    /* Every blur, wherever it was written: a preference, not a style. The
+       standard property alone — given the prefixed one too, the build kept
+       only that, and the alias did not win over the utilities' blur. */
+    *, *::before, *::after {
+      backdrop-filter: none !important;
+    }
+  }
+
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 9px 16px; border-radius: 999px;

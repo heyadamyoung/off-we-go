@@ -1,7 +1,7 @@
 import { test, expect } from './fixture.js'
 
 /* The basemap being kept on the device is the subject, so it is the real one. */
-test.use({ mapStyle: 'real' })
+test.use({ mapStyle: 'real', serviceWorkers: 'allow' })
 import { atDemoTime } from './demo-clock'
 import { serveBasemap } from './basemap-fixture.js'
 
