@@ -105,29 +105,29 @@ export function flightHeadline(segment: Segment, now: number): { text: string; t
       return { text: `Go to gate${gate ? ` ${gate}` : ''}${walk}`, tone: 'tight' }
     }
   }
+  const departs = at(segment.departsAt) ?? now
+  const arrives = at(segment.arrivesAt)
+  const flying = segment.mode === 'flight'
+  /* Past the departure with no board word, the app says what is due rather
+     than what happened — and not "delayed", which was true of a train that
+     has since left and is history now. A board still saying scheduled about
+     a flight past its time has not called it, and the app does not either. */
+  if (now >= departs && (!flight || status === 'scheduled' || status === 'unknown')) {
+    const when = localTime(segment.arrivesAt, segment.arriveTz)
+    if (arrives !== null && now >= arrives) {
+      return { text: `Due to have ${flying ? 'landed' : 'arrived'} ${when}`, tone: 'done' }
+    }
+    return {
+      text: arrives === null ? 'Due to have left' : `Due to ${flying ? 'land' : 'arrive'} ${when}`,
+      tone: 'ok',
+    }
+  }
   const moved = movedMinutes(segment)
   if (status === 'delayed' || segment.status === 'delayed' || (moved !== null && moved > 0)) {
     const by = moved !== null && moved > 0 ? ` ${spell(moved)}` : ''
     return {
       text: `Delayed${by} · leaves ${localTime(segment.departsAt, segment.departTz)}${gateWord}`,
       tone: 'tight',
-    }
-  }
-  const departs = at(segment.departsAt) ?? now
-  const arrives = at(segment.arrivesAt)
-  if (now >= departs) {
-    if (arrives !== null && now >= arrives) {
-      return {
-        text: `Due to have landed ${localTime(segment.arrivesAt, segment.arriveTz)}`,
-        tone: 'done',
-      }
-    }
-    return {
-      text:
-        arrives === null
-          ? 'Due to have left'
-          : `Due to land ${localTime(segment.arrivesAt, segment.arriveTz)}`,
-      tone: 'ok',
     }
   }
   const next = nextDeadline(segment, now)
@@ -172,8 +172,17 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
   const flight = segment.flight || null
   const deadlines = segment.deadlines || {}
   const status = flight?.status || null
-  const left = status === 'departed' || (status !== null && LANDED.has(status))
-  const down = status !== null && LANDED.has(status)
+  /* Leaving and landing are the board's to call when there is one: a plane
+     the board has not said has left has not left, however late the clock
+     is. A train has no board, and then the clock is all there is. */
+  const arrives = at(segment.arrivesAt)
+  const byClock = !flight
+  const left =
+    status === 'departed' ||
+    (status !== null && LANDED.has(status)) ||
+    (byClock && (at(segment.departsAt) ?? Number.POSITIVE_INFINITY) <= now)
+  const down =
+    (status !== null && LANDED.has(status)) || (byClock && arrives !== null && arrives <= now)
   const rows: Array<{ key: string; label: string; at: string | null; done?: boolean }> = []
   for (const key of ['checkinClosesAt', 'bagsCloseAt'] as const) {
     if (deadlines[key]) rows.push({ key, label: PHASE_LABELS[key], at: deadlines[key] as string })
@@ -203,8 +212,6 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
   let nowFound = false
   return rows.map(row => {
     const when = at(row.at)
-    /* Leaving and landing are the board's to call, and a plane the board has
-       not said has left has not left, however late the clock is. */
     const done =
       row.done === true ||
       (row.done === undefined &&

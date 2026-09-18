@@ -259,17 +259,20 @@ export default function SegmentCard({
 
       {trail && tripId && <FlightTrail tripId={tripId} segment={segment} />}
 
-      <div className="flex items-center gap-2 px-3 py-2.5">
+      {/* Buttons that wrap as buttons: on a phone four of them do not fit one
+          row, and a row that squeezed them wrapped each one's words into a
+          tall block instead. */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
         {segment.mode === 'flight' && segment.fromLng != null && onShowGate && (
           <button
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-ink"
+            className="whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-ink"
             onClick={() => onShowGate(segment)}>
             Show gate on the map
           </button>
         )}
         {face === 'day' && segment.flight && tripId && (
           <button
-            className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
+            className="whitespace-nowrap rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
             aria-expanded={trail}
             onClick={() => setTrail(open => !open)}>
             {trail ? 'Hide the trail' : 'What the airport said'}
@@ -285,7 +288,7 @@ export default function SegmentCard({
               onChange={pick}
             />
             <button
-              className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
+              className="whitespace-nowrap rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
               onClick={() => picker.current?.click()}>
               Add a paper
             </button>
