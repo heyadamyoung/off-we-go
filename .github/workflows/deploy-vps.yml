@@ -22,13 +22,16 @@ concurrency:
 # .github/actions, and what they fetch (pnpm and the modules, the browser,
 # ffmpeg, crane) comes out of the cache rather than off the network — and
 # does its one thing. The deploy waits on all of them, so the test phase is
-# the longest job and nothing else: the browser suite is dealt six ways, the
-# live suite runs on two stacks, and the release images are put together here
-# beside the tests, so the deploy is a pull and a restart.
+# the longest job and nothing else: the browser suite is dealt seven ways,
+# the live suite runs on two stacks, and the release images are put together
+# beside the unit tests, so the deploy is a pull and a restart.
 jobs:
   checks:
-    name: Lint, unit tests and the deployment entrypoint
+    name: Lint, unit tests, the entrypoint and the release images
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     defaults:
       run:
         working-directory: app
@@ -42,20 +45,97 @@ jobs:
         run: nohup docker pull caddy:2.10-alpine > /tmp/caddy-pull.log 2>&1 &
 
       - uses: ./.github/actions/node
+      - uses: ./.github/actions/crane
 
       - name: Lint and format check
         run: pnpm lint
 
-      # The web build is not repeated here: the web image job builds the very
-      # bundle that ships, from the same tree, and fails the run if it cannot.
-      - name: Run unit tests
-        run: time pnpm test:unit
+      - name: Sign in to the registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # This runner has docker, so the compose check must run rather than
-      # skip. Here rather than on a runner of its own: it is ten seconds, and
-      # every job the run asks for is a runner it may wait on.
-      - name: Test the restricted deployment entrypoint
-        run: REQUIRE_DOCKER=1 pnpm test:guard
+      # Three things side by side, none of which waits on another: the unit
+      # tests; the deployment guard, which has docker here and so must run
+      # its compose check rather than skip it; and the release images. On one
+      # runner because every job a run asks for is a runner it may wait on,
+      # and the images are mostly a wait on the registry that the tests fill.
+      #
+      # Neither image is built by Docker on a release. Each is a base and one
+      # layer over it — the server over the api's base, the bundle over Caddy
+      # — and crane writes that image into the registry as a manifest and a
+      # blob, without pulling the base's layers to do it. Docker did pull
+      # them, every release, to apply one COPY: most of a minute for the two
+      # images, on the machine the deploy was waiting for. The box pulls the
+      # same layers it always did, and only the new one when the base is the
+      # one it has.
+      #
+      # The api's base is the Dockerfile's base stage — everything under the
+      # server — built by Docker only when the stage, the dependencies or the
+      # node image it starts from change, and named by a hash of them. The
+      # bundle is built on the runner as Dockerfile.web builds it in a
+      # container: against /api, stamped with the commit, and checked for a
+      # file the shell names that the build did not write.
+      - name: Unit tests, the entrypoint and the images
+        env:
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          images() {
+            VITE_API_URL=/api VITE_APP_SHA="$GITHUB_SHA" pnpm build
+            node scripts/check-release-assets.mjs dist/client
+
+            local repo="${IMAGE_REPO,,}"
+            local stamp
+            stamp=$(git log -1 --format=%ct)
+            # Root-owned, in name order, at the commit's time, as COPY would
+            # have it: the same tree is the same layer, whichever runner made it.
+            layer() {
+              tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$stamp" "$@"
+            }
+
+            local node_image base caddy
+            node_image=$(sed -n 's/^FROM \([^ ]*\) AS base$/\1/p' server/Dockerfile)
+            base="$repo/api-base:$(cat server/Dockerfile package.json pnpm-lock.yaml <(crane digest "$node_image") | sha256sum | cut -c1-16)"
+            if ! crane manifest "$base" >/dev/null 2>&1; then
+              echo "Building $base"
+              docker buildx create --name release-base >/dev/null
+              docker buildx build \
+                --builder release-base \
+                --file server/Dockerfile \
+                --target base \
+                --cache-from "type=registry,ref=$repo/api:buildcache" \
+                --cache-to "type=registry,ref=$repo/api:buildcache,mode=max,compression=zstd" \
+                --tag "$base" \
+                --push .
+            fi
+            layer --exclude='server/node_modules' --exclude='server/.env*' --transform 's,^,app/,' -cf /tmp/server.tar server
+            crane append -b "$base" -f /tmp/server.tar -t "$repo/api:$GITHUB_SHA"
+            crane tag "$repo/api:$GITHUB_SHA" latest
+
+            caddy=$(sed -n 's/^FROM \(caddy:[^ ]*\)$/\1/p' Dockerfile.web)
+            layer --transform 's,^dist/client,srv,' -cf /tmp/web.tar dist/client
+            crane append -b "$caddy" -f /tmp/web.tar -t "$repo/web:$GITHUB_SHA"
+            crane tag "$repo/web:$GITHUB_SHA" latest
+          }
+          ( time pnpm test:unit ) > /tmp/unit.log 2>&1 &
+          unit=$!
+          ( time REQUIRE_DOCKER=1 pnpm test:guard ) > /tmp/guard.log 2>&1 &
+          guard=$!
+          ( time images ) > /tmp/images.log 2>&1 &
+          built=$!
+          failed=0
+          wait "$unit" || failed=1
+          wait "$guard" || failed=1
+          wait "$built" || failed=1
+          sed 's/^/[unit] /' /tmp/unit.log
+          sed 's/^/[guard] /' /tmp/guard.log
+          sed 's/^/[images] /' /tmp/images.log
+          exit "$failed"
+
+      - name: Sign out of the registry
+        if: always()
+        run: docker logout ghcr.io
 
   server:
     name: Server tests
@@ -103,7 +183,7 @@ jobs:
         run: time pnpm test:server
 
   browser:
-    name: Browser tests (${{ matrix.shard }} of 6)
+    name: Browser tests (${{ matrix.shard }} of 7)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -111,17 +191,17 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/node
       - uses: ./.github/actions/browser
 
-      # A sixth of the tests each, dealt round-robin so every shard holds the
-      # same mix of light and heavy (see scripts/shard-tests.mjs), spread
-      # across the runner's cores. Six, not more: past a dozen jobs in a run
-      # the next one waited forty seconds for a machine, and a shard's tests
-      # are half a minute.
+      # A seventh of the tests each, dealt round-robin so every shard holds
+      # the same mix of light and heavy (see scripts/shard-tests.mjs), spread
+      # across the runner's cores. Seven, which makes eleven jobs in the run
+      # and not more: past a dozen the next one waited forty seconds for a
+      # machine, and a shard's tests are under half a minute.
       #
       # The sample-mode bundle (see playwright.config) is built here while the
       # tests are dealt — the deal is two seconds of one core that would
@@ -130,7 +210,7 @@ jobs:
         run: |
           VITE_API_URL= pnpm build > /tmp/build.log 2>&1 &
           building=$!
-          mapfile -t dealt < <(node scripts/shard-tests.mjs 6 ${{ matrix.shard }})
+          mapfile -t dealt < <(node scripts/shard-tests.mjs 7 ${{ matrix.shard }})
           [ "${#dealt[@]}" -gt 0 ] || { echo "nothing was dealt to this shard"; exit 1; }
           wait "$building" || { cat /tmp/build.log; exit 1; }
           time PREBUILT=1 pnpm exec playwright test "${dealt[@]}"
@@ -193,91 +273,9 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  images:
-    name: Put the release images together
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-    defaults:
-      run:
-        working-directory: app
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/node
-      - uses: ./.github/actions/crane
-
-      - name: Sign in to the registry
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      # The bundle, built on the runner as Dockerfile.web builds it in a
-      # container: against /api, stamped with the commit, and checked for a
-      # file the shell names that the build did not write.
-      - name: Build the bundle
-        env:
-          VITE_API_URL: /api
-          VITE_APP_SHA: ${{ github.sha }}
-        run: |
-          pnpm build
-          node scripts/check-release-assets.mjs dist/client
-
-      # Neither image is built by Docker on a release. Each is a base and one
-      # layer over it — the server over the api's base, the bundle over Caddy
-      # — and crane writes that image into the registry as a manifest and a
-      # blob, without pulling the base's layers to do it. Docker did pull
-      # them, every release, to apply one COPY: most of a minute for the two
-      # images, on the machine the deploy was waiting for. The box pulls the
-      # same layers it always did, and only the new one when the base is the
-      # one it has.
-      #
-      # The api's base is the Dockerfile's base stage — everything under the
-      # server — built by Docker only when the stage, the dependencies or the
-      # node image it starts from change, and named by a hash of them.
-      - name: Put the images together and push
-        env:
-          IMAGE_REPO: ghcr.io/${{ github.repository }}
-        run: |
-          set -euo pipefail
-          repo="${IMAGE_REPO,,}"
-          stamp=$(git log -1 --format=%ct)
-          # Root-owned, in name order, at the commit's time, as COPY would have
-          # it: the same tree is the same layer, whichever runner made it.
-          layer() {
-            tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$stamp" "$@"
-          }
-
-          node_image=$(sed -n 's/^FROM \([^ ]*\) AS base$/\1/p' server/Dockerfile)
-          base="$repo/api-base:$(cat server/Dockerfile package.json pnpm-lock.yaml <(crane digest "$node_image") | sha256sum | cut -c1-16)"
-          if ! crane manifest "$base" >/dev/null 2>&1; then
-            echo "Building $base"
-            docker buildx create --name release-base >/dev/null
-            docker buildx build \
-              --builder release-base \
-              --file server/Dockerfile \
-              --target base \
-              --cache-from "type=registry,ref=$repo/api:buildcache" \
-              --cache-to "type=registry,ref=$repo/api:buildcache,mode=max,compression=zstd" \
-              --tag "$base" \
-              --push .
-          fi
-          layer --exclude='server/node_modules' --exclude='server/.env*' --transform 's,^,app/,' -cf /tmp/server.tar server
-          crane append -b "$base" -f /tmp/server.tar -t "$repo/api:$GITHUB_SHA"
-          crane tag "$repo/api:$GITHUB_SHA" latest
-
-          caddy=$(sed -n 's/^FROM \(caddy:[^ ]*\)$/\1/p' Dockerfile.web)
-          layer --transform 's,^dist/client,srv,' -cf /tmp/web.tar dist/client
-          crane append -b "$caddy" -f /tmp/web.tar -t "$repo/web:$GITHUB_SHA"
-          crane tag "$repo/web:$GITHUB_SHA" latest
-
-      - name: Sign out of the registry
-        if: always()
-        run: docker logout ghcr.io
-
   deploy:
     name: Deploy production
-    needs: [checks, server, browser, live, images]
+    needs: [checks, server, browser, live]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

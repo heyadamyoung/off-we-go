@@ -255,7 +255,14 @@ test('the release images are put together beside the tests, and the deploy waits
   )
   const dockerfile = readFileSync(path.join(appRoot, 'server', 'Dockerfile'), 'utf8')
   const webDockerfile = readFileSync(path.join(appRoot, 'Dockerfile.web'), 'utf8')
-  assert.match(workflow, /needs: \[checks, server, browser, live, images\]/)
+  assert.match(workflow, /needs: \[checks, server, browser, live\]/)
+  /* The images are put together in the checks job, beside the unit tests
+     and the guard rather than after them: each is waited on, and one
+     failing fails the job. */
+  assert.match(
+    workflow,
+    /wait "\$unit" \|\| failed=1\n\s*wait "\$guard" \|\| failed=1\n\s*wait "\$built" \|\| failed=1/,
+  )
   assert.match(workflow, /packages: write/)
   /* The api image is the Dockerfile's base stage with the server laid over
      it by crane, so the final stage — what a hand build makes — must be that
@@ -282,7 +289,7 @@ test('the release images are put together beside the tests, and the deploy waits
      the commit, and checked. */
   assert.match(webDockerfile, /^FROM caddy:\S+$/m)
   assert.match(workflow, /sed -n 's\/\^FROM \\\(caddy:\[\^ \]\*\\\)\$\/\\1\/p' Dockerfile\.web/)
-  assert.match(workflow, /VITE_API_URL: \/api\n\s*VITE_APP_SHA: \$\{\{ github\.sha \}\}/)
+  assert.match(workflow, /VITE_API_URL=\/api VITE_APP_SHA="\$GITHUB_SHA" pnpm build/)
   assert.match(workflow, /pnpm build\n\s*node scripts\/check-release-assets\.mjs dist\/client/)
   assert.match(workflow, /--transform 's,\^dist\/client,srv,' -cf \/tmp\/web\.tar dist\/client/)
   assert.match(
