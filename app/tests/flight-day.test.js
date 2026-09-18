@@ -143,7 +143,7 @@ test('departed, landed with the belt, cancelled and diverted', () => {
     { status: 'landed', actualArrival: '2026-09-18T02:41:00.000Z', baggageBelt: '5' },
   )
   assert.deepEqual(flightHeadline(down, NOW + 9 * H), {
-    text: 'Landed 22:41 · bags on belt 5',
+    text: 'Landed 22:41 · baggage claim belt 5',
     tone: 'done',
   })
   assert.deepEqual(flightHeadline(leg({}, { status: 'cancelled' }), NOW), {
@@ -231,7 +231,7 @@ test('the phases are the deadlines, the board’s go-to-gate, then leaving and l
   )
   assert.deepEqual(
     down.slice(-2).map(one => `${one.label}:${one.state}`),
-    ['Landed:done', 'Bags on belt 5:done'],
+    ['Landed:done', 'Baggage claim, belt 5:done'],
   )
 })
 
@@ -247,7 +247,7 @@ test('the ticket has its columns whether or not the board has filled them: a das
       'Check-in:null',
       'Walk to gate:null',
       'Security:null',
-      'Bag belt:null',
+      'Baggage claim:null',
     ],
   )
   const full = ticketColumns(leg({ gateWas: '404' }))
@@ -257,13 +257,13 @@ test('the ticket has its columns whether or not the board has filled them: a das
     { key: 'checkin', label: 'Check-in', value: 'Zone 15 · Desks 1501–1520' },
     { key: 'walk', label: 'Walk to gate', value: '12 min' },
     { key: 'security', label: 'Security', value: '9 min queue' },
-    { key: 'belt', label: 'Bag belt', value: null },
+    { key: 'belt', label: 'Baggage claim', value: null },
     { key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' },
   ])
   const arrived = ticketColumns(
     leg({}, { status: 'landed', baggageBelt: '5', stand: '171', securityWaitMinutes: 0 }),
   )
-  assert.equal(arrived.find(one => one.key === 'belt').value, '5')
+  assert.equal(arrived.find(one => one.key === 'belt').value, 'Belt 5')
   assert.equal(arrived.find(one => one.key === 'security').value, 'No queue')
   assert.equal(arrived.find(one => one.key === 'stand').value, '171')
   assert.equal(
@@ -356,6 +356,6 @@ test('the capsule leads with the live leg on its day, and with nothing on any ot
     { status: 'landed', actualArrival: '2026-09-18T02:41:00.000Z', baggageBelt: '5' },
   )
   const after = travelCapsule([train, landed], NOW + 9 * H)
-  assert.equal(after.text, '✈ EI 123 · Landed 22:41 · bags on belt 5')
+  assert.equal(after.text, '✈ EI 123 · Landed 22:41 · baggage claim belt 5')
   assert.equal(after.tone, 'arrived')
 })

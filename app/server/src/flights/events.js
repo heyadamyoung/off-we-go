@@ -172,7 +172,7 @@ export function describeFlightEvent(event, { flight, zone = 'UTC' } = {}) {
     case 'BoardingEnded':
       return `Boarding has closed for ${who}.`
     case 'BaggageUpdated':
-      return `Bags from ${who} are on belt ${event.newValue}.`
+      return `Bags from ${who} are at baggage claim, belt ${event.newValue}.`
     case 'AircraftChanged':
       return `${who} is now operated by a ${event.newValue}.`
     case 'FlightDeparted':
