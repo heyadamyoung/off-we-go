@@ -50,6 +50,12 @@ jobs:
       - name: Lint and format check
         run: pnpm lint
 
+      # Every job takes its modules from the cache by lockfile and installs
+      # nothing; that the lockfile is the one package.json asks for is
+      # checked here, once — a dependency changed without it fails the run.
+      - name: Check the lockfile agrees with package.json
+        run: pnpm install --frozen-lockfile --lockfile-only
+
       - name: Sign in to the registry
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -34,6 +34,12 @@ runs:
     # four to ten seconds at the registry's mood. The modules are cached
     # whole rather than as the store they are linked from: a hit is the
     # modules in place, with no install to run over them.
+    #
+    # By the lockfile alone, not package.json beside it: a script added
+    # there is not a new set of modules, and keyed on both, every job of the
+    # next run installed and tried to save two hundred megabytes over a
+    # test's name. That the lockfile is the one package.json asks for is
+    # checked once, in the checks job.
     - name: Restore pnpm and the modules
       id: modules
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -41,7 +47,7 @@ runs:
         path: |
           ~/.pnpm-cli
           app/node_modules
-        key: modules-${{ runner.os }}-pnpm-10.6.5-${{ hashFiles('app/pnpm-lock.yaml', 'app/package.json') }}
+        key: modules-${{ runner.os }}-pnpm-10.6.5-${{ hashFiles('app/pnpm-lock.yaml') }}
         # An older set is most of a newer one: the install below replaces
         # what changed rather than fetching everything.
         restore-keys: modules-${{ runner.os }}-pnpm-10.6.5-
