@@ -94,7 +94,7 @@ function store({ legs = [leg()], snapshot = null } = {}) {
   }
 }
 
-function sourcesWith({ boards = {}, adsb = null } = {}) {
+function sourcesWith({ boards = {}, adsb = null, queues = null } = {}) {
   const providers = {
     YYZ: { airportCode: 'YYZ', source: 'gtaa-fl-prod.azureedge.net', zone: 'America/Toronto' },
     DUB: { airportCode: 'DUB', source: 'api.dublinairport.com', zone: 'Europe/Dublin' },
@@ -110,6 +110,14 @@ function sourcesWith({ boards = {}, adsb = null } = {}) {
       return { value: held || [], fetchedAt: NOW, stale: false, error: null }
     },
     adsb,
+    ...(queues
+      ? {
+          async queues(code) {
+            asked.push(`${code}:queues`)
+            return { value: queues, fetchedAt: NOW, stale: false, error: null }
+          },
+        }
+      : {}),
   }
 }
 
@@ -412,4 +420,49 @@ test('once the flight has left, a late departure is history and the leaving is t
     },
   )
   assert.equal(note, 'AC872 has departed at 18:41. Toronto Pearson, 18:45.')
+})
+
+test('the security queue at the terminal the leg leaves from rides on the snapshot, until it has left', async () => {
+  /* Not an event — nobody is woken because the queue moved — but the card
+     wants it, so it is written onto the view the leg keeps. Only the leg’s
+     own terminal, and only while there is a queue left to stand in. */
+  const repository = store()
+  const sources = sourcesWith({
+    boards: { 'YYZ:departure': [boardRow({ terminal: '1' })] },
+    queues: { 1: 14, 3: 2 },
+  })
+  await watchFlights({ repository, sources, now: NOW })
+  assert.equal(repository.snapshots[0].info.extra.securityWaitMinutes, 14)
+  assert.equal(repository.events.length, 0, 'a queue is not news')
+  assert.ok(sources.asked.includes('YYZ:queues'))
+
+  const gone = store()
+  await watchFlights({
+    repository: gone,
+    sources: sourcesWith({
+      boards: {
+        'YYZ:departure': [
+          boardRow({ status: 'departed', actualDeparture: '2026-09-20T22:40:00.000Z' }),
+        ],
+      },
+      queues: { 1: 14 },
+    }),
+    now: NOW,
+  })
+  assert.equal(gone.snapshots[0].info.extra?.securityWaitMinutes, undefined)
+
+  const unknown = store()
+  await watchFlights({
+    repository: unknown,
+    sources: sourcesWith({
+      boards: { 'YYZ:departure': [boardRow({ terminal: null })] },
+      queues: { 3: 2 },
+    }),
+    now: NOW,
+  })
+  assert.equal(
+    unknown.snapshots[0].info.extra?.securityWaitMinutes,
+    undefined,
+    'another terminal’s queue is not this leg’s',
+  )
 })

@@ -125,20 +125,27 @@ export function travelActivity(
   )
   if (!live.length) return null
 
-  // The trail knows before the airline's app does; a scheduled arrival long
-  // enough ago counts too, for a phone that stayed in a pocket.
+  // The airport's board says so first when there is one; the trail knows
+  // before the airline's app does; a scheduled arrival long enough ago
+  // counts too, for a phone that stayed in a pocket.
   const landedIds = new Set(landedSegments(live, fixes))
+  const boardSays = (leg: Segment) => leg.flight?.status ?? null
   const isLanded = (leg: Segment) =>
-    landedIds.has(leg.id) || now >= arrivesOf(leg) + LANDED_GRACE_MS
+    ['landed', 'arrived'].includes(boardSays(leg) || '') ||
+    landedIds.has(leg.id) ||
+    now >= arrivesOf(leg) + LANDED_GRACE_MS
   const leg = live.find(candidate => !isLanded(candidate)) ?? live[live.length - 1]
 
   const departs = at(leg.departsAt) as number
   const boardingAt = at(leg.deadlines?.boardingAt)
+  const boarding = ['go-to-gate', 'boarding', 'final-call', 'closed'].includes(
+    leg.flight?.boardingStatus || '',
+  )
   const phase: ActivityPhase = isLanded(leg)
     ? 'landed'
-    : now >= departs
+    : boardSays(leg) === 'departed' || now >= departs
       ? 'airborne'
-      : boardingAt !== null && now >= boardingAt
+      : boarding || (boardingAt !== null && now >= boardingAt)
         ? 'boarding'
         : 'before'
 

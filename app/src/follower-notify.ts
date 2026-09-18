@@ -24,14 +24,15 @@ const idFor = (key: string) => {
   return Math.abs(hash) % 2_000_000_000
 }
 
-/* What is worth the buzz first. A family who have been watching a plane
-   cross an ocean are not reading past the landing; somebody reaching a place
-   is bigger news than the pictures they took when they got there; and the
-   pictures are usually of the place anyway.
+/* What is worth the buzz first. What the airport said — a cancellation, a
+   gate, a landing with its belt — outranks everything; a family who have
+   been watching a plane cross an ocean are not reading past the landing;
+   somebody reaching a place is bigger news than the pictures they took when
+   they got there; and the pictures are usually of the place anyway.
 
    Its own function because it is the only judgement in this file — the rest is
    a plugin call that cannot run outside a phone. */
-const RANK: Record<Notice['kind'], number> = { landed: 0, arrived: 1, photos: 2 }
+const RANK: Record<Notice['kind'], number> = { flight: 0, landed: 1, arrived: 2, photos: 3 }
 
 export function worthWaking(notices: readonly Notice[]): Notice[] {
   /* Stable within a rank: two landings stay in the order the day flew them. */

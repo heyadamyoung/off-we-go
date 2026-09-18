@@ -49,3 +49,16 @@ test('sorting does not disturb the list it was handed', () => {
 test('nothing to say is an empty list rather than a throw', () => {
   assert.deepEqual(worthWaking([]), [])
 })
+
+test('what the airport said comes before everything, the landing it may be included', () => {
+  const order = worthWaking([
+    notice('photos', 'p1'),
+    notice('landed', 'g1'),
+    notice('flight', 'f1'),
+    notice('arrived', 's1'),
+  ])
+  assert.deepEqual(
+    order.map(one => one.kind),
+    ['flight', 'landed', 'arrived', 'photos'],
+  )
+})

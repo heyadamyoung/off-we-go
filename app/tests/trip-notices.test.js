@@ -141,7 +141,7 @@ test('the snapshot to compare against next time is the one taken now', () => {
 
 test('an empty trip has an empty snapshot rather than a broken one', () => {
   const mark = seenNow({})
-  assert.deepEqual(mark, { done: [], photosTo: 0, landed: [] })
+  assert.deepEqual(mark, { done: [], photosTo: 0, landed: [], words: {} })
   assert.deepEqual(noticesSince({}, mark), [])
 })
 
@@ -253,4 +253,82 @@ test('the landing leads, because it is the bigger thing that happened', () => {
 test('the snapshot records which journeys have ended', () => {
   const mark = seenNow({ segments: [flightTo('g1', 'Calgary')], landedSegmentIds: ['g1'] })
   assert.deepEqual(mark.landed, ['g1'])
+})
+
+/* What the airport said. The server writes the board's sentence onto the leg;
+   a follower who opens the app is told it first. */
+const flight = (rest = {}) => ({
+  id: 'kl677',
+  toName: 'Calgary',
+  statusNote: 'KL 677 has moved from gate E19 to D12. Schiphol, 09:10.',
+  flight: { status: 'scheduled' },
+  ...rest,
+})
+
+test('a mark that never recorded the airports’ words announces none of them', () => {
+  const seen = { done: [], photosTo: 0, landed: [] }
+  assert.deepEqual(noticesSince({ segments: [flight()] }, seen), [])
+})
+
+test('a sentence the board has not said before is the first thing on the list, for everybody', () => {
+  const seen = { done: [], photosTo: 0, landed: [], words: {} }
+  const notices = noticesSince(
+    {
+      stops: STOPS,
+      photos: [shot('p1', 'a', '2026-05-14T09:00:00Z')],
+      doneStopIds: ['a'],
+      segments: [flight()],
+    },
+    seen,
+    { arrivals: false },
+  )
+  assert.equal(notices.length, 2)
+  assert.equal(notices[0].kind, 'flight')
+  assert.equal(notices[0].title, 'KL 677 has moved from gate E19 to D12. Schiphol, 09:10.')
+  assert.equal(notices[0].segmentId, 'kl677')
+  assert.equal(notices[1].kind, 'photos')
+})
+
+test('the same sentence again is not news, and a new one under the same leg is', () => {
+  const said = { kl677: 'KL 677 has moved from gate E19 to D12. Schiphol, 09:10.' }
+  const seen = { done: [], photosTo: 0, landed: [], words: said }
+  assert.deepEqual(noticesSince({ segments: [flight()] }, seen), [])
+  const again = noticesSince(
+    { segments: [flight({ statusNote: 'KL 677 is delayed by 40 minutes. Schiphol, 09:30.' })] },
+    seen,
+  )
+  assert.equal(again.length, 1)
+  assert.match(again[0].id, /^flight:kl677:/)
+  assert.notEqual(
+    again[0].id,
+    noticesSince({ segments: [flight()] }, { done: [], photosTo: 0, words: {} })[0].id,
+    'a different sentence is a different notice',
+  )
+})
+
+test('the board’s landing is said once, instead of the trail’s, when both notice it together', () => {
+  const seen = { done: [], photosTo: 0, landed: [], words: {} }
+  const down = flight({
+    statusNote: 'KL 677 has landed at 10:52. Calgary, 10:55.',
+    flight: { status: 'landed' },
+  })
+  const notices = noticesSince({ segments: [down], landedSegmentIds: ['kl677'] }, seen)
+  assert.deepEqual(
+    notices.map(one => one.kind),
+    ['flight'],
+  )
+  /* The trail alone still says so, in its own words. */
+  const trail = noticesSince(
+    { segments: [flight({ statusNote: null })], landedSegmentIds: ['kl677'] },
+    seen,
+  )
+  assert.deepEqual(
+    trail.map(one => one.title),
+    ['Landed at Calgary'],
+  )
+})
+
+test('looking records the words, so the next look compares against them', () => {
+  const mark = seenNow({ segments: [flight(), flight({ id: 'quiet', statusNote: '  ' })] })
+  assert.deepEqual(mark.words, { kl677: 'KL 677 has moved from gate E19 to D12. Schiphol, 09:10.' })
 })

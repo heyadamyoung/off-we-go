@@ -438,7 +438,7 @@ test('Pearson: the list becomes rows, with the IATA number, the codeshares and t
     key: 'A0916AAL1111YYZDFW',
     icao: 'AAL1111',
     stand: 'B10',
-    checkinZone: '169-182',
+    checkinDeskRange: '169-182',
     region: 'USA',
     serviceType: 'J',
     farAirportName: 'Dallas Fort Worth International Airport',
@@ -662,4 +662,58 @@ test('Pearson: the list is asked slowly, one board at a time, and a captcha mean
   clock += 600_000
   challenge = false
   assert.equal((await provider.departures()).length, 1)
+})
+
+test('Dublin’s security queue is read per terminal, in minutes, in the app’s own terminal names', async () => {
+  const { parseDublinQueues, createDublinProvider, DUBLIN_QUEUES } = await import(
+    '../src/flights/providers/dublin.js'
+  )
+  assert.deepEqual(parseDublinQueues({ T1: '12', T2: '0' }), { 1: 12, 2: 0 })
+  assert.deepEqual(parseDublinQueues({ T1: 'closed', T2: '7.6' }), { 2: 8 })
+  assert.deepEqual(parseDublinQueues(null), {})
+  const urls = []
+  const provider = createDublinProvider({
+    fetch: async url => {
+      urls.push(url)
+      return { ok: true, status: 200, json: async () => ({ T1: '25', T2: '5' }) }
+    },
+  })
+  assert.deepEqual(await provider.securityQueues(), { 1: 25, 2: 5 })
+  assert.deepEqual(urls, [DUBLIN_QUEUES])
+})
+
+test('the aircraft’s track is read as a heading for the map', () => {
+  const heard = readAircraft(
+    {
+      hex: 'abc',
+      flight: 'KLM677 ',
+      alt_baro: 36000,
+      gs: 471,
+      track: 289.4,
+      lat: 55.1,
+      lon: -20.2,
+      seen: 3,
+    },
+    { now: Date.parse('2026-09-14T12:00:03.000Z') },
+  )
+  assert.equal(heard.trackDegrees, 289.4)
+  assert.equal(heard.airborne, true)
+  assert.equal(heard.heardAt, '2026-09-14T12:00:00.000Z')
+  assert.equal(readAircraft({ hex: 'abc', alt_baro: 'ground' }).trackDegrees, null)
+})
+
+test('Pearson’s aisle is the check-in zone, in the airport’s own word, beside the desks', () => {
+  const body = JSON.parse(fixture('pearson-departures.json'))
+  const rows = parsePearsonBoard(body, 'departure', { fetchedAt: AT })
+  const aisled = rows.find(row => row.extra.checkinZone)
+  assert.ok(aisled, 'the recording has flights with an aisle')
+  assert.match(aisled.extra.checkinZone, /^Aisle \S+$/)
+  const desked = rows.find(row => row.extra.checkinDeskRange)
+  assert.ok(desked, 'the recording has flights with a run of desks')
+  assert.match(desked.extra.checkinDeskRange, /^\d+-\d+$/)
+  assert.equal(
+    rows.some(row => 'aisle' in row.extra),
+    false,
+    'kept under the ticket’s name only',
+  )
 })

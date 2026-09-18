@@ -249,3 +249,163 @@ test('a leg’s snapshot and trail are the trip’s members’ to read', async (
   assert.equal(nobody.statusCode, 401)
   await app.close()
 })
+
+test('the board’s word rides on the segments list, so the day face needs no second fetch', async () => {
+  const sources = createFlightSources({ fetch: boards().fetch, http: boards().fetch })
+  const { app, repository } = await serve(sources)
+  const owner = await authenticate(repository, 'owner@example.com')
+  const ownerUser = await repository.ensureUser('owner@example.com')
+  const trip = await repository.createTrip(ownerUser, { title: 'Home for the wedding' })
+  const created = await app.inject({
+    method: 'POST',
+    url: `/api/trips/${trip.id}/segments`,
+    headers: { authorization: owner },
+    body: {
+      mode: 'flight',
+      carrier: 'Aer Lingus',
+      number: 'EI 123',
+      fromName: 'Dublin',
+      fromCode: 'DUB',
+      toName: 'Toronto',
+      toCode: 'YYZ',
+      departsAt: '2026-09-17T21:55:00.000Z',
+      arrivesAt: '2026-09-18T05:55:00.000Z',
+    },
+  })
+  const segment = created.json()
+  const before = await app.inject({
+    method: 'GET',
+    url: `/api/trips/${trip.id}/segments`,
+    headers: { authorization: owner },
+  })
+  assert.equal(before.json().segments[0].flight, null)
+
+  await repository.saveFlightSnapshot(segment.id, {
+    info: {
+      flightNumber: 'EI123',
+      status: 'scheduled',
+      statusText: 'ON SCHEDULE',
+      gate: '406',
+      terminal: '2',
+      sources: ['api.dublinairport.com'],
+      extra: {
+        checkinZone: '15',
+        checkinDeskRange: '1501-1520',
+        walkMinutes: 12,
+        securityWaitMinutes: 9,
+      },
+    },
+    fetchedAt: '2026-09-17T18:40:00.000Z',
+  })
+  const after = await app.inject({
+    method: 'GET',
+    url: `/api/trips/${trip.id}/segments`,
+    headers: { authorization: owner },
+  })
+  const flight = after.json().segments[0].flight
+  assert.equal(flight.gate, '406')
+  assert.equal(flight.checkinZone, '15')
+  assert.equal(flight.checkinDesks, '1501-1520')
+  assert.equal(flight.walkMinutes, 12)
+  assert.equal(flight.securityWaitMinutes, 9)
+  assert.equal(flight.fetchedAt, '2026-09-17T18:40:00.000Z')
+  await app.close()
+})
+
+test('where the aircraft is, for the map, only while the leg is plausibly flying', async () => {
+  const NOW = Date.parse('2026-09-14T12:00:00.000Z')
+  const skyAsked = []
+  const sky = async url => {
+    skyAsked.push(url)
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ac: [
+          {
+            hex: '484a9b',
+            flight: 'KLM677  ',
+            alt_baro: 36000,
+            gs: 471,
+            track: 289,
+            lat: 55.1,
+            lon: -20.2,
+            seen: 2,
+          },
+        ],
+      }),
+    }
+  }
+  const sources = createFlightSources({
+    fetch: async (url, options) =>
+      url.includes('adsb.lol') ? sky(url) : boards().fetch(url, options),
+    http: boards().fetch,
+    now: () => NOW,
+  })
+  const { app, repository } = await serve(sources)
+  const owner = await authenticate(repository, 'owner@example.com')
+  const stranger = await authenticate(repository, 'stranger@example.com')
+  const ownerUser = await repository.ensureUser('owner@example.com')
+  const trip = await repository.createTrip(ownerUser, { title: 'Calgary' })
+  const make = body =>
+    app
+      .inject({
+        method: 'POST',
+        url: `/api/trips/${trip.id}/segments`,
+        headers: { authorization: owner },
+        body: {
+          mode: 'flight',
+          fromName: 'Amsterdam',
+          fromCode: 'AMS',
+          toName: 'Calgary',
+          toCode: 'YYC',
+          ...body,
+        },
+      })
+      .then(response => response.json())
+  const flying = await make({
+    carrier: 'KLM',
+    number: 'KL 677',
+    departsAt: '2026-09-14T11:10:00.000Z',
+    arrivesAt: '2026-09-14T20:00:00.000Z',
+  })
+  const tomorrow = await make({
+    carrier: 'KLM',
+    number: 'KL 681',
+    departsAt: '2026-09-15T11:10:00.000Z',
+    arrivesAt: '2026-09-15T20:00:00.000Z',
+  })
+  const nameless = await make({
+    carrier: 'Someone',
+    number: 'ZZ 9',
+    departsAt: '2026-09-14T11:10:00.000Z',
+    arrivesAt: '2026-09-14T20:00:00.000Z',
+  })
+  const ask = (leg, token = owner) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/trips/${trip.id}/segments/${leg.id}/position`,
+      headers: { authorization: token },
+    })
+
+  const heard = await ask(flying)
+  assert.equal(heard.statusCode, 200)
+  assert.equal(heard.json().callsign, 'KLM677')
+  assert.equal(heard.json().aircraft.lat, 55.1)
+  assert.equal(heard.json().aircraft.trackDegrees, 289)
+  assert.equal(heard.json().aircraft.airborne, true)
+  assert.equal(heard.json().reason, null)
+  assert.equal(heard.json().fetchedAt, '2026-09-14T12:00:00.000Z')
+  await ask(flying)
+  assert.equal(skyAsked.length, 1, 'a second phone asking within the minute shares the answer')
+
+  const later = await ask(tomorrow)
+  assert.equal(later.json().reason, 'not-flying')
+  assert.equal(later.json().aircraft, null)
+  const unknown = await ask(nameless)
+  assert.equal(unknown.json().reason, 'no-callsign')
+  assert.equal(skyAsked.length, 1, 'neither of those asked the sky')
+
+  assert.equal((await ask(flying, stranger)).statusCode, 404)
+  await app.close()
+})

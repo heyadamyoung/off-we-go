@@ -16,6 +16,7 @@ import useMapLayers from '../model/use-map-layers'
 import { creditControl, STYLE } from '../model/map-style'
 import registerOfflineTiles from '../model/offline-tiles'
 import { LiveMarker, MapMarker, YouBeam } from './map-marker'
+import PlaneMarker from './plane-marker'
 import type { MapCanvasProps } from '../model/map-props'
 
 setWorkerUrl(maplibreWorkerUrl)
@@ -38,6 +39,7 @@ const MapCanvas = memo(function MapCanvas({
   stops = [],
   photos = [],
   markers = [],
+  plane = null,
   you = null,
   headingUp = null,
   trail = [],
@@ -374,6 +376,7 @@ const MapCanvas = memo(function MapCanvas({
         markers.map(m => (
           <LiveMarker key={m.key} map={map} m={m} onClick={onLive} movedRef={moved} />
         ))}
+      {map && plane && <PlaneMarker map={map} plane={plane} />}
       {map && you && <YouBeam map={map} at={you.at} facing={you.facing} />}
 
       {children}

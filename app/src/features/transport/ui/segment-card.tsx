@@ -10,14 +10,19 @@ import {
   type Segment,
   type SegmentDeadlines,
 } from '../../../segments-core'
+import { flightHeadline, flightSource } from '../../../flight-day-core'
 import { papersOfSegment, type Paper } from '../../../papers-core'
 import { parseSeat } from '../../../seatmap-core'
 import PaperRow from '../../../shared/ui/paper-row'
+import FlightPhases from './flight-phases'
+import FlightTrail from './flight-trail'
 import SeatMap from './seat-map'
+import TicketColumns from './ticket-columns'
 
 /* One leg, wearing the face the clock chooses. future: a quiet line.
-   eve: packing truth. day: the countdown, gate in amber. past: a line in
-   the journal. Nobody configures this; the hour does. */
+   eve: the ticket — where, when, the columns the board fills in. day: the
+   ticket with the answer on top of it, the phases, and the airport's word.
+   past: a line in the journal. Nobody configures this; the hour does. */
 
 const STRIP_ORDER: Array<keyof SegmentDeadlines> = [
   'checkinClosesAt',
@@ -26,9 +31,18 @@ const STRIP_ORDER: Array<keyof SegmentDeadlines> = [
   'doorsAt',
 ]
 
+const TONE: Record<string, string> = {
+  ok: 'text-ok',
+  tight: 'text-accent',
+  late: 'text-tight',
+  done: 'text-ok',
+  quiet: 'text-muted',
+}
+
 export default function SegmentCard({
   segment,
   now,
+  tripId,
   canEdit,
   onEdit,
   onShowGate,
@@ -37,6 +51,8 @@ export default function SegmentCard({
 }: {
   segment: Segment
   now: number
+  /** the trip the leg is on, for the airport's trail; the card works without */
+  tripId?: string
   canEdit: boolean
   onEdit?: (segment: Segment) => void
   onShowGate?: (segment: Segment) => void
@@ -54,6 +70,7 @@ export default function SegmentCard({
   })
   const upcoming = nextDeadline(segment, now)
   const [seats, setSeats] = useState(false)
+  const [trail, setTrail] = useState(false)
   const hasSeatMap = segment.mode === 'flight' && segment.passengers.some(p => parseSeat(p.seat))
   const papers = useMemo(() => papersOfSegment(segment), [segment])
   const picker = useRef<HTMLInputElement>(null)
@@ -81,8 +98,18 @@ export default function SegmentCard({
     )
   }
 
+  /* The answer, in words, on the day: built from the board's word, the delta
+     and the next hard thing. On the eve the same line reads quietly under
+     the columns when a board has spoken, because "is it still on" is the
+     evening's question too. */
+  const headline = flightHeadline(segment, now)
+  const source = flightSource(segment, now)
+
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-raised2">
+    <div
+      className="ticket overflow-hidden rounded-xl border border-line bg-raised2"
+      data-face={face}
+      data-tone={headline.tone}>
       <div className="flex items-center justify-between px-3 pt-2.5">
         <span className="text-[10px] font-bold uppercase tracking-[.12em] text-faint">
           {glyph} {segment.mode}
@@ -102,6 +129,13 @@ export default function SegmentCard({
           </button>
         )}
       </div>
+
+      {face === 'day' && (
+        <div
+          className={`tkhead px-3 pt-1 text-[15px] font-extrabold leading-snug ${TONE[headline.tone]}`}>
+          {headline.text}
+        </div>
+      )}
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pt-1.5">
         <div>
@@ -133,24 +167,40 @@ export default function SegmentCard({
         </div>
       </div>
 
+      {/* The columns are the ticket: TERMINAL, GATE, CHECK-IN, the walk, the
+          queue, the belt — headings always, a dash until the board says. */}
+      <TicketColumns segment={segment} />
+
+      {face === 'day' ? (
+        <FlightPhases segment={segment} now={now} />
+      ) : (
+        segment.deadlines && (
+          <div className="mx-3 mt-2.5 flex justify-between border-t border-dashed border-line pt-2 pb-1">
+            {STRIP_ORDER.filter(key => segment.deadlines?.[key]).map(key => {
+              const at = segment.deadlines?.[key] as string
+              const passed = new Date(at).getTime() <= now
+              const isNext = upcoming?.key === key
+              return (
+                <div key={key} className="flex-1 text-center">
+                  <div className="text-[9px] font-bold uppercase tracking-[.06em] text-faint">
+                    {DEADLINE_LABELS[key]}
+                  </div>
+                  <div
+                    className={
+                      'font-mono text-xs ' +
+                      (passed ? 'text-ok' : isNext ? 'font-bold text-accent' : 'text-ink')
+                    }>
+                    {passed ? '✓' : localTime(at, segment.departTz)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      )}
+
       {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
       <div className="flex flex-wrap gap-1.5 px-3 pt-2 text-[11px]">
-        {segment.gate && (
-          <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
-            Gate <b className="text-accent">{segment.gate}</b>
-            {segment.gateWas && <s className="ml-1 text-faint">{segment.gateWas}</s>}
-          </span>
-        )}
-        {segment.platform && (
-          <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
-            Platform <b className="text-accent">{segment.platform}</b>
-          </span>
-        )}
-        {segment.terminal && (
-          <span className="rounded-md border border-line bg-canvas px-2 py-0.5">
-            T{segment.terminal}
-          </span>
-        )}
         {segment.passengers.map(person => (
           <span key={person.name} className="rounded-md border border-line bg-canvas px-2 py-0.5">
             {person.name}
@@ -177,30 +227,6 @@ export default function SegmentCard({
         )}
       </div>
 
-      {segment.deadlines && (
-        <div className="mx-3 mt-2.5 flex justify-between border-t border-dashed border-line pt-2 pb-1">
-          {STRIP_ORDER.filter(key => segment.deadlines?.[key]).map(key => {
-            const at = segment.deadlines?.[key] as string
-            const passed = new Date(at).getTime() <= now
-            const isNext = upcoming?.key === key
-            return (
-              <div key={key} className="flex-1 text-center">
-                <div className="text-[9px] font-bold uppercase tracking-[.06em] text-faint">
-                  {DEADLINE_LABELS[key]}
-                </div>
-                <div
-                  className={
-                    'font-mono text-xs ' +
-                    (passed ? 'text-ok' : isNext ? 'font-bold text-accent' : 'text-ink')
-                  }>
-                  {passed ? '✓' : localTime(at, segment.departTz)}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
       {/* The papers, on the card, as papers. They used to be drawn twice — a
           row of paperclip chips that opened the file in another tab, and a
           Papers button onto a sheet of text inputs whose chevron did the same
@@ -214,9 +240,24 @@ export default function SegmentCard({
         </div>
       )}
 
+      {/* Which board, how old, in its own words; a quiet board is called
+          quiet rather than shown as fresh. On the eve it also carries the
+          answer, in words, that the day puts on top. */}
+      {source && (
+        <div className="tksource px-3 pt-1.5 text-[11px] text-muted" data-quiet={source.quiet}>
+          {face === 'eve' && <b className={TONE[headline.tone]}>{headline.text} · </b>}
+          {source.name}
+          {source.age && ` · ${source.age}`}
+          {source.said && ` · ${source.said}`}
+          {source.quiet && ' · has not answered since, showing what it last said'}
+        </div>
+      )}
+
       {segment.statusNote && (
         <div className="px-3 pt-1.5 text-[11px] text-tight">✦ {segment.statusNote}</div>
       )}
+
+      {trail && tripId && <FlightTrail tripId={tripId} segment={segment} />}
 
       <div className="flex items-center gap-2 px-3 py-2.5">
         {segment.mode === 'flight' && segment.fromLng != null && onShowGate && (
@@ -224,6 +265,14 @@ export default function SegmentCard({
             className="rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-ink"
             onClick={() => onShowGate(segment)}>
             Show gate on the map
+          </button>
+        )}
+        {face === 'day' && segment.flight && tripId && (
+          <button
+            className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold"
+            aria-expanded={trail}
+            onClick={() => setTrail(open => !open)}>
+            {trail ? 'Hide the trail' : 'What the airport said'}
           </button>
         )}
         {canEdit && onAttach && (

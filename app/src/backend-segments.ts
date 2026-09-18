@@ -1,4 +1,5 @@
 import { authClient, isSample, tripPath } from './backend-base'
+import type { AircraftHeard } from './plane-core'
 import { uid } from './sample-trip-core'
 import { deriveDeadlines, type Segment, type SegmentDocument } from './segments-core'
 import type { Id, StopDocument } from './shared/model/types'
@@ -6,10 +7,20 @@ import type { Id, StopDocument } from './shared/model/types'
 /* ---- travel segments: the getting-there layer ------------------------- */
 
 /* The sample trip's legs are built relative to now, so the public demo's
-   travel day is forever tomorrow and the countdowns forever alive. */
+   travel day is forever tomorrow and the countdowns forever alive.
+
+   Unless the page says it is the travel day itself: then the train has
+   just run and the flight leaves in a couple of hours, which is the one
+   hour of the demo the ticket's day face exists for, and the only way a
+   browser test can look at it without waiting a night. */
 function sampleSegments(): Segment[] {
+  const today =
+    typeof window !== 'undefined' &&
+    (window as { __offwegoTravelDay?: boolean }).__offwegoTravelDay === true
+  const shift = today ? -22 * 60 - 20 : 0
   const at = (hours: number, minutes = 0) =>
-    new Date(Date.now() + (hours * 60 + minutes) * 60_000).toISOString()
+    new Date(Date.now() + (hours * 60 + minutes + shift) * 60_000).toISOString()
+  const heard = new Date(Date.now() - 2 * 60_000).toISOString()
   const train: Segment = {
     id: 'sample-segment-train',
     mode: 'train',
@@ -88,8 +99,93 @@ function sampleSegments(): Segment[] {
     costAmount: 1284,
     costCurrency: 'EUR',
     status: 'scheduled',
+    /* What the airport's board would have written onto the leg: the ticket's
+       columns filled in, so the demo shows the day the way a watched trip
+       has it rather than as a row of dashes. */
+    flight: {
+      status: 'scheduled',
+      statusText: 'On time',
+      boardingStatus: null,
+      gate: 'E19',
+      terminal: '3',
+      scheduledDeparture: at(25, 30),
+      estimatedDeparture: at(25, 30),
+      scheduledArrival: at(34),
+      checkinZone: '3',
+      checkinDesks: '13-20',
+      walkMinutes: 9,
+      securityWaitMinutes: 6,
+      sources: ['www.schiphol.nl'],
+      lastUpdated: heard,
+      fetchedAt: heard,
+    },
   }
   return [train, flight]
+}
+
+/* ---- what the airport said, and where the aircraft is ------------------ */
+
+export interface FlightTrailEvent {
+  id: string
+  type: string
+  oldValue: string | null
+  newValue: string | null
+  minutes: number | null
+  text: string
+  source: string | null
+  at: string
+}
+
+/** The board's snapshot and its trail of events for a leg, newest first. */
+export async function loadSegmentFlight(
+  tripId: Id,
+  segmentId: string,
+): Promise<{ snapshot: unknown; events: FlightTrailEvent[] }> {
+  if (isSample(tripId)) {
+    if (segmentId !== 'sample-segment-flight') return { snapshot: null, events: [] }
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+    return {
+      snapshot: null,
+      events: [
+        {
+          id: 'sample-fe-2',
+          type: 'GateChanged',
+          oldValue: 'E17',
+          newValue: 'E19',
+          minutes: null,
+          text: 'KL 677 has moved from gate E17 to E19.',
+          source: 'www.schiphol.nl',
+          at: minutesAgo(48),
+        },
+        {
+          id: 'sample-fe-1',
+          type: 'TerminalChanged',
+          oldValue: null,
+          newValue: '3',
+          minutes: null,
+          text: 'KL 677 leaves from terminal 3.',
+          source: 'www.schiphol.nl',
+          at: minutesAgo(190),
+        },
+      ],
+    }
+  }
+  return authClient.request<{ snapshot: unknown; events: FlightTrailEvent[] }>(
+    `${tripPath(tripId)}/segments/${encodeURIComponent(segmentId)}/flight`,
+  )
+}
+
+/** Where the aircraft is, as the transponder network last heard it. */
+export async function loadSegmentPosition(
+  tripId: Id,
+  segmentId: string,
+): Promise<{ callsign: string | null; aircraft: AircraftHeard | null; reason: string | null }> {
+  if (isSample(tripId)) return { callsign: null, aircraft: null, reason: 'sample' }
+  return authClient.request<{
+    callsign: string | null
+    aircraft: AircraftHeard | null
+    reason: string | null
+  }>(`${tripPath(tripId)}/segments/${encodeURIComponent(segmentId)}/position`)
 }
 
 export async function loadSegments(tripId: Id): Promise<Segment[]> {

@@ -1,3 +1,4 @@
+import { flightOnLeg } from '../src/flights/on-leg.js'
 import { rescheduled } from '../src/segments.js'
 import { randomBytes } from 'node:crypto'
 import { availableSlug, normalizeProfileHandle, slugBase } from '../src/slugs.js'
@@ -1370,6 +1371,10 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
         .map(s => ({
           ...s,
           documents: [...segmentDocuments.values()].filter(d => d.segmentId === s.id),
+          flight: flightOnLeg(
+            flightSnapshots.get(s.id)?.info,
+            flightSnapshots.get(s.id)?.fetchedAt,
+          ),
         }))
     },
     async createSegment(user, tripId, input) {

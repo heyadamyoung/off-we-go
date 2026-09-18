@@ -196,12 +196,12 @@ function Trip({
           chat={{ ...chat, meId: me?.id }}
           sights={{ centre: mapView, stops, canEdit, onAdd: addSight, onShow: showSight, toast }}
           transport={{
+            tripId,
             segments: transport.segments,
             loadFailed: transport.loadFailed,
             now: clock,
-            /* The same list the floating meter over the map is built from —
-               a second opinion about where somebody is would eventually
-               disagree with the first, on the same screen. */
+            /* The same list the floating meter over the map is built from — a
+               second opinion about where somebody is would eventually disagree. */
             travellers: markers
               .filter(marker => !marker.stale)
               .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat })),

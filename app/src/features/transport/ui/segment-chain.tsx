@@ -7,6 +7,7 @@ import SegmentCard from './segment-card'
    silo the modes; travel days are sequences of getting-there. */
 
 export default function SegmentChain({
+  tripId,
   segments,
   now,
   canEdit,
@@ -15,6 +16,8 @@ export default function SegmentChain({
   onAttach,
   onOpenPaper,
 }: {
+  /** the trip the legs are on, for the airport's trail behind a ticket */
+  tripId?: string
   segments: Segment[]
   now: number
   canEdit: boolean
@@ -49,6 +52,7 @@ export default function SegmentChain({
               <SegmentCard
                 segment={segment}
                 now={now}
+                tripId={tripId}
                 canEdit={canEdit}
                 onEdit={onEdit}
                 onShowGate={onShowGate}

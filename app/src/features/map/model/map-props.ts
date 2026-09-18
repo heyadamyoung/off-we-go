@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { FeatureCollection } from 'geojson'
+import type { PlaneOnMap } from '../../../plane-core'
 import type { MapPadding } from '../../../live-map-view-core'
 import type { PhoneMarker } from '../../../live-markers-core'
 import type {
@@ -35,6 +36,8 @@ export interface MapCanvasProps {
   stops?: Stop[]
   photos?: TripPhoto[]
   markers?: PhoneMarker[]
+  /** the family's aircraft, where the transponder network last heard it */
+  plane?: PlaneOnMap | null
   /** this device's own compass dot, when no marker is this device */
   you?: { at: Coordinates; facing: number | null } | null
   /** heading-up: turn the map to the device's facing and keep it under the walker */

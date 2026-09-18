@@ -32,10 +32,19 @@ const readSeen = (tripId: string, store?: Pick<Storage, 'getItem'> | null): Seen
        A mark written before they were counted makes no claim either way, and
        filling in an empty list here would turn the update itself into news —
        every follower told about every flight of the whole trip, once. */
+    const words =
+      held.words && typeof held.words === 'object' && !Array.isArray(held.words)
+        ? Object.fromEntries(
+            Object.entries(held.words).filter(([, note]) => typeof note === 'string'),
+          )
+        : null
     return {
       done: held.done.map(String),
       photosTo: held.photosTo,
       ...(Array.isArray(held.landed) ? { landed: held.landed.map(String) } : {}),
+      /* The airports' words likewise: a mark that never recorded them makes
+         no claim, or every follower would be told every note on the trip. */
+      ...(words ? { words: words as Record<string, string> } : {}),
     }
   } catch {
     return null
@@ -80,10 +89,10 @@ export default function useTripNotices({
   useEffect(() => {
     if (started.current || seen) return
     started.current = true
-    const mark = seenNow({ photos, doneStopIds, landedSegmentIds })
+    const mark = seenNow({ photos, doneStopIds, segments, landedSegmentIds })
     writeSeen(tripId, mark)
     setSeen(mark)
-  }, [seen, tripId, photos, doneStopIds, landedSegmentIds])
+  }, [seen, tripId, photos, doneStopIds, segments, landedSegmentIds])
 
   const notices = useMemo(
     () =>
@@ -106,10 +115,10 @@ export default function useTripNotices({
 
   /** Read: the mark moves to where things stand, and the list empties. */
   const markSeen = useCallback(() => {
-    const mark = seenNow({ photos, doneStopIds, landedSegmentIds })
+    const mark = seenNow({ photos, doneStopIds, segments, landedSegmentIds })
     writeSeen(tripId, mark)
     setSeen(mark)
-  }, [tripId, photos, doneStopIds, landedSegmentIds])
+  }, [tripId, photos, doneStopIds, segments, landedSegmentIds])
 
   return { notices, markSeen }
 }

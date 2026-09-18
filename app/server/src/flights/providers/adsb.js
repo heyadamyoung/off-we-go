@@ -88,6 +88,8 @@ export function readAircraft(record, { now = Date.now() } = {}) {
     airborne: !onGround && (altitudeFeet ?? 0) > 500,
     altitudeFeet,
     groundSpeedKnots: Number.isFinite(record.gs) ? record.gs : null,
+    /** degrees clockwise from north, the way the aircraft is going */
+    trackDegrees: Number.isFinite(record.track) ? record.track : null,
     lat: Number.isFinite(record.lat) ? record.lat : null,
     lon: Number.isFinite(record.lon) ? record.lon : null,
     heardAt: seenSeconds === null ? null : new Date(now - seenSeconds * 1000).toISOString(),
