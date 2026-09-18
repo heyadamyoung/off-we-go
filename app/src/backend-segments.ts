@@ -1,6 +1,7 @@
 import { authClient, isSample, tripPath } from './backend-base'
 import type { AircraftHeard } from './plane-core'
 import { uid } from './sample-trip-core'
+import { isTravelDay } from './shared/lib/still'
 import { deriveDeadlines, type Segment, type SegmentDocument } from './segments-core'
 import type { Id, StopDocument } from './shared/model/types'
 
@@ -14,9 +15,7 @@ import type { Id, StopDocument } from './shared/model/types'
    hour of the demo the ticket's day face exists for, and the only way a
    browser test can look at it without waiting a night. */
 function sampleSegments(): Segment[] {
-  const today =
-    typeof window !== 'undefined' &&
-    (window as { __offwegoTravelDay?: boolean }).__offwegoTravelDay === true
+  const today = isTravelDay()
   const shift = today ? -22 * 60 - 20 : 0
   const at = (hours: number, minutes = 0) =>
     new Date(Date.now() + (hours * 60 + minutes + shift) * 60_000).toISOString()

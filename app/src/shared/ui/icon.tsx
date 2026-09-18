@@ -58,6 +58,8 @@ const PATHS: Record<string, string> = {
   copy: 'M6 6h7v7H6zM3 10V3h7',
   more: 'c3.2 8 1.2|c8 8 1.2|c12.8 8 1.2',
   spark: 'M8 1.5 9.7 6.3 14.5 8 9.7 9.7 8 14.5 6.3 9.7 1.5 8 6.3 6.3 8 1.5Z|c13 3 .9',
+  bag: 'M5.5 4.5V3.2A1.2 1.2 0 0 1 6.7 2h2.6a1.2 1.2 0 0 1 1.2 1.2v1.3|M2.5 6A1.5 1.5 0 0 1 4 4.5h8A1.5 1.5 0 0 1 13.5 6v6a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12V6Z|M6 4.5v9M10 4.5v9',
+  shield: 'M8 1.5 13 3.5v4c0 3.3-2.1 5.7-5 7-2.9-1.3-5-3.7-5-7v-4L8 1.5Z|m5.8 8 1.6 1.6 2.9-3.2',
 }
 
 /* Aliases keep older call sites reading naturally without a second drawing. */

@@ -1,5 +1,6 @@
 import { bearingBetween } from './compass-core'
 import { metres } from './shared/lib/geo'
+import { isTravelDay } from './shared/lib/still'
 import type { Coordinates, Device, LiveFix } from './shared/model/types'
 
 /* The sample trip, live. A real trip gets its motion from phones; the sample
@@ -88,6 +89,25 @@ const FRIDAY: Waypoint[] = [
   { at: [4.935, 52.3793], dwellS: 600 }, // hotel, done for the day
 ]
 
+/* The travel day. The demo is told it is one (see backend-segments), and
+   then the family is where a family is three hours before a flight: at
+   Schiphol, on the concourse short of the desks, bags in hand. Without this
+   the day face showed a flight in a couple of hours and two phones at lunch
+   across town, and the walk through the terminal had nobody to walk. */
+const HALL: Coordinates = [4.7615, 52.3094]
+const HALL_BESIDE: Coordinates = [4.7617, 52.3095]
+const TRAVEL_DAY: Waypoint[] = [
+  { at: [4.935, 52.3793], dwellS: 600 }, // Hotel Jakarta, bags packed
+  { at: [4.9265, 52.3782] },
+  { at: [4.915, 52.3768] },
+  { at: [4.9003, 52.379], dwellS: 420, speedMS: TRAIN_METRES_PER_SECOND }, // Centraal, the train
+  { at: [4.8378, 52.3888], speedMS: TRAIN_METRES_PER_SECOND },
+  { at: [4.809, 52.357], speedMS: TRAIN_METRES_PER_SECOND },
+  { at: [4.7683, 52.3105] }, // Schiphol Plaza, off the train
+  { at: HALL, dwellS: 900 }, // the departures hall
+  { at: HALL },
+]
+
 interface Leg {
   from: Coordinates
   to: Coordinates
@@ -126,6 +146,7 @@ function schedule(points: Waypoint[], closed: boolean): { legs: Leg[]; totalS: n
 const loop = schedule(LOOP, true)
 const morning = schedule(MORNING, false)
 const friday = schedule(FRIDAY, false)
+const travelDay = schedule(TRAVEL_DAY, false)
 
 function positionOn(
   { legs, totalS }: { legs: Leg[]; totalS: number },
@@ -157,7 +178,7 @@ const wobble = (epochS: number, salt: number): Coordinates => [
 
 function mayaFixAt(epochMs: number): LiveFix {
   const second = Math.floor(epochMs / 1000)
-  const spot = positionOn(loop, second)
+  const spot = isTravelDay() ? { at: HALL, speedMS: 0, heading: null } : positionOn(loop, second)
   const [jx, jy] = wobble(second, 1)
   return {
     deviceId: MAYA,
@@ -174,11 +195,12 @@ function mayaFixAt(epochMs: number): LiveFix {
 function alexFixAt(epochMs: number): LiveFix {
   const second = Math.floor(epochMs / 1000)
   const [jx, jy] = wobble(second, 5)
+  const [lng, lat] = isTravelDay() ? HALL_BESIDE : [4.8688, 52.3662]
   return {
     deviceId: ALEX,
     id: `${ALEX}-${second - (second % 60)}`,
-    lng: 4.8688 + jx,
-    lat: 52.3662 + jy,
+    lng: lng + jx,
+    lat: lat + jy,
     at: new Date(epochMs),
     accuracy: 24,
     speed: 0,
@@ -234,8 +256,13 @@ export function sampleLiveHistory(now = new Date()): { devices: Device[]; fixes:
   /* Friday ends back at the hotel around "yesterday evening": anchored so the
      overnight quiet is a real gap and the trail honestly starts a new line. */
   walked(friday, nowMs - 21 * 3_600_000, 4, 'f')
-  walked(morning, loopZeroMs, 3, 'm')
-  for (let t = loopZeroMs; t <= nowMs; t += FIX_STEP_S * 1000) fixes.push(mayaFixAt(t))
+  if (isTravelDay()) {
+    // The hotel, the train, the terminal — and there for the last quarter hour.
+    walked(travelDay, nowMs, 6, 't')
+  } else {
+    walked(morning, loopZeroMs, 3, 'm')
+    for (let t = loopZeroMs; t <= nowMs; t += FIX_STEP_S * 1000) fixes.push(mayaFixAt(t))
+  }
 
   // Alex has been holding the Foodhallen table for three quarters of an hour.
   for (let t = nowMs - 45 * 60_000; t <= nowMs - ALEX_LAG_MS; t += 60_000) fixes.push(alexFixAt(t))

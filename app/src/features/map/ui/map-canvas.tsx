@@ -177,10 +177,13 @@ const MapCanvas = memo(function MapCanvas({
   }, [map, theme])
 
   /* ---- keep the camera in step with the app -----------------------------
-     Only moves when the app actually asks for somewhere else; the position we
-     report back on moveend lands here again and must not start a second move. */
+     Only moves when the app asks for somewhere else; the position reported on
+     moveend lands here again and must not start a second move. `applied` is
+     the request last acted on: a move ending after a newer one must not report. */
+  const applied = useRef(view)
   useEffect(() => {
     if (!map) return
+    applied.current = view
     const pad = padding || 32
     const ms = isStill() ? 0 : view.ms == null ? 420 : view.ms
     if (view.bounds) {
@@ -222,12 +225,14 @@ const MapCanvas = memo(function MapCanvas({
     }
     const end = () => {
       setMoving(false)
+      const user = userMove.current
+      userMove.current = false
+      if (!user && viewRef.current !== applied.current) return
       const c = map.getCenter()
       oref.current(
         { center: [c.lng, c.lat], zoom: map.getZoom() },
-        userMove.current ? { user: true } : undefined,
+        user ? { user: true } : undefined,
       )
-      userMove.current = false
     }
     // A drag must not also count as a click on whatever marker was underneath.
     const dragStart = () => {

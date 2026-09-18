@@ -1290,15 +1290,21 @@ test('flying to an airport draws its gates', async ({ page }) => {
   await page.evaluate(() => {
     window.__offwegoMap?.jumpTo({ center: [4.7639, 52.3105], zoom: 14.6 })
   })
-  const gates = () =>
+  const drawn = kind => () =>
     page.evaluate(
-      () =>
+      k =>
         window.__offwegoMap
           ?.getSource('indoor')
           ?.serialize?.()
-          .data?.features?.filter(f => f.properties?.kind === 'gate').length ?? 0,
+          .data?.features?.filter(f => f.properties?.kind === k).length ?? 0,
+      kind,
     )
-  await expect.poll(gates, { timeout: 30000 }).toBeGreaterThan(0)
+  // The ground floor first: the desks are there, the gates are on the pier
+  // upstairs, and the folded floor pill is the way up.
+  await expect.poll(drawn('poi'), { timeout: 30000 }).toBeGreaterThan(0)
+  await page.getByRole('button', { name: 'Floor 0 — choose a floor' }).click()
+  await page.getByRole('button', { name: 'Floor 2', exact: true }).click()
+  await expect.poll(drawn('gate'), { timeout: 15000 }).toBeGreaterThan(0)
 })
 
 test('a flight with seats shows where everyone sits, on a drawn cabin', async ({ page }) => {

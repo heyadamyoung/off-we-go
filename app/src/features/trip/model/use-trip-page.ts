@@ -161,10 +161,8 @@ export default function useTripPage({
      card into the terminal — same camera move the airport auto-open makes. */
   const transport = useSegments(tripId, toast)
   const [segmentEditing, setSegmentEditing] = useState<null | 'new' | string>(null)
-  /* The tickets and bookings, onto the phone before anybody asks for one. Here
-     rather than in the page's render file because it is a thing done with the
-     trip's data, not a thing drawn: the case it exists for is a check-in desk
-     with no signal and the document nobody thought to open on the way there. */
+  /* The tickets and bookings, onto the phone before anybody asks: the case is
+     a check-in desk with no signal and a document nobody thought to open. */
   useOfflinePapers({ tripId, stops: ordered, segments: transport.segments })
   const [clock, setClock] = useState(() => Date.now())
   useEffect(() => {
@@ -205,17 +203,19 @@ export default function useTripPage({
     liveStop,
   })
 
-  /* Inside the terminal: zooming into an airport or its card's button opens
-     it, the level picker or zooming away closes it. */
+  // Inside the terminal, and the walk through it on the day of a flight.
   const indoor = useAirportIndoor({
     toast,
     start: latestGpsPosition,
     view: mapView,
     stops: ordered,
-    onOpen: stop => {
+    segments: transport.segments,
+    fix: progress.latestFix,
+    now: clock,
+    onOpen: (stop, focus) => {
       setFollowing(false)
       setMapView({
-        center: [stop.lng, stop.lat],
+        center: focus || [stop.lng, stop.lat],
         zoom: Math.max(viewRef.current.zoom, 16.3),
         ms: 620,
         focus: true,

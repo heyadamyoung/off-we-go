@@ -38,6 +38,12 @@ const MIRRORS = [
    failures, everywhere: never cached, never served, never a fallback. */
 export const isPartial = body => !!(body?.remark && /error|timed?\s*out/i.test(String(body.remark)))
 
+const STAGE_TAGS = '"aeroway"~"^(checkin|check-in|check_in|security_check|security)$"'
+
+/* Bumped with the query: a month-long memory would otherwise keep serving
+   a terminal fetched without the desks and filters the walk steers by. */
+const QUERY_VERSION = '2:'
+
 function queryFor(lng, lat, radius = 1500) {
   const around = `(around:${radius},${lat.toFixed(5)},${lng.toFixed(5)})`
   return (
@@ -50,6 +56,12 @@ function queryFor(lng, lat, radius = 1500) {
     `node["highway"="elevator"]${around};` +
     `node["level"]["name"]${around};` +
     `node["level"]["amenity"="toilets"]${around};` +
+    // The desks and the security filter, however the mapper spelled them:
+    // the walk through the terminal steers by them.
+    `node[${STAGE_TAGS}]${around};` +
+    `way[${STAGE_TAGS}]${around};` +
+    `node["barrier"="security_check"]${around};` +
+    `way["barrier"="security_check"]${around};` +
     `);out geom 4000;`
   )
 }
@@ -157,7 +169,7 @@ export function createIndoorCache({
 
   return {
     async get(lng, lat) {
-      const key = lng.toFixed(3) + ',' + lat.toFixed(3)
+      const key = QUERY_VERSION + lng.toFixed(3) + ',' + lat.toFixed(3)
       const kept = done.get(key)
       if (kept && clock().getTime() - kept.at < ttlMs) return kept.body
       let flight = pending.get(key)

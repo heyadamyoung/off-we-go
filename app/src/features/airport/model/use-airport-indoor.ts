@@ -13,30 +13,45 @@ import {
   stepMetres,
   walkGraph,
 } from '../../../airport-route-core'
+import { sameAirport, walkStop } from '../../../airport-walk-core'
+import type { Segment } from '../../../segments-core'
 import { track } from '../../../shared/lib/telemetry'
 import { indoorForStop } from '../api/indoor'
+import useAirportWalk from './use-airport-walk'
 import type { IndoorGate } from '../../map'
-import type { Coordinates, Stop, Toast } from '../../../shared/model/types'
+import type { Coordinates, LiveFix, Stop, Toast } from '../../../shared/model/types'
 
-/* Terminal-map mode: which airport is open, which floor is showing, which gate
-   is being walked to, and the slice of features the map should draw right now.
-   Its own state rather than a facet of selection, so closing the stop's card
-   does not yank the floor plan out from under someone reading it. */
+/* Terminal-map mode: which airport is open, which floor is showing, where
+   the line on the map goes, and the slice of features the map should draw
+   right now. The camera decides whether a terminal is open — zoomed into an
+   airport, its inside is there; zoomed away, it folds — and nothing else
+   closes it: a floor plan is not a dialog. On the day of a flight the walk
+   through the terminal opens it too, and moves the line from the desks to
+   security to the gate as the traveller does. */
 export default function useAirportIndoor({
   toast,
   onOpen,
   start,
   view,
   stops,
+  segments,
+  fix,
+  now,
 }: {
   toast: Toast
-  /** the page's chance to move the camera into the terminal */
-  onOpen?: (stop: Stop) => void
-  /** the freshest live GPS fix, if any — where the walk to a gate begins */
+  /** the page's chance to move the camera: into the terminal, or onto the traveller in it */
+  onOpen?: (stop: Stop, focus?: Coordinates) => void
+  /** the freshest live GPS fix, if any — where a walk begins */
   start?: Coordinates | null
   /** where the camera is, so zooming into an airport opens its inside */
   view?: { center: Coordinates; zoom: number } | null
   stops?: Stop[]
+  /** the trip's legs, for the walk on the day of a flight */
+  segments?: Segment[]
+  /** the freshest trustworthy fix, for the walk's place in the terminal */
+  fix?: LiveFix | null
+  /** the page's clock; without one there is no walk */
+  now?: number
 }) {
   const [stop, setStop] = useState<Stop | null>(null)
   const [features, setFeatures] = useState<IndoorFeature[] | null>(null)
@@ -47,60 +62,54 @@ export default function useAirportIndoor({
   toastRef.current = toast
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
-  const autoRef = useRef<string | null>(null) // opened by the camera, not a click
-  const dismissedRef = useRef<string | null>(null) // closed by hand; stay closed a while
+  /* Airports the camera should stop asking for: an unmapped one for good, a
+     failed load for a minute — or a terminal that will not load is asked for
+     again the moment it closes, and toasts every time. */
+  const skipRef = useRef(new Map<string, number>())
+  // Whether the line is one somebody tapped for, as against the walk's own.
+  const tappedRef = useRef(false)
 
-  const open = useCallback((next: Stop) => {
-    autoRef.current = null
-    onOpenRef.current?.(next)
+  const open = useCallback((next: Stop, focus?: Coordinates) => {
+    onOpenRef.current?.(next, focus)
     setStop(next)
   }, [])
-  const clearRoute = useCallback(() => setTarget(null), [])
-  const closeAll = useCallback(() => {
-    setStop(current => {
-      if (current) dismissedRef.current = current.id
-      return null
-    })
-    setFeatures(null)
-    setTarget(null)
-  }, [])
-  // Escape steps back the way it came: first the route, then the terminal.
-  const close = useCallback(() => {
-    setTarget(current => {
-      if (!current) {
-        setStop(s => {
-          if (s) dismissedRef.current = s.id
-          return null
-        })
-        setFeatures(null)
-      }
-      return null
-    })
-  }, [])
 
-  /* The camera is the other way in: zoom into an airport and its inside
-     appears, loading while you are still approaching; zoom away and an
-     auto-opened terminal folds itself up again. */
+  const walk = useAirportWalk({
+    segments,
+    fix,
+    now: now ?? 0,
+    stops,
+    stop,
+    features,
+    openStop: open,
+  })
+
+  /* The camera is the way in and the way out: zoom into an airport and its
+     inside appears, loading while you are still approaching; zoom away and
+     it folds — unless a line is up, which somebody is following, or the walk
+     is on, which wants its floor plan whatever the camera does. The walk's
+     airport counts as a stop, so a flight from one the itinerary never named
+     opens too. */
+  const candidates = useMemo(
+    () => (walk.leg ? [...(stops || []), walkStop(walk.leg, stops)] : stops || []),
+    [stops, walk.leg],
+  )
   useEffect(() => {
+    const clock = Date.now()
     const move = autoIndoorMove({
       view: view || null,
-      stops,
+      stops: candidates.filter(s => (skipRef.current.get(s.id) ?? 0) < clock),
       active: stop,
-      auto: autoRef.current,
-      dismissed: dismissedRef.current,
       routing: !!target,
+      keep: !!walk.stage && sameAirport(stop, walk.leg),
     })
     if (!move) return
-    if ('reset' in move) {
-      dismissedRef.current = null
-    } else if ('open' in move) {
-      autoRef.current = move.open.id
-      setStop(move.open)
-    } else {
+    if ('open' in move) setStop(move.open)
+    else {
       setStop(null)
       setFeatures(null)
     }
-  }, [view, stops, stop, target])
+  }, [view, candidates, stop, target, walk.stage, walk.leg])
 
   /* The request outlives this effect on purpose: a remount mid-load rides the
      same shared flight, so only the state updates are guarded, not the fetch. */
@@ -118,6 +127,7 @@ export default function useAirportIndoor({
     indoorForStop(stop)
       .then(found => {
         if (!found.length) {
+          skipRef.current.set(stop.id, Number.POSITIVE_INFINITY)
           toastRef.current('No one has mapped the inside of ' + stop.name + ' yet', 'error')
           if (!gone) setStop(null)
           return
@@ -127,6 +137,7 @@ export default function useAirportIndoor({
         setLevel(defaultLevel(levelsOf(found)))
       })
       .catch(() => {
+        skipRef.current.set(stop.id, Date.now() + 60_000)
         toastRef.current(
           'The terminal map for ' + stop.name + ' did not load — try again in a moment',
           'error',
@@ -143,38 +154,61 @@ export default function useAirportIndoor({
 
   const graph = useMemo(() => (features ? walkGraph(features) : null), [features])
 
-  // A GPS fix from inside (or near) the airport is where the walk begins;
-  // one from the hotel across town is not, so the pin stands in.
+  /* A GPS fix from inside (or near) the airport is where the walk begins;
+     one from the hotel across town is not, so the pin stands in. Keyed by
+     content: the fix is a fresh array on every render of the page, and a
+     route re-planned per render was a floor picker snapping back to the
+     start floor whenever anything on the screen changed. */
+  const startKey = start ? `${start[0]},${start[1]}` : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: startKey carries start's content
   const origin = useMemo(() => {
     if (!stop) return null
     const pin: Coordinates = [stop.lng, stop.lat]
     return start && stepMetres(start, pin) < 3000 ? start : pin
-  }, [stop, start])
+  }, [stop, startKey])
 
   const route = useMemo(
     () => (graph && target && origin ? planGateRoute(graph, origin, target) : null),
     [graph, target, origin],
   )
 
-  const toGate = useCallback((gate: IndoorGate) => setTarget(gate), [])
+  /* The walk's current place is where the line goes; a tapped gate takes
+     over until cleared, and clearing hands the line back to the walk. */
+  useEffect(() => {
+    tappedRef.current = false
+    setTarget(walk.target)
+  }, [walk.target])
+  const walkTargetRef = useRef(walk.target)
+  walkTargetRef.current = walk.target
+  const toGate = useCallback((gate: IndoorGate) => {
+    tappedRef.current = true
+    setTarget(gate)
+  }, [])
+  const clearRoute = useCallback(() => {
+    tappedRef.current = false
+    setTarget(walkTargetRef.current)
+  }, [])
 
-  /* A gate with no mapped path to it is worth saying out loud, once; a routed
-     one starts the story on the floor the walk begins. */
+  /* A gate with no mapped path to it is worth saying out loud, once, to the
+     person who asked; the walk keeps its words and waits. A routed one
+     starts the story on the floor the walk begins — once per destination,
+     not every time the traveller moves and the line is drawn again. */
+  const shownFor = useRef<IndoorGate | null>(null)
   useEffect(() => {
     if (!target || !graph) return
     if (!route) {
-      toastRef.current('The walking paths to that gate are not mapped yet', 'error')
+      if (tappedRef.current) {
+        toastRef.current('The walking paths to that gate are not mapped yet', 'error')
+      }
+      tappedRef.current = false
       setTarget(null)
-    } else if (route.steps.length) {
+    } else if (route.steps.length && shownFor.current !== target) {
+      shownFor.current = target
       setLevel(route.steps[0].level)
     }
   }, [target, graph, route])
 
   const levels = useMemo(() => levelsOf(features || []), [features])
-  const hasGates = useMemo(
-    () => (features || []).some(f => f.properties.kind === 'gate'),
-    [features],
-  )
   const mapData = useMemo(() => {
     if (!stop || !features) return null
     const fc = onLevel(features, level)
@@ -187,8 +221,6 @@ export default function useAirportIndoor({
     active: !!stop,
     stop,
     open,
-    close,
-    closeAll,
     level,
     setLevel,
     levels,
@@ -198,7 +230,7 @@ export default function useAirportIndoor({
     toGate,
     clearRoute,
     routeText,
-    hasGates,
+    walk,
   }
 }
 

@@ -45,42 +45,34 @@ export function isAirportStop(stop: Stop | null | undefined) {
 
 /* Zooming into an airport is asking to see inside it; no button needed. The
    thresholds are apart on purpose — open past one zoom, close below a lower
-   one — so the terminal does not flicker at the boundary. Only what opened by
-   itself closes by itself, never while a gate route is up; and a terminal
-   dismissed by hand stays dismissed until the camera has properly left. */
+   one — so the terminal does not flicker at the boundary. A terminal closes
+   only the way it opened, by the camera leaving, and never while a line to
+   somewhere in it is up or a walk through it is on. */
 export function autoIndoorMove({
   view,
   stops,
   active,
-  auto,
-  dismissed,
   routing,
+  keep = false,
 }: {
   view: { center: Coordinates; zoom: number } | null
   stops?: Stop[]
   /** the stop whose terminal is open, if any */
   active: Stop | null
-  /** the stop id that auto-open chose, if it did */
-  auto: string | null
-  dismissed: string | null
   routing: boolean
-}): { open: Stop } | { close: true } | { reset: true } | null {
+  /** the walk on the day of a flight wants this terminal, wherever the camera is */
+  keep?: boolean
+}): { open: Stop } | { close: true } | null {
   if (!view) return null
   if (!active) {
-    if (view.zoom >= 14.6) {
-      const stop = (stops || []).find(
-        s => isAirportStop(s) && stepMetres(view.center, [s.lng, s.lat]) < 1800,
-      )
-      if (stop && dismissed !== stop.id) return { open: stop }
-    }
-    if (view.zoom < 13.8) return { reset: true }
-    return null
+    if (view.zoom < 14.6) return null
+    const stop = (stops || []).find(
+      s => isAirportStop(s) && stepMetres(view.center, [s.lng, s.lat]) < 1800,
+    )
+    return stop ? { open: stop } : null
   }
-  if (
-    auto === active.id &&
-    !routing &&
-    (view.zoom < 13.8 || stepMetres(view.center, [active.lng, active.lat]) > 4000)
-  ) {
+  if (routing || keep) return null
+  if (view.zoom < 13.8 || stepMetres(view.center, [active.lng, active.lat]) > 4000) {
     return { close: true }
   }
   return null
@@ -90,6 +82,8 @@ export function autoIndoorMove({
    converter library. The radius takes in the whole airfield from a pin dropped
    anywhere on it; the trailing count caps a runaway hub at something a phone
    can hold. */
+const STAGE_TAGS = '"aeroway"~"^(checkin|check-in|check_in|security_check|security)$"'
+
 export function overpassQueryFor(lng: number, lat: number, radius = 1500) {
   const around = `(around:${radius},${lat.toFixed(5)},${lng.toFixed(5)})`
   return (
@@ -102,6 +96,12 @@ export function overpassQueryFor(lng: number, lat: number, radius = 1500) {
     `node["highway"="elevator"]${around};` +
     `node["level"]["name"]${around};` +
     `node["level"]["amenity"="toilets"]${around};` +
+    // The two places a departure passes on its way to the gate — the desks
+    // and the security filter — however the mapper spelled them.
+    `node[${STAGE_TAGS}]${around};` +
+    `way[${STAGE_TAGS}]${around};` +
+    `node["barrier"="security_check"]${around};` +
+    `way["barrier"="security_check"]${around};` +
     `);out geom 4000;`
   )
 }
@@ -145,10 +145,25 @@ function kindOf(t: Record<string, string>, type: string) {
   return null
 }
 
-/* Which colour a landmark wears, and which ones matter enough to show. */
+/* Which colour a landmark wears, and which ones matter enough to show. The
+   desks and the security filter come first: the walk through the terminal
+   steers by them, and a mapper writes them a dozen ways. */
+const CHECKIN_TAG = /^(checkin|check-in|check_in)$/
+const SECURITY_TAG = /^(security_check|security)$/
 export function poiCat(t: Record<string, string>) {
   if (t.amenity === 'toilets') return 'wc'
   if (t.highway === 'elevator') return 'lift'
+  if (
+    CHECKIN_TAG.test(t.aeroway || '') ||
+    /\bcheck[\s_-]?in\b|\bbag[\s-]?drop\b/i.test(t.name || '')
+  )
+    return 'checkin'
+  if (
+    SECURITY_TAG.test(t.aeroway || '') ||
+    t.barrier === 'security_check' ||
+    /\bsecurity\b/i.test(t.name || '')
+  )
+    return 'security'
   if (/^(restaurant|cafe|fast_food|bar|pub|food_court|ice_cream)$/.test(t.amenity || ''))
     return 'food'
   if (t.shop) return 'shop'
@@ -167,18 +182,30 @@ const centroid = (coords: Position[]) =>
     ),
   )
 
+/* What a landmark is called on the map when the mapper left it nameless:
+   the desk row by its numbers, the filter by what it is. */
+function nameOf(t: Record<string, string>, kind: string | null, cat: string) {
+  if (t.name) return t.name
+  if (cat === 'checkin') return t.ref ? `Check-in ${t.ref}` : 'Check-in'
+  if (cat === 'security') return 'Security'
+  return t.ref || (kind === 'lift' ? 'Lift' : t.amenity === 'toilets' ? 'WC' : '')
+}
+
 export function indoorFeatures(json: OverpassResponse | null | undefined): IndoorFeature[] {
   const out: IndoorFeature[] = []
   for (const el of json?.elements || []) {
     const t = el.tags || {}
+    const cat = poiCat(t)
+    // A desk row or a security filter is a landmark however it was drawn.
+    const stage = cat === 'checkin' || cat === 'security'
     const kind = kindOf(t, el.type)
-    if (!kind) continue
+    if (!kind && !stage) continue
     const properties: IndoorProperties = {
-      kind,
-      name: t.name || t.ref || (kind === 'lift' ? 'Lift' : t.amenity === 'toilets' ? 'WC' : ''),
+      kind: kind || 'poi',
+      name: nameOf(t, kind, cat),
       ref: t.ref || t.name || '',
       levels: parseLevels(t.level),
-      cat: poiCat(t),
+      cat,
       stair: t.highway === 'steps',
     }
     if (el.type === 'node') {
@@ -205,17 +232,26 @@ export function indoorFeatures(json: OverpassResponse | null | undefined): Indoo
         properties,
         geometry: { type: 'Point', coordinates: centroid(coords) },
       })
-    } else if (closed && kind !== 'wall' && kind !== 'path') {
+    } else if (kind && closed && kind !== 'wall' && kind !== 'path') {
       out.push({
         type: 'Feature',
         properties,
         geometry: { type: 'Polygon', coordinates: [coords] },
       })
-    } else {
+    } else if (kind) {
       out.push({
         type: 'Feature',
         properties,
         geometry: { type: 'LineString', coordinates: coords },
+      })
+    }
+    // Drawn as an area or a line, the desks are still one point a walk can
+    // be planned to.
+    if (stage) {
+      out.push({
+        type: 'Feature',
+        properties: { ...properties, kind: 'poi' },
+        geometry: { type: 'Point', coordinates: centroid(coords) },
       })
     }
   }
