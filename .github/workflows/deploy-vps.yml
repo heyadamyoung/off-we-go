@@ -313,6 +313,20 @@ jobs:
             echo "IMAGE_TAG=$GITHUB_SHA"
           } > app/deploy/release.env
 
+      # The pipeline's own token, good for this job and no longer: the box
+      # signs in with it for the moment of the pull, signs out, and destroys
+      # the copy before anything else runs (see deploy/github-deploy.sh).
+      - name: Stage the registry credential
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          umask 077
+          {
+            echo "REGISTRY_USER=$REGISTRY_USER"
+            echo "REGISTRY_TOKEN=$REGISTRY_TOKEN"
+          } > app/deploy/registry.env
+
       - name: Stream release to the VPS
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
