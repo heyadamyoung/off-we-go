@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cover, deal, locationsOf } from '../scripts/shard-tests.mjs'
+import { cover, deal, locationsOf, WEIGHTS, weightOf } from '../scripts/shard-tests.mjs'
 
 /* The deal that balances the browser shards: every location to exactly one
    shard, in turn, so the heavy tests at the end of the list are spread rather
@@ -15,6 +15,32 @@ test('every location is dealt to exactly one shard, in turn', () => {
     ['b:1', 'c:3'],
   ])
   assert.deepEqual(shards.flat().sort(), [...locations].sort())
+})
+
+test('a weighed deal gives the heaviest first to whoever has the least, and evens out', () => {
+  const seconds = { 'slow.spec.js:1': 9, 'slow.spec.js:2': 8, 'quick.spec.js:1': 1 }
+  const weigh = location => seconds[location] ?? 2
+  const locations = [
+    'quick.spec.js:1',
+    'mid.spec.js:1',
+    'slow.spec.js:1',
+    'mid.spec.js:2',
+    'slow.spec.js:2',
+  ]
+  const shards = [1, 2].map(index => deal(locations, 2, index, weigh))
+  // 9 + 2 against 8 + 2 + 1: as even as these get.
+  assert.deepEqual(shards, [
+    ['slow.spec.js:1', 'mid.spec.js:2'],
+    ['slow.spec.js:2', 'mid.spec.js:1', 'quick.spec.js:1'],
+  ])
+  assert.deepEqual(shards.flat().sort(), [...locations].sort())
+})
+
+test('the weights are by file, and a file not named is an ordinary one', () => {
+  assert.equal(weightOf('tests/navigation.spec.js:63'), WEIGHTS['navigation.spec.js'])
+  assert.equal(weightOf('tests/trip.spec.js:1766'), WEIGHTS['trip.spec.js'])
+  assert.equal(weightOf('tests/brand-new.spec.js:5'), 3)
+  for (const weight of Object.values(WEIGHTS)) assert.ok(weight > 0 && weight < 10)
 })
 
 test('the punctual shards cover a late one between them, in fixed shares by index', () => {
