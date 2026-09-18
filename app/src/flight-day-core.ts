@@ -207,7 +207,7 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
     })
   }
   if (flight?.baggageBelt)
-    rows.push({ key: 'belt', label: `Belt ${flight.baggageBelt}`, at: null, done: down })
+    rows.push({ key: 'belt', label: `Bags on belt ${flight.baggageBelt}`, at: null, done: down })
 
   let nowFound = false
   return rows.map(row => {
@@ -300,7 +300,9 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
         label: 'Security',
         value: queue == null ? null : queue > 0 ? `${queue} min queue` : 'No queue',
       },
-      { key: 'belt', label: 'Belt', value: flight?.baggageBelt || null },
+      /* Said in full: the board's word alone, over a number, told nobody what
+         it was. It is where the bags come out at the far end. */
+      { key: 'belt', label: 'Bag belt', value: flight?.baggageBelt || null },
     ]
     if (flight?.preClearance)
       columns.push({ key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' })
