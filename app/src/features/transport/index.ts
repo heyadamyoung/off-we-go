@@ -1,4 +1,5 @@
 export { default as useSegments } from './model/use-segments'
+export { default as usePlanePosition } from './model/use-plane-position'
 export { default as SegmentChain } from './ui/segment-chain'
 export { default as SegmentCard } from './ui/segment-card'
 export { default as SegmentEditor } from './ui/segment-editor'

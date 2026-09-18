@@ -43,6 +43,7 @@ export function createFlightSources({
     cache,
     adsb,
     providerFor,
+    now,
 
     /** Every airport with a board, and whether its board can be asked. */
     airports() {
@@ -68,6 +69,34 @@ export function createFlightSources({
         `${provider.airportCode}:${direction}:${day}`,
         () => (direction === 'arrival' ? provider.arrivals(date) : provider.departures(date)),
         { source: provider.source },
+      )
+    },
+
+    /**
+     * The security queue at an airport whose board publishes one, per
+     * terminal in minutes, through the same cache as the boards. null for an
+     * airport that has no board or whose board does not say.
+     */
+    async queues(code) {
+      const provider = providerFor(code)
+      if (!provider?.securityQueues) return null
+      return cache.get(`${provider.airportCode}:queues`, () => provider.securityQueues(), {
+        source: provider.source,
+      })
+    },
+
+    /**
+     * Where an aircraft is, by the callsign its airline files, through the
+     * cache so every phone following one flight shares one question a minute.
+     * @returns {Promise<{value: object|null, fetchedAt: number|null, stale: boolean, error: Error|null}>}
+     */
+    async position(callsign) {
+      return cache.get(
+        `adsb:${String(callsign || '').toUpperCase()}`,
+        () => adsb.byCallsign(callsign),
+        {
+          source: adsb.source,
+        },
       )
     },
 

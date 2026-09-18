@@ -1,16 +1,24 @@
 /* The boards, and what they said about a leg, over HTTP.
  *
- * Four routes. The airports the app has a board for, with each source's
+ * Five routes. The airports the app has a board for, with each source's
  * health; a whole board, normalized, for a screen that wants to show one; a
  * single flight looked up on a board, for the assistant and for a leg being
- * typed in; and the snapshot and event trail behind a leg on a trip, which
- * is where "the airport says" on the card comes from. All behind a login,
- * like every other /api route, and the trip one behind membership. */
+ * typed in; the snapshot and event trail behind a leg on a trip, which is
+ * where "the airport says" on the card comes from; and where the aircraft
+ * is, for the map, while the leg is in the air. All behind a login, like
+ * every other /api route, and the trip ones behind membership. */
 
-import { matchFlight, normalizeFlightNumber } from './model.js'
+import { flightNumberOf, matchFlight, normalizeFlightNumber } from './model.js'
+import { callsignFor } from './providers/adsb.js'
 
 const BOARDS = { departures: 'departure', arrivals: 'arrival' }
 const DAY = /^\d{4}-\d\d-\d\d$/
+
+/* When the sky is worth asking about a leg: from a little before it is due
+   to leave — an early pushback is still a flight — to a while after it was
+   due to land, for the late one. Outside that, nobody is asked. */
+export const POSITION_BEFORE_MS = 30 * 60_000
+export const POSITION_AFTER_MS = 2 * 60 * 60_000
 
 export function registerFlightRoutes(app, { repository, sources, authenticated }) {
   app.get('/api/flights/airports', async (request, reply) => {
@@ -95,5 +103,29 @@ export function registerFlightRoutes(app, { repository, sources, authenticated }
     )
     if (!found) return reply.code(404).send({ error: 'That segment was not found' })
     return found
+  })
+
+  app.get('/api/trips/:tripId/segments/:segmentId/position', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const segments = await repository.listSegments(user, request.params.tripId)
+    const leg = (segments || []).find(one => one.id === request.params.segmentId)
+    if (!leg) return reply.code(404).send({ error: 'That segment was not found' })
+    const callsign = callsignFor(flightNumberOf(leg))
+    if (!callsign) return { callsign: null, aircraft: null, reason: 'no-callsign' }
+    const now = typeof sources.now === 'function' ? sources.now() : Date.now()
+    const departs = new Date(leg.departsAt).getTime()
+    const arrives = leg.arrivesAt ? new Date(leg.arrivesAt).getTime() : departs
+    if (!(now >= departs - POSITION_BEFORE_MS && now <= arrives + POSITION_AFTER_MS)) {
+      return { callsign, aircraft: null, reason: 'not-flying' }
+    }
+    const heard = await sources.position(callsign)
+    return {
+      callsign,
+      aircraft: heard.value || null,
+      fetchedAt: heard.fetchedAt ? new Date(heard.fetchedAt).toISOString() : null,
+      stale: heard.stale,
+      reason: heard.value ? null : heard.error ? 'unavailable' : 'not-heard',
+    }
   })
 }

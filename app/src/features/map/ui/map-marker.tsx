@@ -176,4 +176,4 @@ function YouBeam({
   )
 }
 
-export { LiveMarker, MapMarker, YouBeam }
+export { LiveMarker, MapMarker, YouBeam, useMapBearing }

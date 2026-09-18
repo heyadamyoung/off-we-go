@@ -67,6 +67,38 @@ export interface Segment {
   statusNote?: string | null
   notes?: string | null
   documents?: SegmentDocument[]
+  /** the airport board's last word about this leg, from the server's watch */
+  flight?: FlightOnLeg | null
+}
+
+/* What an airport's board last said about a leg, projected by the server
+   (server/src/flights/on-leg.js). Times are UTC instants; the words are the
+   flights module's vocabulary with the board's own kept in statusText. */
+export interface FlightOnLeg {
+  status: string
+  statusText?: string | null
+  boardingStatus?: 'go-to-gate' | 'boarding' | 'final-call' | 'closed' | string | null
+  gate?: string | null
+  terminal?: string | null
+  baggageBelt?: string | null
+  scheduledDeparture?: string | null
+  estimatedDeparture?: string | null
+  actualDeparture?: string | null
+  scheduledArrival?: string | null
+  estimatedArrival?: string | null
+  actualArrival?: string | null
+  checkinZone?: string | null
+  checkinDesks?: string | null
+  walkMinutes?: number | null
+  goToGateTime?: string | null
+  securityWaitMinutes?: number | null
+  stand?: string | null
+  /** US pre-clearance before the gate, where the board says so */
+  preClearance?: boolean | null
+  aircraft?: string | null
+  sources?: string[]
+  lastUpdated?: string | null
+  fetchedAt?: string | null
 }
 
 /* Mirrors server/src/segments.js OFFSETS. */
@@ -173,14 +205,25 @@ export interface Traveller {
 /* The make-it meter: each traveller's live position against the departure's
    hardest deadline. Honest arithmetic, stated plainly: walking pace inside
    2.5 km, driving pace beyond it, judged against doors (or boarding when
-   doors is unset). Only possible because the app knows where everyone is. */
-export function makeIt(segment: Segment, travellers: Traveller[], now: number) {
+   doors is unset). Only possible because the app knows where everyone is.
+
+   The walk from the door to the gate, when the airport's board says how long
+   it is, counts against everybody — the one already at the airport too, who
+   is at the building and not at the gate. Whoever is still away gets a
+   leave-by: the moment after which the arithmetic stops working. */
+export function makeIt(
+  segment: Segment,
+  travellers: Traveller[],
+  now: number,
+  { walkMinutes = 0 }: { walkMinutes?: number | null } = {},
+) {
   if (segment.fromLng == null || segment.fromLat == null) return null
   const deadlines = segment.deadlines || {}
   const hard = deadlines.doorsAt || deadlines.boardingAt || segment.departsAt
   const hardAt = new Date(hard).getTime()
   if (!Number.isFinite(hardAt)) return null
   const minutesLeft = Math.round((hardAt - now) / 60_000)
+  const walk = Math.max(0, Math.round(walkMinutes || 0))
 
   const people = travellers.map(person => {
     const metres = metresBetween(
@@ -193,10 +236,12 @@ export function makeIt(segment: Segment, travellers: Traveller[], now: number) {
         : metres <= 2500
           ? Math.ceil(metres / 76) // 4.6 km/h on foot
           : Math.ceil(metres / 583) + 8 // 35 km/h door to door, plus parking
-    const spare = minutesLeft - minutesAway
+    const spare = minutesLeft - minutesAway - walk
     const state: 'here' | 'ok' | 'tight' | 'late' =
       minutesAway === 0 ? 'here' : spare > 20 ? 'ok' : spare >= 0 ? 'tight' : 'late'
-    return { name: person.name, minutesAway, state }
+    const leaveBy =
+      minutesAway === 0 ? null : new Date(hardAt - (minutesAway + walk) * 60_000).toISOString()
+    return { name: person.name, minutesAway, state, leaveBy }
   })
 
   const worst = people.some(p => p.state === 'late')
@@ -207,6 +252,7 @@ export function makeIt(segment: Segment, travellers: Traveller[], now: number) {
   return {
     minutesLeft,
     hardLabel: deadlines.doorsAt ? 'doors' : 'boarding',
+    walkMinutes: walk,
     people,
     verdict: worst,
   }

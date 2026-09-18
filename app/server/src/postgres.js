@@ -9,6 +9,7 @@ import { pinAfter, stopForPhoto } from './stop-placement.js'
 import { clockOrNull } from './stop-time.js'
 import { rescheduled } from './segments.js'
 import { visitOf } from './stop-visits.js'
+import { flightOnLeg } from './flights/on-leg.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -1132,8 +1133,12 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
        and ride the same deletion queue as photos when they go. */
     async listSegments(user, tripId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null
+      /* The board's last word rides with the leg (flights/on-leg.js), so the
+         day face, the capsule and the offline pack read it from the one
+         payload they already have. */
       const result = await pool.query(
-        `select s.*, coalesce(d.documents, '[]'::json) as documents
+        `select s.*, coalesce(d.documents, '[]'::json) as documents,
+          f.info as flight_info, f.fetched_at as flight_fetched_at
         from segments s
         left join lateral (
           select json_agg(json_build_object(
@@ -1143,10 +1148,17 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           ) order by sd.created_at) as documents
           from segment_documents sd where sd.segment_id = s.id
         ) d on true
+        left join flight_snapshots f on f.segment_id = s.id
         where s.trip_id = $1 order by s.departs_at`,
         [tripId],
       )
-      return result.rows.map(segmentRow)
+      return result.rows.map(row => ({
+        ...segmentRow(row),
+        flight: flightOnLeg(
+          row.flight_info,
+          row.flight_fetched_at ? new Date(row.flight_fetched_at).toISOString() : null,
+        ),
+      }))
     },
     async createSegment(user, tripId, input) {
       if (!(await this.canEditTrip(user.id, tripId))) return null

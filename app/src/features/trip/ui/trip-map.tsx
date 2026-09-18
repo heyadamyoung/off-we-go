@@ -21,7 +21,7 @@ export default function TripMap({
     mapTheme, sun, mapView, onMapView, mapPadding, routeDraft, track, liveStops, photos,
     markers, trail, trailFaded, selected, pickStop, openViewer, liveStop, editing, placing,
     onMapClicked, onStopMove, places, pickPlace, attractions, setAttractionCard, indoor,
-    streetNames,
+    streetNames, plane,
   } = page
   /* The beam rides this device's own reporting phone when it has one on the
      map still talking; otherwise a plain compass dot at the browser's fix.
@@ -44,6 +44,7 @@ export default function TripMap({
       stops={liveStops}
       photos={photos}
       markers={beamed}
+      plane={plane}
       you={
         compass.on && !selfLive && compass.at ? { at: compass.at, facing: compass.facing } : null
       }

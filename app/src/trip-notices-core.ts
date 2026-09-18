@@ -27,14 +27,18 @@ export interface NoticePhoto {
   when?: string | null
 }
 
-export type NoticeKind = 'arrived' | 'landed' | 'photos'
+export type NoticeKind = 'arrived' | 'landed' | 'photos' | 'flight'
 
-/* A journey, for the one thing a notice needs to know about one: where it was
-   going. The far end is the news — nobody at home is waiting to hear that a
-   plane left. */
+/* A journey, for what a notice needs to know about one: where it was going,
+   and what the airport's board last said about it. The far end is the news
+   — nobody at home is waiting to hear that a plane left — unless the airport
+   said so itself, with the time and the belt, which is better news. */
 export interface NoticeSegment {
   id: string
   toName?: string | null
+  /** the board's last sentence, written by the server's flight watch */
+  statusNote?: string | null
+  flight?: { status?: string | null } | null
 }
 
 export interface Notice {
@@ -62,6 +66,10 @@ export interface Seen {
      means none had, absent means nobody was keeping track, and treating the
      second as the first turns the update itself into the news. */
   landed?: string[]
+  /** What each leg's board had said, by leg, the last time this person looked.
+      Absent on a mark written before the airports were listened to, for the
+      same reason landings can be. */
+  words?: Record<string, string>
 }
 
 export interface NoticeInput<S extends NoticeStop, P extends NoticePhoto> {
@@ -84,16 +92,33 @@ const takenAt = (photo: NoticePhoto): number => {
   return Number.isFinite(own) ? own : 0
 }
 
+const wordsOf = (segments: readonly NoticeSegment[]): Record<string, string> =>
+  Object.fromEntries(
+    segments
+      .filter(leg => typeof leg.statusNote === 'string' && leg.statusNote.trim())
+      .map(leg => [leg.id, (leg.statusNote as string).trim()]),
+  )
+
 export function seenNow<S extends NoticeStop, P extends NoticePhoto>({
   photos = [],
   doneStopIds = [],
+  segments = [],
   landedSegmentIds = [],
 }: NoticeInput<S, P>): Seen {
   return {
     done: [...doneStopIds],
     photosTo: photos.reduce((newest, photo) => Math.max(newest, takenAt(photo)), 0),
     landed: [...landedSegmentIds],
+    words: wordsOf(segments),
   }
+}
+
+/* Stable for the same sentence, so a list can be keyed by it and a phone
+   that has buzzed for it once does not buzz again. */
+const hashOf = (text: string): string => {
+  let hash = 0
+  for (const ch of text) hash = (hash * 31 + ch.charCodeAt(0)) | 0
+  return (hash >>> 0).toString(36)
 }
 
 export interface NoticeLimits {
@@ -145,8 +170,34 @@ export function noticesSince<S extends NoticeStop, P extends NoticePhoto>(
      announced this once: otherwise the update itself becomes the news, and
      every follower is told about every flight of the whole trip the first time
      they open it. */
+  /* What the airport said since, in its own sentence: "KL 677 has landed at
+     06:10. Dublin Airport, 06:12." News to everybody, the traveller included
+     — a gate that moved is not their own life reported back to them. A mark
+     with no record of words makes no claim, and announces nothing this once. */
+  const words: Notice[] = (seen.words ? segments : [])
+    .filter(leg => {
+      const note = leg.statusNote?.trim()
+      return !!note && seen.words?.[leg.id] !== note
+    })
+    .map(leg => ({
+      id: `flight:${leg.id}:${hashOf(leg.statusNote as string)}`,
+      kind: 'flight' as const,
+      title: (leg.statusNote as string).trim(),
+      segmentId: leg.id,
+    }))
+  /* The board's landing outranks the trail's: it has the time and the belt.
+     One landing, said once, when both notice it at the same look. */
+  const landedByBoard = new Set(
+    words
+      .map(word => segments.find(leg => leg.id === word.segmentId))
+      .filter(leg => leg?.flight?.status && ['landed', 'arrived'].includes(leg.flight.status))
+      .map(leg => (leg as NoticeSegment).id),
+  )
+
   const landings: Notice[] = (wantArrivals && seen.landed ? segments : [])
-    .filter(leg => nowLanded.has(leg.id) && !seen.landed?.includes(leg.id))
+    .filter(
+      leg => nowLanded.has(leg.id) && !seen.landed?.includes(leg.id) && !landedByBoard.has(leg.id),
+    )
     .map(leg => ({
       id: `landed:${leg.id}`,
       kind: 'landed' as const,
@@ -188,9 +239,11 @@ export function noticesSince<S extends NoticeStop, P extends NoticePhoto>(
     }
   })
 
-  /* Landing first of all: a family who have been watching a plane cross an
-     ocean are not reading past it. Then a place, because somebody reaching the
-     lighthouse is bigger news than the pictures they took when they got there
-     — and the pictures are usually of the place anyway. */
-  return [...landings, ...arrivals, ...pictures]
+  /* The airport first of all — a cancellation, a gate, a landing with its
+     belt — then a landing the trail noticed: a family who have been watching
+     a plane cross an ocean are not reading past it. Then a place, because
+     somebody reaching the lighthouse is bigger news than the pictures they
+     took when they got there — and the pictures are usually of the place
+     anyway. */
+  return [...words, ...landings, ...arrivals, ...pictures]
 }

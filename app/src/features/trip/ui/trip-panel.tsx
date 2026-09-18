@@ -46,6 +46,8 @@ interface PanelProps {
   chat?: ChatProps
   /** the getting-there chain: the Travel view is its home */
   transport?: {
+    /** the trip the legs are on, for the airport's trail behind a ticket */
+    tripId?: string
     segments: Segment[]
     loadFailed?: boolean
     now: number

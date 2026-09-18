@@ -922,12 +922,30 @@
 .ncnrow b { font-size: 12.5px; font-weight: 700 }
 .ncndot { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--c-muted) }
 .ncndot.on { background: var(--c-accent-bright); box-shadow: 0 0 0 3px var(--c-accent-soft) }
+/* The live leg on a travel day, leading the card: the ticket's headline and
+   its columns in a line, one tap from the whole ticket on the Travel tab. */
+.ncleg { display: flex; flex-direction: column; gap: 6px }
+.ncleg .ncwhen { font-size: 12px }
+.ncleg .nclegline { font-size: 12px; font-weight: 600; color: var(--c-ink); white-space: normal }
+.ncleg[data-tone="tight"] .nclegline, .ncleg[data-tone="late"] .nclegline { color: var(--c-accent-bright) }
+.ncleg[data-tone="done"] .ncwhen { background: var(--c-ok); color: var(--c-accent-ink) }
+.ncleg .ncsrc { color: var(--c-faint) }
 /* The pill says there is something without being opened, or nobody opens it. */
 .nowpill .ncbadge {
   min-width: 17px; height: 17px; flex: none; display: grid; place-items: center;
   border-radius: 999px; background: var(--c-accent-bright); color: #1b1200;
   font-size: 10px; font-weight: 800; padding: 0 4px;
 }
+
+/* The family's aircraft on the map, pointing the way it is going. A plane
+   on the ground at the airport is drawn quieter than one in the air. */
+.mplane {
+  position: absolute; left: -15px; top: -15px; width: 30px; height: 30px;
+  display: grid; place-items: center; color: var(--c-muted);
+  filter: drop-shadow(0 2px 4px var(--c-shadow));
+}
+.mplane.up { color: var(--c-accent-bright) }
+.mplane svg { transition: transform .6s ease }
 
 /* The photograph on its own. Over everything, including the viewer's chrome,
    because the whole point is that there is nothing else on the screen. */

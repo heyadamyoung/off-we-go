@@ -3,9 +3,24 @@ import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { dueLabel } from '../../../live-stop-progress-core'
 import { papersOfStop, type Paper } from '../../../papers-core'
+import type { FlightTone } from '../../../flight-day-core'
 import type { TripNow } from '../../../trip-now-core'
 import type { Notice } from '../../../trip-notices-core'
 import type { Stop, TripPhoto } from '../../../shared/model/types'
+
+/* The live leg on a travel day: the ticket's headline and its columns in a
+   line, and the papers for it — one tap from the Travel tab where the whole
+   ticket is. */
+export interface LegBlock {
+  title: string
+  headline: string
+  tone: FlightTone
+  /** "T3 · gate E19 · Zone 3 · Desks 13–20" */
+  line: string
+  /** "Schiphol · 2 min ago", or null when no board has spoken */
+  source: string | null
+  papers: Paper[]
+}
 
 /* What is happening, opened out.
  *
@@ -27,6 +42,7 @@ import type { Stop, TripPhoto } from '../../../shared/model/types'
 /* The same glyphs the papers list uses: a boarding pass should look like the
    same object wherever it turns up. */
 const DOT: Record<string, string> = {
+  flight: 'ncndot on',
   landed: 'ncndot land',
   arrived: 'ncndot on',
   photos: 'ncndot',
@@ -45,15 +61,21 @@ export default memo(function NowCard({
   notices,
   headline,
   meta,
+  leg = null,
   travelling,
   onNotice,
   onStop,
   onFollow,
   onPhotos,
   onPaper,
+  onTravel,
   onClose,
 }: {
   now: TripNow<Stop, TripPhoto>
+  /** the live leg on a travel day, leading the card; null on any other day */
+  leg?: LegBlock | null
+  /** the Travel tab, where the whole ticket is */
+  onTravel?: () => void
   /** What has happened since this person last looked. Empty for a traveller:
       they were there. */
   notices: readonly Notice[]
@@ -173,6 +195,38 @@ export default memo(function NowCard({
         </div>
       )}
 
+      {/* The leg first on a travel day, for everybody: the traveller is in
+          the queue it describes and the follower is waiting on it. */}
+      {leg && (
+        <div className="ncleg" data-tone={leg.tone}>
+          <button className="ncrow" onClick={onTravel}>
+            <span className="ncwhen" aria-hidden="true">
+              ✈
+            </span>
+            <span className="ncbody">
+              <b>{leg.title}</b>
+              <span className="nclegline">{leg.headline}</span>
+              {leg.line && <span className="ncmeta">{leg.line}</span>}
+              {leg.source && <span className="ncmeta ncsrc">{leg.source}</span>}
+            </span>
+          </button>
+          {travelling && leg.papers.length > 0 && (
+            <div className="ncpapers">
+              {leg.papers.map(paper => (
+                <button
+                  key={paper.id}
+                  className="ncpaper"
+                  onClick={() => onPaper(paper)}
+                  aria-label={`Open ${paper.name}`}>
+                  <span aria-hidden="true">{PAPER_GLYPH[paper.kind] || PAPER_GLYPH.other}</span>
+                  <span className="truncate">{paper.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {travelling ? (
         <>
           {nextBlock}
@@ -200,7 +254,7 @@ export default memo(function NowCard({
 
       {/* An honest empty rather than a card that opens onto nothing: a trip
           that has not started yet has a headline and no day behind it. */}
-      {!next && !done.length && !fresh.length && !notices.length && (
+      {!next && !done.length && !fresh.length && !notices.length && !leg && (
         <p className="ncempty">Nothing has happened today yet.</p>
       )}
     </section>

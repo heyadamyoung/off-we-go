@@ -1,9 +1,11 @@
-import { makeIt, segmentFace, type Segment } from '../../../segments-core'
+import { localTime, makeIt, segmentFace, type Segment } from '../../../segments-core'
 
 /* The make-it meter: the next departure against everyone's live position.
    Only rendered on a travel day, only when the leg has coordinates and
    somebody has a fix — the capsule that answers the only question a family
-   asks in an airport. */
+   asks in an airport. The walk from the door to the gate, when the airport's
+   board says how long it is, is counted against everybody; whoever is still
+   away is told when to leave. */
 
 export default function MakeIt({
   segments,
@@ -18,7 +20,7 @@ export default function MakeIt({
     segment => segmentFace(segment, now) === 'day' && new Date(segment.departsAt).getTime() > now,
   )
   if (!next || !travellers.length) return null
-  const verdicts = makeIt(next, travellers, now)
+  const verdicts = makeIt(next, travellers, now, { walkMinutes: next.flight?.walkMinutes ?? 0 })
   if (!verdicts || verdicts.minutesLeft > 6 * 60 || verdicts.minutesLeft < -30) return null
 
   const label = [next.carrier, next.number].filter(Boolean).join(' ') || next.toName
@@ -35,6 +37,11 @@ export default function MakeIt({
         </b>
         <span className="font-mono text-accent">{clock}</span>
       </div>
+      {verdicts.walkMinutes > 0 && (
+        <div className="mt-0.5 text-[11px] text-muted">
+          {verdicts.walkMinutes} min from the door to the gate, counted
+        </div>
+      )}
       <div className="mt-1.5 flex flex-col gap-1">
         {verdicts.people.map(person => (
           <div key={person.name} className="flex items-center gap-2 text-muted">
@@ -52,6 +59,11 @@ export default function MakeIt({
             {person.state === 'here'
               ? 'here'
               : `${person.minutesAway} min away · ${stateWord[person.state]}`}
+            {person.leaveBy && (
+              <span className="mkleave ml-auto font-mono text-[11px] text-faint">
+                leave by {localTime(person.leaveBy, next.departTz)}
+              </span>
+            )}
           </div>
         ))}
       </div>

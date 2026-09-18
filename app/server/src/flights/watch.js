@@ -33,6 +33,7 @@ const ADSB_SILENCE_MS = 20 * 60_000
 const ADSB_EVERY_MS = 10 * 60_000
 
 const SEGMENT_STATUS = { cancelled: 'cancelled', done: 'arrived', delayed: 'delayed' }
+const SETTLED = new Set(['departed', 'landed', 'arrived', 'cancelled', 'diverted'])
 
 /** The leg as the traveller typed it, in the board's shape, for a first comparison. */
 export function baselineFromSegment(segment) {
@@ -226,6 +227,19 @@ export async function watchFlights({
       }
       if (!view) continue
       stats.matched += 1
+
+      /* The queue at security, where the origin's board publishes one, for
+         the terminal the leg leaves from. Not an event — nobody is woken for
+         a queue — it rides on the leg for the card to draw, and only while
+         there is still a queue to stand in. */
+      if (from && sources.queues && !SETTLED.has(view.status)) {
+        const queues = await sources.queues(from.airportCode).catch(() => null)
+        const terminal = view.terminal || leg.terminal || null
+        const minutes = queues?.value && terminal ? queues.value[terminal] : undefined
+        if (Number.isFinite(minutes)) {
+          view = { ...view, extra: { ...(view.extra || {}), securityWaitMinutes: minutes } }
+        }
+      }
 
       const previous = snapshot?.info || baselineFromSegment(leg)
       const events = detectFlightEvents(previous, view)

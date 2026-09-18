@@ -180,3 +180,31 @@ test('a leg with nothing on it still has a name rather than an empty row', () =>
   assert.equal(segmentName({}), 'Journey')
   assert.equal(segmentName(null), 'Journey')
 })
+
+test('the make-it meter counts the walk to the gate, and says when to leave', () => {
+  /* Someone 5 km out at 35 km/h door to door plus parking: 17 min away.
+     Doors at T−15 with 60 min left, a 12 min walk from the door to the gate:
+     31 spare, on pace, and the leave-by is the doors minus the lot. */
+  const now = Date.parse('2026-09-19T14:55:00.000Z')
+  const home = { name: 'Maya', lng: -79.5628, lat: 43.6777 }
+  const met = makeIt(FLIGHT, [home], now, { walkMinutes: 12 })
+  assert.equal(met.walkMinutes, 12)
+  assert.equal(met.people[0].minutesAway, 17)
+  assert.equal(met.people[0].state, 'ok')
+  assert.equal(met.people[0].leaveBy, '2026-09-19T15:26:00.000Z')
+  /* Without the walk the same person is on pace with more to spare, and
+     leaves later. Both true; the board makes the meter honest. */
+  const plain = makeIt(FLIGHT, [home], now)
+  assert.equal(plain.walkMinutes, 0)
+  assert.equal(plain.people[0].leaveBy, '2026-09-19T15:38:00.000Z')
+  /* A long walk turns a tight run into a late one. */
+  const late = makeIt(FLIGHT, [home], Date.parse('2026-09-19T15:30:00.000Z'), { walkMinutes: 12 })
+  assert.equal(late.people[0].state, 'late')
+  assert.equal(late.verdict, 'late')
+  /* Somebody at the building is here, with nothing to leave by. */
+  const here = makeIt(FLIGHT, [{ name: 'Alex', lng: -79.6248, lat: 43.6777 }], now, {
+    walkMinutes: 12,
+  })
+  assert.equal(here.people[0].state, 'here')
+  assert.equal(here.people[0].leaveBy, null)
+})

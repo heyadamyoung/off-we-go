@@ -4,7 +4,7 @@ import { applyLiveStopStatuses } from '../../../live-stop-progress-core'
 import { initialTripView } from '../../../live-map-view-core'
 import { useAssistant } from '../../assistant'
 import { useAirportIndoor } from '../../airport'
-import { useSegments } from '../../transport'
+import { usePlanePosition, useSegments } from '../../transport'
 import { useItineraryEditor } from '../../itinerary'
 import { useTripPhotos } from '../../photos'
 import { useTripCamera } from './use-trip-camera'
@@ -171,6 +171,7 @@ export default function useTripPage({
     const timer = setInterval(() => setClock(Date.now()), 60_000)
     return () => clearInterval(timer)
   }, [])
+  const plane = usePlanePosition(tripId, transport.segments, clock) // over the family's dots
   const showGate = useCallback(
     (segment: { fromLng?: number | null; fromLat?: number | null }) => {
       if (segment.fromLng == null || segment.fromLat == null) return
@@ -383,7 +384,7 @@ export default function useTripPage({
     mapView, setMapView, onMapView, mapPadding, following, setFollowing, toggleFollow, fitAll,
     phones, setPhones, fixes, track, sun, mapTheme, markers, trail, trailFaded,
     progress, progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
-    transport, segmentEditing, setSegmentEditing, clock, showGate,
+    transport, segmentEditing, setSegmentEditing, clock, showGate, plane,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, movePhotos, removePhoto, removeComment, indoor, editing,
     draft, setDraft, saving, routeDraft, setRouteDraft,

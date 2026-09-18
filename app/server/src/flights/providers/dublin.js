@@ -24,6 +24,9 @@ export const DUBLIN_AIRPORT = 'DUB'
 export const DUBLIN_ZONE = 'Europe/Dublin'
 export const DUBLIN_SOURCE = 'api.dublinairport.com'
 export const DUBLIN_LISTING = 'https://api.dublinairport.com/dap/flight-listing'
+/* The security queue, as the site's own "security times" widget reads it:
+   {"T1":"12","T2":"5"}, minutes per terminal, recorded by the probe. */
+export const DUBLIN_QUEUES = 'https://api.dublinairport.com/dap/get-security-times'
 export const DUBLIN_HEADERS = Object.freeze({
   accept: 'application/json',
   origin: 'https://www.dublinairport.com',
@@ -171,6 +174,21 @@ export function parseDublinBoard(body, direction, { fetchedAt = new Date().toISO
   return out
 }
 
+/**
+ * The security queue per terminal, in minutes, keyed the way terminals are
+ * kept everywhere else ("1", "2"). {} when the answer names no terminal the
+ * app knows; a word that is not a number is not a queue.
+ */
+export function parseDublinQueues(body) {
+  const out = {}
+  for (const [key, value] of Object.entries(body && typeof body === 'object' ? body : {})) {
+    const terminal = normalizeTerminal(key)
+    const minutes = Number(value)
+    if (terminal && Number.isFinite(minutes) && minutes >= 0) out[terminal] = Math.round(minutes)
+  }
+  return out
+}
+
 /* The API hands out two hundred records at most, and today's listing starts
    at "now". The site's own listing turns pages with after=<latestTimestamp>
    &after-id=<latestId> going forward and before=/before-id= going back, so
@@ -249,6 +267,12 @@ export function createDublinProvider({ fetch = globalThis.fetch, now = () => Dat
     return rows
   }
 
+  const securityQueues = async () => {
+    const response = await fetch(DUBLIN_QUEUES, { headers: DUBLIN_HEADERS })
+    if (!response.ok) throw new Error(`${DUBLIN_SOURCE} answered ${response.status}`)
+    return parseDublinQueues(await response.json())
+  }
+
   return {
     airportCode: DUBLIN_AIRPORT,
     source: DUBLIN_SOURCE,
@@ -256,5 +280,6 @@ export function createDublinProvider({ fetch = globalThis.fetch, now = () => Dat
     datedBoards: true,
     departures: date => read('departure', date),
     arrivals: date => read('arrival', date),
+    securityQueues,
   }
 }

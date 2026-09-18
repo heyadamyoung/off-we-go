@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import NowCard from './now-card'
-import type { Paper } from '../../../papers-core'
+import NowCard, { type LegBlock } from './now-card'
+import { papersOfSegment, type Paper } from '../../../papers-core'
 import { NowCapsule } from './trip-chrome'
+import { flightSource, ticketLine } from '../../../flight-day-core'
+import { travelCapsule } from '../../../travel-capsule-core'
 import { tripNow } from '../../../trip-now-core'
 import useTripNotices from '../model/use-trip-notices'
 import type { deriveLiveStopProgress } from '../../../live-stop-progress-core'
@@ -114,12 +116,29 @@ export default function TripNow({
       setOpen(false)
     }
 
+  /* On a travel day the pill leads with the live leg — "✈ KL 677 · boarding
+     in 42 min" — because that is the one line the whole family is waiting
+     on. Where the phones are is still one tap away, in the card. */
+  const day = useMemo(() => travelCapsule(segments, clock), [segments, clock])
+  const leg = useMemo<LegBlock | null>(() => {
+    if (!day) return null
+    const source = flightSource(day.leg, clock)
+    return {
+      title: day.title,
+      headline: day.headline.text,
+      tone: day.headline.tone,
+      line: ticketLine(day.leg),
+      source: source ? [source.name, source.age].filter(Boolean).join(' · ') : null,
+      papers: papersOfSegment(day.leg),
+    }
+  }, [day, clock])
+
   return (
     <>
       <NowCapsule
-        text={progressCopy.text}
-        meta={progressCopy.meta}
-        tone={progressCopy.tone}
+        text={day ? day.text : progressCopy.text}
+        meta={day ? day.meta : progressCopy.meta}
+        tone={day ? day.tone : progressCopy.tone}
         open={open}
         unread={notices.length}
         onClick={() => setOpen(value => !value)}
@@ -132,6 +151,7 @@ export default function TripNow({
           notices={notices}
           headline={progressCopy.text}
           meta={progressCopy.meta}
+          leg={leg}
           travelling={travelling}
           onFollow={() => shut(onFollow)(liveStop)}
           onNotice={notice => {
@@ -142,7 +162,7 @@ export default function TripNow({
             const stop = notice.stopId ? stops.find(one => one.id === notice.stopId) : null
             const photo = notice.photoId ? photos.find(one => one.id === notice.photoId) : null
             if (notice.kind === 'photos' && photo) shut(onPhotos)(photo)
-            else if (notice.kind === 'landed') {
+            else if (notice.kind === 'landed' || notice.kind === 'flight') {
               setOpen(false)
               onTravel()
             } else if (stop) shut(onSelect)(stop)
@@ -151,6 +171,10 @@ export default function TripNow({
           onStop={shut(onSelect)}
           onPhotos={shut(onPhotos)}
           onPaper={shut(onPaper)}
+          onTravel={() => {
+            setOpen(false)
+            onTravel()
+          }}
           onClose={() => setOpen(false)}
         />
       )}

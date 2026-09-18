@@ -142,8 +142,11 @@ export function parsePearsonBoard(body, direction, { fetchedAt = new Date().toIS
       key: blankToNull(record.key),
       icao: blankToNull(record.id),
       stand: blankToNull(record.stand),
-      checkinZone: blankToNull(record.zone),
-      aisle: blankToNull(record.aisle),
+      /* `zone` is a run of counter numbers ("169-182") — the desks — and
+         `aisle` is the airport's own name for where they are, so each is
+         kept under the name the ticket draws it by. */
+      checkinDeskRange: blankToNull(record.zone),
+      checkinZone: blankToNull(record.aisle) ? `Aisle ${String(record.aisle).trim()}` : null,
       region: blankToNull(record.termzone),
       serviceType: blankToNull(record.svctype),
       farAirportName: blankToNull(far?.name),
