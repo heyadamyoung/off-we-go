@@ -20,6 +20,7 @@ import { event, span } from '../tracing.js'
 import { describeFlightEvent, detectFlightEvents } from './events.js'
 import { bestArrival, bestDeparture, flightNumberOf, matchFlight } from './model.js'
 import { callsignFor, verdictFromPosition } from './providers/adsb.js'
+import { keepFarEnd, keepNearEnd } from './quiet.js'
 
 export const WATCH_EVERY_MS = 60_000
 export const WATCH_BEFORE_MS = 30 * 60 * 60 * 1000
@@ -34,8 +35,6 @@ const ADSB_EVERY_MS = 10 * 60_000
 
 const SEGMENT_STATUS = { cancelled: 'cancelled', done: 'arrived', delayed: 'delayed' }
 const SETTLED = new Set(['departed', 'landed', 'arrived', 'cancelled', 'diverted'])
-const LANDED = new Set(['landed', 'arrived'])
-const ENDED = new Set(['cancelled', 'diverted'])
 
 /** The leg as the traveller typed it, in the board's shape, for a first comparison. */
 export function baselineFromSegment(segment) {
@@ -65,12 +64,26 @@ export function mergeBoards(departure, arrival) {
     ...base,
     sources: [departure?.source, arrival?.source].filter(Boolean),
   }
+  if (!departure) {
+    /* An arrivals board's gate and terminal are where the flight comes in.
+       The leg's gate is where it leaves from, which only the near board
+       knows: with that board quiet the view says nothing about leaving, and
+       what the near board last said is put back by the watch. Boarding and
+       the extras — the desks, the walk to the gate — are the near end's too.
+       Taken as the leg's, the far gate was written over the real one hours
+       after the flight had left, and announced as a gate change. */
+    view.gate = null
+    view.terminal = null
+    view.boardingStatus = null
+    view.extra = undefined
+  }
   if (arrival) {
     view.scheduledArrival = arrival.scheduledArrival
     view.estimatedArrival = arrival.estimatedArrival
     view.actualArrival = arrival.actualArrival
     view.baggageBelt = arrival.baggageBelt
     view.arrivalTerminal = arrival.terminal
+    view.arrivalGate = arrival.gate
     view.origin = departure?.origin || arrival.origin
     view.destination = arrival.destination || departure?.destination || null
     if (['landed', 'arrived', 'diverted', 'cancelled'].includes(arrival.status)) {
@@ -221,27 +234,11 @@ export async function watchFlights({
       let view = mergeBoards(departure, arrival)
 
       const snapshot = await repository.flightSnapshot(leg.id)
-      /* A belt does not un-assign because the board that named it has gone
-         quiet — Pearson answers once and then challenges — and a flight the
-         far board has landed does not take off again because only the near
-         board answered this minute. What the arrivals board last said about
-         the far end is kept until it says otherwise. */
-      if (view && !arrival && snapshot?.info) {
-        const was = snapshot.info
-        const settled =
-          LANDED.has(was.status) && !LANDED.has(view.status) && !ENDED.has(view.status)
-        view = {
-          ...view,
-          baggageBelt: view.baggageBelt || was.baggageBelt || null,
-          arrivalTerminal: view.arrivalTerminal || was.arrivalTerminal || null,
-          estimatedArrival: view.estimatedArrival || was.estimatedArrival || null,
-          actualArrival: view.actualArrival || was.actualArrival || null,
-          ...(settled ? { status: was.status, statusText: was.statusText } : {}),
-          sources: [
-            ...(view.sources || []),
-            ...(was.sources || []).filter(one => !(view.sources || []).includes(one)),
-          ],
-        }
+      /* A board that has gone quiet keeps its last word about its own end
+         until it says otherwise — see quiet.js. */
+      if (view && snapshot?.info) {
+        if (!arrival) view = keepFarEnd(view, snapshot.info)
+        if (!departure) view = keepNearEnd(view, snapshot.info)
       }
       /* A board that should have said "departed" and has not: ask the sky. */
       const known = view || snapshot?.info || null

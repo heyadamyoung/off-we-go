@@ -567,3 +567,128 @@ test('what the far board last said is kept when it goes quiet: the belt stays, a
   assert.equal(kept.actualArrival, '2026-09-21T05:10:00.000Z')
   assert.deepEqual(kept.sources, ['gtaa-fl-prod.azureedge.net', 'api.dublinairport.com'])
 })
+
+test('an arrivals board alone says nothing about leaving: its gate and terminal are where the flight comes in', () => {
+  const arrival = boardRow({
+    airportCode: 'DUB',
+    direction: 'arrival',
+    source: 'api.dublinairport.com',
+    status: 'landed',
+    scheduledDeparture: null,
+    scheduledArrival: '2026-09-21T05:25:00.000Z',
+    actualArrival: '2026-09-21T05:10:00.000Z',
+    baggageBelt: '8',
+    terminal: '2',
+    gate: '412',
+    extra: { stand: '112L' },
+  })
+  const alone = mergeBoards(null, arrival)
+  assert.equal(alone.gate, null)
+  assert.equal(alone.terminal, null)
+  assert.equal(alone.boardingStatus, null)
+  assert.equal(alone.extra, undefined)
+  assert.equal(alone.arrivalGate, '412')
+  assert.equal(alone.arrivalTerminal, '2')
+  assert.equal(alone.status, 'landed')
+  assert.equal(alone.baggageBelt, '8')
+  /* Nothing to write about the gate: the leg's gate is where it left from. */
+  assert.deepEqual(changesFor(leg(), alone), { arrivesAt: '2026-09-21T05:10:00.000Z' })
+  /* With the departures board there too its gate is the gate, and the far
+     end's is kept under its own name. */
+  const both = mergeBoards(boardRow(), arrival)
+  assert.equal(both.gate, 'C34')
+  assert.equal(both.terminal, '1')
+  assert.equal(both.arrivalGate, '412')
+  assert.equal(both.arrivalTerminal, '2')
+})
+
+test('what the near board last said is kept when it goes quiet: the gate stays the gate, and the far gate is no gate change', async () => {
+  const departed = boardRow({
+    status: 'departed',
+    actualDeparture: '2026-09-20T22:41:00.000Z',
+    boardingStatus: 'closed',
+    extra: { checkinZone: 'Aisle 3', checkinDeskRange: '169-182' },
+  })
+  const arrival = boardRow({
+    airportCode: 'DUB',
+    direction: 'arrival',
+    source: 'api.dublinairport.com',
+    status: 'landed',
+    scheduledDeparture: null,
+    scheduledArrival: '2026-09-21T05:25:00.000Z',
+    actualArrival: '2026-09-21T05:10:00.000Z',
+    baggageBelt: '8',
+    terminal: '2',
+    gate: '412',
+    extra: { stand: '112L' },
+  })
+  const repository = store({
+    /* The leg as the watch had already written it from both boards. */
+    legs: [leg({ departsAt: '2026-09-20T22:41:00.000Z', arrivesAt: '2026-09-21T05:10:00.000Z' })],
+    snapshot: {
+      info: mergeBoards(departed, arrival),
+      fetchedAt: '2026-09-21T05:12:00.000Z',
+      note: null,
+    },
+  })
+  const stats = await watchFlights({
+    repository,
+    /* The origin's listing has dropped a flight that left hours ago; only
+       the far board still answers. */
+    sources: sourcesWith({ boards: { 'DUB:arrival': [arrival] } }),
+    now: Date.parse('2026-09-21T05:40:00.000Z'),
+  })
+  assert.equal(stats.matched, 1)
+  assert.equal(stats.events, 0, 'the far gate is not news about the gate')
+  assert.deepEqual(repository.applied, [], 'nothing is written onto the leg')
+  const kept = repository.snapshots[0].info
+  assert.equal(kept.gate, 'C34')
+  assert.equal(kept.terminal, '1')
+  assert.equal(kept.arrivalGate, '412')
+  assert.equal(kept.arrivalTerminal, '2')
+  assert.equal(kept.status, 'landed')
+  assert.equal(kept.actualDeparture, '2026-09-20T22:41:00.000Z')
+  assert.equal(kept.boardingStatus, 'closed')
+  assert.deepEqual(kept.extra, { checkinZone: 'Aisle 3', checkinDeskRange: '169-182' })
+  assert.deepEqual(kept.sources, ['api.dublinairport.com', 'gtaa-fl-prod.azureedge.net'])
+})
+
+test('a first look with only the arrivals board is news of a landing, not of a gate', async () => {
+  const repository = store()
+  const stats = await watchFlights({
+    repository,
+    sources: sourcesWith({
+      boards: {
+        'DUB:arrival': [
+          boardRow({
+            airportCode: 'DUB',
+            direction: 'arrival',
+            source: 'api.dublinairport.com',
+            status: 'landed',
+            scheduledDeparture: null,
+            scheduledArrival: '2026-09-21T05:25:00.000Z',
+            actualArrival: '2026-09-21T05:10:00.000Z',
+            baggageBelt: '8',
+            terminal: '2',
+            gate: '412',
+          }),
+        ],
+      },
+    }),
+    now: Date.parse('2026-09-21T05:40:00.000Z'),
+  })
+  assert.equal(stats.matched, 1)
+  assert.deepEqual(repository.events.map(one => one.type).sort(), [
+    'ArrivalEstimateChanged',
+    'BaggageUpdated',
+    'FlightLanded',
+  ])
+  assert.ok(repository.events.every(one => one.source === 'api.dublinairport.com'))
+  assert.deepEqual(repository.applied[0].changes, {
+    arrivesAt: '2026-09-21T05:10:00.000Z',
+    statusNote: 'AC872 has landed at 06:10. Dublin Airport, 06:40.',
+  })
+  const kept = repository.snapshots[0].info
+  assert.equal(kept.gate, null)
+  assert.equal(kept.arrivalGate, '412')
+})
