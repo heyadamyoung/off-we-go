@@ -29,17 +29,30 @@ test('the app opens and the map draws with the network cut', async ({ page, cont
      since nothing below reads a stop, a day or a destination. */
   await page.goto('/trips/sample')
   await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 15000 })
-  // The poll below is the wait: the worker takes over and is told what the
-  // page loaded, and the shell count climbs past five when it has.
+  /* The poll below is the wait: the worker takes over and is told what the
+     page loaded, and everything the page loaded is what a cold start needs —
+     the route's own chunk and the map's included, which land after the shell
+     and were the ones a count of "more than five" let this go offline
+     without. */
   await expect
     .poll(
       () =>
-        page.evaluate(async () =>
-          (await caches.open('wayfare-shell-v1')).keys().then(keys => keys.length),
-        ),
-      { timeout: 15000, message: 'the shell should be held on the device' },
+        page.evaluate(async () => {
+          const kept = new Set(
+            (await (await caches.open('wayfare-shell-v1')).keys()).map(
+              request => new URL(request.url).pathname,
+            ),
+          )
+          const loaded = performance
+            .getEntriesByType('resource')
+            .map(entry => new URL(entry.name))
+            .filter(url => url.origin === location.origin && /\.(js|css)$/.test(url.pathname))
+            .map(url => url.pathname)
+          return loaded.length > 3 && loaded.every(path => kept.has(path))
+        }),
+      { timeout: 15000, message: 'everything the page loaded should be held on the device' },
     )
-    .toBeGreaterThan(5)
+    .toBe(true)
 
   await context.setOffline(true)
   await page.reload()

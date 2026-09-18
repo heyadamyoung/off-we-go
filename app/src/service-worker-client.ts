@@ -43,10 +43,19 @@ export function registerAppShell(native: boolean) {
         if (urls.length) ready.active?.postMessage({ type: 'warm', urls })
       }
       warm()
-      /* Again once the screen has finished asking for its parts. Routes load
+      /* And again as the screen goes on asking for its parts. Routes load
          their own code as they mount, so the first pass cannot have seen the
-         chunk for the page the visitor actually opened. */
-      setTimeout(warm, 4_000)
+         chunk for the page the visitor actually opened; a second pass on a
+         timer guessed at when that would be done, and a slow machine had the
+         chunk arrive after it — the shell was kept, the page was not. Every
+         resource the browser records is sent on as it lands. */
+      if (typeof PerformanceObserver !== 'undefined') {
+        try {
+          new PerformanceObserver(warm).observe({ type: 'resource', buffered: true })
+        } catch {
+          setTimeout(warm, 4_000)
+        }
+      } else setTimeout(warm, 4_000)
     })
     .catch(() => {
       /* A browser that refuses it loses offline, not the app. */
