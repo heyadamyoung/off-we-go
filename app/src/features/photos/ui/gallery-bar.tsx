@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import Icon from '../../../shared/ui/icon'
 import { worthFiltering, type KindTally, type MediaKind } from '../../../photo-filter-core'
 import type { GroupMode } from '../../../photo-groups-core'
 import type { Person } from '../../../shared/model/types'
@@ -25,8 +24,6 @@ interface GalleryBarProps {
   count: number
   /** Starts choosing several. Absent for a read-only trip, or while choosing. */
   onSelect?: () => void
-  onAddPhotos?: () => void
-  onClose: () => void
 }
 
 export default function GalleryBar({
@@ -41,8 +38,6 @@ export default function GalleryBar({
   onPhotoBy,
   count,
   onSelect,
-  onAddPhotos,
-  onClose,
 }: GalleryBarProps) {
   /* Everything the gallery needs in one band: what it is, how it is arranged,
      whose it is, how much there is, and the way out. Two rows of chrome over a
@@ -51,13 +46,6 @@ export default function GalleryBar({
     <div
       className="sticky top-0 z-[2] flex items-center gap-2 border-b border-line bg-strong
                  px-3 py-2.5 backdrop-blur-xl sm:gap-3 sm:px-6">
-      {/* The name goes first where there is room for it. On a phone the
-          screen is the answer to what this is, and the width is better spent
-          on the controls. */}
-      <h2 className="m-0 mr-1 text-[15px] font-extrabold tracking-[-.02em] max-sm:hidden">
-        Photos
-      </h2>
-
       {/* One line, always. Where the controls outgrow a phone they slide
           rather than wrapping: a second band of chrome costs every screen
           below it, and this one costs nothing until it is used. */}
@@ -159,29 +147,6 @@ export default function GalleryBar({
             Select
           </button>
         )}
-        {onAddPhotos && (
-          /* A plus, because everywhere else a plus is how you add one more of
-             whatever you are looking at. The word was costing sixty pixels
-             of a row that has to hold everything. */
-          <button
-            className="grid size-8 place-items-center rounded-full bg-accent text-accent-ink
-                       transition-[filter] hover:brightness-110"
-            onClick={onAddPhotos}
-            title="Add photos or videos"
-            aria-label="Add photos or videos">
-            <Icon n="plus" s={16} w={2} />
-          </button>
-        )}
-        {/* On a phone the way back is on the row above the tabs, with the
-            gallery's name, as it is for every panel; here it would be a
-            second one. */}
-        <button
-          className="grid size-8 place-items-center rounded-full text-muted hover:bg-raised2 hover:text-ink max-sm:hidden"
-          onClick={onClose}
-          title="Back to map"
-          aria-label="Back to map">
-          <Icon n="x" s={16} />
-        </button>
       </div>
     </div>
   )

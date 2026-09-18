@@ -67,35 +67,32 @@ interface PanelProps {
   }
 }
 
-const HEADINGS: Record<string, [string, string]> = {
-  timeline: [
-    'Timeline',
-    'The day in order — what was planned, and when everyone actually got there.',
-  ],
-  /* Just the name. The tab underneath already says what this is, and a
-     sentence explaining a screen is a sentence in the way of it. */
-  travel: ['Travel', ''],
-  papers: ['Papers', 'Every ticket, pass and booking you are carrying — the next one first.'],
-  chat: ['Chat', 'The whole crew, one room — travellers and followers alike.'],
-  photos: ['Photos', ''],
-  sights: ['Sights nearby', 'Places worth a detour, from where the map is looking.'],
-  people: ['People', 'Who is travelling, and who is following from home.'],
+/* Just the name, the same word as the tab. A sentence explaining a screen
+   is a sentence in the way of it. */
+const HEADINGS: Record<string, string> = {
+  timeline: 'Timeline',
+  travel: 'Travel',
+  papers: 'Papers',
+  chat: 'Chat',
+  photos: 'Photos',
+  sights: 'Sights',
+  people: 'People',
 }
 
-/* The panel's name and its verbs. On a desktop this is the panel's own first
-   row. On a phone it takes the trip title's row in the top bar instead — the
-   title, the tabs and then a panel title made three bands of chrome, a third
-   of the screen, above the thing somebody opened; the tabs under it already
-   say where you are, and the title comes back with the map. */
+/* The panel's name and its verbs, the same row on every panel: the name,
+   a plus where there is something to add, and the way back. On a desktop
+   this is the panel's own first row. On a phone it takes the trip title's
+   row in the top bar instead — the title, the tabs and then a panel title
+   made three bands of chrome, a third of the screen, above the thing
+   somebody opened; the tabs under it already say where you are, and the
+   title comes back with the map. */
 export function PanelHeader({
   title,
-  sub,
   action,
   onClose,
   className = '',
 }: {
   title: string
-  sub?: string
   action: ReactNode
   onClose: () => void
   className?: string
@@ -103,16 +100,13 @@ export function PanelHeader({
   return (
     <div
       className={
-        'flex items-start justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px] ' +
-        'max-sm:min-h-10 max-sm:items-center max-sm:border-0 max-sm:px-0 max-sm:py-0 ' +
+        'phead flex items-center justify-between gap-3 border-b border-line px-5 py-3 ' +
+        'max-sm:min-h-10 max-sm:border-0 max-sm:px-0 max-sm:py-0 ' +
         className
       }>
-      <div className="min-w-0">
-        <h2 className="m-0 truncate text-2xl font-extrabold tracking-[-.02em] max-sm:text-[17px]">
-          {title}
-        </h2>
-        {sub && <p className="mt-1 text-xs text-muted max-sm:hidden">{sub}</p>}
-      </div>
+      <h2 className="m-0 min-w-0 truncate text-xl font-extrabold tracking-[-.02em] max-sm:text-[17px]">
+        {title}
+      </h2>
       <div className="flex flex-none items-center gap-1.5">
         {action}
         <button
@@ -135,8 +129,21 @@ function useTopBar() {
   return slot
 }
 
+/* One plus, wherever there is one more of something to add. */
+function Plus({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      className="mini mini-accent grid size-8 place-items-center !px-0"
+      onClick={onClick}
+      title={label}
+      aria-label={label}>
+      <Icon n="plus" s={15} />
+    </button>
+  )
+}
+
 export default function TripPanel(props: PanelProps) {
-  const [title, sub] = HEADINGS[props.view] || ['', '']
+  const title = HEADINGS[props.view] || ''
   const topBar = useTopBar()
   /* The gallery takes the screen. A wall of photographs in a 440px column is a
      column of photographs — three across, most of the screen given to a map
@@ -146,24 +153,11 @@ export default function TripPanel(props: PanelProps) {
   const wide = props.view === 'photos'
   const action =
     props.view === 'photos' && props.onAddPhotos ? (
-      <button
-        className="mini mini-accent inline-flex items-center gap-1"
-        onClick={props.onAddPhotos}>
-        <Icon n="plus" s={13} />
-        Add
-      </button>
+      <Plus label="Add photos or videos" onClick={props.onAddPhotos} />
     ) : props.view === 'people' ? (
-      <button className="mini mini-accent" onClick={props.onInvite}>
-        Invite someone
-      </button>
+      <Plus label="Invite someone" onClick={props.onInvite} />
     ) : props.view === 'travel' && props.transport?.canEdit ? (
-      <button
-        className="mini mini-accent grid size-8 place-items-center !px-0"
-        onClick={props.transport.onAdd}
-        title="Add a leg"
-        aria-label="Add a leg">
-        <Icon n="plus" s={15} />
-      </button>
+      <Plus label="Add a leg" onClick={props.transport.onAdd} />
     ) : null
 
   return (
@@ -184,25 +178,17 @@ export default function TripPanel(props: PanelProps) {
              max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-none max-sm:border-x-0
              max-sm:border-b-0`)
       }>
-      {/* The gallery draws its own, because a title bar and a row of controls
-          stacked on top of each other is two bands of chrome above the thing
-          somebody actually opened. */}
-      {!wide && (
-        <PanelHeader
-          title={title}
-          sub={sub}
-          action={action}
-          onClose={props.onClose}
-          className="max-sm:hidden"
-        />
-      )}
-      {/* The gallery's own bar has the add button; up here it keeps its name
-          and the way back. */}
+      <PanelHeader
+        title={title}
+        action={action}
+        onClose={props.onClose}
+        className="max-sm:hidden"
+      />
       {topBar &&
         createPortal(
           <PanelHeader
             title={title}
-            action={wide ? null : action}
+            action={action}
             onClose={props.onClose}
             className="w-full sm:hidden"
           />,

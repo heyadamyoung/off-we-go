@@ -83,8 +83,11 @@ export default defineConfig({
             : {}),
           /* A test's page lives for seconds: the optimising compilers spent
              a sixth of every boot compiling code that would run a few times.
-             The interpreter and the baseline compiler are enough. */
-          args: ['--js-flags=--no-opt --no-maglev'],
+             The interpreter and the baseline compiler are enough. And the GPU
+             service — software rendering, here — lives in the browser
+             process: every map frame was a command buffer handed to another
+             process and waited on, a fourteenth of each test's CPU. */
+          args: ['--js-flags=--no-opt --no-maglev', '--in-process-gpu'],
         },
       },
     },

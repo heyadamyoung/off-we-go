@@ -1200,7 +1200,7 @@ test('finding a place fills in its name, description and picture', async ({ page
 test('the sights panel shows real landmarks with a picture and a description', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Sights', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Sights nearby' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sights', exact: true })).toBeVisible()
   await expect(page.locator('.sight').first()).toBeVisible({ timeout: 25000 })
   await expect(page.locator('.sight .sname').first()).not.toHaveText('')
 })
@@ -1586,8 +1586,10 @@ test('adding photos opens from the gallery, on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page)
   await page.getByRole('button', { name: 'Photos', exact: true }).click()
+  // The plus is on the gallery's name row above the tabs, as on every panel
+  // (the tab strip's Upload answers to the same name).
   await page
-    .locator('aside.sheet')
+    .locator('.phead')
     .getByRole('button', { name: 'Add photos or videos' })
     .click({ timeout: 10_000 })
   await expect(page.getByRole('dialog')).toBeVisible()

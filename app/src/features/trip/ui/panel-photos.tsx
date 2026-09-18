@@ -44,8 +44,6 @@ export default function PanelPhotos({
   photoBy,
   onPhotoBy,
   onSelect,
-  onClose,
-  onAddPhotos,
   onMovePhotos,
 }: PhotosPanelProps) {
   /* Whose photographs these are, from the photographs rather than the roster:
@@ -146,8 +144,6 @@ export default function PanelPhotos({
         onPhotoBy={onPhotoBy}
         count={shown.length}
         onSelect={onMovePhotos && !choosing.on ? choosing.begin : undefined}
-        onAddPhotos={onAddPhotos}
-        onClose={onClose}
       />
       {shown.length ? (
         /* Only the rows anybody can see are in the document. The two spacers
