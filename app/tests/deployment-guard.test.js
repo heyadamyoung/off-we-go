@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -268,6 +269,84 @@ test('the release images are built beside the tests, and the deploy waits for th
   assert.doesNotMatch(workflow, /REGISTRY_TOKEN[^\n]*release\.env/)
   // And every step of it signs out again.
   assert.match(workflow, /docker logout ghcr\.io/)
+})
+
+/* The backup before a release, exercised with docker stubbed: the deploy
+   takes the databases only and stops nothing, because stopping the api to
+   archive the uploads volume was a minute and a half of downtime on every
+   release; the nightly run still takes everything, stopped. */
+const backupWorld = () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'offwego-backup-'))
+  mkdirSync(path.join(dir, 'deploy'))
+  mkdirSync(path.join(dir, 'data', 'uploads'), { recursive: true })
+  writeFileSync(path.join(dir, 'data', 'uploads', 'a.jpg'), 'jpeg')
+  writeFileSync(
+    path.join(dir, 'deploy', 'backup.sh'),
+    readFileSync(path.join(appRoot, 'deploy', 'backup.sh')),
+  )
+  mkdirSync(path.join(dir, 'stub'))
+  const log = path.join(dir, 'docker.log')
+  writeFileSync(
+    path.join(dir, 'stub', 'docker'),
+    [
+      '#!/bin/sh',
+      `echo "$*" >> "${log}"`,
+      'case "$*" in',
+      '  *pg_dump*) echo "dump of $*" ;;',
+      '  *"pg_restore --list"*) cat >/dev/null ;;',
+      'esac',
+      'exit 0',
+      '',
+    ].join('\n'),
+  )
+  chmodSync(path.join(dir, 'stub', 'docker'), 0o755)
+  return {
+    run(mode) {
+      const result = spawnSync('bash', [`${dir}/deploy/backup.sh`, ...(mode ? [mode] : [])], {
+        cwd: dir,
+        env: { ...process.env, PATH: `${dir}/stub:${process.env.PATH}` },
+        encoding: 'utf8',
+      })
+      assert.equal(result.status, 0, result.stderr)
+      return path.join(dir, result.stdout.trim())
+    },
+    calls: () => readFileSync(log, 'utf8').trim().split('\n'),
+  }
+}
+
+test('the quick backup dumps the databases and stops nothing', () => {
+  const world = backupWorld()
+  const made = world.run('quick')
+  assert.ok(readFileSync(path.join(made, 'database.dump'), 'utf8').includes('wayfare'))
+  assert.ok(readFileSync(path.join(made, 'logto.dump'), 'utf8').includes('logto'))
+  assert.ok(!existsSync(path.join(made, 'uploads.tar.gz')), "the uploads are the nightly run's")
+  assert.ok(!world.calls().some(call => /compose (stop|up)/.test(call)), world.calls().join('\n'))
+})
+
+test('the full backup still stops the api, takes the uploads, and starts it again', () => {
+  const world = backupWorld()
+  const made = world.run()
+  assert.ok(existsSync(path.join(made, 'uploads.tar.gz')))
+  const calls = world.calls()
+  assert.ok(
+    calls.some(call => call.startsWith('compose stop api logto')),
+    calls.join('\n'),
+  )
+  assert.ok(
+    calls.some(call => call.startsWith('compose up -d api logto')),
+    calls.join('\n'),
+  )
+})
+
+test('the deploy takes the quick backup, and a quick backup can be restored', () => {
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  assert.match(deploy, /bash \.\/deploy\/backup\.sh quick/)
+  const restore = readFileSync(path.join(appRoot, 'deploy', 'restore.sh'), 'utf8')
+  // the uploads archive is no longer required, and every step that touches
+  // the uploads is behind the check
+  assert.doesNotMatch(restore, /! -f "\$SOURCE\/uploads\.tar\.gz" \]\]; then\n {2}echo "Usage/)
+  assert.match(restore, /HAS_UPLOADS=0/)
+  assert.match(restore, /if \(\( HAS_UPLOADS \)\); then\n {2}mv "\$UPLOADS_DIR" "\$OLD_UPLOADS"/)
 })
 
 test('production restore includes the Logto identity database', () => {
