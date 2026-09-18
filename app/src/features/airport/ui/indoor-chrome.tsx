@@ -8,10 +8,12 @@ import type { AirportIndoor } from '../model/use-airport-indoor'
    tapped. Nothing that only tells you what to click. */
 const STAGE_ICON: Record<string, string> = { bagdrop: 'bag', security: 'shield', gate: 'plane' }
 
+/* The same row as the floor picker and the same height; on a phone the
+   whole width less the margins, because the picker sits under it there. */
 const capsule =
-  'glass absolute left-1/2 top-[calc(var(--trip-top)+14px)] z-[6] flex ' +
-  'max-w-[calc(100%-7rem)] -translate-x-1/2 items-center gap-2.5 whitespace-nowrap ' +
-  'overflow-hidden rounded-full text-xs'
+  'glass absolute left-1/2 top-[calc(var(--trip-top)+14px)] z-[6] flex min-h-11 ' +
+  'max-w-[calc(100%-8.5rem)] -translate-x-1/2 items-center gap-2.5 whitespace-nowrap ' +
+  'overflow-hidden rounded-full text-xs max-sm:max-w-[calc(100%-2rem)]'
 
 const button = 'rounded-full bg-raised2 px-3 py-1.5 text-xs font-bold'
 
@@ -21,6 +23,7 @@ export default function IndoorChrome({ indoor }: { indoor: AirportIndoor }) {
   // A tapped gate has the line until it is cleared; the walk's words stay.
   const tapped =
     !!target && (!walk.target || target.lng !== walk.target.lng || target.lat !== walk.target.lat)
+  const capsuleUp = (tapped && !!routeText) || !!stage
   return (
     <>
       {indoor.active && (
@@ -30,6 +33,7 @@ export default function IndoorChrome({ indoor }: { indoor: AirportIndoor }) {
           level={indoor.level}
           loading={indoor.loading}
           onLevel={indoor.setLevel}
+          below={capsuleUp}
         />
       )}
       {tapped && routeText ? (

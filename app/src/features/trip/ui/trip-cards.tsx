@@ -144,7 +144,7 @@ export default function TripCards({
 
       {showAttractions && attrFilling > 0 && (
         <div
-          className="glass absolute left-1/2 top-20 z-[6] -translate-x-1/2 rounded-full px-3.5 py-2
+          className="glass absolute left-1/2 top-[calc(var(--trip-top)+68px)] z-[6] -translate-x-1/2 rounded-full px-3.5 py-2
                         text-xs text-muted">
           Finding attractions… {attrCount}
         </div>
