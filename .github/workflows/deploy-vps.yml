@@ -52,11 +52,14 @@ jobs:
       run:
         working-directory: app
     steps:
-      # The test database, started in the background before anything else so
-      # its pull and its first start overlap the checkout and the install
-      # rather than holding them up: as a service container it was nine
-      # seconds at the front of the job with the runner otherwise idle. It
-      # lives for the job and is never read back, so its files sit on memory.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The test database, started in the background before the install so
+      # its pull and its first start overlap it rather than holding it up: as
+      # a service container it was nine seconds at the front of the job with
+      # the runner otherwise idle. It lives for the job and is never read
+      # back, so its files sit on memory. After the checkout, because the
+      # job's working directory is the checkout.
       - name: Start the test database
         run: |
           nohup docker run -d --name postgres -p 5432:5432 \
@@ -64,7 +67,6 @@ jobs:
             -e POSTGRES_DB=offwego_test -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
             postgres:17-alpine > /tmp/postgres-start.log 2>&1 &
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/node
 
       # Without it every video test quietly SKIPS. They have been skipping here
@@ -176,8 +178,11 @@ jobs:
       # The sample-mode suite runs in the shards above, where uploads never
       # leave the tab. This one has a real server behind it, so "does a film
       # actually upload" is a question CI can answer rather than infer.
+      # Playwright itself rather than the package script: the specs are the
+      # arguments, and a package manager between them and Playwright once
+      # kept the `--` and ran every spec on both stacks.
       - name: Run browser tests against a real server
-        run: time pnpm test:live -- ${{ matrix.specs }}
+        run: time pnpm exec playwright test --config playwright.live.config.ts ${{ matrix.specs }}
 
       - name: Keep the failure traces
         if: failure()

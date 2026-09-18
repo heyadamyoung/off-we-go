@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../fixture.js'
 import sharp from 'sharp'
 import { leaveNoTrace } from './leave-no-trace.js'
 import { stack } from './stack.js'

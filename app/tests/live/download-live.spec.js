@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../fixture.js'
 import { leaveNoTrace } from './leave-no-trace.js'
 import { stack } from './stack.js'
 
