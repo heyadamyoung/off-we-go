@@ -185,6 +185,10 @@ jobs:
   browser:
     name: Browser tests (${{ matrix.shard }} of 7)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # To ask which sibling shards have a runner yet, and what they covered.
+      actions: read
     defaults:
       run:
         working-directory: app
@@ -197,20 +201,44 @@ jobs:
       - uses: ./.github/actions/node
       - uses: ./.github/actions/browser
 
+      # A runner is sometimes handed a job forty seconds after the rest of
+      # the run has begun — one job in perhaps every other run, any of them
+      # — and the deploy waited on it. The shards given machines on time
+      # cover for the one that was not (see scripts/shard-cover.mjs): each
+      # asks which siblings have not started, takes a fixed share of each
+      # such sibling's deal on top of its own, and says so with a marker.
+      # The late shard, when its machine arrives, finds a marker from every
+      # sibling and runs nothing; short of one, it runs its own deal, and a
+      # test is run twice rather than not at all.
+      - name: Cover the shards without a runner
+        id: cover
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/shard-cover.mjs 7 ${{ matrix.shard }} >> "$GITHUB_OUTPUT"
+
+      - name: Say which shards this one covers
+        if: steps.cover.outputs.late != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cover-${{ steps.cover.outputs.late }}-by-${{ matrix.shard }}
+          path: app/covered.txt
+          retention-days: 1
+
       # A seventh of the tests each, dealt round-robin so every shard holds
       # the same mix of light and heavy (see scripts/shard-tests.mjs), spread
-      # across the runner's cores. Seven, which makes eleven jobs in the run
-      # and not more: past a dozen the next one waited forty seconds for a
-      # machine, and a shard's tests are under half a minute.
+      # across the runner's cores.
       #
       # The sample-mode bundle (see playwright.config) is built here while the
       # tests are dealt — the deal is two seconds of one core that would
       # otherwise wait for the build — and the suite is told to serve it.
       - name: Run browser tests
+        if: steps.cover.outputs.skip != 'yes'
+        env:
+          COVERING: ${{ steps.cover.outputs.late }}
         run: |
           VITE_API_URL= pnpm build > /tmp/build.log 2>&1 &
           building=$!
-          mapfile -t dealt < <(node scripts/shard-tests.mjs 7 ${{ matrix.shard }})
+          mapfile -t dealt < <(node scripts/shard-tests.mjs 7 ${{ matrix.shard }} --cover "$COVERING")
           [ "${#dealt[@]}" -gt 0 ] || { echo "nothing was dealt to this shard"; exit 1; }
           wait "$building" || { cat /tmp/build.log; exit 1; }
           time PREBUILT=1 pnpm exec playwright test "${dealt[@]}"

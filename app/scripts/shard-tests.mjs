@@ -13,12 +13,18 @@
    loop that declares several tests on one line is one location and stays
    together.
 
-     node scripts/shard-tests.mjs <count> <index>    (index from 1)
+     node scripts/shard-tests.mjs <count> <index> [--cover <k>-<k>...]
 
-   prints the locations for that shard, one per line, for the shell to hand
-   to `playwright test`. An empty deal is an error rather than an empty
-   argument list, because `playwright test` with no arguments runs the whole
-   suite. */
+   prints the locations for that shard (index from 1), one per line, for
+   the shell to hand to `playwright test`. An empty deal is an error rather
+   than an empty argument list, because `playwright test` with no arguments
+   runs the whole suite.
+
+   With --cover, the shard also takes its share of the deals of the shards
+   named — the ones whose runner had not arrived (see shard-cover.mjs). A
+   late shard's deal is split into fixed parts, one for each of the others
+   by index, so what the punctual shards run between them is the whole of
+   it whichever of them asked first. */
 import { spawnSync } from 'node:child_process'
 import { isAbsolute, join, relative } from 'node:path'
 
@@ -28,6 +34,17 @@ export function deal(locations, count, index) {
     throw new Error(`no shard ${index} of ${count}`)
   }
   return locations.filter((_, at) => at % count === index - 1)
+}
+
+/** Shard `index`'s own deal, and its fixed share of each late shard's. */
+export function cover(locations, count, index, late) {
+  const mine = deal(locations, count, index)
+  for (const shard of late) {
+    if (shard === index) continue
+    const others = Array.from({ length: count }, (_, at) => at + 1).filter(at => at !== shard)
+    mine.push(...deal(deal(locations, count, shard), others.length, others.indexOf(index) + 1))
+  }
+  return mine
 }
 
 /** Every test's file:line, once each, in the order Playwright lists them. */
@@ -51,7 +68,10 @@ export function locationsOf(listing, cwd = process.cwd()) {
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/^.*\//, ''))) {
-  const [count, index] = process.argv.slice(2).map(Number)
+  const [count, index] = process.argv.slice(2, 4).map(Number)
+  const covering = process.argv.indexOf('--cover')
+  const late =
+    covering > 0 ? (process.argv[covering + 1] || '').split('-').filter(Boolean).map(Number) : []
   const listed = spawnSync('pnpm', ['exec', 'playwright', 'test', '--list', '--reporter=json'], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
@@ -60,7 +80,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/^.*\//,
     process.stderr.write(listed.stderr || 'playwright could not list the tests\n')
     process.exit(listed.status || 1)
   }
-  const locations = deal(locationsOf(JSON.parse(listed.stdout)), count, index)
+  const locations = cover(locationsOf(JSON.parse(listed.stdout)), count, index, late)
   if (!locations.length) {
     process.stderr.write(`shard ${index} of ${count} was dealt no tests\n`)
     process.exit(1)
