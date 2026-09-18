@@ -125,18 +125,16 @@ function Trip({
         onDeselect={() => patch({ sel: undefined })}
       />
 
-      {/* The map runs behind everything; these two washes keep the chrome legible
-          without a panel behind each piece of it. */}
+      {/* The map runs behind everything; two washes keep the chrome legible. */}
       <div
         className="pointer-events-none absolute inset-0 opacity-70
                       [background:linear-gradient(to_bottom,var(--c-bg)_0%,transparent_26%,transparent_58%,var(--c-bg)_100%)]"
       />
 
       {/* One top bar rather than two islands laid out from opposite edges that
-          met in the middle of a phone. On a phone it is a real bar, anchored to
-          the top edge on its own surface, with the actions on a second line and
-          the panels opening directly beneath it; above 640px it goes back to
-          floating over the map, which is where there is room for it. */}
+          met in the middle of a phone. On a phone it is a real bar on its own
+          surface, the tabs on a second line and the panels opening beneath it;
+          above 640px it goes back to floating over the map, where there is room. */}
       <div
         id="trip-top"
         className="absolute inset-x-0 top-0 z-20 flex h-[var(--trip-top)] flex-wrap

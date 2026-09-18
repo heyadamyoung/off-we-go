@@ -1573,8 +1573,13 @@ test('the photo gallery never covers the trip header or its tabs', async ({ page
       sheet.y + 1,
     )
   }
-  // And the trip's own name is still up there with them.
-  await expect(page.getByRole('heading', { name: 'Amsterdam Weekend' })).toBeVisible()
+  /* The row above the tabs is the gallery's own on a phone — its name and
+     the way back — where the trip's name sits when the map is showing. Two
+     bands of chrome, not three, and neither of them under the gallery. */
+  const name = await page.getByRole('heading', { name: 'Photos' }).boundingBox()
+  expect(name, 'the gallery should be named above its tabs').not.toBeNull()
+  expect(name.y + name.height).toBeLessThanOrEqual(sheet.y + 1)
+  await expect(page.getByRole('button', { name: 'Back to map' })).toBeVisible()
 })
 
 test('adding photos opens from the gallery, on a phone', async ({ page }) => {

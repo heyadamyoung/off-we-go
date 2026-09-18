@@ -172,8 +172,11 @@ export default function GalleryBar({
             <Icon n="plus" s={16} w={2} />
           </button>
         )}
+        {/* On a phone the way back is on the row above the tabs, with the
+            gallery's name, as it is for every panel; here it would be a
+            second one. */}
         <button
-          className="grid size-8 place-items-center rounded-full text-muted hover:bg-raised2 hover:text-ink"
+          className="grid size-8 place-items-center rounded-full text-muted hover:bg-raised2 hover:text-ink max-sm:hidden"
           onClick={onClose}
           title="Back to map"
           aria-label="Back to map">
