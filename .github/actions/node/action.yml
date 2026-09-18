@@ -1,24 +1,70 @@
 name: Node with the dependencies installed
 description: >-
-  pnpm through corepack, Node 22 with the pnpm store cached by lockfile, and a
-  frozen install of app/. Every job that runs anything of the app starts here.
+  Node 22 from the runner image, pnpm as the package the registry publishes,
+  and app/'s node_modules whole, kept in the cache by lockfile. Every job that
+  runs anything of the app starts here, and starts on the code in a few
+  seconds rather than fifteen.
 runs:
   using: composite
   steps:
-    # Before setup-node, whose cache of the pnpm store needs pnpm on the path.
-    # From pnpm's own release rather than through corepack, which fetched the
-    # tarball from the npm registry on every job and took four seconds over it.
-    - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      with:
-        version: 10.6.5
+    # The image carries Node 22 in its toolcache. setup-node found it there
+    # every time — and then spent four seconds asking three tools their
+    # versions and restoring the pnpm store. On the PATH and done; if an
+    # image ever lacks it, setup-node still knows how to fetch one.
+    - name: Node 22 from the image
+      id: node
+      shell: bash
+      run: |
+        bin=$(ls -d /opt/hostedtoolcache/node/22.*/x64/bin 2>/dev/null | sort -V | tail -1 || true)
+        if [ -n "$bin" ]; then
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "node $("$bin/node" --version) from the image"
+        else
+          echo "fetch=yes" >> "$GITHUB_OUTPUT"
+        fi
 
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      if: steps.node.outputs.fetch == 'yes'
       with:
         node-version: 22
-        cache: pnpm
-        cache-dependency-path: app/pnpm-lock.yaml
+
+    # pnpm and the modules together, by lockfile. pnpm is the package the
+    # registry publishes, run by the node above: fetched once a version and
+    # kept beside the modules, not installed by npm on every job, which was
+    # four to ten seconds at the registry's mood. The modules are cached
+    # whole rather than as the store they are linked from: a hit is the
+    # modules in place, with no install to run over them.
+    - name: Restore pnpm and the modules
+      id: modules
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.pnpm-cli
+          app/node_modules
+        key: modules-${{ runner.os }}-pnpm-10.6.5-${{ hashFiles('app/pnpm-lock.yaml', 'app/package.json') }}
+        # An older set is most of a newer one: the install below replaces
+        # what changed rather than fetching everything.
+        restore-keys: modules-${{ runner.os }}-pnpm-10.6.5-
+
+    # The checksum is the pin: a tarball that does not match is not run.
+    - name: Put pnpm on the PATH
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -f ~/.pnpm-cli/package/bin/pnpm.cjs ]; then
+          mkdir -p ~/.pnpm-cli
+          cd ~/.pnpm-cli
+          curl -fsSL --retry 3 -o pnpm.tgz https://registry.npmjs.org/pnpm/-/pnpm-10.6.5.tgz
+          echo "47c8bca42b4b48534b5b1b28d573c506773937b02f68e52992fbd8269131c5c8  pnpm.tgz" | sha256sum -c
+          tar -xzf pnpm.tgz
+          rm pnpm.tgz
+        fi
+        mkdir -p ~/.pnpm-cli/bin
+        ln -sf ~/.pnpm-cli/package/bin/pnpm.cjs ~/.pnpm-cli/bin/pnpm
+        echo "$HOME/.pnpm-cli/bin" >> "$GITHUB_PATH"
 
     - name: Install dependencies
+      if: steps.modules.outputs.cache-hit != 'true'
       shell: bash
       working-directory: app
       run: pnpm install --frozen-lockfile

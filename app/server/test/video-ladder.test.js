@@ -24,7 +24,7 @@ const skip =
     ? false
     : 'ffmpeg is not installed on this machine'
 
-const film = (path, { width = 640, height = 360, seconds = 6 } = {}) => {
+const film = (path, { width = 320, height = 180, seconds = 6 } = {}) => {
   const result = spawnSync(
     'ffmpeg',
     [
@@ -177,7 +177,7 @@ describe('the ladder', { concurrency: true }, () => {
     // Big enough that the ladder has more than one rung to switch between.
     const row = await uploaded(
       place,
-      film(join(place.directory, 'big.mp4'), { width: 1280, height: 720, seconds: 6 }),
+      film(join(place.directory, 'big.mp4'), { width: 888, height: 500, seconds: 6 }),
     )
 
     const masterText = await (await replay(place.origin, row.hlsSrc)).text()

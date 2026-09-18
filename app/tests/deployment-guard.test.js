@@ -248,22 +248,50 @@ test('the deploy pulls with a token it destroys, builds without one, and keeps t
   assert.doesNotMatch(script, /echo.*registry_token/)
 })
 
-test('the release images are built beside the tests, and the deploy waits for them', () => {
+test('the release images are put together beside the tests, and the deploy waits for them', () => {
   const workflow = readFileSync(
     path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
     'utf8',
   )
-  assert.match(workflow, /build api server\/Dockerfile/)
-  assert.match(workflow, /build web Dockerfile\.web/)
+  const dockerfile = readFileSync(path.join(appRoot, 'server', 'Dockerfile'), 'utf8')
+  const webDockerfile = readFileSync(path.join(appRoot, 'Dockerfile.web'), 'utf8')
   assert.match(workflow, /needs: \[checks, server, browser, live, images\]/)
   assert.match(workflow, /packages: write/)
+  /* The api image is the Dockerfile's base stage with the server laid over
+     it by crane, so the final stage — what a hand build makes — must be that
+     base and the one COPY, nothing else, and the base is rebuilt only when
+     the stage, the dependencies or the node image it starts from change. */
+  assert.match(dockerfile, /^FROM node:\S+ AS base$/m)
+  assert.match(dockerfile, /\nFROM base\nCOPY server \.\/server\n$/)
   assert.match(
     workflow,
-    /--cache-to "type=registry,ref=\$repo\/\$image:buildcache,mode=max,compression=zstd"/,
+    /sed -n 's\/\^FROM \\\(\[\^ \]\*\\\) AS base\$\/\\1\/p' server\/Dockerfile/,
   )
-  // And only when the layers it is made of changed; source alone never is.
-  assert.match(workflow, /git diff --name-only HEAD~1 HEAD -- package\.json pnpm-lock\.yaml/)
-  assert.match(workflow, /--tag "\$repo\/\$image:\$GITHUB_SHA"/)
+  assert.match(
+    workflow,
+    /cat server\/Dockerfile package\.json pnpm-lock\.yaml <\(crane digest "\$node_image"\)/,
+  )
+  assert.match(workflow, /--target base/)
+  assert.match(workflow, /--transform 's,\^,app\/,' -cf \/tmp\/server\.tar server/)
+  assert.match(
+    workflow,
+    /crane append -b "\$base" -f \/tmp\/server\.tar -t "\$repo\/api:\$GITHUB_SHA"/,
+  )
+  /* The web image is the bundle over the Caddy Dockerfile.web names, built
+     on the runner as that Dockerfile builds it: against /api, stamped with
+     the commit, and checked. */
+  assert.match(webDockerfile, /^FROM caddy:\S+$/m)
+  assert.match(workflow, /sed -n 's\/\^FROM \\\(caddy:\[\^ \]\*\\\)\$\/\\1\/p' Dockerfile\.web/)
+  assert.match(workflow, /VITE_API_URL: \/api\n\s*VITE_APP_SHA: \$\{\{ github\.sha \}\}/)
+  assert.match(workflow, /pnpm build\n\s*node scripts\/check-release-assets\.mjs dist\/client/)
+  assert.match(workflow, /--transform 's,\^dist\/client,srv,' -cf \/tmp\/web\.tar dist\/client/)
+  assert.match(
+    workflow,
+    /crane append -b "\$caddy" -f \/tmp\/web\.tar -t "\$repo\/web:\$GITHUB_SHA"/,
+  )
+  // Both by commit, and both as latest.
+  assert.match(workflow, /crane tag "\$repo\/api:\$GITHUB_SHA" latest/)
+  assert.match(workflow, /crane tag "\$repo\/web:\$GITHUB_SHA" latest/)
   // The box is told which images the release is, by commit, and handed the
   // pipeline's own token to pull them with — into the file the deploy script
   // reads once and destroys, never into the release values it keeps.

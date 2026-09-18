@@ -1,0 +1,36 @@
+name: crane
+description: >-
+  crane, the registry client from go-containerregistry, fetched once by
+  release and checksum, kept in the cache and put on the PATH. It writes an
+  image into a registry as a manifest and a layer over the registry's own
+  API, which is how a release image is put together without pulling the
+  layers it does not change.
+runs:
+  using: composite
+  steps:
+    - name: Restore crane
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.crane
+        key: crane-0.22.1-linux-x64
+
+    # The checksum is the pin: a build that does not match is not installed
+    # and is not cached.
+    - name: Fetch crane
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.crane
+        cd ~/.crane
+        curl -fsSL --retry 3 -o crane.tgz https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+        echo "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0  crane.tgz" | sha256sum -c
+        tar -xzf crane.tgz crane
+        rm crane.tgz
+
+    - name: Put crane on the PATH
+      shell: bash
+      run: |
+        echo "$HOME/.crane" >> "$GITHUB_PATH"
+        ~/.crane/crane version

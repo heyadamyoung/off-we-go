@@ -97,7 +97,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm build && node scripts/serve-release.mjs dist/client 4180',
+    /* Built here, unless the caller built already and says so: on CI a shard
+       builds while its tests are being dealt, and serves what it built. */
+    command: `${process.env.PREBUILT ? '' : 'pnpm build && '}node scripts/serve-release.mjs dist/client 4180`,
     url: 'http://localhost:4180',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
