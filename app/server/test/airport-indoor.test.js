@@ -154,8 +154,9 @@ test('a restart re-reads the durable store instead of re-asking Overpass', async
   assert.equal(asked, 1)
 })
 
-// The cache's own key for the coordinates every test asks with.
-const KEY = (4.7639).toFixed(3) + ',' + (52.3105).toFixed(3)
+// The cache's own key for the coordinates every test asks with: the query
+// version, then the rounded position.
+const KEY = '2:' + (4.7639).toFixed(3) + ',' + (52.3105).toFixed(3)
 
 test('a stale durable row is re-asked and rewritten', async () => {
   let asked = 0

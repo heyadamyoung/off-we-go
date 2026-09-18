@@ -25,9 +25,10 @@ const MIRRORS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
-// The version in the prefix retires caches from before routes and landmarks,
-// which lack the paths a route needs.
-const STORE_PREFIX = 'wf-indoor2-'
+// The version in the prefix retires caches fetched with an older query —
+// before routes and landmarks, and then before the desks and security
+// filters the walk through the terminal steers by.
+const STORE_PREFIX = 'wf-indoor3-'
 const STORE_CAP = 2 // whole terminals are big; keep the last couple
 const live = new Map<string, IndoorFeature[]>()
 

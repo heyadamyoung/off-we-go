@@ -32,6 +32,12 @@ test('the Overpass query asks around the stop and brings geometry back', () => {
   assert.match(query, /node\["aeroway"="gate"\]/)
   assert.match(query, /footway\|corridor\|steps/)
   assert.match(query, /node\["highway"="elevator"\]/)
+  // the desks and the security filter, for the walk on the day of the flight
+  assert.match(
+    query,
+    /node\["aeroway"~"\^\(checkin\|check-in\|check_in\|security_check\|security\)\$"\]/,
+  )
+  assert.match(query, /way\["barrier"="security_check"\]/)
   assert.match(query, /out geom/)
 })
 
@@ -177,6 +183,57 @@ test('a gate mapped as an area still reads as one point', () => {
   assert.equal(features[0].geometry.type, 'Point')
 })
 
+test('check-in desks and security filters are landmarks, however they were drawn', () => {
+  const features = indoorFeatures({
+    elements: [
+      {
+        type: 'node',
+        tags: { aeroway: 'checkin', ref: '13-20', level: '0' },
+        lon: 4.7628,
+        lat: 52.3098,
+      },
+      { type: 'node', tags: { aeroway: 'security_check', level: '0' }, lon: 4.7638, lat: 52.31 },
+      // named for what it is, tagged as nothing in particular
+      { type: 'node', tags: { name: 'Bag drop KLM', level: '0' }, lon: 4.763, lat: 52.3099 },
+      // desks drawn as a room: the room stays a room, and gains a point
+      {
+        type: 'way',
+        tags: { indoor: 'room', name: 'Check-in 3', level: '0' },
+        geometry: [
+          { lon: 4.762, lat: 52.309 },
+          { lon: 4.7622, lat: 52.309 },
+          { lon: 4.7622, lat: 52.3092 },
+          { lon: 4.762, lat: 52.3092 },
+          { lon: 4.762, lat: 52.309 },
+        ],
+      },
+      // a filter drawn as a line across the corridor
+      {
+        type: 'way',
+        tags: { barrier: 'security_check' },
+        geometry: [
+          { lon: 4.764, lat: 52.3101 },
+          { lon: 4.7641, lat: 52.3102 },
+        ],
+      },
+    ],
+  })
+  assert.deepEqual(
+    features.map(f => [f.properties.kind, f.properties.cat, f.properties.name]),
+    [
+      ['poi', 'checkin', 'Check-in 13-20'],
+      ['poi', 'security', 'Security'],
+      ['poi', 'checkin', 'Bag drop KLM'],
+      ['room', 'checkin', 'Check-in 3'],
+      ['poi', 'checkin', 'Check-in 3'],
+      ['poi', 'security', 'Security'],
+    ],
+  )
+  assert.equal(features[3].geometry.type, 'Polygon')
+  assert.equal(features[4].geometry.type, 'Point')
+  assert.equal(features[5].geometry.type, 'Point')
+})
+
 test('floors are listed once each and the map opens at ground level', () => {
   const features = indoorFeatures(OVERPASS)
   assert.deepEqual(levelsOf(features), [0, 1])
@@ -203,8 +260,6 @@ const AT_AIRPORT = { center: [4.7639, 52.3105], zoom: 15 }
 const quiet = {
   stops: [SCHIPHOL, HOTEL],
   active: null,
-  auto: null,
-  dismissed: null,
   routing: false,
 }
 
@@ -214,35 +269,19 @@ test('zooming into an airport opens its inside; into a hotel opens nothing', () 
   assert.equal(autoIndoorMove({ ...quiet, view: { center: [4.7639, 52.3105], zoom: 14 } }), null)
 })
 
-test('a terminal dismissed by hand stays closed until the camera has left', () => {
-  assert.equal(autoIndoorMove({ ...quiet, view: AT_AIRPORT, dismissed: 's1' }), null)
-  // zooming right out lifts the dismissal…
-  assert.deepEqual(
-    autoIndoorMove({ ...quiet, view: { center: [4.7639, 52.3105], zoom: 12 }, dismissed: 's1' }),
-    { reset: true },
-  )
-})
-
-test('only what opened by itself closes by itself, and never mid-route', () => {
+test('a terminal closes only when the camera leaves it, and never mid-route', () => {
   const zoomedOut = { center: [4.7639, 52.3105], zoom: 12 }
-  assert.deepEqual(autoIndoorMove({ ...quiet, view: zoomedOut, active: SCHIPHOL, auto: 's1' }), {
+  assert.deepEqual(autoIndoorMove({ ...quiet, view: zoomedOut, active: SCHIPHOL }), {
     close: true,
   })
-  // opened from the card's button: stays put
-  assert.equal(autoIndoorMove({ ...quiet, view: zoomedOut, active: SCHIPHOL, auto: null }), null)
-  // a gate route is up: stays put
-  assert.equal(
-    autoIndoorMove({ ...quiet, view: zoomedOut, active: SCHIPHOL, auto: 's1', routing: true }),
-    null,
-  )
+  // still looking at it: stays put, however it was opened
+  assert.equal(autoIndoorMove({ ...quiet, view: AT_AIRPORT, active: SCHIPHOL }), null)
+  // a line to somewhere in it is up, or the walk through it is on: stays put
+  assert.equal(autoIndoorMove({ ...quiet, view: zoomedOut, active: SCHIPHOL, routing: true }), null)
+  assert.equal(autoIndoorMove({ ...quiet, view: zoomedOut, active: SCHIPHOL, keep: true }), null)
   // wandered kilometres away while still zoomed in: folds up too
   assert.deepEqual(
-    autoIndoorMove({
-      ...quiet,
-      view: { center: [4.85, 52.31], zoom: 15 },
-      active: SCHIPHOL,
-      auto: 's1',
-    }),
+    autoIndoorMove({ ...quiet, view: { center: [4.85, 52.31], zoom: 15 }, active: SCHIPHOL }),
     { close: true },
   )
 })
