@@ -1,28 +1,31 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
 
-/* A sheet that follows the finger.
+/* A sheet that follows the finger, through three stages.
  *
- * The bar at the bottom of a phone opens and closes on its grabber. This is
- * the gesture: press anywhere on the handle strip, and the bar comes along
- * — down the whole way to where it will sit collapsed, or up the whole way
- * to its open height, growing from the bottom of the screen; let go past
- * the threshold, or flick, and it opens or closes; let go short of it and it
- * settles back. A tap still toggles, because a press that never moved is a
- * tap. Pointer events with capture, so a mouse can do it and a finger that
- * wanders off the handle keeps it.
+ * The bar at the bottom of a phone has a peek (the handle and the day chips),
+ * an open height (the cards in a row), and a tall one that fills the screen
+ * to the top chrome, where the cards wrap into a grid with room to look at.
+ * This is the gesture: press anywhere on the handle strip and the bar's top
+ * edge comes with the finger, one for one, from the peek to the top of the
+ * screen; let go and it settles on the next stage the way it was going — a
+ * pull past the threshold never snaps back — or, short of it, where it was.
+ * A flick decides too. A tap still toggles.
  *
- * Down is a slide: the bar's top comes down with the finger and its bottom
- * goes under the edge of the screen, which nobody sees. Up is a stretch:
- * the bar's bottom stays on the edge of the screen and its top rises, so
- * it is never a floating strip with a gap of map under it — which is what
- * sliding it up did, before snapping back to where its feet were.
+ * The bar is always as tall as it can be, hung from the bottom of the screen
+ * with the part past its stage below the edge. So every stage, and every
+ * frame of a drag, is one transform on the bar — which the compositor does
+ * without a layout — and there is never a gap under it. The chrome standing
+ * on the bar rides its top edge by a translate of its own, the same way.
+ * Nothing goes through React until the finger has gone: a re-render of the
+ * day's cards per pointer event was the jank.
  *
- * The bar is moved by hand — a transform or a height written straight onto
- * the element on every move, never through React — because a re-render of
- * the day's cards per pointer event was the jank, and the browser must never
- * see the gesture as its own: the handle refuses every touch action, and a
- * touchmove on it is stopped before Android can read it as pull-to-refresh
- * or a scroll that hides the address bar. */
+ * The browser must never see the gesture as its own: the handle refuses every
+ * touch action, and a touchmove on it is stopped before Android can read it
+ * as pull-to-refresh or a scroll that hides the address bar. */
+
+export type BarStage = 'peek' | 'open' | 'tall'
+export const STAGES: readonly BarStage[] = ['peek', 'open', 'tall']
 
 /** How far a drag has to go before letting go counts as a decision. */
 export const DRAG_DECIDES_PX = 28
@@ -32,10 +35,52 @@ export const PEEK_PX = 80
 export const OPEN_PX = 208
 /** A fast short flick decides too. */
 const FLICK_PX_PER_MS = 0.45
-/** The margin between the bar's top and the chrome standing on it, as --trip-1 declares it. */
-const CHROME_GAP_PX = 16
+/** How long the bar takes to settle on a stage once the finger has gone. */
+const SETTLE_MS = 220
+/** Everything that stands on the bar. */
+const CHROME = '.mapchrome, .nowpill, .wctl, .edithint, .nowcard'
 
 const resist = (px: number) => Math.sqrt(Math.max(0, px)) * 4
+
+/** The chrome standing on this bar, on the screen the bar is on. */
+const chrome = (element: HTMLElement): Iterable<HTMLElement> =>
+  element.closest<HTMLElement>('.tripscreen')?.querySelectorAll<HTMLElement>(CHROME) ?? []
+
+export interface StageHeights {
+  peek: number
+  open: number
+  tall: number
+}
+
+/** The bar's visible height under a finger `dy` down from where it started at
+    `from`: one for one between the peek and the top, resisted past either. */
+export function visibleUnder(dy: number, from: BarStage, heights: StageHeights): number {
+  const wanted = heights[from] - dy
+  if (wanted < heights.peek) return heights.peek - resist(heights.peek - wanted) / 2
+  if (wanted > heights.tall) return heights.tall + resist(wanted - heights.tall) / 2
+  return wanted
+}
+
+/** Where the bar settles when the finger lifts. A pull past the threshold, or
+    a flick, goes on to the next stage the way it was going — and further,
+    when it went far enough to be nearer a later one — never back the way it
+    came; a shorter pull settles where it was. */
+export function stageAfter(dy: number, from: BarStage, heights: StageHeights, speed = 0): BarStage {
+  if (dy === 0) return from
+  const decided = Math.abs(dy) >= DRAG_DECIDES_PX || speed >= FLICK_PX_PER_MS
+  if (!decided) return from
+  const index = STAGES.indexOf(from)
+  const ahead = STAGES.filter((_, at) => (dy < 0 ? at > index : at < index))
+  if (!ahead.length) return from
+  const visible = heights[from] - dy
+  let best = ahead[0]
+  for (const stage of ahead)
+    if (Math.abs(heights[stage] - visible) < Math.abs(heights[best] - visible)) best = stage
+  return best
+}
+
+/** A press that never moved: the next stage over. */
+export const stageOnTap = (from: BarStage): BarStage => (from === 'peek' ? 'open' : 'peek')
 
 export interface SheetDrag {
   /** the element that moves: the bar */
@@ -50,40 +95,23 @@ export interface SheetDrag {
   }
 }
 
-/** Where the bar's top goes for a finger `dy` down from where it started:
-    negative is up. Collapsed, it rises with the finger the whole way to
-    its open height and resists past it, and barely sinks under a pull down.
-    Open, it comes down with the finger to its collapsed place and no
-    further, and does not move under a pull up — there is nothing above to
-    show, and a bar lifted off the bottom of the screen is a bar with a gap
-    under it. */
-export function followBy(dy: number, collapsed: boolean, travel: number): number {
-  if (collapsed) {
-    if (dy >= 0) return resist(dy) / 2
-    const up = -dy
-    return -(Math.min(travel, up) + (up > travel ? resist(up - travel) / 2 : 0))
-  }
-  return dy < 0 ? 0 : Math.min(travel, dy)
+interface Press {
+  y: number
+  at: number
+  id: number
+  stage: BarStage
+  heights: StageHeights
 }
 
-/**
- * @param collapsed whether the sheet is currently down
- * @param onCollapse asked with true to collapse, false to open
- */
 export default function useSheetDrag(
-  collapsed: boolean,
-  onCollapse: (collapsed: boolean) => void,
+  stage: BarStage,
+  onStage: (stage: BarStage) => void,
 ): SheetDrag {
   const sheet = useRef<HTMLDivElement>(null)
   const grip = useRef<HTMLButtonElement>(null)
-  const start = useRef<{
-    y: number
-    at: number
-    id: number
-    travel: number
-    height: number
-  } | null>(null)
+  const press = useRef<Press | null>(null)
   const moved = useRef(0)
+  const settling = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [dragging, setDragging] = useState(false)
 
   /* Non-passive on purpose: React's own touch handlers are passive, and a
@@ -92,123 +120,130 @@ export default function useSheetDrag(
     const element = grip.current
     if (!element) return
     const swallow = (event: TouchEvent) => {
-      if (start.current) event.preventDefault()
+      if (press.current) event.preventDefault()
     }
     element.addEventListener('touchmove', swallow, { passive: false })
     return () => element.removeEventListener('touchmove', swallow)
   }, [])
+  useEffect(
+    () => () => {
+      if (settling.current) clearTimeout(settling.current)
+    },
+    [],
+  )
 
-  /* A move down is a transform; a move up is a taller bar. Zero is home:
-     both come off, and with `eased` the stylesheet's own height glides the
-     bar to wherever its class now says it belongs.
-
-     Everything standing on the bar — the map's controls, the pill, the
-     card — stands on --trip-1, the bar's height plus a margin, which the
-     stylesheet derives from the bar's class. While the finger is down that
-     is written by hand too, on the screen the chrome lives in, from the
-     bar's visible height on every move: the chrome rides the bar's top
-     edge frame by frame rather than waiting at the old height and gliding
-     over after the finger has gone. Home takes it off again, and the
-     stylesheet's own transition glides it the last of the way. */
-  const place = useCallback((dy: number, eased: boolean) => {
+  /* The bar and the chrome at a visible height, by hand: a transform on the
+     bar, a translate on each of the chrome, and — eased — the settle. */
+  const place = useCallback((visible: number, from: Press, eased: boolean) => {
     const element = sheet.current
     if (!element) return
-    element.style.transition = eased ? 'transform .18s ease, height .18s ease' : 'none'
-    if (dy < 0) {
-      element.style.transform = ''
-      element.style.height = `${(start.current?.height ?? 0) - dy}px`
-    } else {
-      element.style.height = ''
-      element.style.transform = dy ? `translate3d(0, ${dy}px, 0)` : ''
-    }
-    const screen = element.closest<HTMLElement>('.tripscreen')
-    if (!screen) return
-    if (dy === 0) {
-      screen.removeAttribute('data-bardrag')
-      screen.style.removeProperty('--trip-1')
-    } else {
-      screen.setAttribute('data-bardrag', '')
-      screen.style.setProperty('--trip-1', `${(start.current?.height ?? 0) - dy + CHROME_GAP_PX}px`)
+    const ease = eased ? `${SETTLE_MS}ms ease` : 'none'
+    element.closest('.tripscreen')?.setAttribute('data-bardrag', '')
+    element.style.transition = eased ? `transform ${ease}` : 'none'
+    element.style.transform = `translate3d(0, ${from.heights.tall - visible}px, 0)`
+    const shift = from.heights[from.stage] - visible
+    for (const standing of chrome(element)) {
+      standing.style.transition = eased ? `translate ${ease}` : 'none'
+      standing.style.translate = `0 ${shift}px`
     }
   }, [])
+
+  /* Hands back to the stylesheet: the class now says where everything is,
+     and it is exactly where the hand left it, so nothing jumps. The drag
+     mark comes off a frame later, so the bottom the chrome stands on does
+     not ease from the old stage to the new one under it. */
+  const release = useCallback(() => {
+    const element = sheet.current
+    if (!element) return
+    element.style.transition = ''
+    element.style.transform = ''
+    element.style.willChange = ''
+    for (const standing of chrome(element)) {
+      standing.style.transition = ''
+      standing.style.translate = ''
+      standing.style.willChange = ''
+    }
+    const screen = element.closest('.tripscreen')
+    requestAnimationFrame(() => screen?.removeAttribute('data-bardrag'))
+  }, [])
+
+  const settle = useCallback(
+    (from: Press, target: BarStage) => {
+      place(from.heights[target], from, true)
+      if (settling.current) clearTimeout(settling.current)
+      settling.current = setTimeout(() => {
+        settling.current = null
+        if (target !== from.stage) flushSync(() => onStage(target))
+        release()
+      }, SETTLE_MS + 30)
+    },
+    [place, release, onStage],
+  )
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLElement>) => {
       const element = sheet.current
-      const padding = element ? Number.parseFloat(getComputedStyle(element).paddingBottom) || 0 : 0
-      const height = element?.getBoundingClientRect().height ?? 0
-      start.current = {
-        y: event.clientY,
-        at: event.timeStamp,
-        id: event.pointerId,
-        height,
-        travel: collapsed ? OPEN_PX - PEEK_PX : Math.max(0, height - PEEK_PX - padding),
+      if (!element) return
+      if (settling.current) {
+        clearTimeout(settling.current)
+        settling.current = null
+        release()
       }
+      const padding = Number.parseFloat(getComputedStyle(element).paddingBottom) || 0
+      const heights: StageHeights = {
+        peek: PEEK_PX + padding,
+        open: OPEN_PX + padding,
+        tall: element.getBoundingClientRect().height,
+      }
+      press.current = { y: event.clientY, at: event.timeStamp, id: event.pointerId, stage, heights }
       moved.current = 0
       event.currentTarget.setPointerCapture?.(event.pointerId)
-      if (element) element.style.willChange = 'transform, height'
+      element.style.willChange = 'transform'
+      for (const standing of chrome(element)) standing.style.willChange = 'translate'
       setDragging(true)
     },
-    [collapsed],
+    [stage, release],
   )
 
   const onPointerMove = useCallback(
     (event: PointerEvent<HTMLElement>) => {
-      const begun = start.current
+      const begun = press.current
       if (!begun || begun.id !== event.pointerId) return
       const dy = event.clientY - begun.y
       moved.current = dy
-      place(followBy(dy, collapsed, begun.travel), false)
+      place(visibleUnder(dy, begun.stage, begun.heights), begun, false)
     },
-    [collapsed, place],
+    [place],
   )
 
-  const settle = useCallback(
+  const onPointerUp = useCallback(
     (event: PointerEvent<HTMLElement>) => {
-      const begun = start.current
+      const begun = press.current
       if (!begun || begun.id !== event.pointerId) return
+      press.current = null
       setDragging(false)
       event.currentTarget.releasePointerCapture?.(event.pointerId)
       const dy = moved.current
       const speed = Math.abs(dy) / Math.max(1, event.timeStamp - begun.at)
-      const decided = Math.abs(dy) >= DRAG_DECIDES_PX || speed >= FLICK_PX_PER_MS
-      const opening = collapsed && dy < 0 && decided
-      if (opening) {
-        /* The bar is already most of the way up by hand. Let the class
-           change first, then take the hand-set height off on the next
-           frame, so the stylesheet glides it the last of the way rather
-           than dropping it to its collapsed height and growing it again. */
-        onCollapse(false)
-        requestAnimationFrame(() => {
-          place(0, true)
-          start.current = null
-          if (sheet.current) sheet.current.style.willChange = ''
-        })
-        return
-      }
-      start.current = null
-      /* The transform comes off as the height changes, so a bar dragged all
-         the way down to its collapsed place stays exactly there. */
-      place(0, true)
-      if (sheet.current) sheet.current.style.willChange = ''
-      if (Math.abs(dy) < 6) {
-        onCollapse(!collapsed) // a press that never moved is a tap
-      } else if (decided) {
-        onCollapse(dy > 0) // down collapses, up opens
-      }
+      const target =
+        Math.abs(dy) < 6
+          ? stageOnTap(begun.stage)
+          : stageAfter(dy, begun.stage, begun.heights, speed)
+      settle(begun, target)
     },
-    [collapsed, onCollapse, place],
+    [settle],
   )
 
   const onPointerCancel = useCallback(() => {
-    place(0, true)
-    start.current = null
+    const begun = press.current
+    press.current = null
     setDragging(false)
-  }, [place])
+    if (begun) settle(begun, begun.stage)
+  }, [settle])
 
   return {
     sheet,
     dragging,
-    handle: { ref: grip, onPointerDown, onPointerMove, onPointerUp: settle, onPointerCancel },
+    handle: { ref: grip, onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
   }
 }

@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react'
-import useSheetDrag from '../model/use-sheet-drag'
+import useSheetDrag, { type BarStage } from '../model/use-sheet-drag'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import MediaThumb from '../../../shared/ui/media-thumb'
@@ -25,10 +25,12 @@ interface TripBarProps {
      better — so the bar yields whenever one is open, at every width. On a
      phone there was no room anyway; on a desktop it was a duplicate. */
   behindPanel?: boolean
-  /* Phone only: collapsed to the handle and the day chips, the map keeps the
-     height. The state lives on the page so the floating chrome moves with it. */
-  peek?: boolean
-  onPeek?: (peek: boolean) => void
+  /* Phone only: the peek (the handle and the day chips, the map keeps the
+     height), open (the cards in a row) or tall (the screen to the top chrome,
+     the cards in a grid). The state lives on the page so the floating chrome
+     moves with it. Absent at a desk, where the bar has one height. */
+  stage?: BarStage
+  onStage?: (stage: BarStage) => void
 }
 
 const TripBar = memo(function TripBar({
@@ -44,19 +46,20 @@ const TripBar = memo(function TripBar({
   onSelect,
   onAddStop,
   behindPanel,
-  peek,
-  onPeek,
+  stage = 'open',
+  onStage,
 }: TripBarProps) {
+  const peek = stage === 'peek'
   const chips = useRef<HTMLDivElement>(null)
   /* The handle strip follows the finger: pull down and the bar goes with it
      to where it will sit collapsed, pull up and it opens, a tap still
      toggles. The bar is moved by hand while the finger is on it (see
      use-sheet-drag), so nothing here re-renders per move. */
-  const drag = useSheetDrag(!!peek, collapsed => onPeek?.(collapsed))
-  /* Collapsed, the search and the cards are off the screen; under a finger
-     pulling the bar up they are back, so the bar growing from the bottom
-     reveals the day rather than a stretch of empty glass. */
-  const tucked = !!peek && !drag.dragging
+  const drag = useSheetDrag(stage, next => onStage?.(next))
+  /* At the peek, the search and the cards are below the edge of the screen
+     and not drawn; under a finger pulling the bar up they are back, so the
+     bar rising reveals the day rather than a stretch of empty glass. */
+  const tucked = peek && !drag.dragging
 
   // Keep the chosen day in view when it changes from somewhere else — picking a
   // stop off the map moves the day with it.
@@ -72,11 +75,12 @@ const TripBar = memo(function TripBar({
         'border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px] ' +
         (behindPanel ? 'hidden' : '')
       }
+      data-stage={stage}
       data-dragging={drag.dragging || undefined}>
       {/* The whole strip above the chips is the handle, not the pill alone:
           a finger that landed a few pixels off an eight-pixel pill was the
           browser's, and the browser read the pull as a refresh. */}
-      {onPeek && (
+      {onStage && (
         <button
           className="grabber hidden w-full flex-none select-none touch-none py-2.5 max-sm:block"
           style={{ touchAction: 'none' }}
@@ -103,7 +107,7 @@ const TripBar = memo(function TripBar({
             className={'chip hitslop' + (day === ALL_DAYS ? ' sel' : '')}
             onClick={() => {
               onDay(ALL_DAYS)
-              if (peek) onPeek?.(false)
+              if (peek) onStage?.('open')
             }}>
             All days
           </button>
@@ -116,7 +120,7 @@ const TripBar = memo(function TripBar({
               className={'chip hitslop' + (day === value.iso ? ' sel' : '')}
               onClick={() => {
                 onDay(value.iso)
-                if (peek) onPeek?.(false)
+                if (peek) onStage?.('open')
               }}>
               {/* The live dot stays amber even on the ink-inverted selected
                   chip — it marks the journey's day, and that is amber's job. */}
@@ -147,7 +151,7 @@ const TripBar = memo(function TripBar({
       </div>
       <div
         className={
-          'flex flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden px-4 ' +
+          'fcards flex flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden px-4 ' +
           'pb-3.5 pt-1.5 max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5' +
           (tucked ? ' max-sm:hidden' : '')
         }>

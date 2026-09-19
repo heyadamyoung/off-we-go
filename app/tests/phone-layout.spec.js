@@ -421,11 +421,12 @@ test('the day bar is dragged open and closed by its grabber, and still taps', as
   await expect(grabber).toHaveAttribute('aria-expanded', 'true')
 })
 
-/* Pulled up from its collapsed place, the bar grows from the bottom of the
-   screen under the finger — its feet never leave the edge. Sliding it up
-   left a strip of map under it and then snapped it back to its feet before
-   growing it, which read as the chrome coming loose. */
-test('pulled up while collapsed, the bar grows from the bottom edge and never lifts off it', async ({
+/* Pulled up from its peek, the bar's top edge comes with the finger and its
+   feet never leave the bottom of the screen: it is one tall sheet hung from
+   the edge, moved by a transform, with the part past its stage below the
+   edge. Sliding a short bar up left a strip of map under it and then snapped
+   it back before growing it, which read as the chrome coming loose. */
+test('pulled up from its peek, the bar rises from the bottom edge and never lifts off it', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -435,7 +436,9 @@ test('pulled up while collapsed, the bar grows from the bottom edge and never li
   const bar = page.locator('.tripbar')
   if ((await grabber.getAttribute('aria-expanded')) !== 'false') await grabber.click()
   await expect(grabber).toHaveAttribute('aria-expanded', 'false')
-  const rest = await bar.boundingBox()
+  await expect(bar).toHaveAttribute('data-stage', 'peek')
+  const visible = async () => 844 - (await bar.boundingBox()).y
+  await expect.poll(visible).toBe(80)
   const box = await grabber.boundingBox()
   const x = box.x + box.width / 2
   const y = box.y + box.height / 2
@@ -443,22 +446,70 @@ test('pulled up while collapsed, the bar grows from the bottom edge and never li
   await page.mouse.down()
   await page.mouse.move(x, y - 30, { steps: 3 })
   await page.mouse.move(x, y - 60, { steps: 3 })
+  /* One for one with the finger, and the bar reaches below the edge: no gap. */
+  expect(Math.round(await visible())).toBe(140)
   const held = await bar.boundingBox()
-  const bottom = await page.evaluate(() => window.innerHeight)
-  expect(Math.round(held.y + held.height)).toBe(Math.round(rest.y + rest.height))
-  expect(Math.round(held.y + held.height)).toBe(bottom)
-  expect(held.height).toBeGreaterThanOrEqual(rest.height + 55)
-  /* And the day is in it as it rises, not a stretch of empty glass. */
+  expect(held.y + held.height).toBeGreaterThanOrEqual(844)
+  /* The day is in it as it rises, not a stretch of empty glass. */
   await expect(bar.locator('.fcard').first()).toBeVisible()
-  /* The chrome standing on the bar rides its top edge as it rises, the
-     same sixteen pixels above it as at rest — not left at the old height
-     to catch up after the finger has gone. */
+  /* The chrome standing on the bar rides its top edge, the same sixteen
+     pixels above it as at rest. */
   const chrome = await page.locator('.mapchrome').boundingBox()
   expect(Math.round(held.y - (chrome.y + chrome.height))).toBe(16)
   await page.mouse.up()
   await expect(grabber).toHaveAttribute('aria-expanded', 'true')
+  await expect(bar).toHaveAttribute('data-stage', 'open')
+  await expect.poll(async () => Math.round(await visible())).toBe(208)
+  expect(await bar.evaluate(el => el.style.transform)).toBe('')
+  const rested = await page.locator('.mapchrome').boundingBox()
+  expect(Math.round((await bar.boundingBox()).y - (rested.y + rested.height))).toBe(16)
+})
+
+/* Pulled up past its open height the bar keeps going, to the top chrome and
+   no further, and the cards wrap into a grid with pictures big enough to
+   look at. A pull down brings it back to open; a pull down that went past
+   the threshold never snaps back. */
+test('pulled up past open, the bar covers the map up to the top chrome, and comes back down', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  const grabber = page.locator('.grabber')
+  const bar = page.locator('.tripbar')
+  await expect(bar).toHaveAttribute('data-stage', 'open')
+  const pull = async by => {
+    const box = await grabber.boundingBox()
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y + by / 2, { steps: 4 })
+    await page.mouse.move(x, y + by, { steps: 4 })
+    await page.mouse.up()
+  }
+  await pull(-300)
+  await expect(bar).toHaveAttribute('data-stage', 'tall')
+  /* Up to the top chrome — the title and the row of tabs — and no further:
+     a sheet that covers them is a screen you are stuck in. */
+  const tabs = await page.locator('.tbv').first().boundingBox()
   await expect
-    .poll(async () => Math.round((await bar.boundingBox()).height))
-    .toBe(Math.round(rest.height) + 128)
-  expect(await bar.evaluate(el => el.style.height)).toBe('')
+    .poll(async () => Math.round((await bar.boundingBox()).y))
+    .toBeGreaterThanOrEqual(Math.round(tabs.y + tabs.height) - 1)
+  expect(Math.round((await bar.boundingBox()).y)).toBeLessThanOrEqual(
+    Math.round(tabs.y + tabs.height) + 12,
+  )
+  /* The cards, two to a row, with room. */
+  const cards = bar.locator('.fcard')
+  const first = await cards.nth(0).boundingBox()
+  const second = await cards.nth(1).boundingBox()
+  expect(Math.round(first.y)).toBe(Math.round(second.y))
+  expect(first.x + first.width).toBeLessThanOrEqual(second.x + 1)
+  expect(first.width).toBeGreaterThan(150)
+  /* Down again: past the threshold it goes to open and stays there. */
+  await pull(80)
+  await expect(bar).toHaveAttribute('data-stage', 'open')
+  await expect.poll(async () => Math.round(844 - (await bar.boundingBox()).y)).toBe(208)
+  await pull(80)
+  await expect(bar).toHaveAttribute('data-stage', 'peek')
 })

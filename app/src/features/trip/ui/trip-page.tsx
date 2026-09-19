@@ -82,7 +82,7 @@ function Trip({
     photos, comments, likes, viewer, viewerList, viewerIndex, closeViewer, setIndex,
     addComment, toggleLike, changePhoto, movePhotos, removePhoto, removePhotos, removeComment, editing, startEditing,
     addSight, toggleAttractions, showSight, showAttractions, items, selectedItem, select, addStopAt,
-    offlineAt, waitingEdits, barPeek, setBarPeek,
+    offlineAt, waitingEdits, barStage, setBarStage,
   } = page
   const chat = useTripChat({ tripId, toast })
   const ask = useMapAsk({
@@ -102,7 +102,7 @@ function Trip({
     <div
       className={
         'tripscreen fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink' +
-        (barPeek ? ' barpeek' : '')
+        (barStage === 'peek' ? ' barpeek' : barStage === 'tall' ? ' bartall' : '')
       }
       onScroll={event => {
         const screen = event.currentTarget
@@ -316,8 +316,8 @@ function Trip({
         onDay={value => patch({ day: value, sel: undefined })}
         onQuery={value => patch({ q: value || undefined })}
         onSelect={select}
-        peek={barPeek}
-        onPeek={setBarPeek}
+        stage={barStage}
+        onStage={setBarStage}
       />
 
       {viewer && viewerList && viewerList.length > 0 && (
