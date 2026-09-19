@@ -35,6 +35,8 @@ interface PanelProps {
     ids: Id[],
     filing: { stopId?: Id | null; stopPinned?: boolean },
   ) => Promise<boolean | undefined> | boolean | undefined
+  /** deleting several photographs at once; absent for read-only viewers */
+  onDeletePhotos?: (ids: Id[]) => Promise<void> | void
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>

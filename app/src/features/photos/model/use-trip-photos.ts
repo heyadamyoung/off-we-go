@@ -271,6 +271,31 @@ export default function useTripPhotos({
     },
     [tripId, photos, toast],
   )
+  /* Several at once, from the gallery's selection: one toast for the lot,
+     each one taken out the moment it is asked for, and put back if the
+     server refused it. */
+  const removePhotos = useCallback(
+    async (ids: Id[]) => {
+      const kept = photos.filter(p => ids.includes(p.id))
+      setPhotos(list => list.filter(p => !ids.includes(p.id)))
+      const failed: TripPhoto[] = []
+      for (const photo of kept) {
+        try {
+          await deletePhoto(tripId, photo.id)
+        } catch {
+          failed.push(photo)
+        }
+      }
+      if (failed.length) {
+        setPhotos(list => [...list, ...failed.filter(p => !list.some(x => x.id === p.id))])
+        toast(
+          `${kept.length - failed.length} deleted; ${failed.length} could not be — try again`,
+          'error',
+        )
+      } else toast(`${kept.length} ${kept.length === 1 ? 'photo' : 'photos'} deleted`)
+    },
+    [photos, tripId, toast],
+  )
 
   const removeComment = useCallback(
     async (photoId: Id, id: Id) => {
@@ -331,6 +356,7 @@ export default function useTripPhotos({
     changePhoto,
     movePhotos,
     removePhoto,
+    removePhotos,
     removeComment,
   }
 }

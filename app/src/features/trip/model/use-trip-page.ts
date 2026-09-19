@@ -179,7 +179,7 @@ export default function useTripPage({
   const {
     photos, setPhotos, comments, likes,
     viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
-    addComment, toggleLike, addPhoto, changePhoto, movePhotos, removePhoto, removeComment,
+    addComment, toggleLike, addPhoto, changePhoto, movePhotos, removePhoto, removePhotos, removeComment,
   } = useTripPhotos({ data, tripId, me, toast, setSelected: selectId })
 
   const { days, day, liveDay } = useTripDays({
@@ -380,7 +380,7 @@ export default function useTripPage({
     progress, progressCopy, latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops,
     transport, segmentEditing, setSegmentEditing, clock, showGate, plane,
     photos, comments, likes, viewer, viewerList, viewerIndex, openViewer, closeViewer, setIndex,
-    addComment, toggleLike, changePhoto, movePhotos, removePhoto, removeComment, indoor, editing,
+    addComment, toggleLike, changePhoto, movePhotos, removePhoto, removePhotos, removeComment, indoor, editing,
     draft, setDraft, saving, routeDraft, setRouteDraft,
     places, setPlaces, startEditing, searchPlaces, pickPlace, lookUpDraft, saveRoute,
     onStopMove, onDraftField, moveStop, saveDraft, removeDraft,

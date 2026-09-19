@@ -34,6 +34,8 @@ export interface PhotosPanelProps {
      the way in goes with it — there is no point offering a selection whose
      only action is one you are not allowed to take. */
   onMovePhotos?: (ids: Id[], filing: Filing) => Promise<boolean | undefined> | boolean | undefined
+  /* Deleting several at once, from the same selection. */
+  onDeletePhotos?: (ids: Id[]) => Promise<void> | void
 }
 
 export default function PanelPhotos({
@@ -45,6 +47,7 @@ export default function PanelPhotos({
   onPhotoBy,
   onSelect,
   onMovePhotos,
+  onDeletePhotos,
 }: PhotosPanelProps) {
   /* Whose photographs these are, from the photographs rather than the roster:
      somebody who has not added anything is not a filter worth offering, and a
@@ -77,6 +80,8 @@ export default function PanelPhotos({
     visible,
     collapsed,
     toggle,
+    allCollapsed,
+    foldAll,
   } = usePhotoGroups(shown, stops, mode)
 
   /* The gallery's own reading order, top to bottom — which is what the viewer
@@ -98,6 +103,22 @@ export default function PanelPhotos({
   const choosing = usePhotoSelection(reading)
   const [picking, setPicking] = useState(false)
   const [moving, setMoving] = useState(false)
+
+  /* Asked once, in numbers: a bulk delete is the one thing here with no
+     undo, and the confirm is what stands between a slip and forty pictures. */
+  const remove = async () => {
+    if (!onDeletePhotos || !choosing.count) return
+    const count = choosing.count
+    if (!window.confirm(`Delete ${count} ${count === 1 ? 'photo' : 'photos'} from the trip?`))
+      return
+    setMoving(true)
+    try {
+      await onDeletePhotos(choosing.photos.map(photo => photo.id))
+      choosing.end()
+    } finally {
+      setMoving(false)
+    }
+  }
 
   const file = async (filing: Filing) => {
     if (!onMovePhotos) return
@@ -144,6 +165,8 @@ export default function PanelPhotos({
         onPhotoBy={onPhotoBy}
         count={shown.length}
         onSelect={onMovePhotos && !choosing.on ? choosing.begin : undefined}
+        folded={allCollapsed}
+        onFold={mode === 'stop' && groups.length > 1 ? foldAll : undefined}
       />
       {shown.length ? (
         /* Only the rows anybody can see are in the document. The two spacers
@@ -292,6 +315,7 @@ export default function PanelPhotos({
               total={reading.length}
               busy={moving}
               onMove={() => setPicking(true)}
+              onDelete={onDeletePhotos ? remove : undefined}
               onAll={choosing.all}
               onDone={choosing.end}
             />

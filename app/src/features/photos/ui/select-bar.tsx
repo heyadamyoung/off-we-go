@@ -17,12 +17,22 @@ interface SelectBarProps {
   count: number
   total: number
   onMove: () => void
+  /** Absent when nothing here may be deleted. */
+  onDelete?: () => void
   onAll: () => void
   onDone: () => void
   busy?: boolean
 }
 
-export default function SelectBar({ count, total, onMove, onAll, onDone, busy }: SelectBarProps) {
+export default function SelectBar({
+  count,
+  total,
+  onMove,
+  onDelete,
+  onAll,
+  onDone,
+  busy,
+}: SelectBarProps) {
   const every = count >= total && total > 0
   return (
     <div className="pointer-events-none sticky bottom-0 z-[3] -mx-4 mt-2 px-4 pb-2 sm:-mx-6 sm:px-6">
@@ -42,6 +52,15 @@ export default function SelectBar({ count, total, onMove, onAll, onDone, busy }:
         <button className="mini whitespace-nowrap" onClick={onAll} disabled={busy}>
           {every ? 'None' : 'All'}
         </button>
+        {onDelete && (
+          <button
+            className="mini whitespace-nowrap text-danger"
+            onClick={onDelete}
+            disabled={busy || !count}
+            aria-label="Delete the chosen photos">
+            Delete
+          </button>
+        )}
         <button
           className="mini mini-accent inline-flex items-center gap-1 whitespace-nowrap"
           onClick={onMove}
