@@ -1,0 +1,39 @@
+name: OSM airport probe
+
+# What OpenStreetMap holds for one airport, from a runner with open internet:
+# every gate and stand within reach of a point, with how far each sits from
+# the terminal outline. It is how a question like "why are there stand
+# numbers on the terminal map" gets answered from the data rather than from
+# memory of it, and the canary when a terminal's drawing goes strange.
+on:
+  workflow_dispatch:
+    inputs:
+      lat:
+        description: 'Latitude of the terminal'
+        required: true
+        default: '43.6777'
+      lng:
+        description: 'Longitude of the terminal'
+        required: true
+        default: '-79.6248'
+      radius:
+        description: 'Metres around the point'
+        required: false
+        default: '1500'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Ask Overpass about the airport
+        env:
+          LAT: ${{ inputs.lat }}
+          LNG: ${{ inputs.lng }}
+          RADIUS: ${{ inputs.radius }}
+        run: node app/scripts/osm-airport-probe.mjs "$LAT" "$LNG" "$RADIUS"
