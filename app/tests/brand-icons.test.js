@@ -8,45 +8,46 @@ import test, { after } from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import sharp from 'sharp'
-import { Brandmark, Screen } from '../src/shared/ui/brand.tsx'
+import { Screen } from '../src/shared/ui/brand.tsx'
+import { WORDMARK_LINES, wordmarkPage } from '../scripts/render-wordmark.mjs'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const sourcePath = path.join(appRoot, 'public', 'offwego-logo.svg')
-const iconPath = path.join(appRoot, 'public', 'offwego-icon.svg')
+/* The master every icon is cut from: the wordmark, drawn by a browser with
+   the app's own display face (scripts/render-wordmark.mjs) onto nothing. */
+const iconPath = path.join(appRoot, 'public', 'brand', 'wordmark.png')
 
-test('uses genuine vector artwork for the new portal icon and full lockup', async () => {
-  const logo = await readFile(sourcePath, 'utf8')
-  assert.match(logo, /^<svg\b/)
-  assert.match(logo, /viewBox=["']0 0 635 568["']/)
-  assert.match(logo, /<title[^>]*>Off We Go logo<\/title>/)
-  assert.doesNotMatch(logo, /<image\b/)
-  assert.doesNotMatch(logo, /<text\b/)
-  assert.ok(
-    (logo.match(/<path\b/g) || []).length >= 13,
-    'full lockup must remain outlined vector paths',
+test('the mark is the words, in the display face, on nothing', async () => {
+  const master = await sharp(iconPath).metadata()
+  assert.deepEqual(
+    { width: master.width, height: master.height, hasAlpha: master.hasAlpha },
+    { width: 2048, height: 2048, hasAlpha: true },
   )
-
-  const icon = await readFile(iconPath, 'utf8')
-  assert.match(icon, /^<svg\b/)
-  assert.match(icon, /viewBox=["']0 0 820 1060["']/)
-  assert.doesNotMatch(icon, /<image\b/)
-  assert.doesNotMatch(icon, /<text\b/)
-  assert.ok(
-    (icon.match(/inkscape:groupmode=["']layer["']/g) || []).length >= 6,
-    'icon must expose editable layers',
-  )
-
+  assert.equal((await rgbaAt(iconPath, 0, 0))[3], 0, 'the master stands on nothing')
+  /* Ink, and only two colours of it: the words in the app's ink and the full
+     stop in its accent. Anything else drawn is a fallback font's rendering or
+     a stray background. */
   const { data } = await sharp(iconPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-  assert.equal(data[3], 0, 'vector icon background must be transparent')
+  let ink = 0
+  let amber = 0
+  for (let at = 0; at < data.length; at += 4) {
+    if (data[at + 3] < 250) continue
+    if (data[at] > 220 && data[at + 1] > 220 && data[at + 2] > 220) ink += 1
+    else if (data[at] > 200 && data[at + 1] > 130 && data[at + 2] < 120) amber += 1
+  }
+  assert.ok(ink > 2048 * 2048 * 0.08, `the words are drawn, got ${ink} pixels of ink`)
+  assert.ok(amber > 2048 * 2048 * 0.002, `the full stop is amber, got ${amber} pixels`)
+  assert.ok(amber < ink / 5, 'the full stop is a full stop, not a second word')
+
+  /* The page the browser draws: the app's words, its own font and nothing
+     installed on the machine. */
+  const page = wordmarkPage('data:font/woff2;base64,AAAA')
+  assert.deepEqual(WORDMARK_LINES, ['Off', 'we', 'go.'])
+  assert.match(page, /Bricolage Grotesque/)
+  assert.match(page, /data:font\/woff2;base64,AAAA/)
+  assert.match(page, /Off\nwe\ngo<span class="dot">\.<\/span>/)
 })
 
-test('brand UI: the badge stays vector where used, and chrome carries type only', () => {
-  const brandmark = renderToStaticMarkup(createElement(Brandmark, { size: 18 }))
-  assert.match(brandmark, /<img[^>]+src="\/offwego-icon\.svg"/)
-  assert.doesNotMatch(brandmark, /<svg\b/)
-
-  /* Both marks are still under review, so the screens that used to lead with
-     the badge lead with the wordmark: the words, and the amber full stop. */
+test('brand UI: the chrome carries type only', () => {
   const screen = renderToStaticMarkup(createElement(Screen, null, 'Loading'))
   assert.match(screen, /Off we go/)
   assert.doesNotMatch(screen, /<img\b/)
@@ -93,16 +94,6 @@ function parseIco(buffer) {
 
 async function rgbaAt(filename, x, y) {
   const { data, info } = await sharp(filename)
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true })
-  const offset = (y * info.width + x) * 4
-  return [...data.subarray(offset, offset + 4)]
-}
-
-async function renderedRgbaAt(filename, size, x, y) {
-  const { data, info } = await sharp(filename)
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true })
@@ -165,65 +156,19 @@ async function underMask(filename, mask, ground) {
 const ICON_GROUND = [10, 12, 16]
 const SPLASH_GROUND = [11, 13, 17]
 
-/* The arch and the road share one gradient, and it was warmed to the interface
-   accent (#F5B84A) so the mark and the chrome read as one family — the sunset
-   inside the arch keeps its reds. What still has to hold is the shape of that
-   gradient: a pale crown, a deeper road, and daylight between them. */
-test('renders the approved warm gradient from the portal crown to the road', async () => {
-  const crown = await renderedRgbaAt(iconPath, 512, 256, 24)
-  const road = await renderedRgbaAt(iconPath, 512, 256, 488)
-
-  assert.ok(crown[1] > 180, `expected a pale amber crown, got ${crown}`)
-  assert.ok(road[1] > 100 && road[1] < 160, `expected a deeper amber road, got ${road}`)
-  assert.ok(crown[1] - road[1] > 60, 'portal and road must not collapse back to one flat fill')
-  // Amber, not the old red-orange: the blue channel is what separates the two.
-  assert.ok(crown[2] > 80, `expected the crown in the accent's family, got ${crown}`)
-})
-
-test('renders the full lockup on its dark backdrop so the cream wordmark remains visible', async () => {
-  const backdrop = await rgbaAt(sourcePath, 10, 550)
-  const wordmark = await rgbaAt(sourcePath, 30, 477)
-
-  assert.ok(
-    backdrop[0] < 20 && backdrop[1] < 20 && backdrop[2] < 20 && backdrop[3] === 255,
-    `expected opaque dark backdrop, got ${backdrop}`,
-  )
-  assert.ok(
-    wordmark[0] > 240 && wordmark[1] > 225 && wordmark[2] > 210 && wordmark[3] === 255,
-    `expected readable cream wordmark, got ${wordmark}`,
-  )
-})
-
 test('generates the approved brand icon for every web and native launcher surface', async () => {
   const outputRoot = await generated()
 
-  const generatedSvg = await readFile(path.join(outputRoot, 'public', 'offwego-icon.svg'), 'utf8')
-  assert.doesNotMatch(generatedSvg, /<image\b/, 'generated SVG must preserve vector paths')
-  assert.doesNotMatch(generatedSvg, /<text\b/, 'generated SVG must not depend on an installed font')
-
+  /* The web's one picture of the app: the words on their dark tile with the
+     corners rounded off, so it reads as an icon on a light page too. */
   const webMarkPath = path.join(outputRoot, 'public', 'offwego-icon.png')
   const webMark = await sharp(webMarkPath).metadata()
   assert.deepEqual(
     { width: webMark.width, height: webMark.height, hasAlpha: webMark.hasAlpha },
     { width: 512, height: 512, hasAlpha: true },
   )
-  assert.equal((await rgbaAt(webMarkPath, 0, 0))[3], 0, 'web mark background must be transparent')
-
-  for (const size of [16, 32, 48, 64, 128, 256, 512, 1024]) {
-    const metadata = await sharp(
-      path.join(outputRoot, 'public', 'brand', `offwego-icon-${size}.png`),
-    ).metadata()
-    assert.deepEqual(
-      { width: metadata.width, height: metadata.height, hasAlpha: metadata.hasAlpha },
-      { width: size, height: size, hasAlpha: true },
-      `transparent ${size}px export`,
-    )
-    assert.equal(
-      (await rgbaAt(path.join(outputRoot, 'public', 'brand', `offwego-icon-${size}.png`), 0, 0))[3],
-      0,
-      `transparent ${size}px export corner`,
-    )
-  }
+  assert.equal((await rgbaAt(webMarkPath, 0, 0))[3], 0, 'the rounded corner is see-through')
+  assert.deepEqual((await rgbaAt(webMarkPath, 256, 8)).slice(0, 3), ICON_GROUND, 'a dark tile')
 
   for (const [filename, size] of [
     ['apple-touch-icon.png', 180],
@@ -248,13 +193,18 @@ test('generates the approved brand icon for every web and native launcher surfac
       [256, 256],
     ],
   )
+  /* White words on nothing vanished on a light browser tab; each favicon is
+     the dark tile with its corners rounded, so the corner is see-through and
+     the top edge's middle is ground. */
   for (const entry of favicon) {
     assert.deepEqual([...entry.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10])
-    const { data } = await sharp(entry.bytes)
+    const { data, info } = await sharp(entry.bytes)
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
     assert.equal(data[3], 0, `${entry.width}px favicon corner must be transparent`)
+    const top = Math.floor(info.width / 2) * 4
+    assert.equal(data[top + 3], 255, `${entry.width}px favicon stands on its tile`)
   }
 
   /* Three icons, because iOS 18 asks for three: the one everybody knows, the
@@ -353,16 +303,17 @@ test('generates the approved brand icon for every web and native launcher surfac
   }
 })
 
-/* The two rules the shipped assets were breaking, and the reason this file
+/* The two rules the shipped assets once broke, and the reason this file
    grew a mask at all.
 
-   The icons were the right artwork fitted to the wrong shape: a portrait mark
-   scaled to fill a square tile, then handed to a launcher that crops. Round
-   Android launchers sliced the arch flat top and bottom; iOS shaved the feet
-   off the frame. And the launch screen was never ours — it was Capacitor's
-   blue mark on white, which is what anybody opening this app actually saw
-   first, twice a day, on a background that flashed to black the moment the
-   webview arrived. */
+   The icons were the right artwork fitted to the wrong shape: a mark scaled
+   to fill a square tile, then handed to a launcher that crops. Round Android
+   launchers sliced the old mark flat top and bottom; iOS shaved its feet off.
+   The words are wider than they are tall in places and three lines deep, so
+   the same rule holds for them. And the launch screen was never ours — it
+   was Capacitor's blue mark on white, which is what anybody opening this app
+   actually saw first, twice a day, on a background that flashed to black
+   the moment the webview arrived. */
 test('the mark survives every launcher mask, and the launch screen is ours', async t => {
   const outputRoot = await generated()
 

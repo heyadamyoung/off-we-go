@@ -9,6 +9,7 @@
     "build": "node scripts/copyValhallaWasm.mjs && vite build",
     "build:ios": "node scripts/copyValhallaWasm.mjs && vite build --mode ios",
     "build:android": "node scripts/copyValhallaWasm.mjs && vite build --mode android",
+    "brand:wordmark": "node scripts/render-wordmark.mjs",
     "brand:icons": "node scripts/generate-brand-icons.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
