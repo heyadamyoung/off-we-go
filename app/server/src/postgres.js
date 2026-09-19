@@ -221,6 +221,12 @@ const mailboxRow = row =>
     : null
 
 export async function createPostgresRepository({ databaseUrl, adminEmail }) {
+  /* A `date` column is a calendar day, not a moment: pg's default turns
+     2026-09-04 into a Date at local midnight, whose String() begins "Fri Sep
+     04" — which is what a trip's leaving and coming-home dates were sliced
+     from, and why the settings showed nothing and the home card said "NaN".
+     The wire form is the ISO date, and that is what every reader wants. */
+  pg.types.setTypeParser(1082, value => value)
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
   /* An idle client losing its connection is Tuesday: Postgres restarted, a
      deploy recreated it, the network blinked. The pool discards the client

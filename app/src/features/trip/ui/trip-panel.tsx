@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../../../shared/ui/icon'
 import { SightsList, type SightsListProps } from '../../sights'
@@ -143,6 +143,14 @@ function Plus({ label, onClick }: { label: string; onClick: () => void }) {
 export default function TripPanel(props: PanelProps) {
   const title = HEADINGS[props.view] || ''
   const topBar = useTopBar()
+  /* A tab opens at its top. Switching from the Travel tab halfway down to
+     Photos landed halfway down Photos, because the one scroller served every
+     view; a fresh page already starts at the top, and a switch is the same
+     request. */
+  const body = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    body.current?.scrollTo({ top: 0 })
+  }, [props.view])
   /* The gallery takes the screen. A wall of photographs in a 440px column is a
      column of photographs — three across, most of the screen given to a map
      nobody is looking at while they are looking at these. Everywhere else the
@@ -193,6 +201,7 @@ export default function TripPanel(props: PanelProps) {
           topBar,
         )}
       <div
+        ref={body}
         className={
           'flex-1 overflow-y-auto ' +
           (wide
