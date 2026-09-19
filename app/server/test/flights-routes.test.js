@@ -341,7 +341,7 @@ test('where the aircraft is, for the map, only while the leg is plausibly flying
   }
   const sources = createFlightSources({
     fetch: async (url, options) =>
-      /^https:\/\/(api\.adsb\.lol|opendata\.adsb\.fi|api\.adsb\.one)\//.test(url)
+      /^https:\/\/(api\.adsb\.lol|opendata\.adsb\.fi)\//.test(url)
         ? sky(url)
         : boards().fetch(url, options),
     http: boards().fetch,
