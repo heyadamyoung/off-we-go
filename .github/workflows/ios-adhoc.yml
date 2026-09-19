@@ -10,6 +10,8 @@ on:
       - 'app/src/**'
       - 'app/public/**'
       - 'app/ios/**'
+      # The signing lane lives here; a change to it is a change to the build.
+      - 'app/fastlane/**'
       - 'app/capacitor.config.json'
       - 'app/pnpm-lock.yaml'
       - 'app/vite.config.ts'

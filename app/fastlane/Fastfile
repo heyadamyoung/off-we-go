@@ -39,13 +39,33 @@ def ensure_app_id(api_key, identifier, name)
   )
 end
 
+# Two workflows make this profile — TestFlight and Ad Hoc both start on the
+# same push, within the same second — and each used to delete it and make
+# it afresh. Twice at once, that left Apple holding two profiles of the one
+# name, and the next build died at its first minute: "Multiple profiles
+# found with the name". So: whatever is there under the name is looked at
+# first, and where there is more than one, all of them go, so the one made
+# next is the only one. Then the profile is fetched rather than forced —
+# a valid one that carries the installed certificate is downloaded as it
+# is, which two workflows can do at once without treading on each other;
+# only a missing or stale one is made.
+def clear_duplicate_profiles(name)
+  profiles = Spaceship::ConnectAPI::Profile.all(filter: { name: name })
+                                          .select { |profile| profile.name == name }
+  return if profiles.length < 2
+  UI.important("#{profiles.length} profiles are named #{name}; removing them all before making one")
+  profiles.each(&:delete!)
+end
+
 # The card's App Store profile, under the name the Xcode project signs it
-# with: made when there is none, remade when there is, with the distribution
-# certificate installed on this machine, and installed where Xcode looks.
+# with: made when there is none, kept when there is one that carries the
+# distribution certificate installed on this machine, and installed where
+# Xcode looks.
 def fetch_activity_app_store_profile(api_key)
   ensure_app_id(api_key, activity_identifier, 'Off We Go Travel Activity')
+  clear_duplicate_profiles(ENV.fetch('IOS_ACTIVITY_PROVISIONING_PROFILE_NAME'))
   get_provisioning_profile(
-    force: true,
+    force: false,
     app_identifier: activity_identifier,
     team_id: ENV.fetch('APPLE_TEAM_ID'),
     provisioning_name: ENV.fetch('IOS_ACTIVITY_PROVISIONING_PROFILE_NAME'),
