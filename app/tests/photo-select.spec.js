@@ -148,6 +148,25 @@ test('the picker offers the itinerary, and choosing one re-files the pictures', 
   // It says what happened, and the picture is now under the place chosen.
   await expect(page.locator('.toast, [role="status"]').first()).toBeVisible({ timeout: 8000 })
   expect(targetName).not.toEqual(wasUnder)
+  /* And the move is finished: nothing is left chosen, the way a delete
+     leaves it, rather than the moved pictures waiting to be moved again. */
+  await expect(page.getByRole('toolbar', { name: /chosen photos/i })).toHaveCount(0)
+})
+
+test('every chosen tile wears the ring, the last one tapped included', async ({ page }) => {
+  /* The last tile tapped is the focused one, and the stylesheet's focus
+     outline took the chosen outline's place on it and pushed it outside
+     the tile — so the tile you had just chosen was the one without a
+     border. The ring is drawn over the picture now, focus or no focus. */
+  await openPhotos(page)
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  const tiles = page.locator('.pgrid-photo')
+  await tiles.nth(0).click()
+  await tiles.nth(1).click()
+  await expect(page.getByText('2 items', { exact: true })).toBeVisible()
+  await expect(page.locator('.pgrid-ring')).toHaveCount(2)
+  await expect(tiles.nth(1).locator('.pgrid-ring')).toBeVisible()
+  await expect(tiles.nth(1)).toBeFocused()
 })
 
 test('Delete takes the chosen pictures out of the trip, after asking', async ({ page }) => {
@@ -186,7 +205,11 @@ test.describe('on a phone', () => {
     const bar = page.getByRole('toolbar', { name: /chosen photos/i })
     await expect(bar).toBeVisible()
     const barBox = await bar.boundingBox()
+    /* On the bottom edge of the screen itself, its own small margin and
+       nothing else under it — not a strip up at the scroller's padding
+       edge with a row of pictures showing beneath. */
     expect(barBox.y + barBox.height).toBeLessThanOrEqual(844)
+    expect(barBox.y + barBox.height).toBeGreaterThanOrEqual(844 - 12)
 
     await page.getByRole('button', { name: 'Move', exact: true }).click()
     const picker = page.getByRole('dialog', { name: /Move 1 item/ })
@@ -239,6 +262,39 @@ test.describe('on a phone', () => {
     await expect(page.locator('.pgrid-head[aria-expanded="false"]').first()).toBeVisible()
     await page.getByRole('button', { name: 'Expand all' }).click()
     await expect(page.locator('.pgrid-photo').first()).toBeVisible()
+  })
+
+  test('a finger held on one tile and drawn across the next takes each one it crosses', async ({
+    page,
+  }) => {
+    await openPhotos(page)
+    const tiles = page.locator('.pgrid-photo')
+    const middle = async index => {
+      const box = await tiles.nth(index).boundingBox()
+      return { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }
+    }
+    const first = tiles.first()
+    const touch = { pointerType: 'touch', isPrimary: true, pointerId: 7 }
+    await first.dispatchEvent('pointerdown', { ...touch, ...(await middle(0)) })
+    await page.waitForTimeout(700)
+    await expect(page.getByText('1 item', { exact: true })).toBeVisible()
+    /* The pointer is captured by the tile that was held, so the moves
+       arrive there whichever tile the finger is over. */
+    await first.dispatchEvent('pointermove', { ...touch, ...(await middle(1)) })
+    await first.dispatchEvent('pointermove', { ...touch, ...(await middle(2)) })
+    await expect(page.getByText('3 items', { exact: true })).toBeVisible()
+    /* Back over one already taken: nothing flips. */
+    await first.dispatchEvent('pointermove', { ...touch, ...(await middle(1)) })
+    await expect(page.getByText('3 items', { exact: true })).toBeVisible()
+    await first.dispatchEvent('pointerup', { ...touch, ...(await middle(1)) })
+    await expect(page.locator('.pgrid-ring')).toHaveCount(3)
+    /* Already choosing, a finger drawn from a chosen tile lets go of the
+       ones it crosses. */
+    await first.dispatchEvent('pointerdown', { ...touch, ...(await middle(0)) })
+    await first.dispatchEvent('pointermove', { ...touch, ...(await middle(1)) })
+    await expect(page.getByText('1 item', { exact: true })).toBeVisible()
+    await first.dispatchEvent('pointerup', { ...touch, ...(await middle(1)) })
+    await expect(page.locator('.vbody')).toHaveCount(0)
   })
 
   test('the scrim is the way out, and nothing is left chosen by accident', async ({ page }) => {

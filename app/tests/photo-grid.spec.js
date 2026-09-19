@@ -119,6 +119,35 @@ test('a card rolls up and gives its space back, keeping its own heading', async 
   await expect(headings).toHaveCount(before)
 })
 
+test('the card under the bar is named there while its own row is scrolled off', async ({
+  page,
+}) => {
+  /* Scrolling through a card's pictures, its heading — name, count, the
+     chevron that rolls it up — stays pinned under the bar until the next
+     card's row comes up under it. At rest nothing is pinned: the first
+     card's own row is right there. */
+  await openPhotos(page)
+  await expect(page.locator('.pgrid-stuck')).toHaveCount(0)
+  const title = (await page.locator('.pgrid-head').first().innerText()).split('\n')[0]
+  const scroller = page.locator('aside .overflow-y-auto').first()
+  await scroller.evaluate(el => {
+    el.scrollTop = 60
+  })
+  const stuck = page.locator('.pgrid-stuck')
+  await expect(stuck).toBeVisible()
+  await expect(stuck).toContainText(title)
+  /* The pinned copy is not counted among the grid's own headings. */
+  const headings = await page.locator('.pgrid-head').count()
+  /* And it works: the card rolls up from here. */
+  await stuck.locator('.pgrid-stuckhead').click()
+  await expect(page.locator('.pgrid-head').first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.pgrid-head')).toHaveCount(headings)
+  await scroller.evaluate(el => {
+    el.scrollTop = 0
+  })
+  await expect(page.locator('.pgrid-stuck')).toHaveCount(0)
+})
+
 test('by date is one plain list of everything, newest first', async ({ page }) => {
   await openPhotos(page)
   await page.getByRole('button', { name: 'By date' }).click()

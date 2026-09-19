@@ -9,7 +9,14 @@ import {
   type MediaKind,
 } from '../../../photo-filter-core'
 import { chosenIn } from '../../../photo-select-core'
-import { GalleryBar, PlacePicker, SelectBar, usePhotoSelection, type Filing } from '../../photos'
+import {
+  GalleryBar,
+  GroupHeading,
+  PlacePicker,
+  SelectBar,
+  usePhotoSelection,
+  type Filing,
+} from '../../photos'
 import type { GroupMode } from '../../../photo-groups-core'
 import type { Id, Person, Stop, TripPhoto } from '../../../shared/model/types'
 import usePhotoGroups from '../model/use-photo-groups'
@@ -19,6 +26,10 @@ import { photoItem, type TripItem } from '../model/trip-items'
    than a phone it takes the whole of one, and a screen that owns its title,
    its controls and its way out does not belong inside the panel that used to
    hold it in a column. */
+
+/** How far under the gallery's bar the grid's top edge sits: the band's
+    height. The card named under the bar is the one whose rows are there. */
+const BAR_EDGE = 48
 
 export interface PhotosPanelProps {
   photos: TripPhoto[]
@@ -78,6 +89,7 @@ export default function PanelPhotos({
     groups,
     rows,
     visible,
+    scrolled,
     collapsed,
     toggle,
     allCollapsed,
@@ -103,6 +115,19 @@ export default function PanelPhotos({
   const choosing = usePhotoSelection(reading)
   const [picking, setPicking] = useState(false)
   const [moving, setMoving] = useState(false)
+
+  /* The card whose pictures are under the bar right now, named there while
+     its own title row is scrolled off above — with the chevron and the tick,
+     so the card can be rolled up or taken whole from where the thumb is. */
+  const stuck = useMemo(() => {
+    /* Nothing until the grid has gone under the bar at all: at rest the bar
+       is above the grid, not over it, and the first card's own row is there. */
+    if (mode !== 'stop' || scrolled <= 0) return null
+    const edge = scrolled + BAR_EDGE
+    const row = rows.find(one => one.top + one.height > edge)
+    if (!row || (row.kind === 'header' && row.top >= edge)) return null
+    return row.group
+  }, [mode, rows, scrolled])
 
   /* Asked once, in numbers: a bulk delete is the one thing here with no
      undo, and the confirm is what stands between a slip and forty pictures. */
@@ -131,14 +156,28 @@ export default function PanelPhotos({
       /* Closed only on a move that happened. One that was refused — no
          signal, a stop somebody else deleted — leaves the picker where it is,
          beside the toast saying why, rather than putting it away as though
-         something had been done. The pictures stay chosen either way: a move
-         re-groups the gallery under them, so the selection is what says where
-         they went, and getting it wrong costs one more tap. */
-      if (done !== false) setPicking(false)
+         something had been done. A move that happened is finished: the
+         pictures are under their new card and nothing is left chosen, the
+         way a delete leaves it. */
+      if (done !== false) {
+        setPicking(false)
+        choosing.end()
+      }
     } finally {
       setMoving(false)
     }
   }
+
+  const tickFor = (group: (typeof groups)[number]) =>
+    choosing.on && onMovePhotos
+      ? {
+          state: chosenIn(
+            { ids: choosing.chosen, anchor: null },
+            group.photos.map(photo => photo.id),
+          ),
+          onClick: () => choosing.pressGroup(group.photos.map(photo => photo.id)),
+        }
+      : undefined
 
   if (!photos.length) {
     return (
@@ -167,6 +206,18 @@ export default function PanelPhotos({
         onSelect={onMovePhotos && !choosing.on ? choosing.begin : undefined}
         folded={allCollapsed}
         onFold={mode === 'stop' && groups.length > 1 ? foldAll : undefined}
+        stuck={
+          stuck && (
+            <GroupHeading
+              stuck
+              title={stuck.title}
+              count={stuck.photos.length}
+              collapsed={collapsed.has(stuck.key)}
+              onToggle={() => toggle(stuck.key)}
+              tick={tickFor(stuck)}
+            />
+          )
+        }
       />
       {shown.length ? (
         /* Only the rows anybody can see are in the document. The two spacers
@@ -178,50 +229,14 @@ export default function PanelPhotos({
           <div style={{ height: visible.topPad }} />
           {rows.slice(visible.start, visible.end).map(row =>
             row.kind === 'header' ? (
-              /* A row rather than one button, because the heading rolls the
-                 card up and the tick beside it takes the whole card — and a
-                 button inside a button is neither valid nor clickable. The
-                 heading keeps the class: it is what the card IS. */
-              <div
-                key={row.key}
-                className="group flex w-full items-center gap-2 pb-2 pt-4 text-left"
-                style={{ height: row.height }}>
-                <button
-                  className="pgrid-head flex min-w-0 shrink items-center gap-2 self-stretch text-left"
-                  aria-expanded={!collapsed.has(row.group.key)}
-                  onClick={() => toggle(row.group.key)}>
-                  <Icon
-                    n="chev"
-                    s={14}
-                    className={
-                      'flex-none text-muted transition-transform ' +
-                      (collapsed.has(row.group.key) ? '' : 'rotate-90')
-                    }
-                  />
-                  <span className="truncate text-[13px] font-bold tracking-[-.01em]">
-                    {row.group.title}
-                  </span>
-                  <span className="text-[11px] tabular-nums text-muted">
-                    {row.group.photos.length}
-                  </span>
-                </button>
-                {choosing.on && onMovePhotos && (
-                  /* A whole card in one tap, which is the case this feature
-                     exists for: a stop's worth of pictures filed at the wrong
-                     stop, corrected in two gestures rather than forty. */
-                  <GroupTick
-                    state={chosenIn(
-                      { ids: choosing.chosen, anchor: null },
-                      row.group.photos.map(photo => photo.id),
-                    )}
-                    title={row.group.title}
-                    onClick={() => choosing.pressGroup(row.group.photos.map(photo => photo.id))}
-                  />
-                )}
-                {/* Outside the heading, so the tick sits against the count it
-                    belongs to rather than being pushed to the far side of a
-                    desktop. The rule takes whatever is left. */}
-                <span className="ml-1 h-px flex-1 bg-line" aria-hidden="true" />
+              <div key={row.key} style={{ height: row.height }}>
+                <GroupHeading
+                  title={row.group.title}
+                  count={row.group.photos.length}
+                  collapsed={collapsed.has(row.group.key)}
+                  onToggle={() => toggle(row.group.key)}
+                  tick={tickFor(row.group)}
+                />
               </div>
             ) : (
               <div
@@ -236,6 +251,7 @@ export default function PanelPhotos({
                   return (
                     <button
                       key={photo.id}
+                      data-photo-id={photo.id}
                       aria-label={photo.caption || (photo.kind === 'video' ? 'Video' : 'Photo')}
                       aria-pressed={choosing.on ? chosen : undefined}
                       {...(onMovePhotos ? choosing.holdProps(photo.id) : {})}
@@ -246,13 +262,11 @@ export default function PanelPhotos({
                          started, and a dragged one must not select text. */
                         'select-none [-webkit-touch-callout:none] ' +
                         'transition-transform ' +
-                        (chosen
-                          ? 'scale-[.93] outline outline-2 -outline-offset-2 outline-accent '
-                          : '') +
-                        (!chosen && selected === photo.id
-                          ? 'outline outline-2 -outline-offset-2 outline-accent'
-                          : '')
+                        (chosen ? 'scale-[.93]' : '')
                       }
+                      /* Up and down is the page's; sideways is a sweep across
+                         the tiles, choosing each one the finger crosses. */
+                      style={{ touchAction: 'pan-y' }}
                       onClick={event => {
                         const how = event.shiftKey
                           ? 'range'
@@ -277,6 +291,17 @@ export default function PanelPhotos({
                         className="size-full object-cover transition-transform duration-200
                                  group-hover:scale-[1.03]"
                       />
+                      {(chosen || (!choosing.on && selected === photo.id)) && (
+                        /* The ring is drawn over the picture rather than as an
+                           outline: the focus outline the stylesheet gives every
+                           button took the outline's place on the last tile
+                           tapped, pushed it outside the tile, and the tile you
+                           had just chosen was the one without a border. */
+                        <span
+                          className="pgrid-ring pointer-events-none absolute inset-0 rounded-xl border-2 border-accent"
+                          aria-hidden="true"
+                        />
+                      )}
                       {photo.caption && !choosing.on && (
                         <span
                           className="pointer-events-none absolute inset-x-0 bottom-0 truncate
@@ -310,15 +335,21 @@ export default function PanelPhotos({
           )}
           <div style={{ height: visible.bottomPad }} />
           {choosing.on && onMovePhotos && (
-            <SelectBar
-              count={choosing.count}
-              total={reading.length}
-              busy={moving}
-              onMove={() => setPicking(true)}
-              onDelete={onDeletePhotos ? remove : undefined}
-              onAll={choosing.all}
-              onDone={choosing.end}
-            />
+            <>
+              {/* Room under the last row for the bar pinned to the bottom of
+                  a phone, so the pictures at the end can scroll out from
+                  under it. */}
+              <div className="h-16 sm:hidden" aria-hidden="true" />
+              <SelectBar
+                count={choosing.count}
+                total={reading.length}
+                busy={moving}
+                onMove={() => setPicking(true)}
+                onDelete={onDeletePhotos ? remove : undefined}
+                onAll={choosing.all}
+                onDone={choosing.end}
+              />
+            </>
           )}
         </div>
       ) : (
@@ -335,38 +366,5 @@ export default function PanelPhotos({
         />
       )}
     </>
-  )
-}
-
-/* How much of a card is chosen, as one tappable mark: filled for all of it,
-   a dash for some, an empty ring for none. The dash matters — "some" drawn as
-   "none" is a heading that appears to have done nothing when you tapped a
-   picture under it. */
-function GroupTick({
-  state,
-  title,
-  onClick,
-}: {
-  state: 'none' | 'some' | 'all'
-  title: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      className="grid size-7 flex-none place-items-center rounded-full hover:bg-raised2"
-      onClick={onClick}
-      aria-pressed={state === 'all'}
-      title={state === 'all' ? `Deselect ${title}` : `Select all of ${title}`}
-      aria-label={state === 'all' ? `Deselect ${title}` : `Select all of ${title}`}>
-      <span
-        className={
-          'grid size-5 place-items-center rounded-full border-2 transition-colors ' +
-          (state === 'none'
-            ? 'border-line2 text-transparent'
-            : 'border-accent bg-accent text-accent-ink')
-        }>
-        <Icon n={state === 'some' ? 'minus' : 'check'} s={11} w={3} />
-      </span>
-    </button>
   )
 }

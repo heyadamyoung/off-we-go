@@ -9,9 +9,10 @@ import Icon from '../../../shared/ui/icon'
    count sits at the far end from the actions so a fast tap on "Move" is never
    a slow read of "17".
 
-   It is sticky inside the gallery's own scroller, so it clears the home bar
-   without knowing there is one: the sheet around it already carries that
-   inset, and adding a second would be a bar floating on nothing. */
+   On a phone it is pinned to the bottom edge of the screen, over the grid,
+   with the home bar's inset under it; at a desk it is sticky inside the
+   gallery's own scroller. Sticky on a phone put it at the scroller's
+   padding edge, a strip above the bottom with pictures showing under it. */
 
 interface SelectBarProps {
   count: number
@@ -35,7 +36,10 @@ export default function SelectBar({
 }: SelectBarProps) {
   const every = count >= total && total > 0
   return (
-    <div className="pointer-events-none sticky bottom-0 z-[3] -mx-4 mt-2 px-4 pb-2 sm:-mx-6 sm:px-6">
+    <div
+      className="pointer-events-none z-[3] max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:px-3
+                 max-sm:pb-[calc(.5rem+env(safe-area-inset-bottom,0px))]
+                 sm:sticky sm:bottom-0 sm:-mx-6 sm:mt-2 sm:px-6 sm:pb-2">
       <div
         /* Capped and centred. Spread across a desktop the count sat at one
            edge and the buttons at the other, a foot apart; on a phone it is
