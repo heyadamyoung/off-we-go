@@ -45,9 +45,10 @@ const TripBar = memo(function TripBar({
   onPeek,
 }: TripBarProps) {
   const chips = useRef<HTMLDivElement>(null)
-  /* The grabber follows the finger: pull up to open, down to collapse, a
-     tap still toggles. The bar itself comes along for the first few dozen
-     pixels so the pull is seen to be doing something. */
+  /* The handle strip follows the finger: pull down and the bar goes with it
+     to where it will sit collapsed, pull up and it opens, a tap still
+     toggles. The bar is moved by hand while the finger is on it (see
+     use-sheet-drag), so nothing here re-renders per move. */
   const drag = useSheetDrag(!!peek, collapsed => onPeek?.(collapsed))
 
   // Keep the chosen day in view when it changes from somewhere else — picking a
@@ -58,23 +59,25 @@ const TripBar = memo(function TripBar({
 
   return (
     <div
+      ref={drag.sheet}
       className={
-        'glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col ' +
+        'tripbar glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col ' +
         'border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px] ' +
         (behindPanel ? 'hidden' : '')
       }
-      style={{
-        transform: drag.offset ? `translateY(${drag.offset}px)` : undefined,
-        transition: drag.dragging ? 'none' : 'transform .18s ease',
-      }}>
+      data-dragging={drag.dragging || undefined}>
+      {/* The whole strip above the chips is the handle, not the pill alone:
+          a finger that landed a few pixels off an eight-pixel pill was the
+          browser's, and the browser read the pull as a refresh. */}
       {onPeek && (
         <button
-          className="grabber hitslop mx-auto mt-1.5 hidden h-2 w-12 flex-none touch-none rounded-full
-                        bg-line2 max-sm:block"
+          className="grabber hidden w-full flex-none select-none touch-none py-2.5 max-sm:block"
+          style={{ touchAction: 'none' }}
           aria-label={peek ? 'Show the day’s cards' : 'Collapse to the map'}
           aria-expanded={!peek}
-          {...drag.handle}
-        />
+          {...drag.handle}>
+          <span aria-hidden="true" className="mx-auto block h-1.5 w-12 rounded-full bg-line2" />
+        </button>
       )}
       {/* The day chips and the search box each want the full width of a phone,
           so below 640px they take a line each instead of splitting one. */}

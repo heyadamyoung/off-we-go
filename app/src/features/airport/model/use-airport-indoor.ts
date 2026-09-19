@@ -14,7 +14,7 @@ import {
   stepMetres,
   walkGraph,
 } from '../../../airport-route-core'
-import { sameAirport, walkStop } from '../../../airport-walk-core'
+import { findGate, sameAirport, walkStop } from '../../../airport-walk-core'
 import type { Segment } from '../../../segments-core'
 import { track } from '../../../shared/lib/telemetry'
 import { indoorForStop } from '../api/indoor'
@@ -190,6 +190,32 @@ export default function useAirportIndoor({
     setTarget(walkTargetRef.current)
   }, [])
 
+  /* "Show the gate on the map", from a ticket: open the leg's airport and,
+     once its floor plan is in, put the camera on the gate itself, on its
+     floor, with the line to it — not on the airport's pin a terminal away,
+     which is where the old camera move landed. A gate the plan has not
+     mapped leaves the camera on the terminal. */
+  const [wanted, setWanted] = useState<{ stopId: string; ref: string } | null>(null)
+  const focusGate = useCallback(
+    (leg: Segment) => {
+      if (leg.fromLng == null || leg.fromLat == null) return
+      const airport = walkStop(leg, stops)
+      const ref = leg.gate || leg.flight?.gate || ''
+      setWanted(ref ? { stopId: airport.id, ref } : null)
+      open(airport)
+    },
+    [stops, open],
+  )
+  useEffect(() => {
+    if (!wanted || !stop || !features || stop.id !== wanted.stopId) return
+    setWanted(null)
+    const gate = findGate(features, wanted.ref)
+    if (!gate) return
+    setLevel(current => (gate.levels.includes(current) ? current : (gate.levels[0] ?? current)))
+    toGate(gate)
+    onOpenRef.current?.(stop, [gate.lng, gate.lat])
+  }, [wanted, stop, features, toGate])
+
   /* A gate with no mapped path to it is worth saying out loud, once, to the
      person who asked; the walk keeps its words and waits. A routed one
      starts the story on the floor the walk begins — once per destination,
@@ -238,6 +264,7 @@ export default function useAirportIndoor({
     target,
     toGate,
     clearRoute,
+    focusGate,
     routeText,
     walk,
   }

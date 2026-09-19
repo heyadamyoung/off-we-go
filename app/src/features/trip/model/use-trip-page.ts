@@ -3,6 +3,7 @@ import type { TripView } from '../../../trip-search-core'
 import { applyLiveStopStatuses } from '../../../live-stop-progress-core'
 import { initialTripView } from '../../../live-map-view-core'
 import { useAssistant } from '../../assistant'
+import type { Segment } from '../../../segments-core'
 import { useAirportIndoor } from '../../airport'
 import { usePlanePosition, useSegments } from '../../transport'
 import { useItineraryEditor } from '../../itinerary'
@@ -169,20 +170,6 @@ export default function useTripPage({
   useOfflinePapers({ tripId, stops: ordered, segments: transport.segments })
   const clock = useMinuteClock()
   const plane = usePlanePosition(tripId, transport.segments, clock) // over the family's dots
-  const showGate = useCallback(
-    (segment: { fromLng?: number | null; fromLat?: number | null }) => {
-      if (segment.fromLng == null || segment.fromLat == null) return
-      setFollowing(false)
-      setMapView({
-        center: [segment.fromLng, segment.fromLat],
-        zoom: 16.3,
-        ms: 620,
-        focus: true,
-      })
-      patch({ view: undefined })
-    },
-    [setFollowing, setMapView, patch],
-  )
   const liveStop = progress.currentStop || progress.destination
   /* The itinerary with the journey's own progress written over it: what has
      been reached, what is next. */
@@ -221,6 +208,14 @@ export default function useTripPage({
       })
     },
   })
+  /* From a ticket to the gate itself, on its floor, with the panel away. */
+  const showGate = useCallback(
+    (segment: Segment) => {
+      indoor.focusGate(segment)
+      patch({ view: undefined })
+    },
+    [indoor.focusGate, patch],
+  )
 
   const {
     editing,
