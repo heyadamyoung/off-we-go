@@ -26,6 +26,8 @@ import type {
   Coordinates,
   MapView,
   Person,
+  Toast,
+  ToastTone,
   TripData,
 } from '../../../shared/model/types'
 
@@ -36,7 +38,7 @@ interface TripPageOptions {
   busyEditing: MutableRefObject<boolean>
   search: { view?: TripView; sel?: string; q?: string; day?: string }
   patch: (changes: Record<string, unknown>) => void
-  notify: (message: string, tone?: 'success' | 'error') => void
+  notify: Toast
   /** Re-reads the trip from the server, once queued changes have landed. */
   reload: () => void
 }
@@ -87,7 +89,7 @@ export default function useTripPage({
   const query = search.q || ''
 
   const toast = useCallback(
-    (message: string, tone: 'success' | 'error' = 'success') => notify(message, tone),
+    (message: string, tone: ToastTone = 'success') => notify(message, tone),
     [notify],
   )
 

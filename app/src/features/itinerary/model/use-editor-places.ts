@@ -121,11 +121,8 @@ export default function useEditorPlaces({
           pl.lng != null && pl.lat != null && !taken.has(pl.name.toLowerCase()),
       )
       setPlaces(fresh)
-      toast(
-        fresh.length
-          ? `Found ${fresh.length} place${fresh.length === 1 ? '' : 's'} here`
-          : 'Nothing new found here — try zooming out',
-      )
+      if (fresh.length) toast(`Found ${fresh.length} place${fresh.length === 1 ? '' : 's'} here`)
+      else toast('Nothing new found here — try zooming out', 'warning')
     } catch (e) {
       toast(appErrorMessage(e, 'search-places'), 'error')
     } finally {
@@ -170,7 +167,7 @@ export default function useEditorPlaces({
     try {
       const pl = await describePlace({ lng: draft.lng, lat: draft.lat, name: draft.name })
       if (!pl) {
-        toast('Nothing found at that spot')
+        toast('Nothing found at that spot', 'warning')
         return
       }
       const image =

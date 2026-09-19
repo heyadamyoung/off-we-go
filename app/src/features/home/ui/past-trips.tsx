@@ -59,7 +59,7 @@ function PastCard({ trip }: { trip: TripSummary }) {
       URL.revokeObjectURL(url)
       notify('Archive downloaded.')
     } catch {
-      notify('The archive could not be built just now.', 'error')
+      notify('The archive could not be built just now', 'error')
     }
   }
 

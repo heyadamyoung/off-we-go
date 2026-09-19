@@ -199,11 +199,6 @@ function Trip({
             segments: transport.segments,
             loadFailed: transport.loadFailed,
             now: clock,
-            /* The same list the floating meter over the map is built from — a
-               second opinion about where somebody is would eventually disagree. */
-            travellers: markers
-              .filter(marker => !marker.stale)
-              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat })),
             canEdit,
             onEdit: segment => setSegmentEditing(segment.id),
             onAdd: () => setSegmentEditing('new'),

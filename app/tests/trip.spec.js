@@ -479,32 +479,68 @@ test('a successful action shows a toast with a check mark', async ({ page }) => 
   await expect(page.locator('.editor')).toBeVisible()
 })
 
-test('a toast stays horizontally centred throughout its entrance animation', async ({ page }) => {
-  await open(page)
-  const positions = await page.evaluate(async () => {
-    // Follow lives only in the map controls now; the cluster's duplicate is gone.
-    const button = [...document.querySelectorAll('button')].find(
-      b => b.title === 'Follow the travellers',
-    )
-    button.click()
-    const toast = await new Promise(resolve =>
-      requestAnimationFrame(() => resolve(document.querySelector('.toast'))),
-    )
-    if (!toast) return []
-    const animation = toast.getAnimations()[0]
-    animation.pause()
-    const duration = Number(animation.effect.getTiming().duration)
-    const viewportCentre = document.documentElement.clientWidth / 2
-    return [0, duration / 2, duration - 0.01].map(currentTime => {
-      animation.currentTime = currentTime
-      const box = toast.getBoundingClientRect()
-      return { toastCentre: box.left + box.width / 2, viewportCentre }
-    })
+/* A toast is centred on the screen from its first frame to its last, on a
+   phone and at a desk, and wears its tone: green for what worked, yellow for
+   what to know, red for what failed. The old pill's centring lived only in
+   its entrance keyframes, so when they ended it snapped to the right and sat
+   over the header — the one place it was measured was the one moment it was
+   in the middle. */
+for (const size of [
+  { name: 'a phone', width: 390, height: 844 },
+  { name: 'a desk', width: 1280, height: 800 },
+]) {
+  test(`on ${size.name} a toast is centred throughout, and at rest, in every tone`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height })
+    await open(page)
+    for (const tone of ['success', 'warning', 'error']) {
+      const positions = await page.evaluate(async kind => {
+        window.__offwegoToast(`A ${kind} toast, long enough to wrap on a phone screen`, kind)
+        const toast = await new Promise(resolve =>
+          requestAnimationFrame(() => resolve(document.querySelector('.toast'))),
+        )
+        const centre = () => {
+          const box = toast.getBoundingClientRect()
+          return box.left + box.width / 2 - document.documentElement.clientWidth / 2
+        }
+        const animation = toast.getAnimations()[0]
+        const out = []
+        if (animation) {
+          animation.pause()
+          const duration = Number(animation.effect.getTiming().duration)
+          for (const currentTime of [0, duration / 2, duration - 0.01]) {
+            animation.currentTime = currentTime
+            out.push(centre())
+          }
+          animation.finish()
+        }
+        out.push(centre())
+        const mark = toast.querySelector('.tmark')
+        const style = getComputedStyle(toast)
+        return {
+          off: out,
+          tone: toast.dataset.tone,
+          role: toast.getAttribute('role'),
+          fits: toast.getBoundingClientRect().right <= document.documentElement.clientWidth,
+          background: style.backgroundColor,
+          markColour: getComputedStyle(mark).backgroundColor,
+        }
+      }, tone)
+      for (const off of positions.off) expect(Math.abs(off), `${tone} off centre`).toBeLessThan(0.5)
+      expect(positions.tone).toBe(tone)
+      expect(positions.role).toBe(tone === 'error' ? 'alert' : 'status')
+      expect(positions.fits, `${tone} runs off the screen`).toBe(true)
+      /* The colour is the tone's: a green, a yellow and a red mark, each on
+         a surface tinted from it — never the same grey pill three times. */
+      const [r, g, b] = positions.markColour.match(/\d+/g).map(Number)
+      if (tone === 'success') expect(g).toBeGreaterThan(Math.max(r, b))
+      if (tone === 'warning') expect(Math.min(r, g)).toBeGreaterThan(b + 60)
+      if (tone === 'error') expect(r).toBeGreaterThan(Math.max(g, b))
+      expect(positions.background).not.toBe(positions.markColour)
+    }
   })
-  for (const position of positions) {
-    expect(Math.abs(position.toastCentre - position.viewportCentre)).toBeLessThan(0.5)
-  }
-})
+}
 
 /* The trip chrome used to be laid out from both edges of the screen at once —
    the title from the left, the actions from the right — which on a phone put

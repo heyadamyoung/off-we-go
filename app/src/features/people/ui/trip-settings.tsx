@@ -170,8 +170,8 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
       toast(
         row.mailed
           ? `Invited ${row.email} — invitation email sent`
-          : `${row.email} can join, but the invitation email could not be sent.`,
-        row.mailed ? 'success' : 'error',
+          : `${row.email} can join, but the invitation email could not be sent`,
+        row.mailed ? 'success' : 'warning',
       )
     } catch (error) {
       toast(appErrorMessage(error, 'send-invite'), 'error')
