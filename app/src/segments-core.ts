@@ -318,10 +318,14 @@ export function delayLabel(segment: Pick<Segment, 'departsAt' | 'departsWas'>): 
 export function segmentName(segment: Partial<Segment> | null | undefined): string {
   const number = String(segment?.number ?? '').trim()
   const carrier = String(segment?.carrier ?? '').trim()
-  const said =
-    carrier && number.toLowerCase().startsWith(carrier.toLowerCase().slice(0, 2))
-      ? number
-      : [carrier, number].filter(Boolean).join(' ')
+  /* A flight number carries its airline in its first two letters, whatever
+     the carrier is called in words — "AC1924" is Air Canada's however Rouge
+     the cabin — so the words are not said again in front of it. A train's
+     "IC 3155" carries no such thing, and keeps its operator. */
+  const coded =
+    (segment?.mode === 'flight' && /^[A-Z][A-Z0-9]\s?\d/i.test(number)) ||
+    (carrier && number.toLowerCase().startsWith(carrier.toLowerCase().slice(0, 2)))
+  const said = coded ? number : [carrier, number].filter(Boolean).join(' ')
   const where = [segment?.fromName, segment?.toName].filter(Boolean).join(' → ')
   return [said, where].filter(Boolean).join(' · ') || segment?.mode || 'Journey'
 }

@@ -230,9 +230,12 @@ test('the phases are the deadlines, the board’s go-to-gate, then leaving and l
     leg({}, { status: 'landed', actualArrival: '2026-09-18T02:41:00.000Z', baggageBelt: '5' }),
     NOW + 9 * H,
   )
-  assert.deepEqual(
-    down.slice(-2).map(one => `${one.label}:${one.state}`),
-    ['Landed:done', 'Baggage claim, belt 5:done'],
+  /* The landing is the last phase; the belt is a place, said under the far
+     end of the ticket, not a row with no time under it. */
+  assert.equal(`${down.at(-1).label}:${down.at(-1).state}`, 'Landed:done')
+  assert.equal(
+    down.some(one => one.key === 'belt'),
+    false,
   )
 })
 

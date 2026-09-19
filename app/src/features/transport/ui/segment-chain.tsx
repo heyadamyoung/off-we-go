@@ -46,8 +46,10 @@ function Gap({ gap }: { gap: ReturnType<typeof connectionGap> | null }) {
   )
 }
 
-/* One line for a leg that is not the one that matters now: what it is,
-   where it goes, when it leaves — and the ticket under it once tapped. */
+/* Two lines for a leg that is not the one that matters now: what it is and
+   when it leaves, then where it goes — and the ticket under it once tapped.
+   One line held "Air Canada Rouge AC1924 · YQR → YYZ · Thu 3 Sept · 14:15"
+   only by wrapping the name and cutting the route to "YQR …" on a phone. */
 function LegFold({
   leg,
   open,
@@ -67,16 +69,16 @@ function LegFold({
       data-leg={leg.id}
       data-open={open}>
       <button
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-raised"
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-0.5 px-3 py-2.5 text-left text-xs hover:bg-raised"
         aria-expanded={open}
         onClick={onToggle}>
         <span aria-hidden="true">{MODE_GLYPH[leg.mode]}</span>
-        <b className="font-semibold">{name}</b>
-        <span className="min-w-0 truncate text-muted">{where}</span>
-        <span className="ml-auto whitespace-nowrap font-mono text-[11px] text-faint">
+        <b className="legname min-w-0 truncate font-semibold">{name}</b>
+        <span className="whitespace-nowrap font-mono text-[11px] text-faint">
           {legDay(leg.departsAt, leg.departTz)} · {localTime(leg.departsAt, leg.departTz)}
         </span>
         <Icon n={open ? 'chevd' : 'chev'} s={12} className="text-muted" />
+        <span className="legroute col-start-2 col-end-4 min-w-0 truncate text-muted">{where}</span>
       </button>
       {open && (
         <div className="border-t border-line [&>.ticket]:rounded-none [&>.ticket]:border-0">

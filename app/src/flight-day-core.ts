@@ -198,6 +198,8 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
     at: flight?.actualDeparture || flight?.estimatedDeparture || segment.departsAt,
     done: left,
   })
+  /* The belt is not a phase: it is a place, said under the far end on the
+     ticket (arrivalLine), and a row with no time under it read as a gap. */
   if (segment.arrivesAt || flight?.actualArrival) {
     rows.push({
       key: 'lands',
@@ -206,13 +208,6 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
       done: down,
     })
   }
-  if (flight?.baggageBelt)
-    rows.push({
-      key: 'belt',
-      label: `Baggage claim, belt ${flight.baggageBelt}`,
-      at: null,
-      done: down,
-    })
 
   let nowFound = false
   return rows.map(row => {
@@ -229,7 +224,7 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
       state = 'now'
       nowFound = true
     }
-    const tz = row.key === 'lands' || row.key === 'belt' ? segment.arriveTz : segment.departTz
+    const tz = row.key === 'lands' ? segment.arriveTz : segment.departTz
     return {
       key: row.key,
       label: row.label,
