@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { filterRows, orderRows } from '../src/timeline-find-core.ts'
 import {
   DAY_HEIGHT,
   LEG_HEIGHT,
@@ -261,5 +262,125 @@ test('a segment with no departure at all is left out rather than guessed at', ()
   assert.deepEqual(
     rows.map(row => row.kind),
     ['day', 'stop'],
+  )
+})
+
+/* Newest first, and found by a word: the days turned round with each day
+   still read morning to evening, and the rows that carry the words asked
+   for under the heading of their day. */
+
+const week = () =>
+  timelineRows({
+    stops: [
+      stop('museum', { name: 'Rijksmuseum', day: '2026-09-12', note: 'Vermeer' }),
+      stop('market', { name: 'Albert Cuyp market', day: '2026-09-12' }),
+      stop('canal', { name: 'Canal boat', day: '2026-09-13', kind: 'Boat' }),
+      stop('loose', { name: 'Somewhere, some day' }),
+    ],
+    photos: [shot('p1', 'museum', { caption: 'The Milkmaid' }), shot('p2', 'canal')],
+    legs: new Map([['museum', { minutes: 12, distanceKm: 1.2 }]]),
+    today: '2026-09-13',
+  })
+
+test('newest first turns the days round and leaves each day reading morning to evening', () => {
+  const rows = week()
+  assert.deepEqual(
+    rows.map(row => row.key),
+    [
+      'day:2026-09-12',
+      'stop:museum',
+      'shots:museum',
+      'leg:museum',
+      'stop:market',
+      'day:2026-09-13',
+      'stop:canal',
+      'shots:canal',
+      'day:undated',
+      'stop:loose',
+    ],
+  )
+  assert.deepEqual(
+    orderRows(rows, 'newest').map(row => row.key),
+    [
+      'day:2026-09-13',
+      'stop:canal',
+      'shots:canal',
+      'day:2026-09-12',
+      'stop:museum',
+      'shots:museum',
+      'leg:museum',
+      'stop:market',
+      'day:undated',
+      'stop:loose',
+    ],
+    'the undated tail stays at the end either way',
+  )
+  assert.deepEqual(orderRows(rows, 'oldest'), rows)
+  assert.deepEqual(orderRows([], 'newest'), [])
+})
+
+test('a word finds the rows that carry it, under the heading of their day', () => {
+  const rows = week()
+  assert.deepEqual(filterRows(rows, '   '), rows, 'nothing asked, nothing hidden')
+  assert.deepEqual(
+    filterRows(rows, 'rijks').map(row => row.key),
+    ['day:2026-09-12', 'stop:museum', 'shots:museum'],
+    'a stop found keeps its photographs and loses the road out of it',
+  )
+  assert.deepEqual(
+    filterRows(rows, 'milkmaid').map(row => row.key),
+    ['day:2026-09-12', 'stop:museum', 'shots:museum'],
+    'a photograph found by its caption keeps the stop it was taken at',
+  )
+  assert.deepEqual(
+    filterRows(rows, 'vermeer market').map(row => row.key),
+    [],
+    'every word has to be on the same row',
+  )
+  assert.deepEqual(
+    filterRows(rows, 'boat').map(row => row.key),
+    ['day:2026-09-13', 'stop:canal', 'shots:canal'],
+    'the kind of a stop counts as its words',
+  )
+  assert.deepEqual(
+    filterRows(rows, 'sat 12').map(row => row.key),
+    ['day:2026-09-12', 'stop:museum', 'shots:museum', 'stop:market'],
+    'a day found by its own name keeps the whole day, without the roads',
+  )
+  assert.deepEqual(
+    filterRows(orderRows(rows, 'newest'), 'canal').map(row => row.key),
+    ['day:2026-09-13', 'stop:canal', 'shots:canal'],
+    'found in whichever order the days are read',
+  )
+})
+
+test('a journey is found by its number, its airline and its airports', () => {
+  const rows = timelineRows({
+    stops: [stop('a', { name: 'Home', day: '2026-09-12' })],
+    photos: [],
+    segments: [
+      {
+        id: 'f1',
+        mode: 'flight',
+        carrier: 'KLM',
+        number: 'KL 677',
+        fromCode: 'AMS',
+        toCode: 'YYC',
+        departsAt: '2026-09-12T16:10:00.000Z',
+        departTz: 'Europe/Amsterdam',
+      },
+    ],
+  })
+  assert.deepEqual(
+    filterRows(rows, 'kl 677').map(row => row.key),
+    ['day:2026-09-12', 'travel:f1'],
+  )
+  assert.deepEqual(
+    filterRows(rows, 'yyc').map(row => row.key),
+    ['day:2026-09-12', 'travel:f1'],
+  )
+  assert.deepEqual(
+    filterRows(rows, 'home').map(row => row.key),
+    ['day:2026-09-12', 'stop:a'],
   )
 })
