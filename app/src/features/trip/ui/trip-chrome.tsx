@@ -88,7 +88,7 @@ export const TripTitle = memo(function TripTitle({
    in. */
 export function MapChrome({ children }: { children: ReactNode }) {
   return (
-    <div className="absolute inset-x-3 bottom-[var(--trip-1)] z-[4] flex items-center gap-2 sm:contents">
+    <div className="mapchrome absolute inset-x-3 bottom-[var(--trip-1)] z-[4] flex items-center gap-2 sm:contents">
       {children}
     </div>
   )

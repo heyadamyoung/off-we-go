@@ -19,6 +19,7 @@ import FlightPhases from './flight-phases'
 import FlightTrail from './flight-trail'
 import SeatMap from './seat-map'
 import TicketColumns from './ticket-columns'
+import TicketDoor from './ticket-door'
 
 /* One leg, wearing the face the clock chooses. future: a quiet line.
    eve: the ticket — where, when, the columns the board has filled in. day:
@@ -86,12 +87,15 @@ export default function SegmentCard({
   onShowGate,
   onAttach,
   onOpenPaper,
+  onOpen,
   expanded = false,
 }: {
   segment: Segment
   now: number
   /** the ticket whatever the face: the leg was opened from its folded line */
   expanded?: boolean
+  /** the leg's own screen — a tap on the route, or the Full details button */
+  onOpen?: (segment: Segment) => void
   /** the trip the leg is on, for the airport's trail; the card works without */
   tripId?: string
   canEdit: boolean
@@ -201,7 +205,13 @@ export default function SegmentCard({
         />
       )}
 
-      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 px-3 pt-1.5">
+      {/* The route is the door to the leg's own screen: a tap on where it
+          goes opens the airline-app view of it, with the same facts and a
+          whole screen to say them in. */}
+      <TicketDoor
+        open={onOpen ? () => onOpen(segment) : undefined}
+        label={`Open ${title}`}
+        className="grid w-full grid-cols-[1fr_auto_1fr] items-start gap-2 px-3 pt-1.5 text-left">
         <div className="min-w-0">
           <div className="text-lg font-extrabold leading-tight tracking-[-.01em]">
             {segment.fromCode || segment.fromName}
@@ -221,6 +231,8 @@ export default function SegmentCard({
           {segment.carrier}
           <div className="text-xs font-bold text-ink">{segment.number}</div>
           {aircraft && <div className="tkcraft mt-0.5 text-[10px]">{aircraft}</div>}
+          {/* The door's handle: the route is a button, and this says so. */}
+          {onOpen && <div className="tkmore mt-1 text-[10px] font-bold text-accent">Details ›</div>}
         </div>
         <div className="min-w-0 text-right">
           <div className="text-lg font-extrabold leading-tight tracking-[-.01em]">
@@ -230,7 +242,7 @@ export default function SegmentCard({
             {localTime(segment.arrivesAt, segment.arriveTz)}
           </div>
         </div>
-      </div>
+      </TicketDoor>
 
       {/* The columns are the ticket: TERMINAL, GATE, CHECK-IN, the walk, the
           queue, BAGGAGE CLAIM — what is known, and a dash under the gate

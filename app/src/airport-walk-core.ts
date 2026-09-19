@@ -194,6 +194,11 @@ function securityNear(
   return best ? pointOf(best) : null
 }
 
+/** The mapped gate the board named — "E19", "Gate E19" — or the stand of that number. */
+export function findGate(features: readonly IndoorFeature[], gate: string): WalkPoint | null {
+  return gateAt(features, gate)
+}
+
 function gateAt(features: readonly IndoorFeature[], gate: string): WalkPoint | null {
   const want = gateRef(gate)
   if (!want) return null

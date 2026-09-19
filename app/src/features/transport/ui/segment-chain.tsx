@@ -9,6 +9,7 @@ import {
 } from '../../../segments-core'
 import { byDeparture, legDay, travelLayout } from '../../../travel-order-core'
 import Icon from '../../../shared/ui/icon'
+import FlightScreen from './flight-screen'
 import SegmentCard from './segment-card'
 
 /* The travel day read from where you are in it: the leg that matters now on
@@ -92,6 +93,10 @@ function LegFold({
 export default function SegmentChain(props: ChainProps) {
   const { segments, now } = props
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  /* The leg whose own screen is up, by id: the legs refresh under it every
+     minute, and the screen reads the fresh one. */
+  const [shown, setShown] = useState<string | null>(null)
+  const shownLeg = shown ? segments.find(leg => leg.id === shown) : undefined
   if (!segments.length) return null
   const { active, later, earlier } = travelLayout(segments, now)
   const ordered = byDeparture(segments)
@@ -110,6 +115,7 @@ export default function SegmentChain(props: ChainProps) {
       onShowGate={props.onShowGate}
       onAttach={props.onAttach}
       onOpenPaper={props.onOpenPaper}
+      onOpen={leg => setShown(leg.id)}
     />
   )
   const fold = (leg: Segment) => (
@@ -124,6 +130,17 @@ export default function SegmentChain(props: ChainProps) {
 
   return (
     <section className="mb-4 flex flex-col gap-2">
+      {shownLeg && (
+        <FlightScreen
+          segment={shownLeg}
+          now={now}
+          canEdit={props.canEdit}
+          onClose={() => setShown(null)}
+          onEdit={props.onEdit}
+          onShowGate={props.onShowGate}
+          onOpenPaper={props.onOpenPaper}
+        />
+      )}
       {active && card(active)}
       {later.map(leg => (
         <div key={leg.id} className="flex flex-col gap-2">

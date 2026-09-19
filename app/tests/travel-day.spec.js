@@ -152,3 +152,49 @@ test('on any other day the pill says where the phones are, as before', async ({ 
   await expect(page.locator('.nowcard')).toBeVisible()
   await expect(page.locator('.nowcard .ncleg')).toHaveCount(0)
 })
+
+/* The leg's own screen: a tap on the ticket's route opens the airline-app
+   view of the flight — the two ends large with their times, the board as a
+   board, the day as steps with a note under each, the people and the
+   papers — and the arrow goes back to the tab with the ticket as it was. */
+test('a tap on the ticket opens the flight’s own screen, and the arrow comes back', async ({
+  page,
+}) => {
+  await openTravel(page, { travelDay: true })
+  const flight = ticketOf(page, 'KL 677')
+  await expect(flight).toHaveAttribute('data-face', 'day')
+  await flight.getByRole('button', { name: 'Open KL 677' }).click()
+
+  const screen = page.getByRole('dialog', { name: /KL 677/ })
+  await expect(screen).toBeVisible()
+  await expect(screen.locator('.fsstatus')).toContainText('On time')
+  await expect(screen.locator('.fsend').first()).toContainText('AMS')
+  await expect(screen.locator('.fsend').first()).toContainText('Amsterdam Schiphol')
+  await expect(screen.locator('.fsend').last()).toContainText('YYC')
+  await expect(screen.locator('.fsend').last()).toContainText('Calgary')
+  await expect(screen.locator('.fscraft')).toHaveText('Boeing 787-9')
+  await expect(screen.locator('.fscol[data-key="gate"]')).toContainText('E19')
+  await expect(screen.locator('.fscol[data-key="checkin"]')).toContainText('Zone 3')
+  await expect(screen.locator('.fsstep')).toHaveCount(6)
+  await expect(screen.locator('.fsstep[data-state="now"]')).toHaveCount(1)
+  await expect(screen.locator('.fsstep').filter({ hasText: 'Check-in' })).toContainText(
+    'Zone 3 · Desks 13–20',
+  )
+  await expect(screen.locator('.fsstep').filter({ hasText: 'Boarding' })).toContainText('Gate E19')
+  await expect(screen.locator('.fspeople')).toContainText('Maya')
+  await expect(screen.locator('.fspeople')).toContainText('31A')
+  await expect(screen.locator('.fspapers')).toContainText('Boarding pass — Maya')
+  await expect(screen.getByRole('button', { name: 'Show the gate on the map' })).toBeVisible()
+
+  await screen.getByRole('button', { name: 'Back to the Travel tab' }).click()
+  await expect(screen).toHaveCount(0)
+  await expect(flight).toBeVisible()
+
+  /* Escape closes it too, and only it: the Travel tab stays. */
+  await expect(flight.locator('.tkmore')).toHaveText('Details ›')
+  await flight.getByRole('button', { name: 'Open KL 677' }).click()
+  await expect(page.getByRole('dialog', { name: /KL 677/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: /KL 677/ })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
+})

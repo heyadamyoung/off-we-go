@@ -254,6 +254,12 @@
      substituted where it is DEFINED, so :root's --trip-1 had :root's bar
      height baked in and this override never reached the floating chrome —
      the bar shrank and every control stayed hanging in the air above it. */
+  /* Everything that stands on the bar glides to its new place when the bar
+     opens or collapses, in step with the bar's own height. Snapping there
+     the instant the finger let go was the "chrome jumping about" of the
+     drag; the bar's height and the chrome's feet move together now. */
+  .tripbar { transition: height .18s ease }
+  .mapchrome, .nowpill, .wctl, .edithint, .nowcard { transition: bottom .18s ease }
   .barpeek {
     --trip-bar: calc(80px + env(safe-area-inset-bottom, 0px));
     --trip-1: calc(var(--trip-bar) + 16px);
