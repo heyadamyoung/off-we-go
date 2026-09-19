@@ -404,8 +404,8 @@ const SOURCE_NAMES = {
   'www.torontopearson.com': 'Toronto Pearson',
   'gtaa-fl-prod.azureedge.net': 'Toronto Pearson',
   'api.adsb.lol': 'ADS-B',
-  'api.airplanes.live': 'ADS-B',
   'opendata.adsb.fi': 'ADS-B',
+  'api.adsb.one': 'ADS-B',
 }
 export const sourceNameOf = source => SOURCE_NAMES[source] || source || 'the airport'
 

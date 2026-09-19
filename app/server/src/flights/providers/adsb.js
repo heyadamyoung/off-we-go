@@ -25,9 +25,12 @@ export const ADSB_BASE = 'https://api.adsb.lol/v2'
    down must not be the seat map drawing a guess. */
 export const ADSB_NETWORKS = Object.freeze([
   { base: ADSB_BASE, source: ADSB_SOURCE },
-  { base: 'https://api.airplanes.live/v2', source: 'api.airplanes.live' },
   { base: 'https://opendata.adsb.fi/api/v2', source: 'opendata.adsb.fi' },
+  { base: 'https://api.adsb.one/v2', source: 'api.adsb.one' },
 ])
+/* airplanes.live is not among them: it answers a server in a datacenter
+   with 403 (probed from a GitHub runner), and a network that never answers
+   is a wait, not a source. */
 
 /* IATA → ICAO, for the callsign. */
 export const ICAO_CODES = Object.freeze({
