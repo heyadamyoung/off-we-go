@@ -15,10 +15,11 @@ import {
   PlacePicker,
   SelectBar,
   usePhotoSelection,
+  usePhotosDownload,
   type Filing,
 } from '../../photos'
 import type { GroupMode } from '../../../photo-groups-core'
-import type { Id, Person, Stop, TripPhoto } from '../../../shared/model/types'
+import type { Id, Person, Stop, Toast, TripPhoto } from '../../../shared/model/types'
 import usePhotoGroups from '../model/use-photo-groups'
 import { photoItem, type TripItem } from '../model/trip-items'
 
@@ -47,6 +48,8 @@ export interface PhotosPanelProps {
   onMovePhotos?: (ids: Id[], filing: Filing) => Promise<boolean | undefined> | boolean | undefined
   /* Deleting several at once, from the same selection. */
   onDeletePhotos?: (ids: Id[]) => Promise<void> | void
+  /** where a save says how it went; without one it says nothing */
+  toast?: Toast
 }
 
 export default function PanelPhotos({
@@ -59,6 +62,7 @@ export default function PanelPhotos({
   onSelect,
   onMovePhotos,
   onDeletePhotos,
+  toast,
 }: PhotosPanelProps) {
   /* Whose photographs these are, from the photographs rather than the roster:
      somebody who has not added anything is not a filter worth offering, and a
@@ -115,6 +119,8 @@ export default function PanelPhotos({
   const choosing = usePhotoSelection(reading)
   const [picking, setPicking] = useState(false)
   const [moving, setMoving] = useState(false)
+  /* Every chosen picture to the device, the way the viewer saves one. */
+  const { downloadAll, saving } = usePhotosDownload(toast ?? (() => {}))
 
   /* The card whose pictures are under the bar right now, named there while
      its own title row is scrolled off above — with the chevron and the tick,
@@ -343,9 +349,10 @@ export default function PanelPhotos({
               <SelectBar
                 count={choosing.count}
                 total={reading.length}
-                busy={moving}
+                busy={moving || saving}
                 onMove={() => setPicking(true)}
                 onDelete={onDeletePhotos ? remove : undefined}
+                onDownload={() => downloadAll(choosing.photos)}
                 onAll={choosing.all}
                 onDone={choosing.end}
               />

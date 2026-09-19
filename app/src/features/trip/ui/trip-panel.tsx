@@ -11,7 +11,7 @@ import PeopleList from './panel-people'
 import ChatPanel, { type ChatProps } from './panel-chat'
 import type { Paper } from '../../../papers-core'
 import type { Segment } from '../../../segments-core'
-import type { Id, Person, Stop, TripLeg, TripPhoto } from '../../../shared/model/types'
+import type { Id, Person, Stop, Toast, TripLeg, TripPhoto } from '../../../shared/model/types'
 import type { TripView } from '../../../trip-search-core'
 
 interface PanelProps {
@@ -37,6 +37,8 @@ interface PanelProps {
   ) => Promise<boolean | undefined> | boolean | undefined
   /** deleting several photographs at once; absent for read-only viewers */
   onDeletePhotos?: (ids: Id[]) => Promise<void> | void
+  /** where the gallery's saves say how they went */
+  toast?: Toast
   sights: SightsListProps
   /** road truth from the routing engine, keyed by the stop each leg leaves */
   legs?: Map<Id, TripLeg>

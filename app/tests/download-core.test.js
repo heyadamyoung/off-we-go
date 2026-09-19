@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  downloadManyOutcome,
   downloadName,
   downloadOutcome,
   downloadUrl,
@@ -110,4 +111,18 @@ test('only our own links can be asked to come back as attachments', () => {
   assert.equal(oursToServe('https://offwego.to/api/media/t/p.jpg?expires=1'), true)
   assert.equal(oursToServe('https://loremflickr.com/1200/800/canal?lock=3'), false)
   assert.equal(oursToServe(null), false)
+})
+
+test('saving several says how many went where, and how many did not', () => {
+  assert.equal(downloadManyOutcome(12, 0, 'anchor'), 'Saved 12 photos')
+  assert.equal(
+    downloadManyOutcome(1, 0, 'device', 'ios'),
+    'Saved 1 photo to Files, under Off We Go',
+  )
+  assert.equal(
+    downloadManyOutcome(9, 3, 'device', 'android'),
+    'Saved 9 photos to your Documents folder · 3 did not save',
+  )
+  assert.equal(downloadManyOutcome(0, 2, 'anchor'), '2 photos did not save')
+  assert.equal(downloadManyOutcome(0, 0, null), 'Nothing to save')
 })

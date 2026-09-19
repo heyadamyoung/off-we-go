@@ -153,6 +153,35 @@ test('the picker offers the itinerary, and choosing one re-files the pictures', 
   await expect(page.getByRole('toolbar', { name: /chosen photos/i })).toHaveCount(0)
 })
 
+test('Download saves every chosen picture, one file each, and says how many', async ({ page }) => {
+  /* The sample's pictures live on somebody else's server; here they are a
+     pixel each, which is enough to be a file. */
+  await page.route(/https:\/\/(loremflickr\.com|picsum\.photos)\//, route =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+        'base64',
+      ),
+    }),
+  )
+  await openPhotos(page)
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  const tiles = page.locator('.pgrid-photo')
+  await tiles.nth(0).click()
+  await tiles.nth(1).click()
+  const bar = page.getByRole('toolbar', { name: /chosen photos/i })
+  const files = []
+  page.on('download', download => files.push(download.suggestedFilename()))
+  await bar.getByRole('button', { name: 'Download the chosen photos' }).click()
+  await expect.poll(() => files.length, { timeout: 8000 }).toBe(2)
+  expect(new Set(files).size).toBe(2)
+  for (const name of files) expect(name).toMatch(/\.jpe?g$/i)
+  await expect(
+    page.locator('.toast, [role="status"]').filter({ hasText: 'Saved 2 photos' }).first(),
+  ).toBeVisible({ timeout: 8000 })
+})
+
 test('every chosen tile wears the ring, the last one tapped included', async ({ page }) => {
   /* The last tile tapped is the focused one, and the stylesheet's focus
      outline took the chosen outline's place on it and pushed it outside
