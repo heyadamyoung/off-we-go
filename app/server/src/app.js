@@ -34,6 +34,7 @@ import { createMailboxReader } from './mailbox-read.js'
 import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
 import { createFlightSources } from './flights/registry.js'
 import { registerFlightRoutes } from './flights/routes.js'
+import { registerPushRoutes } from './push/routes.js'
 import {
   contentDisposition,
   isPlaylistPath,
@@ -135,6 +136,8 @@ export async function buildServer({
   mailer,
   publicUrl,
   sessionSecret,
+  /** the web-push sender from push/sender.js; its public key is what browsers subscribe with */
+  push = null,
   clock = () => new Date(),
   ingestRateLimit = { max: 180, windowMs: 60_000 },
   authRateLimit = { maxPerEmail: 3, maxPerIp: 20, windowMs: 15 * 60_000 },
@@ -3418,6 +3421,12 @@ export async function buildServer({
      cached boards between them. */
   const flightSources = flights || createFlightSources()
   registerFlightRoutes(app, { repository, sources: flightSources, authenticated })
+  registerPushRoutes(app, {
+    repository,
+    authenticate: authenticated,
+    secret: sessionSecret,
+    publicKey: push?.publicKey ?? null,
+  })
   app.decorate('flightSources', flightSources)
 
   return app

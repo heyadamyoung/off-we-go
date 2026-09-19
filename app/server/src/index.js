@@ -6,6 +6,8 @@ import { buildServer } from './app.js'
 import { startTravelWatch } from './travel-watch.js'
 import { createFlightSources } from './flights/registry.js'
 import { startFlightWatch } from './flights/watch.js'
+import { createWebPushSender } from './push/sender.js'
+import { startPushTick } from './push/tick.js'
 import { writeFile } from 'node:fs/promises'
 import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
@@ -25,6 +27,10 @@ const repository = await createPostgresRepository({
   adminEmail: required('WAYFARE_ADMIN_EMAIL'),
 })
 await repository.migrate()
+
+/* The key pair every push is signed with: made once, kept in the database,
+   handed to browsers as the thing they subscribe under. */
+const push = await createWebPushSender({ repository, subject: required('WAYFARE_PUBLIC_URL') })
 const oidcConfig = readOidcConfig(process.env)
 
 /* The AI assistant exists only when the deploy delivered a Codex login —
@@ -130,6 +136,7 @@ const app = await buildServer({
   }),
   publicUrl: required('WAYFARE_PUBLIC_URL'),
   sessionSecret: required('WAYFARE_SESSION_SECRET'),
+  push,
   oauthSecret: required('WAYFARE_OAUTH_SECRET'),
   identityProvider: createOidcIdentityProvider(oidcConfig),
   appleTeamId: required('APPLE_TEAM_ID'),
@@ -258,12 +265,23 @@ const flightWatch = startFlightWatch({
   log: app.log,
 })
 
+/* The phones that asked to be told, told: one card per leg, replaced in
+   place, a sound only for the moments worth one. The rule is in
+   push/card.js; this is the clock. */
+const pushTick = startPushTick({
+  repository,
+  sender: push,
+  secret: required('WAYFARE_SESSION_SECRET'),
+  log: app.log,
+})
+
 const stop = async signal => {
   app.log.info({ signal }, 'shutting down')
   clearInterval(pruneTimer)
   clearInterval(stampTimer)
   travelWatch?.stop()
   flightWatch.stop()
+  pushTick.stop()
   await app.close().catch(() => {})
   await repository.close().catch(() => {})
   process.exit(0)

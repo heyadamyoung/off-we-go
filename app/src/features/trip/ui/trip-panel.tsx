@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../../../shared/ui/icon'
 import { SightsList, type SightsListProps } from '../../sights'
-import { SegmentChain } from '../../transport'
+import { PushOffer, SegmentChain } from '../../transport'
 import PanelPhotos from './panel-photos'
 import PanelPapers from './panel-papers'
 import Timeline from './timeline'
@@ -252,6 +252,9 @@ function Travel({ transport }: PanelProps) {
        centred instead, the way a boarding pass is not the size of the desk. */
     <div className="mx-auto w-full max-w-[600px] px-3 pt-3">
       <SegmentChain {...transport} />
+      {/* Under the tickets, for a browser that can be told about them while
+          it is closed: one line, and gone once it is on. */}
+      {transport.tripId && <PushOffer tripId={transport.tripId} />}
     </div>
   )
 }

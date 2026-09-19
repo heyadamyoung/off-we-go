@@ -28,6 +28,11 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const segmentDocuments = new Map()
   const flightSnapshots = new Map()
   const flightEvents = []
+  let pushKeys = null
+  const pushSubscriptions = new Map()
+  const pushCards = new Map()
+  const pushMutes = new Set()
+  const pushSends = new Map()
   const stopDocuments = new Map()
   const fakeUuid = (namespace, value) =>
     `00000000-0000-4000-8000-${String(namespace * 100000 + value).padStart(12, '0')}`
@@ -1172,6 +1177,133 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     async applyFlightUpdate(segmentId, changes) {
       const row = segments.get(segmentId)
       return row ? this.writeSegment(row.tripId, segmentId, changes) : null
+    },
+    /* ---- push: the postgres contract, in Maps ---------------------------- */
+    async pushKeys() {
+      return pushKeys ? { ...pushKeys } : null
+    },
+    async savePushKeys({ publicKey, privateKey }) {
+      pushKeys ||= { publicKey, privateKey }
+      return { ...pushKeys }
+    },
+    async savePushSubscription({ profileId, endpoint, p256dh, auth, userAgent = null }) {
+      const existing = [...pushSubscriptions.values()].find(sub => sub.endpoint === endpoint)
+      const id = existing?.id || fakeUuid(9, pushSubscriptions.size + 1)
+      pushSubscriptions.set(id, {
+        id,
+        profileId,
+        endpoint,
+        p256dh,
+        auth,
+        userAgent,
+        failures: 0,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      })
+      return id
+    },
+    async deletePushSubscription(id) {
+      pushSubscriptions.delete(id)
+      for (const key of [...pushCards.keys()]) if (key.startsWith(`${id}|`)) pushCards.delete(key)
+    },
+    async deletePushSubscriptionByEndpoint(profileId, endpoint) {
+      const found = [...pushSubscriptions.values()].find(
+        sub => sub.endpoint === endpoint && sub.profileId === profileId,
+      )
+      if (!found) return false
+      await this.deletePushSubscription(found.id)
+      return true
+    },
+    async notePushFailure(id) {
+      const sub = pushSubscriptions.get(id)
+      if (sub) sub.failures += 1
+    },
+    async pushLegs({ now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = now - (afterMs ?? 12 * 3600_000)
+      const to = now + (beforeMs ?? 30 * 3600_000)
+      return [...segments.values()]
+        .filter(row => row.mode === 'flight')
+        .filter(row => {
+          const departs = new Date(row.departsAt).getTime()
+          return departs >= from && departs <= to
+        })
+        .sort((a, b) => new Date(a.departsAt) - new Date(b.departsAt))
+        .map(row => {
+          const noted = flightEvents.filter(one => one.segmentId === row.id).map(one => one.at)
+          return {
+            ...row,
+            tripSlug: trips.get(row.tripId)?.slug || row.tripId,
+            info: flightSnapshots.get(row.id)?.info || null,
+            changedAt: noted.length ? noted.sort().at(-1) : null,
+          }
+        })
+    },
+    async pushRecipients(tripId, segmentId) {
+      const trip = trips.get(tripId)
+      if (!trip) return []
+      const dayAgo = Date.now() - 24 * 3600_000
+      return [...pushSubscriptions.values()]
+        .filter(sub => sub.failures < 8)
+        .map(sub => {
+          const member = trip.members.find(one => one.profileId === sub.profileId)
+          if (!member) return null
+          const card = pushCards.get(`${sub.id}|${segmentId}`)
+          return {
+            subscriptionId: sub.id,
+            endpoint: sub.endpoint,
+            p256dh: sub.p256dh,
+            auth: sub.auth,
+            role: member.role,
+            said: card?.said || null,
+            woken: card?.woken || 0,
+            muted: pushMutes.has(`${sub.id}|${segmentId}`),
+            wokenToday: [...pushSends.values()].filter(
+              one =>
+                one.subscriptionId === sub.id &&
+                one.audible &&
+                new Date(one.sentAt).getTime() > dayAgo,
+            ).length,
+          }
+        })
+        .filter(Boolean)
+    },
+    async savePushCard(subscriptionId, segmentId, { said, woken }) {
+      pushCards.set(`${subscriptionId}|${segmentId}`, {
+        said: JSON.parse(JSON.stringify(said)),
+        woken,
+        sentAt: new Date().toISOString(),
+      })
+    },
+    async clearPushCard(subscriptionId, segmentId) {
+      pushCards.delete(`${subscriptionId}|${segmentId}`)
+    },
+    async recordPushSend({ id, subscriptionId, segmentId, kind, audible }) {
+      pushSends.set(id, {
+        id,
+        subscriptionId,
+        segmentId,
+        kind,
+        audible,
+        sentAt: new Date().toISOString(),
+        openedAt: null,
+        dismissedAt: null,
+      })
+    },
+    async mutePushSend(sendId) {
+      const send = pushSends.get(sendId)
+      if (!send?.segmentId) return false
+      pushMutes.add(`${send.subscriptionId}|${send.segmentId}`)
+      return true
+    },
+    async recordPushOutcome(sendId, outcome) {
+      const send = pushSends.get(sendId)
+      if (!send) return false
+      const key = outcome === 'opened' ? 'openedAt' : 'dismissedAt'
+      send[key] ||= new Date().toISOString()
+      return true
+    },
+    /* For the tests: what has been sent. */
+    pushSendsSoFar() {
+      return [...pushSends.values()].map(one => ({ ...one }))
     },
     async flightForSegment(user, tripId, segmentId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null
