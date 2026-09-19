@@ -2738,6 +2738,144 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       const tripId = found.rows[0]?.trip_id
       return tripId ? this.writeSegment(tripId, segmentId, changes) : null
     },
+    /* ---- push: the phones that asked to be told ------------------------- */
+    async pushKeys() {
+      const result = await pool.query('select public_key, private_key from push_keys where id=1')
+      const row = result.rows[0]
+      return row ? { publicKey: row.public_key, privateKey: row.private_key } : null
+    },
+    /* First writer wins: two instances booting at once keep one pair. */
+    async savePushKeys({ publicKey, privateKey }) {
+      await pool.query(
+        `insert into push_keys (id, public_key, private_key) values (1, $1, $2)
+        on conflict (id) do nothing`,
+        [publicKey, privateKey],
+      )
+      return this.pushKeys()
+    },
+    async savePushSubscription({ profileId, endpoint, p256dh, auth, userAgent = null }) {
+      const result = await pool.query(
+        `insert into push_subscriptions (profile_id, endpoint, p256dh, auth, user_agent)
+        values ($1, $2, $3, $4, $5)
+        on conflict (endpoint) do update
+          set profile_id=$1, p256dh=$3, auth=$4, user_agent=$5, failures=0, updated_at=now()
+        returning id`,
+        [profileId, endpoint, p256dh, auth, userAgent],
+      )
+      return result.rows[0].id
+    },
+    async deletePushSubscription(id) {
+      await pool.query('delete from push_subscriptions where id=$1', [id])
+    },
+    async deletePushSubscriptionByEndpoint(profileId, endpoint) {
+      const result = await pool.query(
+        'delete from push_subscriptions where profile_id=$1 and endpoint=$2',
+        [profileId, endpoint],
+      )
+      return result.rowCount > 0
+    },
+    async notePushFailure(id) {
+      await pool.query(
+        'update push_subscriptions set failures=failures+1, updated_at=now() where id=$1',
+        [id],
+      )
+    },
+    /* Every flight leg near enough in time to have a card, with the board's
+       last word and when it last changed. Cancelled and finished legs are
+       in: a cancellation is the card most worth showing. */
+    async pushLegs({ now = Date.now(), beforeMs, afterMs } = {}) {
+      const from = new Date(now - (afterMs ?? 12 * 3600_000)).toISOString()
+      const to = new Date(now + (beforeMs ?? 30 * 3600_000)).toISOString()
+      const result = await pool.query(
+        `select s.*, t.slug as trip_slug, f.info as flight_info,
+          (select max(e.noted_at) from flight_events e where e.segment_id = s.id) as changed_at
+        from segments s
+        join trips t on t.id = s.trip_id
+        left join flight_snapshots f on f.segment_id = s.id
+        where s.mode = 'flight' and s.departs_at between $1 and $2
+        order by s.departs_at`,
+        [from, to],
+      )
+      return result.rows.map(row => ({
+        ...segmentRow({ ...row, documents: undefined }),
+        tripSlug: row.trip_slug,
+        info: row.flight_info || null,
+        changedAt: row.changed_at ? new Date(row.changed_at).toISOString() : null,
+      }))
+    },
+    /* Every phone on the trip, with what it was last told about this leg,
+       whether it asked to hear no more, and how often it was woken today. */
+    async pushRecipients(tripId, segmentId) {
+      const result = await pool.query(
+        `select sub.id, sub.endpoint, sub.p256dh, sub.auth, m.role, c.said, c.woken,
+          exists(select 1 from push_mutes mu
+            where mu.subscription_id = sub.id and mu.segment_id = $2) as muted,
+          (select count(*)::int from push_sends ps
+            where ps.subscription_id = sub.id and ps.audible
+              and ps.sent_at > now() - interval '1 day') as woken_today
+        from push_subscriptions sub
+        join trip_members m on m.profile_id = sub.profile_id and m.trip_id = $1
+        left join push_cards c on c.subscription_id = sub.id and c.segment_id = $2
+        where sub.failures < 8
+        order by sub.created_at`,
+        [tripId, segmentId],
+      )
+      return result.rows.map(row => ({
+        subscriptionId: row.id,
+        endpoint: row.endpoint,
+        p256dh: row.p256dh,
+        auth: row.auth,
+        role: row.role,
+        said: row.said || null,
+        woken: row.woken || 0,
+        muted: row.muted === true,
+        wokenToday: row.woken_today || 0,
+      }))
+    },
+    async savePushCard(subscriptionId, segmentId, { said, woken }) {
+      await pool.query(
+        `insert into push_cards (subscription_id, segment_id, said, woken, sent_at)
+        values ($1, $2, $3, $4, now())
+        on conflict (subscription_id, segment_id) do update set said=$3, woken=$4, sent_at=now()`,
+        [subscriptionId, segmentId, JSON.stringify(said), woken],
+      )
+    },
+    async clearPushCard(subscriptionId, segmentId) {
+      await pool.query('delete from push_cards where subscription_id=$1 and segment_id=$2', [
+        subscriptionId,
+        segmentId,
+      ])
+    },
+    async recordPushSend({ id, subscriptionId, segmentId, kind, audible }) {
+      await pool.query(
+        `insert into push_sends (id, subscription_id, segment_id, kind, audible)
+        values ($1, $2, $3, $4, $5)`,
+        [id, subscriptionId, segmentId, kind, audible],
+      )
+    },
+    async mutePushSend(sendId) {
+      const result = await pool.query(
+        `insert into push_mutes (subscription_id, segment_id)
+        select subscription_id, segment_id from push_sends where id=$1 and segment_id is not null
+        on conflict do nothing
+        returning subscription_id`,
+        [sendId],
+      )
+      if (result.rowCount > 0) return true
+      const known = await pool.query(
+        'select 1 from push_sends where id=$1 and segment_id is not null',
+        [sendId],
+      )
+      return known.rowCount > 0
+    },
+    async recordPushOutcome(sendId, outcome) {
+      const column = outcome === 'opened' ? 'opened_at' : 'dismissed_at'
+      const result = await pool.query(
+        `update push_sends set ${column}=coalesce(${column}, now()) where id=$1`,
+        [sendId],
+      )
+      return result.rowCount > 0
+    },
     /* The snapshot and the trail behind one leg, for its card. */
     async flightForSegment(user, tripId, segmentId) {
       if (!(await this.canReadTrip(user.id, tripId))) return null

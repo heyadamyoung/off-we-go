@@ -235,6 +235,27 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
   })
 }
 
+/**
+ * Items in rows of at most `across`, as even as rows can be: four are two
+ * and two, five are three and two, seven are three, two and two. A grid that
+ * simply wraps deals four as three and one, and TERMINAL · GATE · CHECK-IN
+ * over BAGGAGE CLAIM alone read as a ticket with a hole in it.
+ */
+export function dealRows<T>(items: readonly T[], across: number): T[][] {
+  if (!items.length) return []
+  const rows = Math.ceil(items.length / Math.max(1, across))
+  const base = Math.floor(items.length / rows)
+  const extra = items.length % rows
+  const dealt: T[][] = []
+  let at = 0
+  for (let row = 0; row < rows; row += 1) {
+    const size = base + (row < extra ? 1 : 0)
+    dealt.push(items.slice(at, at + size))
+    at += size
+  }
+  return dealt
+}
+
 export interface TicketColumn {
   key: string
   label: string

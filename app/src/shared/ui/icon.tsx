@@ -1,3 +1,4 @@
+import { Plane } from 'lucide-react'
 import { memo } from 'react'
 
 /* One stroke set, drawn on a 16 grid at 1.5 weight. Everything is a path so a
@@ -19,7 +20,6 @@ const PATHS: Record<string, string> = {
     'M1.5 5A1.5 1.5 0 0 1 3 3.5h5.5A1.5 1.5 0 0 1 10 5v6a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 11V5Z|M10 7.3l4-2.3v6l-4-2.3V7.3Z',
   sun: 'M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3|o8 8 3',
   moon: 'M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z',
-  plane: 'M2 9.5 14 5l-1 3.5L9 10l-1.5 3.5-1.3-2.6L3.5 10 2 9.5Z',
   train: 'M3 1.5h10v10.5H3zM3 7h10M5.5 14.5 6.5 12M10.5 14.5 9.5 12|c5.75 9.75 .9|c10.25 9.75 .9',
   bed: 'M2 12V5.5M2 10h12v2M2 10V8.5A1.5 1.5 0 0 1 3.5 7h4A1.5 1.5 0 0 1 9 8.5V10m0 0h5v-1a2 2 0 0 0-2-2H9',
   music: 'M6 12.5V4l7-1.5V11|o4 12.5 2|o11 11 2',
@@ -100,8 +100,27 @@ export interface IconProps {
   className?: string
 }
 
+/* Drawn by a library rather than by hand, the one shape of ours that never
+   read as what it was: the plane on the Travel tab was a polygon. Lucide's
+   is on a 24 grid at a stroke of 2, so ours at 1.5 on 16 is scaled to match. */
+const LIBRARY: Record<string, typeof Plane> = { plane: Plane }
+
 const Icon = memo(function Icon({ n, s = 16, c = 'currentColor', w = 1.5, className }: IconProps) {
-  const shapes = SHAPES[ALIAS[n] || n] || SHAPES.pin
+  const name = ALIAS[n] || n
+  const Drawn = LIBRARY[name]
+  if (Drawn) {
+    return (
+      <Drawn
+        size={s}
+        color={c}
+        strokeWidth={w * 1.5}
+        className={className}
+        style={{ flex: 'none' }}
+        aria-hidden="true"
+      />
+    )
+  }
+  const shapes = SHAPES[name] || SHAPES.pin
   return (
     <svg
       width={s}

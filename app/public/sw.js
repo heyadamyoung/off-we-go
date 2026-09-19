@@ -111,3 +111,73 @@ self.addEventListener('fetch', event => {
   if (PRIVATE.some(prefix => url.pathname.startsWith(prefix))) return
   event.respondWith(request.mode === 'navigate' ? document_(request) : asset(request))
 })
+
+/* ---------------------------------------------------------- the travel day
+   Pushed by the server: one card per leg, replaced in place under its tag,
+   silent unless the server said the moment was worth a sound, and closed
+   when the server says the leg is over. Tapping it opens the trip's Travel
+   tab; its one action mutes the leg. What became of each card is reported
+   with the token the card carried, so a kind nobody opens can be quietened. */
+
+self.addEventListener('push', event => {
+  let card = null
+  try {
+    card = event.data ? event.data.json() : null
+  } catch {
+    card = null
+  }
+  if (!card || typeof card.tag !== 'string') return
+  event.waitUntil(
+    (async () => {
+      if (card.clear) {
+        for (const shown of await self.registration.getNotifications({ tag: card.tag })) shown.close()
+        return
+      }
+      await self.registration.showNotification(card.title || 'Off We Go', {
+        body: card.body || '',
+        tag: card.tag,
+        renotify: card.silent === false,
+        silent: card.silent !== false,
+        icon: '/icon-192.png',
+        timestamp: Date.now(),
+        data: { url: card.url, sendId: card.sendId, token: card.token, kind: card.kind },
+        actions: [{ action: 'mute', title: 'Mute this leg' }],
+      })
+    })(),
+  )
+})
+
+const tellTheServer = (data, what, body) =>
+  data && data.sendId && data.token
+    ? fetch(`/api/push/sends/${encodeURIComponent(data.sendId)}/${what}`, {
+        method: 'POST',
+        headers: { 'x-push-token': data.token, 'content-type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      }).catch(() => {})
+    : Promise.resolve()
+
+self.addEventListener('notificationclick', event => {
+  const data = event.notification.data || {}
+  event.notification.close()
+  if (event.action === 'mute') {
+    event.waitUntil(tellTheServer(data, 'mute'))
+    return
+  }
+  event.waitUntil(
+    (async () => {
+      await tellTheServer(data, 'outcome', { outcome: 'opened' })
+      const url = new URL(data.url || '/', self.location.origin).href
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      const open = windows.find(client => client.url.startsWith(self.location.origin))
+      if (open) {
+        await open.focus()
+        if ('navigate' in open) await open.navigate(url).catch(() => {})
+      } else await self.clients.openWindow(url)
+    })(),
+  )
+})
+
+self.addEventListener('notificationclose', event => {
+  const data = event.notification.data || {}
+  event.waitUntil(tellTheServer(data, 'outcome', { outcome: 'dismissed' }))
+})
