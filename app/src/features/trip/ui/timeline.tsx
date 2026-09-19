@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import useGridBox from '../model/use-grid-box'
@@ -107,23 +107,19 @@ export default function Timeline({
     setOrder(next)
   }
 
-  /* Opened at today rather than at the first morning of the trip.
-     
-     The screen's whole subject is when things happened, and on the fourth day
-     of a fortnight the answer to "where are we" was eleven rows of scrolling
-     away. Once per opening, and never again: after that the view belongs to
-     whoever is reading it, and a list that jumps back while somebody is
-     reading yesterday is worse than one that never moved. */
-  const jumped = useRef(false)
-  useEffect(() => {
-    if (jumped.current || !box.viewportHeight) return
+  /* Today, on request. The timeline used to jump there by itself on opening;
+     every tab opens at its top now, and with the newest day first today is
+     the top or near it. When it is not — the second week of a fortnight —
+     one tap in the bar goes there, and the view is otherwise left to
+     whoever is reading it. */
+  const hasToday = rows.some(row => row.kind === 'day' && row.today)
+  const toToday = () => {
     const at = rows.findIndex(row => row.kind === 'day' && row.today)
-    jumped.current = true
-    if (at <= 0) return
+    if (at < 0) return
     let above = 0
     for (let index = 0; index < at; index += 1) above += rows[index].height
-    scroller.current?.scrollTo({ top: above })
-  }, [rows, box.viewportHeight, scroller])
+    scroller.current?.scrollTo({ top: above, behavior: 'smooth' })
+  }
 
   if (!everything.length)
     return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>
@@ -141,6 +137,11 @@ export default function Timeline({
         value={query}
         onChange={event => setQuery(event.target.value)}
       />
+      {hasToday && (
+        <button className="mini flex-none" onClick={toToday} aria-label="Go to today">
+          Today
+        </button>
+      )}
       <button
         className="mini flex-none whitespace-nowrap"
         onClick={flip}

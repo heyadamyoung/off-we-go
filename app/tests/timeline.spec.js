@@ -149,23 +149,27 @@ test('every row is the height the window thinks it is', async ({ page }) => {
   expect(off, 'a row is not the height the window was told').toEqual([])
 })
 
-test('the timeline opens at today, not at the first morning of the trip', async ({ page }) => {
-  /* The screen's whole subject is when things happened. On the fourth day of a
-     fortnight "where are we" was eleven rows of scrolling away. */
+test('the timeline opens at its top, and Today goes to today', async ({ page }) => {
+  /* Every tab opens at its top; with the newest day first, today is the
+     top or near it. When it is not, the bar's Today goes there. */
   await openTimeline(page)
-  const placed = await page.evaluate(() => {
-    const today = document.querySelector('.tday.now')
-    const line = document.querySelector('.tline')
-    if (!today || !line) return null
-    const scroller = today.closest('.sheet')?.querySelector('div.flex-1.overflow-y-auto')
-    return {
-      moved: (scroller?.scrollTop ?? 0) > 0,
-      onScreen: today.getBoundingClientRect().top < window.innerHeight,
-    }
+  const scroller = page.locator('.sheet div.flex-1.overflow-y-auto')
+  expect(await scroller.evaluate(node => node.scrollTop)).toBe(0)
+  await page.getByRole('button', { name: 'Go to today' }).click()
+  await expect
+    .poll(async () => {
+      const box = await page.locator('.tday.now').boundingBox()
+      const bar = await page.locator('.tbar').boundingBox()
+      return box && bar ? Math.abs(box.y - (bar.y + bar.height)) < 6 : null
+    })
+    .toBe(true)
+  /* And a switch to another tab is a fresh top, not the scroll left behind. */
+  await scroller.evaluate(node => {
+    node.scrollTop = 400
   })
-  expect(placed, 'today was never drawn').not.toBeNull()
-  expect(placed.moved, 'the timeline opened at the top of the trip').toBe(true)
-  expect(placed.onScreen).toBe(true)
+  await page.getByRole('button', { name: 'Papers', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Papers' })).toBeVisible()
+  expect(await scroller.evaluate(node => node.scrollTop)).toBe(0)
 })
 
 test('a traveller can start a stop from the day it belongs to', async ({ page }) => {

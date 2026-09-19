@@ -375,8 +375,15 @@ const sweep =
     const trouble = []
     for (const [what, scope, reach] of states) {
       await reach(page)
+      /* The screen is there before it is measured. A quiet network is not a
+         drawn page: the index.html served is an empty shell that React fills
+         once the route's chunk has been evaluated, and on a runner with six
+         workers booting pages at once that took longer than the silence the
+         five stand-alone screens waited for — so the sweep found no root,
+         and reported it as an object nobody could read. */
+      await expect(page.locator(scope).first(), `${what} never appeared`).toBeAttached()
       for (const finding of await page.evaluate(SWEEP(scope))) {
-        trouble.push(`${what}: ${finding}`)
+        trouble.push(`${what}: ${typeof finding === 'string' ? finding : JSON.stringify(finding)}`)
       }
     }
 
