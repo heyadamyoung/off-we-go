@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from 'react'
+import useSheetDrag from '../model/use-sheet-drag'
 import Icon from '../../../shared/ui/icon'
 import Img from '../../../shared/ui/img'
 import MediaThumb from '../../../shared/ui/media-thumb'
@@ -44,6 +45,10 @@ const TripBar = memo(function TripBar({
   onPeek,
 }: TripBarProps) {
   const chips = useRef<HTMLDivElement>(null)
+  /* The grabber follows the finger: pull up to open, down to collapse, a
+     tap still toggles. The bar itself comes along for the first few dozen
+     pixels so the pull is seen to be doing something. */
+  const drag = useSheetDrag(!!peek, collapsed => onPeek?.(collapsed))
 
   // Keep the chosen day in view when it changes from somewhere else — picking a
   // stop off the map moves the day with it.
@@ -57,14 +62,18 @@ const TripBar = memo(function TripBar({
         'glass absolute inset-x-0 bottom-0 z-[5] flex h-[var(--trip-bar)] flex-col ' +
         'border-t border-line pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-[18px] ' +
         (behindPanel ? 'hidden' : '')
-      }>
+      }
+      style={{
+        transform: drag.offset ? `translateY(${drag.offset}px)` : undefined,
+        transition: drag.dragging ? 'none' : 'transform .18s ease',
+      }}>
       {onPeek && (
         <button
-          className="hitslop mx-auto mt-1.5 hidden h-2 w-12 flex-none rounded-full
+          className="grabber hitslop mx-auto mt-1.5 hidden h-2 w-12 flex-none touch-none rounded-full
                         bg-line2 max-sm:block"
           aria-label={peek ? 'Show the day’s cards' : 'Collapse to the map'}
           aria-expanded={!peek}
-          onClick={() => onPeek(!peek)}
+          {...drag.handle}
         />
       )}
       {/* The day chips and the search box each want the full width of a phone,

@@ -73,9 +73,19 @@ test('the timeline heads those days the same way, in the same order', async ({ p
     }
     return seen
   }
+  /* Newest first by default — the days turned round, the undated tail still
+     last — and the chips' own order once the control flips it. */
+  const newest = await headingsInOrder()
+  expect(newest.at(-1)).toBe('no date yet', 'the stop with no day is drawn last either way')
+  await page.getByRole('button', { name: /Newest first/ }).click()
+  await page.locator('.sheet div.flex-1.overflow-y-auto').evaluate(node => {
+    node.scrollTop = 0
+  })
   const headings = await headingsInOrder()
   expect(headings.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
   expect(headings.at(-1)).toBe('no date yet', 'and the stop with no day is drawn, last')
+  const dated = list => list.filter(day => day !== 'no date yet')
+  expect(dated(newest)).toEqual(dated(headings).slice().reverse())
 
   /* And the four stops of the fourth are all under the first heading — read as
      the panel reads, top to bottom, because that is what somebody scrolling it
