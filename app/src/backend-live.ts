@@ -1,11 +1,11 @@
-import { authClient, isSample, tripPath } from './backend-base'
+import { authClient, functionsUrl, isSample, tripPath } from './backend-base'
 import { isStill } from './shared/lib/still'
 import { onWake } from './shared/lib/wake'
 import { asDevice, asFix, liveRetryDelay, type DeviceWire } from './live-positions-core'
 import { sampleLiveHistory, sampleLiveNow } from './sample-live-core'
 import { sampleResult } from './sample-trip-core'
 import { createTripStreams } from './trip-stream-core'
-import type { Device, Id, LiveFix } from './shared/model/types'
+import type { Device, Id, LiveFix, PairCode } from './shared/model/types'
 
 /* The live side of the API: change streams, presence, the phones that report
    positions and the positions they report. */
@@ -97,6 +97,33 @@ export async function resetDeviceToken(tripId: Id, id: Id): Promise<Device> {
   return authClient.request(`${tripPath(tripId)}/devices/${encodeURIComponent(id)}/token`, {
     method: 'POST',
   })
+}
+/* The pairing code: six characters this screen shows and the other phone
+   types. Issuing rotates the phone's token, and the fresh token comes back
+   here too, for the case where the phone to share is this one. */
+export async function issuePairCode(tripId: Id, id: Id): Promise<PairCode> {
+  if (isSample(tripId)) throw new Error('Phones require the VPS backend')
+  return authClient.request(`${tripPath(tripId)}/devices/${encodeURIComponent(id)}/pair-code`, {
+    method: 'POST',
+  })
+}
+/* No session: whoever types the code is the phone. */
+export async function claimPairCode(
+  code: string,
+): Promise<{ endpoint: string; token: string; deviceId: string; name: string }> {
+  if (!functionsUrl) throw new Error('Phones require the VPS backend')
+  const response = await fetch(`${functionsUrl.replace(/\/ingest$/, '')}/pair/claim`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  const body = (await response.json().catch(() => ({}))) as { error?: string }
+  if (!response.ok) {
+    throw Object.assign(new Error(body.error || 'That code did not work'), {
+      status: response.status,
+    })
+  }
+  return body as { endpoint: string; token: string; deviceId: string; name: string }
 }
 export async function loadLive(
   tripId: Id,

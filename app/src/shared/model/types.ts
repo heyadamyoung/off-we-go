@@ -131,6 +131,17 @@ export interface Device {
   [key: string]: unknown
 }
 
+/* Six characters on the organiser's screen, typed on the phone that will
+   share; the token rides with it for "use this phone" on the screen that
+   asked. */
+export interface PairCode {
+  id: Id
+  name: string
+  code: string
+  token: string
+  expiresAt: string
+}
+
 export interface LiveFix {
   deviceId?: Id
   id?: Id

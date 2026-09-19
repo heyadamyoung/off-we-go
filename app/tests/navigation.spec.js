@@ -334,7 +334,7 @@ test('form controls do not trigger Safari focus zoom on a phone', async ({ page 
 
 test('no screen creates a wider layout than the phone it is on', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  for (const path of ['/', '/profile', '/new', '/past']) {
+  for (const path of ['/', '/profile', '/new', '/past', '/pair']) {
     await page.goto(path)
     await page.waitForTimeout(300)
     const overflow = await page.evaluate(

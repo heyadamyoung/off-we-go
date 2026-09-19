@@ -1,19 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import QRCode from 'qrcode'
+import { useState, type FormEvent } from 'react'
 import {
   functionsUrl,
   hasBackend,
   listDevices,
   registerDevice,
   removeDevice,
-  resetDeviceToken,
 } from '../../../backend'
-import { absolutePairHref } from '../../../app-routes-core'
 import AdoptPhones from './adopt-phones'
-import { isNativeApp, mobilePlatform, mobileTracker } from '../../../mobile'
-import type { TrackerState } from '../../../mobile-tracking-core'
+import SetupCard from './setup-card'
+import { isNativeApp, mobileTracker } from '../../../mobile'
 import { agoLabel } from '../../../shared/lib/geo'
-import Icon from '../../../shared/ui/icon'
 import { appErrorMessage } from '../../../user-messages-core'
 import useTrackerState from '../model/use-tracker-state'
 import type { Device, Person, Toast } from '../../../shared/model/types'
@@ -28,9 +24,11 @@ interface PhonesProps {
   onChange: (phones: Device[]) => void
 }
 
-/* A phone is registered here and gets a token, shown exactly once. The native
-   app stores that device-scoped token and posts fixes itself; a phone without
-   the app can be pointed at the same endpoint by any tracker. */
+/* A phone is registered here and paired with six characters typed on it —
+   in the Off We Go app, which keeps sharing while the screen is locked, or
+   in a browser, which shares while the page is open. The phone in your hand
+   can be the one, with a button. A phone without either can be pointed at
+   the same endpoint by any tracker app. */
 export default function PhonesTab({
   tripId,
   family,
@@ -94,16 +92,9 @@ export default function PhonesTab({
     }
   }
 
-  /* The honest answer to a lost code: a new one, the old one dead. */
-  const reissue = async (phone: Device) => {
-    try {
-      const fresh = await resetDeviceToken(tripId, phone.id)
-      setCard(fresh)
-      toast('New setup code ready — the old one no longer works')
-    } catch (error) {
-      toast(appErrorMessage(error, 'add-phone'), 'error')
-    }
-  }
+  /* The honest answer to a lost code: the card, which asks for a new one and
+     retires the old one as it opens. */
+  const reissue = (phone: Device) => setCard(phone)
 
   if (!hasBackend) {
     return <p className="hint">Phones report to the database, and this is the sample trip.</p>
@@ -112,8 +103,8 @@ export default function PhonesTab({
   return (
     <>
       {canEdit && <AdoptPhones tripId={tripId} toast={toast} onChange={onChange} />}
-      {isNativeApp && (
-        <div className="surface grid grid-cols-[auto_1fr_auto] items-center gap-2 p-3">
+      {(isNativeApp || tracking.configured) && (
+        <div className="surface trackrow grid grid-cols-[auto_1fr_auto] items-center gap-2 p-3">
           <span
             className={
               'size-2.5 rounded-full ' +
@@ -141,7 +132,9 @@ export default function PhonesTab({
                 ? appErrorMessage(new Error(tracking.error), 'share-location')
                 : tracking.queued
                   ? `${tracking.queued} fix${tracking.queued === 1 ? '' : 'es'} queued for retry`
-                  : 'A fix is sent after about 10 metres of movement, including while the screen is locked.'}
+                  : isNativeApp
+                    ? 'A fix is sent after about 10 metres of movement, including while the screen is locked.'
+                    : 'A fix is sent after about 10 metres of movement, while this page is open.'}
             </span>
           </div>
           {tracking.configured && ['tracking', 'waiting', 'starting'].includes(tracking.status) ? (
@@ -200,9 +193,9 @@ export default function PhonesTab({
               {canEdit && (
                 <button
                   className="mini"
-                  title="Issue a new setup code; the old one stops working"
+                  title="Show a pairing code for this phone; the old code stops working"
                   onClick={() => reissue(phone)}>
-                  New code
+                  Pair
                 </button>
               )}
               {canEdit && (
@@ -240,6 +233,7 @@ export default function PhonesTab({
 
       {card && (
         <SetupCard
+          tripId={tripId}
           card={card}
           toast={toast}
           tracking={tracking}
@@ -253,147 +247,5 @@ export default function PhonesTab({
         trip. Positions delete themselves after 30 days — sooner if the trip is deleted.
       </p>
     </>
-  )
-}
-
-function SetupCard({
-  card,
-  toast,
-  tracking,
-  onEnable,
-  onClose,
-}: {
-  card: Device
-  toast: Toast
-  tracking: TrackerState
-  onEnable: (phone: Device) => Promise<void>
-  onClose: () => void
-}) {
-  const sayShareFailed = (error: unknown) =>
-    toast(appErrorMessage(error, 'share-location'), 'error')
-  const copy = (label: string, value: string) =>
-    navigator.clipboard
-      ?.writeText(value)
-      .then(() => toast(`${label} copied`))
-      .catch(error => toast(appErrorMessage(error, 'copy'), 'error'))
-  const trackUrl = `${functionsUrl}/track`
-
-  /* The consumer path is a QR code the phone's camera understands: it opens
-     the Off We Go app through the universal link and switches sharing on —
-     nothing typed, nothing pasted. The raw token lives behind an Advanced fold
-     for people bringing their own tracker; that audience wants it, everyone
-     else should never meet it. */
-  const pairUrl = absolutePairHref(
-    {
-      endpoint: trackUrl,
-      token: String(card.token || ''),
-      deviceId: String(card.id),
-      name: card.name,
-    },
-    typeof window === 'undefined' ? '' : window.location.origin,
-    String(import.meta.env.VITE_API_URL || ''),
-  )
-  const [qr, setQr] = useState('')
-  useEffect(() => {
-    let alive = true
-    QRCode.toDataURL(pairUrl, { margin: 1, width: 232 })
-      .then(value => {
-        if (alive) setQr(value)
-      })
-      .catch(() => {
-        /* the advanced rows still work without a picture */
-      })
-    return () => {
-      alive = false
-    }
-  }, [pairUrl])
-
-  const Row = ({ k, v }: { k: string; v: string }) => (
-    <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2">
-      <span className="text-[11px] text-faint">{k}</span>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: click-to-copy is a convenience; the Copy button beside it is the accessible path */}
-      <code
-        className="min-w-0 cursor-copy break-all rounded-lg border border-line bg-raised px-2 py-1.5
-                       font-mono text-[11px] leading-snug text-ink"
-        onClick={() => copy(k, v)}
-        title="Click to copy">
-        {v}
-      </code>
-      <button
-        className="grid size-9 place-items-center rounded-lg border border-line bg-raised"
-        title={`Copy ${k}`}
-        onClick={() => copy(k, v)}>
-        <Icon n="copy" s={14} />
-      </button>
-    </div>
-  )
-
-  return (
-    <div className="surface flex flex-col gap-2 p-3.5">
-      <b className="text-sm font-extrabold tracking-[-.01em]">{card.name} — set-up</b>
-      {isNativeApp ? (
-        <>
-          <em className="text-[11px] font-extrabold uppercase not-italic tracking-[.06em] text-accent">
-            Location sharing
-          </em>
-          <p className="hint">
-            {mobilePlatform === 'android'
-              ? 'Allow precise location and notifications so sharing continues while the screen is locked.'
-              : 'Choose Allow While Using App, then approve Always Allow when iOS asks, so fixes continue while the screen is locked.'}
-          </p>
-          <div>
-            <button
-              className="btn btn-accent"
-              disabled={tracking?.status === 'starting'}
-              onClick={() => onEnable(card).catch(sayShareFailed)}>
-              {tracking?.deviceId === card.id && tracking.status === 'tracking'
-                ? 'Tracking is on'
-                : 'Enable location sharing'}
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <em className="text-[11px] font-extrabold uppercase not-italic tracking-[.06em] text-accent">
-            Pair the phone
-          </em>
-          <div className="flex items-start gap-3 max-sm:flex-col">
-            {qr && (
-              <img
-                src={qr}
-                alt="Pairing code"
-                width={116}
-                height={116}
-                className="flex-none rounded-lg border border-line bg-white p-1"
-              />
-            )}
-            <p className="hint">
-              Scan this with the camera of the phone that will share its location — the one with Off
-              We Go installed. It opens the app and switches sharing on; nothing to type. Lost the
-              code later? Choose New code beside the phone and this one retires.
-            </p>
-          </div>
-          <details>
-            <summary className="cursor-pointer text-[11px] font-bold text-faint">
-              Advanced — bring your own tracker app
-            </summary>
-            <div className="mt-2.5 flex flex-col gap-2">
-              <Row k="Device token" v={String(card.token || '')} />
-              <Row k="Server URL" v={trackUrl} />
-              <p className="hint">
-                Traccar Client, OwnTracks and GPSLogger all work: post to{' '}
-                <code className="break-all">{trackUrl}?id=</code>token, every 30 seconds, high
-                accuracy.
-              </p>
-            </div>
-          </details>
-        </>
-      )}
-      <div>
-        <button className="mini" onClick={onClose}>
-          Done
-        </button>
-      </div>
-    </div>
   )
 }

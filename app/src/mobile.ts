@@ -19,6 +19,7 @@ import {
 } from './mobile-tracking-core'
 import { completeNativeLogin, type NativeLoginState } from './mobile-auth-core'
 import { createNativeLocationDriver, createNativeTrackingFetch } from './mobile-platform-core'
+import { createWebLocationDriver } from './web-tracking-core'
 import { beginOidcLogin, beginOidcLogout, NATIVE_OIDC_VERIFIER_KEY } from './login-core'
 import type { AsyncStorage } from './shared/model/types'
 
@@ -46,18 +47,19 @@ const unavailableState: TrackerState = {
   error: null,
 }
 
-/* The same surface as the real tracker, every path a polite refusal: a web tab
-   cannot track in the background, and pretending otherwise would only lose
-   fixes silently. */
-const webTracker: MobileTracker = {
+/* The same surface as the real tracker, every path a polite refusal, for a
+   browser with no Geolocation API at all — a build step, a very old tab. A
+   browser with one shares through the same tracker as the app, on the web
+   driver below: while the page is open, and the screen says so. */
+const noTracker: MobileTracker = {
   async configure() {
-    throw new Error('Background tracking is available in the native app')
+    throw new Error('This browser cannot share its location')
   },
   async restore() {
     return false
   },
   async start() {
-    throw new Error('Background tracking is available in the native app')
+    throw new Error('This browser cannot share its location')
   },
   async stop() {},
   async forget() {},
@@ -187,6 +189,11 @@ const trackingStorage: TrackerStorage = isNativeApp
     }
   : Preferences
 
+const webDriver =
+  !isNativeApp && typeof navigator !== 'undefined' && navigator.geolocation
+    ? createWebLocationDriver(navigator.geolocation)
+    : null
+
 export const mobileTracker: MobileTracker =
   isNativeApp && locationDriver
     ? createMobileTracker({
@@ -194,7 +201,9 @@ export const mobileTracker: MobileTracker =
         storage: trackingStorage,
         fetch: trackingFetch,
       })
-    : webTracker
+    : webDriver
+      ? createMobileTracker({ driver: webDriver, storage: trackingStorage, fetch: trackingFetch })
+      : noTracker
 
 /* Keeping a file on the phone.
  *
@@ -313,8 +322,8 @@ const isCustomScheme = (url: string) => {
   }
 }
 
-/* A universal link into /pair is the QR pairing handshake, not a sign-in;
-   hand it to the pair screen with its fragment intact. */
+/* A universal link into /pair is the pairing handshake, not a sign-in; hand
+   it to the pair screen with its fragment intact. */
 function routePairUrl(url: string) {
   try {
     const opened = new URL(url)
@@ -329,7 +338,12 @@ function routePairUrl(url: string) {
 }
 
 export async function initializeNativeServices(authClient: HandoffAuthClient) {
-  if (!isNativeApp) return
+  if (!isNativeApp) {
+    /* A browser that was paired picks its sharing back up on the next open,
+       the way the app does; the browser asks its own permission again. */
+    await mobileTracker.restore().catch(() => {})
+    return
+  }
   if (!appUrlListener) {
     appUrlListener = NativeApp.addListener('appUrlOpen', ({ url }) => {
       nativeOidcPending = false
