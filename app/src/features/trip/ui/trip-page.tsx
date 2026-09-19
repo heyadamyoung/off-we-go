@@ -98,10 +98,17 @@ function Trip({
     if (headingUp) setFollowing(false)
   }, [headingUp, setFollowing])
 
+  /* The screen is clipped, not hidden (see .tripscreen in styles.css): a
+     box that merely hides its overflow is still a scroll container, and the
+     browser scrolls one whenever something inside asks to be brought into
+     view — a chat's last bubble, a control taking focus on a tab switch —
+     which carried the title and the tabs off the top of the phone until the
+     next frame put them back. Clipped, it cannot move. The scroll handler
+     is for a browser too old to know clip. */
   return (
     <div
       className={
-        'tripscreen fixed inset-x-0 top-0 h-[100dvh] overflow-hidden bg-canvas text-ink' +
+        'tripscreen fixed inset-x-0 top-0 h-[100dvh] bg-canvas text-ink' +
         (barStage === 'peek' ? ' barpeek' : barStage === 'tall' ? ' bartall' : '')
       }
       onScroll={event => {
