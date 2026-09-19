@@ -521,3 +521,45 @@ test('pulled up past open, the bar covers the map up to the top chrome, and come
   await pull(80)
   await expect(bar).toHaveAttribute('data-stage', 'peek')
 })
+
+test('switching tabs never carries the title and the tabs off the top of the phone', async ({
+  page,
+}) => {
+  /* The screen and the panel hide what overflows them, and a box that hides
+     its overflow is still something the browser will scroll to bring a
+     child into view — the chat's last bubble on opening Chat, a control
+     taking focus on a tab switch. Each time it did, the top bar went with it
+     and came back a frame later: the blip. Now neither is a scroll container
+     at all, so the strongest request to scroll them moves nothing. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  const top = page.locator('#trip-top')
+  const before = await top.boundingBox()
+  for (const name of ['Chat', 'Timeline', 'Photos', 'Travel', 'Chat']) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await expect(page.locator('aside')).toBeVisible()
+    /* The strongest ask there is: the panel's deepest child, to the end,
+       through every ancestor. Then the screen and the panel scrolled by hand. */
+    const moved = await page.evaluate(() => {
+      const screen = document.querySelector('.tripscreen')
+      const panel = document.querySelector('.trippanel')
+      const deepest = [...panel.querySelectorAll('*')].at(-1)
+      deepest?.scrollIntoView({ block: 'end' })
+      screen.scrollTop = 400
+      screen.scrollLeft = 40
+      panel.scrollTop = 400
+      return {
+        screen: [screen.scrollTop, screen.scrollLeft],
+        panel: panel.scrollTop,
+        overflow: [getComputedStyle(screen).overflowY, getComputedStyle(panel).overflowY],
+      }
+    })
+    expect(moved.overflow).toEqual(['clip', 'clip'])
+    expect(moved.screen).toEqual([0, 0])
+    expect(moved.panel).toBe(0)
+    const after = await top.boundingBox()
+    expect(Math.round(after.y)).toBe(Math.round(before.y))
+    expect(Math.round(after.height)).toBe(Math.round(before.height))
+  }
+})

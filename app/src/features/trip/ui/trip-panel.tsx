@@ -173,7 +173,7 @@ export default function TripPanel(props: PanelProps) {
   return (
     <aside
       className={
-        'sheet rise absolute flex flex-col overflow-hidden ' +
+        'trippanel sheet rise absolute flex flex-col ' +
         (wide
           ? /* Every pixel BELOW the trip's own chrome, and not one above it.
                The gallery is a view of the trip, not a place you leave it: the

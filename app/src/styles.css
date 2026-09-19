@@ -566,6 +566,15 @@
 /* Away from the left edge's chip stack: the empty stretch of baseline to the
    left of the zoom column, where nothing else lives. On a phone the column is
    not there, so the credit takes the corner itself. */
+/* Never scroll containers. A box that hides its overflow can still be
+   scrolled by the browser — scrollIntoView, an element taking focus, a
+   keyboard — and the trip screen was: switching tabs brought the chat's
+   last bubble or a focused control into view by scrolling the whole screen,
+   title and tabs off the top, until a handler put it back a frame later.
+   Clip makes them no scroll container at all; hidden first, for a browser
+   that does not know clip, with the handler on the screen as its guard. */
+.tripscreen, .trippanel { overflow: hidden; overflow: clip }
+
 .tripscreen .maplibregl-ctrl-bottom-right {
   bottom: var(--trip-1); right: calc(1rem + 40px + 12px); z-index: 3;
 }
