@@ -74,7 +74,7 @@ function Trip({
     theme, toggleTheme, trip, stops, family, me, viewers, placing, setPlacing, planOnDay, photoBy, setPhotoBy,
     streetNames, toggleStreetNames,
     asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
-    mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
+    mapView, setMapView, following, setFollowing, toggleFollow,
     phones, setPhones, fixes, sun, mapTheme, markers, progress, progressCopy, openViewer,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
@@ -268,7 +268,6 @@ function Trip({
           onFollow={toggleFollow}
           compassOn={ask.compass.on}
           onCompass={ask.compass.toggle}
-          onFit={fitAll}
           onZoom={by => {
             setFollowing(false)
             setMapView(current => ({

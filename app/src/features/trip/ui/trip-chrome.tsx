@@ -191,14 +191,12 @@ export const MapControls = memo(function MapControls({
   compassOn,
   onCompass,
   onZoom,
-  onFit,
 }: {
   following: boolean
   onFollow: () => void
   compassOn: boolean
   onCompass: () => void
   onZoom: (by: number) => void
-  onFit: () => void
 }) {
   /* 44px on a phone, the platform's touch floor — a hit-slop shadow would be
      clipped by the pill's own overflow, so the buttons are simply that size. */
@@ -227,9 +225,6 @@ export const MapControls = memo(function MapControls({
       </button>
       <button className={button + ' max-sm:hidden'} title="Zoom out" onClick={() => onZoom(-1)}>
         <Icon n="minus" s={17} />
-      </button>
-      <button className={button} title="Fit the whole trip" onClick={onFit}>
-        <Icon n="expand" s={16} />
       </button>
     </div>
   )
