@@ -739,7 +739,7 @@ test('ADS-B: the networks are asked in turn until one hears; a network down is s
   }
   const answers = {
     'api.adsb.lol': { ok: true, status: 200, json: async () => ({ ac: [] }) },
-    'api.airplanes.live': { ok: true, status: 200, json: async () => ({ ac: [heard] }) },
+    'opendata.adsb.fi': { ok: true, status: 200, json: async () => ({ ac: [heard] }) },
   }
   const asked = []
   const fetch = async url => {
@@ -753,15 +753,15 @@ test('ADS-B: the networks are asked in turn until one hears; a network down is s
   /* The first network hears nothing; the second has it. */
   const found = await sky.byCallsign('ACA1115')
   assert.equal(found.type, 'BCS3')
-  assert.equal(found.network, 'api.airplanes.live')
-  assert.deepEqual(asked, ['api.adsb.lol', 'api.airplanes.live'])
+  assert.equal(found.network, 'opendata.adsb.fi')
+  assert.deepEqual(asked, ['api.adsb.lol', 'opendata.adsb.fi'])
   /* The first network down is skipped for the second. */
   answers['api.adsb.lol'] = { ok: false, status: 503 }
   assert.equal((await sky.byCallsign('ACA1115')).type, 'BCS3')
   /* Nobody hears: null, not a failure — one network did answer. */
-  answers['api.airplanes.live'] = { ok: true, status: 200, json: async () => ({ ac: [] }) }
+  answers['opendata.adsb.fi'] = { ok: true, status: 200, json: async () => ({ ac: [] }) }
   assert.equal(await sky.byCallsign('ACA1115'), null)
   /* Every network down is the failure it is. */
-  delete answers['api.airplanes.live']
+  delete answers['opendata.adsb.fi']
   await assert.rejects(sky.byCallsign('ACA1115'), /unreachable|503/)
 })

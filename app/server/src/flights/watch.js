@@ -36,6 +36,30 @@ const ADSB_EVERY_MS = 10 * 60_000
    rotation — a flight that is up for an hour is heard at this cadence. */
 const ADSB_EARLY_EVERY_MS = 20 * 60_000
 
+/* The sky, asked, with a failure said rather than swallowed: a network the
+   server cannot reach looked exactly like a flight nobody was hearing, and
+   was believed for a whole flight. The answer is what was heard, or null. */
+async function askSky(sources, callsign, segmentId) {
+  try {
+    const heard = await sources.adsb.byCallsign(callsign)
+    event('flights.sky.asked', {
+      'segment.id': segmentId,
+      callsign,
+      heard: !!heard,
+      type: heard?.type || null,
+      network: heard?.network || null,
+    })
+    return heard
+  } catch (error) {
+    event('flights.sky.failed', {
+      'segment.id': segmentId,
+      callsign,
+      'error.message': error?.message,
+    })
+    return null
+  }
+}
+
 const SEGMENT_STATUS = { cancelled: 'cancelled', done: 'arrived', delayed: 'delayed' }
 const SETTLED = new Set(['departed', 'landed', 'arrived', 'cancelled', 'diverted'])
 
@@ -257,7 +281,7 @@ export async function watchFlights({
       if (silent && now - (asked.get(leg.id) || 0) > ADSB_EVERY_MS && sources.adsb) {
         asked.set(leg.id, now)
         const callsign = callsignFor(number)
-        const aircraft = callsign ? await sources.adsb.byCallsign(callsign).catch(() => null) : null
+        const aircraft = callsign ? await askSky(sources, callsign, leg.id) : null
         const verdict = verdictFromPosition(aircraft, {
           from: leg.fromLat != null ? { lat: leg.fromLat, lon: leg.fromLng } : null,
           to: leg.toLat != null ? { lat: leg.toLat, lon: leg.toLng } : null,
@@ -294,7 +318,7 @@ export async function watchFlights({
       ) {
         asked.set(leg.id, now)
         const callsign = callsignFor(number)
-        const heard = callsign ? await sources.adsb.byCallsign(callsign).catch(() => null) : null
+        const heard = callsign ? await askSky(sources, callsign, leg.id) : null
         if (heard?.type) {
           view = {
             ...typed,
@@ -323,7 +347,7 @@ export async function watchFlights({
       ) {
         asked.set(leg.id, now)
         const callsign = callsignFor(number)
-        const heard = callsign ? await sources.adsb.byCallsign(callsign).catch(() => null) : null
+        const heard = callsign ? await askSky(sources, callsign, leg.id) : null
         if (heard?.type) view = { ...typed, usualAircraft: heard.type }
       }
       if (!view) continue
@@ -404,7 +428,6 @@ const SOURCE_NAMES = {
   'www.torontopearson.com': 'Toronto Pearson',
   'gtaa-fl-prod.azureedge.net': 'Toronto Pearson',
   'api.adsb.lol': 'ADS-B',
-  'api.airplanes.live': 'ADS-B',
   'opendata.adsb.fi': 'ADS-B',
 }
 export const sourceNameOf = source => SOURCE_NAMES[source] || source || 'the airport'

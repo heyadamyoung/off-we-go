@@ -25,6 +25,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import https from 'node:https'
 import path from 'node:path'
+import { ADSB_NETWORKS, callsignFor } from '../src/flights/providers/adsb.js'
 
 /* One flight, looked up on the boards right now: `--flight TS231` adds the
    Dublin listings narrowed to it, today and tomorrow, printed whole — the
@@ -97,6 +98,39 @@ const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
    "public code" means a public repository requests it today; "probe" means
    an earlier run of this script found it. */
 const tomorrowDay = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+/* The sky, for the one flight: its callsign on each of the networks the
+   server asks in turn, and — so an empty answer can be told from a network
+   that is not answering anybody — everything each network hears within
+   sixty nautical miles of Regina and of Toronto right now, with the types.
+   Asked last of all and printed short, so they are the end of the log. */
+const CALLSIGN = FLIGHT ? callsignFor(FLIGHT) : null
+const NEAR = [
+  ['regina', 50.43, -104.67],
+  ['toronto', 43.68, -79.63],
+]
+const SKY_PROBES = CALLSIGN
+  ? ADSB_NETWORKS.flatMap(network => [
+      json(
+        `sky-${network.source}-callsign-${CALLSIGN}`,
+        `${network.base}/callsign/${CALLSIGN}`,
+        {},
+        {
+          sky: true,
+        },
+      ),
+      ...NEAR.map(([name, lat, lon]) =>
+        json(
+          `sky-${network.source}-near-${name}`,
+          `${network.base}/point/${lat}/${lon}/60`,
+          {},
+          {
+            sky: true,
+          },
+        ),
+      ),
+    ])
+  : []
+
 const FLIGHT_PROBES = FLIGHT
   ? [
       json(
@@ -505,6 +539,26 @@ async function record(probe) {
     return { kind: 'js' }
   }
   const trimmed = text.trim()
+  if (probe.sky) {
+    /* One line per aircraft: callsign, type, registration, where, how high. */
+    try {
+      const body = JSON.parse(trimmed)
+      const list = Array.isArray(body?.ac) ? body.ac : []
+      console.log(`${list.length} aircraft (msg: ${body?.msg ?? '—'})`)
+      for (const one of list) {
+        console.log(
+          `    ${String(one.flight || '')
+            .trim()
+            .padEnd(
+              8,
+            )} type ${String(one.t || '?').padEnd(5)} reg ${String(one.r || '?').padEnd(7)} at ${one.lat},${one.lon} alt ${one.alt_baro} seen ${one.seen}s`,
+        )
+      }
+    } catch (error) {
+      console.log(`not JSON (${error.message}); first bytes: ${JSON.stringify(text.slice(0, 300))}`)
+    }
+    return { kind: 'json' }
+  }
   if (ext === 'json' || trimmed.startsWith('{') || trimmed.startsWith('[')) {
     const described = describeJson(text)
     console.log(described.text)
@@ -571,6 +625,11 @@ for (const { probe, body } of pages) {
 if (followUps.length) {
   console.log(`\n${'#'.repeat(78)}\nFOLLOW-UPS (${followUps.length})\n${'#'.repeat(78)}`)
   for (const probe of followUps) await record(probe)
+}
+
+if (SKY_PROBES.length) {
+  console.log(`\n${'#'.repeat(78)}\nTHE SKY (${SKY_PROBES.length})\n${'#'.repeat(78)}`)
+  for (const probe of SKY_PROBES) await record(probe)
 }
 
 console.log(
