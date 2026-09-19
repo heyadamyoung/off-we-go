@@ -1103,7 +1103,8 @@ function buildMcpServer({
   register(
     'list_invitations',
     {
-      description: 'List invitations for a trip owned by the authenticated user.',
+      description:
+        'List the people added to a trip by email (owner only). A row with claimedAt is an account that is on the trip; one without is waiting for the account to be made.',
       inputSchema: z.object({ tripId: entityId }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -1111,7 +1112,7 @@ function buildMcpServer({
       const invitations = await repository.listInvites(user, tripId)
       return invitations
         ? result(invitations)
-        : toolFailure('Only a trip owner can view invitations.')
+        : toolFailure('Only a trip owner can see who was added.')
     },
   )
 
@@ -1119,7 +1120,7 @@ function buildMcpServer({
     'invite_person',
     {
       description:
-        'Create a pending trip invitation and send an email telling the recipient to sign in and accept it.',
+        'Add a person to a trip by email, in the role given. An account with that email is on the trip at once; one that does not exist yet is on it the moment it is made. An email tells them so; there is nothing to accept.',
       inputSchema: z.object({
         tripId: entityId,
         email: z.string().email(),
@@ -1135,7 +1136,7 @@ function buildMcpServer({
         name: name || null,
         role,
       })
-      if (!invitation) return toolFailure('Only a trip owner can send invitations.')
+      if (!invitation) return toolFailure('Only a trip owner can add people.')
       try {
         await sendInvite(invitation)
         return result({ ...invitation, mailed: true })
@@ -1145,7 +1146,7 @@ function buildMcpServer({
         return result({
           ...invitation,
           mailed: false,
-          mailError: 'The invitation was saved, but its email could not be sent.',
+          mailError: 'They are on the trip, but the email telling them could not be sent.',
         })
       }
     }),
@@ -1217,7 +1218,8 @@ function buildMcpServer({
   register(
     'revoke_invitation',
     {
-      description: 'Revoke an invitation and remove that invited member from the trip.',
+      description:
+        'Take a person added by email off the trip, whether or not their account exists yet.',
       inputSchema: z.object({ tripId: entityId, invitationId: entityId }),
       annotations: { destructiveHint: true, openWorldHint: false },
     },

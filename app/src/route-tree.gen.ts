@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as InvitationsRouteImport } from './routes/invitations'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as PastRouteImport } from './routes/past'
@@ -22,11 +21,6 @@ import { Route as UsersHandleRouteImport } from './routes/users.$handle'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InvitationsRoute = InvitationsRouteImport.update({
-  id: '/invitations',
-  path: '/invitations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewRoute = NewRouteImport.update({
@@ -67,7 +61,6 @@ const UsersHandleRoute = UsersHandleRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/invitations': typeof InvitationsRoute
   '/new': typeof NewRoute
   '/pair': typeof PairRoute
   '/past': typeof PastRoute
@@ -78,7 +71,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/invitations': typeof InvitationsRoute
   '/new': typeof NewRoute
   '/pair': typeof PairRoute
   '/past': typeof PastRoute
@@ -90,7 +82,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/invitations': typeof InvitationsRoute
   '/new': typeof NewRoute
   '/pair': typeof PairRoute
   '/past': typeof PastRoute
@@ -103,7 +94,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/invitations'
     | '/new'
     | '/pair'
     | '/past'
@@ -114,7 +104,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/invitations'
     | '/new'
     | '/pair'
     | '/past'
@@ -125,7 +114,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/invitations'
     | '/new'
     | '/pair'
     | '/past'
@@ -137,7 +125,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  InvitationsRoute: typeof InvitationsRoute
   NewRoute: typeof NewRoute
   PairRoute: typeof PairRoute
   PastRoute: typeof PastRoute
@@ -154,13 +141,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/invitations': {
-      id: '/invitations'
-      path: '/invitations'
-      fullPath: '/invitations'
-      preLoaderRoute: typeof InvitationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/new': {
@@ -217,7 +197,6 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  InvitationsRoute: InvitationsRoute,
   NewRoute: NewRoute,
   PairRoute: PairRoute,
   PastRoute: PastRoute,

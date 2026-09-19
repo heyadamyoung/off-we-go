@@ -82,8 +82,8 @@ export default function PeopleList({
       {group('On the road', travelling, 'Nobody is marked as travelling yet.')}
       {group('Following', following, 'Nobody is following along yet.')}
       <p className="hint px-4 pt-3.5">
-        Everyone signs in, including people just following along. Access comes from the invitation,
-        not from the link.
+        Everyone signs in, including people just following along. Access comes from being added by
+        email, not from the link.
       </p>
     </>
   )

@@ -1189,7 +1189,7 @@ test('the settings sheet finishes on one row and never scrolls sideways', async 
   expect(sideways.over, 'something inside the sheet is wider than it').toBeLessThanOrEqual(1)
 })
 
-test('the roster lists people and takes an invite', async ({ page }) => {
+test('the roster lists people and adds one by email', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'More tools' }).click()
   await page.getByRole('menuitem', { name: 'Trip settings' }).click()
@@ -1197,7 +1197,7 @@ test('the roster lists people and takes an invite', async ({ page }) => {
 
   await expect(page.locator('.dlg').getByText('Maya').first()).toBeVisible()
   await page.locator('.dlg input[type=email]').fill('someone@example.com')
-  await page.locator('.dlg').getByRole('button', { name: 'Invite' }).click()
+  await page.locator('.dlg').getByRole('button', { name: 'Add', exact: true }).click()
   await expect(page.locator('.toast')).toBeVisible()
 })
 
@@ -1477,10 +1477,17 @@ test('a stop added under a day joins that day in the timeline', async ({ page })
   await page.locator('.editor .btn.pri').click()
 
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
-  // In the panel, not on the map: the map pin was never the thing that vanished.
-  await expect(page.locator('.sheet').getByRole('button', { name: /Joined Stop/ })).toHaveCount(1)
   // The day it was seeded with is a day the trip already had, so no new heading.
   expect(await headings().allInnerTexts(), seeded.join()).toEqual(before)
+  /* In the panel, not on the map: the map pin was never the thing that
+     vanished. The list is windowed and reads newest first, so a stop with no
+     time at the end of today's day sits below the fold; the filter brings it
+     up, and the one heading left over it is a real date — not a spelling of
+     its own, which was the whole report. */
+  await page.getByLabel('Filter the timeline').fill('Joined')
+  await expect(page.locator('.sheet').getByRole('button', { name: /Joined Stop/ })).toHaveCount(1)
+  await expect(page.locator('.tday')).toHaveCount(1)
+  await expect(page.locator('.tday')).toHaveAttribute('data-iso', '2026-09-13')
 })
 
 /* The Day field is optional and always has been; the timeline was not. It

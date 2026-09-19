@@ -56,7 +56,7 @@ export default function NewTripPage({ step }: { step: number }) {
       }
       notify(
         failed.length
-          ? `Trip created. These invitations did not send: ${failed.join(', ')}`
+          ? `Trip created. These people could not be added: ${failed.join(', ')}`
           : 'Trip created.',
         failed.length ? 'error' : 'success',
       )
@@ -203,8 +203,8 @@ export default function NewTripPage({ step }: { step: number }) {
               </li>
               <li>
                 {guests.length
-                  ? `${guests.length} invitation${guests.length === 1 ? '' : 's'} to send`
-                  : 'Nobody invited yet — you can add people any time'}
+                  ? `${guests.length} ${guests.length === 1 ? 'person' : 'people'} to add — on the trip at once, nothing to accept`
+                  : 'Nobody added yet — you can add people any time'}
               </li>
             </ul>
           </section>
@@ -319,7 +319,8 @@ function People({
         </div>
         <p className="hint">
           Everyone signs in, including people just following along. Nobody can see the trip from the
-          link alone — access comes from the invitation, which is sent when the trip is created.
+          link alone — access comes from being added by email, which happens when the trip is
+          created. An email tells them; there is nothing to accept.
         </p>
       </section>
       <div className="flex items-center gap-2">

@@ -221,12 +221,8 @@ describe('the ladder', { concurrency: true }, () => {
       body: JSON.stringify({ email: 'friend@example.com', name: 'Alex', role: 'viewer' }),
     })
     assert.equal(invited.status, 201)
+    // On the trip the moment the account is made; nothing to accept.
     const second = (await authenticate(place.repository, 'friend@example.com')).slice(7)
-    const joined = await fetch(`${place.origin}/api/invites/${(await invited.json()).id}/accept`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${second}` },
-    })
-    assert.equal(joined.status, 200)
     const path = decodeURIComponent(new URL(row.src).pathname.replace('/api/media/', ''))
     const ask = async token => {
       const response = await fetch(`${place.origin}/api/media/links`, {

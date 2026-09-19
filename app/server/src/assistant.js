@@ -129,7 +129,7 @@ export function assistantPrompt({
           '- update_photo, add_comment and the other tools mirror what the app can do.',
           'Call get_trip first so you work with real ids. Change exactly what was',
           'asked and nothing more; use destructive tools (delete_stop, delete_photo,',
-          'replace_route) and invitations only on an explicit, unambiguous request.',
+          'replace_route) and adding people only on an explicit, unambiguous request.',
           'End by saying plainly what you changed.',
         ]
       : [

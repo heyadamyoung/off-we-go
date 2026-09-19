@@ -140,14 +140,6 @@ const STATES = [
     },
   ],
   [
-    'invitations',
-    'main',
-    async page => {
-      await page.goto('/invitations')
-      await settled(page)
-    },
-  ],
-  [
     'the trip chrome',
     'header',
     async page => {
@@ -346,7 +338,7 @@ test('a card on the day bar shows its whole name', async ({ page }) => {
   }
 })
 
-/* Two sweeps a phone rather than one: the first five screens are each a
+/* Two sweeps a phone rather than one: the first four screens are each a
    page of their own, and the rest are one trip walked through state by
    state, each built on the last. Apart, the two halves run on two workers
    and neither is the longest test in the suite by a distance.
@@ -355,8 +347,8 @@ test('a card on the day bar shows its whole name', async ({ page }) => {
    by file and line (see scripts/shard-tests.mjs), and four tests on one
    line are one card in that deal — every sweep, the heaviest tests in the
    suite, landed on the same shard. */
-const AROUND = ['the screens around the trip', STATES.slice(0, 5)]
-const ITSELF = ['the trip itself', STATES.slice(5)]
+const AROUND = ['the screens around the trip', STATES.slice(0, 4)]
+const ITSELF = ['the trip itself', STATES.slice(4)]
 const [MODERN, SMALLEST] = PHONES
 
 const title = ([phone], [which]) => `nothing sticks out or hides from a tap on ${phone}: ${which}`

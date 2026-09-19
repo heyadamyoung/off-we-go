@@ -28,20 +28,13 @@ test('trip presence shows active people once, survives another tab closing, and 
       payload: { title: 'Shared trip' },
     })
   ).json()
-  const invitation = (
-    await app.inject({
-      method: 'POST',
-      url: `/api/trips/${trip.id}/invites`,
-      headers: { authorization: owner },
-      payload: { email: 'friend@example.com', name: 'Alex', role: 'viewer' },
-    })
-  ).json()
-  const friend = await authenticate(repository, 'friend@example.com')
   await app.inject({
     method: 'POST',
-    url: `/api/invites/${invitation.id}/accept`,
-    headers: { authorization: friend },
+    url: `/api/trips/${trip.id}/invites`,
+    headers: { authorization: owner },
+    payload: { email: 'friend@example.com', name: 'Alex', role: 'viewer' },
   })
+  const friend = await authenticate(repository, 'friend@example.com')
   const friendId = (
     await app.inject({
       method: 'GET',

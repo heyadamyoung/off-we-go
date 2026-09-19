@@ -10,7 +10,6 @@ export type AppAction =
   | 'update-document'
   | 'remove-document'
   | 'create-trip'
-  | 'accept-invite'
   | 'delete-account'
   | 'save-trip'
   | 'save-profile'
@@ -44,12 +43,11 @@ const failures: Record<AppAction, string> = {
   'load-trip': 'We could not load this trip. Please try again.',
   'load-profile': 'We could not load this profile. Please try again.',
   'create-trip': 'We could not create your trip. Check the details and try again.',
-  'accept-invite': 'We could not accept that invitation. It may have expired or been withdrawn.',
   'delete-account': 'We could not delete your account. Please try again.',
   'save-trip': 'We could not save the trip changes. Please try again.',
   'save-profile': 'We could not save your profile. Please try again.',
-  'send-invite': 'We could not create that invitation. Check the email address and try again.',
-  'remove-invite': 'We could not cancel that invitation. Please try again.',
+  'send-invite': 'We could not add that person. Check the email address and try again.',
+  'remove-invite': 'We could not take that person off the trip. Please try again.',
   'remove-member': 'We could not remove that person from the trip. Please try again.',
   'add-phone': 'We could not add that phone. Please try again.',
   'remove-phone': 'We could not remove that phone. Please try again.',
@@ -67,7 +65,7 @@ const failures: Record<AppAction, string> = {
   'move-stop': 'We could not move that stop. Please try again.',
   'reorder-stops': 'We could not reorder the stops. Please try again.',
   'load-trips': 'Your trips could not be loaded just now. Pull to refresh, or try again shortly.',
-  'load-invites': 'The pending invitations could not be loaded. Reopen this tab to try again.',
+  'load-invites': 'The people added by email could not be loaded. Reopen this tab to try again.',
   'load-segments': 'The travel legs could not be loaded. They will retry on their own.',
   'save-leg': 'That leg could not be saved. Check the details and try again.',
   'delete-leg': 'That leg could not be removed. Please try again.',
@@ -89,7 +87,7 @@ const unavailable: Partial<Record<AppAction, string>> = {
   'upload-photo': 'Photo uploads are temporarily unavailable. Please try again later.',
   'open-photos': 'Your photo library is temporarily unavailable. Please try again later.',
   'share-location': 'Location sharing is temporarily unavailable. Please try again later.',
-  'send-invite': 'Invitations are temporarily unavailable. Please try again later.',
+  'send-invite': 'Adding people is temporarily unavailable. Please try again later.',
   'ask-assistant':
     'The assistant hit a problem finishing that answer. Anything it already changed is ' +
     'saved — check before asking again, so it is not done twice.',
@@ -104,8 +102,8 @@ const forbidden: Partial<Record<AppAction, string>> = {
   'delete-stop': 'You do not have permission to edit this trip.',
   'add-place': 'You do not have permission to edit this trip.',
   'upload-photo': 'You do not have permission to add photos to this trip.',
-  'send-invite': 'Only a trip owner can invite people.',
-  'remove-invite': 'Only a trip owner can cancel invitations.',
+  'send-invite': 'Only a trip owner can add people.',
+  'remove-invite': 'Only a trip owner can take people off a trip.',
   'remove-member': 'Only a trip owner can remove people.',
 }
 
@@ -124,10 +122,7 @@ export function appErrorMessage(caught: unknown, action: AppAction): string {
   }
   if (status === 401) return 'Your session has expired. Sign in again, then retry.'
   if (status === 403) return forbidden[action] || 'You do not have permission to do that.'
-  if (status === 404)
-    return action === 'accept-invite'
-      ? 'That invitation is no longer available.'
-      : 'That item could not be found. It may have been removed.'
+  if (status === 404) return 'That item could not be found. It may have been removed.'
   if (status === 409) return 'That change conflicts with a newer update. Reload and try again.'
   if (status === 413) return 'That file is too large. Choose a smaller image and try again.'
   if (status === 415) return 'Choose a JPEG, PNG, WebP, or HEIC image.'

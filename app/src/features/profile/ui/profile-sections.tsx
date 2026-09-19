@@ -264,7 +264,7 @@ export function TripsSection({ trips, tripsFailed }: SectionProps) {
         <p className="hint">
           {tripsFailed
             ? 'Your trips could not be loaded just now — an empty list here is the connection, not your trips.'
-            : 'When someone invites you along, their trip shows up here.'}
+            : 'When someone adds you to their trip, it shows up here.'}
         </p>
       )}
     </Card>

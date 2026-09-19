@@ -107,7 +107,7 @@ test('an authenticated owner can create and reload a trip in the app contract', 
   await app.close()
 })
 
-test('the trip landing contract lists every accessible trip and pending invitation', async () => {
+test('the trip landing contract lists every accessible trip, including the ones somebody added you to', async () => {
   const { app, repository, authorization } = await signedInApp()
   const owned = await app.inject({
     method: 'POST',
@@ -150,16 +150,21 @@ test('the trip landing contract lists every accessible trip and pending invitati
         photoCount: 0,
         memberCount: 1,
       },
-    ],
-    invites: [
+      /* Added by the host, so on the trip — no invitation to accept. */
       {
-        id: '00000000-0000-4000-8000-000000500001',
-        email: 'owner@example.com',
-        name: 'Owner',
+        id: invited.json().id,
+        slug: 'japan-2028',
+        title: 'Japan 2028',
+        crew: 'Old friends',
+        dates: 'April 3–17',
+        dayCount: 1,
+        startsOn: null,
+        endsOn: null,
         role: 'viewer',
-        tripId: invited.json().id,
-        tripSlug: 'japan-2028',
-        tripTitle: 'Japan 2028',
+        places: [],
+        stopCount: 0,
+        photoCount: 0,
+        memberCount: 2,
       },
     ],
   })

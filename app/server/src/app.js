@@ -519,13 +519,18 @@ export async function buildServer({
     return Number.isNaN(date.getTime()) ? null : date
   }
 
-  const sendTripInvitation = async invite => {
-    const appUrl = new URL('/', publicUrl)
+  /* The mail that says somebody is on a trip. No token: the trip is theirs
+     the moment they sign in with this address, and a link that signs in by
+     itself is a link anybody forwarded it could use. */
+  const sendTripAccess = async invite => {
     const message = {
-      kind: 'trip-invitation',
+      kind: 'trip-access',
       to: invite.email,
-      appUrl: appUrl.href,
+      appUrl: new URL('/', publicUrl).href,
+      tripUrl: new URL(`/trips/${encodeURIComponent(invite.tripSlug)}`, publicUrl).href,
       tripTitle: invite.tripTitle,
+      role: invite.role,
+      joined: !!invite.joined,
     }
     await mailer.send(message)
     return message
@@ -939,7 +944,7 @@ export async function buildServer({
     oauthSecret,
     clock,
     authenticate: authenticated,
-    sendInvite: sendTripInvitation,
+    sendInvite: sendTripAccess,
     routing,
     /* Tool edits reach watching browsers the same way route edits do. */
     announce: touched,
@@ -962,11 +967,7 @@ export async function buildServer({
   app.get('/api/trips', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
-    const [trips, invites] = await Promise.all([
-      repository.listTrips(user),
-      repository.listPendingInvites(user),
-    ])
-    return { trips, invites }
+    return { trips: await repository.listTrips(user) }
   })
 
   /* A trip's own dates, held to the same rule as a stop's day. Unvalidated,
@@ -3119,29 +3120,15 @@ export async function buildServer({
     return invites
   })
 
-  app.get('/api/invites/pending', async (request, reply) => {
-    const user = await authenticated(request, reply)
-    if (!user) return
-    return repository.listPendingInvites(user)
-  })
-
-  app.post('/api/invites/:inviteId/accept', async (request, reply) => {
-    const user = await authenticated(request, reply)
-    if (!user) return
-    const accepted = await repository.acceptInvite(user, request.params.inviteId)
-    if (!accepted) return reply.code(404).send({ error: 'Invitation not found' })
-    return accepted
-  })
-
   app.post('/api/trips/:tripId/invites', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
     const email = normalizeEmail(request.body?.email)
     const role = request.body?.role === 'editor' ? 'editor' : 'viewer'
     if (!singleAddress(email)) return reply.code(400).send({ error: 'Enter a valid email address' })
-    /* Nothing else stops one account posting this route in a loop: the invite
-       row is upserted, so every call sends another mail from our identity to
-       an address the recipient never asked us to write to. */
+    /* Nothing else stops one account posting this route in a loop: the row
+       is upserted, so every call sends another mail from our identity to an
+       address the recipient never asked us to write to. */
     const slowDown =
       inviteLimiter.hit(`user:${user.id}`, inviteRateLimit) ||
       inviteLimiter.hit(`to:${email}`, inviteTargetRateLimit)
@@ -3149,7 +3136,7 @@ export async function buildServer({
       return reply
         .header('retry-after', String(slowDown))
         .code(429)
-        .send({ error: 'Too many invitations just now. Try again shortly.' })
+        .send({ error: 'Too many people added just now. Try again shortly.' })
     }
     const invite = await repository.upsertInvite(user, request.params.tripId, {
       email,
@@ -3160,7 +3147,7 @@ export async function buildServer({
     let mailed = true,
       mailError = null
     try {
-      await sendTripInvitation(invite)
+      await sendTripAccess(invite)
     } catch (error) {
       // The 201 is honest about the row; the span must be honest about the
       // mail, or a week of SMTP refusals reads as a week of clean creates.
