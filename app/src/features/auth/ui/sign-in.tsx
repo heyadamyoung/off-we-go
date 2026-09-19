@@ -83,7 +83,7 @@ export default function SignInScreen() {
         }
         if (password !== confirmPassword) {
           setBusy(false)
-          notify('Those passwords do not match.', 'error')
+          notify('Those passwords do not match', 'warning')
           return
         }
         try {

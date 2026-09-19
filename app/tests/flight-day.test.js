@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  arrivalLine,
   boardName,
   flightHeadline,
   flightPhases,
@@ -230,8 +229,8 @@ test('the phases are the deadlines, the board’s go-to-gate, then leaving and l
     leg({}, { status: 'landed', actualArrival: '2026-09-18T02:41:00.000Z', baggageBelt: '5' }),
     NOW + 9 * H,
   )
-  /* The landing is the last phase; the belt is a place, said under the far
-     end of the ticket, not a row with no time under it. */
+  /* The landing is the last phase; the belt is a place, a column on the
+     ticket, not a row with no time under it. */
   assert.equal(`${down.at(-1).label}:${down.at(-1).state}`, 'Landed:done')
   assert.equal(
     down.some(one => one.key === 'belt'),
@@ -257,18 +256,23 @@ test('the ticket has the columns that are known, and the gate whether or not it 
     { key: 'security', label: 'Security', value: '9 min queue' },
     { key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' },
   ])
-  /* The belt is the far end's, drawn under where the leg lands; the stand
-     is the aircraft's business and is on no ticket. */
+  /* The belt is its own column once the far end's board names one — BAGGAGE
+     CLAIM over "Belt 5", last, after the leaving; the stand is the aircraft's
+     business and is on no ticket. */
   const arrived = ticketColumns(
     leg({}, { status: 'landed', baggageBelt: '5', stand: '171', securityWaitMinutes: 0 }),
   )
   assert.deepEqual(
     arrived.map(one => one.key),
-    ['terminal', 'gate', 'security'],
+    ['terminal', 'gate', 'security', 'belt'],
   )
   assert.equal(arrived.find(one => one.key === 'security').value, 'No queue')
-  assert.equal(arrivalLine(leg({}, { status: 'landed', baggageBelt: '5' })), 'Baggage claim belt 5')
-  assert.equal(arrivalLine(leg()), null)
+  assert.deepEqual(arrived.at(-1), { key: 'belt', label: 'Baggage claim', value: 'Belt 5' })
+  assert.equal(
+    ticketColumns(leg()).some(one => one.key === 'belt'),
+    false,
+    'no belt column before a belt is named',
+  )
   /* No gate yet, but the board has said when it will call passengers to
      it: the dash says when to look again. */
   const later = ticketColumns(

@@ -56,7 +56,7 @@ export default function useMapAsk({
       setHeld(null)
       if (origin) return
       if (!navigator.geolocation) {
-        toast('This browser cannot report a location, and no phone has shared one.', 'error')
+        toast('This browser cannot report a location, and no phone has shared one', 'warning')
         setProbe(null)
         return
       }
@@ -64,8 +64,8 @@ export default function useMapAsk({
         position => setDeviceAt([position.coords.longitude, position.coords.latitude]),
         () => {
           toast(
-            'Measuring needs somewhere to start — allow location, or share from a phone.',
-            'error',
+            'Measuring needs somewhere to start — allow location, or share from a phone',
+            'warning',
           )
           setProbe(null)
         },

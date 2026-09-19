@@ -6,9 +6,11 @@ import { forgetRoutingPack, hasRoutingPack, saveRoutingPack } from '../../offlin
 import { saveTripMap } from '../model/save-region'
 import type { Coordinates, Id, Toast } from '../../../shared/model/types'
 
+/* Why a map was not saved: the first two are the trip's own shape, said as
+   a caution; the third is a failure to reach anything, said as one. */
 const REFUSALS: Record<string, string> = {
-  'nothing-to-save': 'Add a stop first — there is no map to save yet.',
-  'too-wide': 'This trip covers too much ground to save in one go.',
+  'nothing-to-save': 'Add a stop first — there is no map to save yet',
+  'too-wide': 'This trip covers too much ground to save in one go',
   'no-basemap': 'The map could not be reached. Try again when you are online.',
 }
 
@@ -52,7 +54,11 @@ export default function OfflineMapCard({ tripId, points, toast }: OfflineMapCard
         onProgress: setProgress,
       })
       if (!result.ok) {
-        toast(REFUSALS[result.reason] || 'The map could not be saved.', 'error')
+        const refused = REFUSALS[result.reason]
+        toast(
+          refused || 'The map could not be saved',
+          refused && result.reason !== 'no-basemap' ? 'warning' : 'error',
+        )
         return
       }
       if (controller.signal.aborted) return
@@ -73,7 +79,7 @@ export default function OfflineMapCard({ tripId, points, toast }: OfflineMapCard
           return
         } catch {
           if (!controller.signal.aborted)
-            toast('The map is saved; the roads could not be — try again later.', 'error')
+            toast('The map is saved; the roads could not be — try again later', 'warning')
           return
         }
       }

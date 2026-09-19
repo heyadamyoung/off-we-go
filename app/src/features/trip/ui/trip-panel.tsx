@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../../../shared/ui/icon'
 import { SightsList, type SightsListProps } from '../../sights'
-import { MakeIt, SegmentChain } from '../../transport'
+import { SegmentChain } from '../../transport'
 import PanelPhotos from './panel-photos'
 import PanelPapers from './panel-papers'
 import Timeline from './timeline'
@@ -53,8 +53,6 @@ interface PanelProps {
     segments: Segment[]
     loadFailed?: boolean
     now: number
-    /** everybody's live position, for the make-it meter above the chain */
-    travellers?: Array<{ name: string; lng: number; lat: number }>
     canEdit: boolean
     onEdit: (segment: Segment) => void
     onAdd: () => void
@@ -233,7 +231,9 @@ export default function TripPanel(props: PanelProps) {
 }
 
 /* The Travel view: the chain is the whole page. The header carries the name
-   and the add action, so the chain itself is bare legs and gaps. */
+   and the add action, so the chain itself is bare legs and gaps. The make-it
+   meter is the map's, floated over it where everybody's position is drawn;
+   a second copy boxed above the tickets was a box in the way of them. */
 function Travel({ transport }: PanelProps) {
   if (!transport?.segments.length)
     return (
@@ -251,17 +251,6 @@ function Travel({ transport }: PanelProps) {
        gate a hand's breadth from the terminal; the column is capped and
        centred instead, the way a boarding pass is not the size of the desk. */
     <div className="mx-auto w-full max-w-[600px] px-3 pt-3">
-      {/* The one thing on this screen no competitor can build, at the top of
-          the screen it is about. It floated over the map and the map hides it
-          the moment a panel opens — so on the tab whose whole subject is
-          whether you are going to make it, it was the one place it never
-          appeared. It draws itself only on a travel day with somebody's
-          position to draw. */}
-      <MakeIt
-        segments={transport.segments}
-        travellers={transport.travellers || []}
-        now={transport.now}
-      />
       <SegmentChain {...transport} />
     </div>
   )

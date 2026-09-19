@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { aircraftName } from '../../../cabin-core'
-import { arrivalLine, flightHeadline, flightSource } from '../../../flight-day-core'
+import { flightHeadline, flightSource } from '../../../flight-day-core'
 import { papersOfSegment, type Paper } from '../../../papers-core'
 import { parseSeat } from '../../../seatmap-core'
 import {
@@ -148,7 +148,6 @@ export default function SegmentCard({
   /* Which aircraft, as the booking, the board or the transponder named it;
      the seat map draws that cabin. */
   const aircraft = aircraftName(segment.aircraft || segment.flight?.aircraft)
-  const far = arrivalLine(segment)
   /* The watch's own sentence is already the headline and the columns; it is
      drawn only when somebody typed a note of their own. */
   const note =
@@ -230,15 +229,12 @@ export default function SegmentCard({
           <div className="font-mono text-[11.5px] text-muted">
             {localTime(segment.arrivesAt, segment.arriveTz)}
           </div>
-          {/* The far end's word, under the far end: the belt is where the
-              bags come out at the airport you land at, not a column among
-              the leaving. */}
-          {far && <div className="tkfar text-[10.5px] leading-tight text-muted">{far}</div>}
         </div>
       </div>
 
       {/* The columns are the ticket: TERMINAL, GATE, CHECK-IN, the walk, the
-          queue — what is known, and a dash under the gate until it is. */}
+          queue, BAGGAGE CLAIM — what is known, and a dash under the gate
+          until it is. */}
       <TicketColumns segment={segment} />
 
       {face === 'day' ? (

@@ -90,6 +90,19 @@
   --c-tight: #FF9A6B;
   --c-shadow: 0 8px 30px rgb(0 0 0 / 0.45);
   --c-glow: rgb(255 180 84 / 0.5);
+  /* the three words a toast says — worked, take note, failed — each as the
+     mark's colour, the ink on the mark, a surface tinted from it that is
+     solid enough to read over a map, and its edge */
+  --c-ok-ink: #052E16;
+  --c-ok-surface: #10301F;
+  --c-ok-line: rgb(74 222 128 / 0.42);
+  --c-warn: #F5C542;
+  --c-warn-ink: #2A1A05;
+  --c-warn-surface: #33290B;
+  --c-warn-line: rgb(245 197 66 / 0.42);
+  --c-danger-ink: #2B0708;
+  --c-danger-surface: #3A1719;
+  --c-danger-line: rgb(240 106 106 / 0.45);
 }
 
 [data-theme="light"] {
@@ -118,6 +131,16 @@
   --c-tight: #B4540A;
   --c-shadow: 0 8px 30px rgb(16 20 28 / 0.16);
   --c-glow: rgb(143 90 16 / 0.35);
+  --c-ok-ink: #FFFFFF;
+  --c-ok-surface: #E3F5EA;
+  --c-ok-line: rgb(6 118 71 / 0.35);
+  --c-warn: #F2C230;
+  --c-warn-ink: #2A1A05;
+  --c-warn-surface: #FCF3D3;
+  --c-warn-line: rgb(170 116 0 / 0.4);
+  --c-danger-ink: #FFFFFF;
+  --c-danger-surface: #FBE4E4;
+  --c-danger-line: rgb(199 63 63 / 0.4);
 }
 
 @theme inline {
@@ -151,6 +174,7 @@
   --color-accent-ink: var(--c-accent-ink);
   --color-danger: var(--c-danger);
   --color-ok: var(--c-ok);
+  --color-warn: var(--c-warn);
   --color-tight: var(--c-tight);
 
   --shadow-panel: var(--c-shadow);
@@ -714,11 +738,23 @@
 
 @keyframes rise { from { transform: translateY(10px); opacity: 0 } to { transform: none; opacity: 1 } }
 .rise { animation: rise .22s ease }
+/* Straight down into its place and nothing else: a toast whose keyframes
+   also carried its centring snapped sideways the moment they ended. */
 @keyframes toast-rise {
-  from { opacity: 0; transform: translate(-50%, -8px) }
-  to { opacity: 1; transform: translate(-50%, 0) }
+  from { opacity: 0; transform: translateY(-8px) }
+  to { opacity: 1; transform: none }
 }
 .toast-rise { animation: toast-rise .2s ease }
+
+/* --------------------------------------------------------------- toasts
+   Green for what worked, yellow for what to know, red for what failed: the
+   surface is the tone's tint, the mark is the tone's colour, and the words
+   are the page's own ink so they read the same in both themes. */
+.toast { color: var(--c-ink); background: var(--toast-bg); border-color: var(--toast-line) }
+.toast.success { --toast-bg: var(--c-ok-surface); --toast-line: var(--c-ok-line); --toast-mark: var(--c-ok); --toast-mark-ink: var(--c-ok-ink) }
+.toast.warning { --toast-bg: var(--c-warn-surface); --toast-line: var(--c-warn-line); --toast-mark: var(--c-warn); --toast-mark-ink: var(--c-warn-ink) }
+.toast.error { --toast-bg: var(--c-danger-surface); --toast-line: var(--c-danger-line); --toast-mark: var(--c-danger); --toast-mark-ink: var(--c-danger-ink) }
+.toast .tmark { background: var(--toast-mark); color: var(--toast-mark-ink) }
 
 /* iOS Safari zooms the visual viewport when a focused control is below 16px,
    and the zoom survives closing the sheet. Keep pinch-zoom, kill the focus zoom. */

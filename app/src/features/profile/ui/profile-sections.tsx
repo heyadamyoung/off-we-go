@@ -62,7 +62,7 @@ export function ProfileSection({
      them; two taps beats teaching anyone what a latitude is. */
   const setHomeHere = () => {
     if (!navigator.geolocation) {
-      toast('This browser cannot report a location.', 'error')
+      toast('This browser cannot report a location', 'warning')
       return
     }
     setHomeBusy(true)
@@ -75,7 +75,7 @@ export function ProfileSection({
       },
       () => {
         setHomeBusy(false)
-        toast('Location permission was refused.', 'error')
+        toast('Location permission was refused', 'warning')
       },
       { enableHighAccuracy: true, timeout: 10_000 },
     )

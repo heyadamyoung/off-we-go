@@ -89,7 +89,7 @@ export default function useMediaPicker({ toast }: { toast: Toast }) {
            eighteen rather than refuse the lot. */
         const refusals = picked.map(tooBigToSend)
         const fresh = picked.filter((_, i) => !refusals[i])
-        for (const refusal of refusals.filter(Boolean)) toast(refusal as string, 'error')
+        for (const refusal of refusals.filter(Boolean)) toast(refusal as string, 'warning')
         if (!fresh.length) return
         const prepared = await readPhotoFiles(fresh.map(withVideoMime))
         /* One decode at a time: a handful of 4K films seeked in parallel is how

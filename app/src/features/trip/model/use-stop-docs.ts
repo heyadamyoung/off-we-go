@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { deleteStopDocument, updateStopDocument, uploadStopDocument } from '../../../backend'
 import { track } from '../../../shared/lib/telemetry'
-import type { Id } from '../../../shared/model/types'
+import type { Id, Toast } from '../../../shared/model/types'
 
 export interface StopDocTools {
   attach: (stopId: string, file: File) => void
@@ -12,11 +12,7 @@ export interface StopDocTools {
 /* A stop's paperwork, managed: upload, rename, note, delete — each lands on
    the server and the trip reloads, so the card under the sheet tells the
    truth straight away. */
-export default function useStopDocs(
-  tripId: Id,
-  reload: () => void,
-  toast: (message: string, tone?: 'success' | 'error') => void,
-): StopDocTools {
+export default function useStopDocs(tripId: Id, reload: () => void, toast: Toast): StopDocTools {
   return useMemo(
     () => ({
       attach: (stopId, file) =>

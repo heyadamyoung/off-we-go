@@ -198,8 +198,8 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
     at: flight?.actualDeparture || flight?.estimatedDeparture || segment.departsAt,
     done: left,
   })
-  /* The belt is not a phase: it is a place, said under the far end on the
-     ticket (arrivalLine), and a row with no time under it read as a gap. */
+  /* The belt is not a phase: it is a place, a column on the ticket, and a
+     row with no time under it read as a gap. */
   if (segment.arrivesAt || flight?.actualArrival) {
     rows.push({
       key: 'lands',
@@ -250,10 +250,10 @@ export interface TicketColumn {
    it, because it is the one thing everybody looks for and the dash under it
    says "not yet" — with "by 12:35" when the board has said when. The rest —
    the terminal, the check-in zone and desks, the walk, the queue, the
-   pre-clearance — appear as they are known: a row of dashes under headings
-   nobody asked about read as a ticket that was broken. The belt is the far
-   end's and is drawn there (see arrivalLine), not among the leaving; the
-   stand is the aircraft's business, not the traveller's. */
+   pre-clearance, and the belt once the far end's board has named one —
+   appear as they are known: a row of dashes under headings nobody asked
+   about read as a ticket that was broken. The stand is the aircraft's
+   business, not the traveller's, and is on no ticket. */
 export function ticketColumns(segment: Segment): TicketColumn[] {
   const flight = segment.flight || null
   const gate = segment.gate || flight?.gate || null
@@ -298,6 +298,11 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
       })
     if (flight?.preClearance)
       columns.push({ key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' })
+    /* Last, because it is the far end's: BAGGAGE CLAIM over "Belt 5", named
+       for the sign a traveller walks towards — "Belt" over a number told
+       nobody what it was. */
+    if (flight?.baggageBelt)
+      columns.push({ key: 'belt', label: 'Baggage claim', value: `Belt ${flight.baggageBelt}` })
     return columns
   }
   if (segment.mode === 'train' || segment.mode === 'bus') {
@@ -318,29 +323,20 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
   return []
 }
 
-/** The far end's word, drawn under where the leg lands rather than among
-    the leaving: "Baggage claim belt 5", once the board has named one. Named
-    for what a traveller looks for at the far end — "Belt" over a number
-    told nobody what it was; baggage claim is the sign they walk towards. */
-export function arrivalLine(segment: Segment): string | null {
-  const belt = segment.flight?.baggageBelt
-  return belt ? `Baggage claim belt ${belt}` : null
-}
-
-/** The ticket's first columns with something in them, and the far end's
-    word, as one line for a pill or a card row: "T2 · gate 406 · Zone 15 ·
-    Desks 1501–1520 · baggage claim belt 5". */
+/** The ticket's first columns with something in them as one line for a pill
+    or a card row: "T2 · gate 406 · Zone 15 · Desks 1501–1520 · baggage claim
+    belt 5". */
 export function ticketLine(segment: Segment): string {
   const said = (column: TicketColumn) =>
     column.key === 'gate' || column.key === 'platform'
       ? `${column.label.toLowerCase()} ${column.value}`
-      : column.value
-  const parts = ticketColumns(segment)
+      : column.key === 'belt'
+        ? `${column.label.toLowerCase()} ${String(column.value).toLowerCase()}`
+        : column.value
+  return ticketColumns(segment)
     .filter(column => column.value && !['walk', 'security', 'preclearance'].includes(column.key))
     .map(said)
-  const far = arrivalLine(segment)
-  if (far) parts.push(far.toLowerCase())
-  return parts.join(' · ')
+    .join(' · ')
 }
 
 export interface SourceLine {

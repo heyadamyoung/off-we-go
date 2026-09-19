@@ -111,10 +111,16 @@ test('on the day the answer is on top, in words, with the phases and the board u
   await expect(flight.locator('.tktrail li')).toHaveCount(2)
 })
 
-test('the make-it meter counts the walk to the gate and says when to leave', async ({ page }) => {
-  await openTravel(page, { travelDay: true })
+test('the make-it meter is the map’s, and is not boxed above the tickets', async ({ page }) => {
+  await openTrip(page, { travelDay: true })
   await expect(page.getByText('9 min from the door to the gate, counted')).toBeVisible()
   await expect(page.locator('.mkleave').first()).toHaveText(/^leave by \d{2}:\d{2}$/)
+  await page.getByRole('button', { name: 'Travel', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
+  /* The Travel tab is the tickets: the first thing in it is the live leg's
+     card, not a second copy of the meter. */
+  await expect(page.locator('.sheet .mkleave')).toHaveCount(0)
+  await expect(page.locator('.sheet .ticket').first()).toContainText('KL 677')
 })
 
 test('the pill over the map leads with the live leg, and the card opens on the ticket', async ({

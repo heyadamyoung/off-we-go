@@ -128,7 +128,7 @@ export default function useAirportIndoor({
       .then(found => {
         if (!found.length) {
           skipRef.current.set(stop.id, Number.POSITIVE_INFINITY)
-          toastRef.current('No one has mapped the inside of ' + stop.name + ' yet', 'error')
+          toastRef.current('No one has mapped the inside of ' + stop.name + ' yet', 'warning')
           if (!gone) setStop(null)
           return
         }
@@ -202,7 +202,7 @@ export default function useAirportIndoor({
     if (!target || !graph) return
     if (!route) {
       if (tappedRef.current) {
-        toastRef.current('The walking paths to that gate are not mapped yet', 'error')
+        toastRef.current('The walking paths to that gate are not mapped yet', 'warning')
       }
       tappedRef.current = false
       setTarget(null)
