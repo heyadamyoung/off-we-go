@@ -91,9 +91,9 @@ test('on the day the answer is on top, in words, with the phases and the board u
   await expect(flight).toHaveAttribute('data-face', 'day')
   /* Three hours and ten to the flight in travel-day mode; check-in closes an
      hour before it. The clock is pinned, so this is exact. */
-  await expect(flight.locator('.tkhead')).toHaveText(
-    /^On time · gate E19 · check-in closes in 2 h (09|10)$/,
-  )
+  /* How long is left, and nothing the ticket already says: not the board's
+     word, not the gate, which sit in the columns underneath. */
+  await expect(flight.locator('.tkhead')).toHaveText(/^Check-in closes in 2 h (09|10)$/)
   await expect(column(flight, 'walk')).toContainText('9 min')
   await expect(column(flight, 'security')).toContainText('6 min queue')
   /* The phases: the first one still to come is the one lit. */
@@ -167,7 +167,7 @@ test('a tap on the ticket opens the flight’s own screen, and the arrow comes b
 
   const screen = page.getByRole('dialog', { name: /KL 677/ })
   await expect(screen).toBeVisible()
-  await expect(screen.locator('.fsstatus')).toContainText('On time')
+  await expect(screen.locator('.fsstatus')).toContainText('Check-in closes in 2 h')
   await expect(screen.locator('.fsend').first()).toContainText('AMS')
   await expect(screen.locator('.fsend').first()).toContainText('Amsterdam Schiphol')
   await expect(screen.locator('.fsend').last()).toContainText('YYC')

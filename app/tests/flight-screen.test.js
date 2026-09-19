@@ -64,7 +64,7 @@ test('the screen leads with the answer and the two ends, timed in their own cloc
   const screen = flightScreen(leg(), NOW)
   assert.equal(screen.title, 'KL 677')
   assert.equal(screen.date, 'Sun 13 Sept')
-  assert.match(screen.status.text, /^On time/)
+  assert.equal(screen.status.text, 'Check-in closes in 2 h')
   assert.deepEqual(
     {
       code: screen.from.code,

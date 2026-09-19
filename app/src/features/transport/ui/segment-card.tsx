@@ -1,11 +1,11 @@
 import { Fragment, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { aircraftName } from '../../../cabin-core'
-import { flightHeadline, flightSource } from '../../../flight-day-core'
+import { flightSource } from '../../../flight-day-core'
+import { flightTimeLeft } from '../../../flight-left-core'
 import { papersOfSegment, type Paper } from '../../../papers-core'
 import { parseSeat } from '../../../seatmap-core'
 import {
   DEADLINE_LABELS,
-  delayLabel,
   localTime,
   MODE_GLYPH,
   nextDeadline,
@@ -106,7 +106,6 @@ export default function SegmentCard({
   onOpenPaper?: (paper: Paper) => void
 }) {
   const face = segmentFace(segment, now)
-  const moved = delayLabel(segment)
   const glyph = MODE_GLYPH[segment.mode]
   const title = segmentName({
     carrier: segment.carrier,
@@ -143,11 +142,10 @@ export default function SegmentCard({
     )
   }
 
-  /* The answer, in words, on the day: built from the board's word, the delta
-     and the next hard thing. On the eve the same line reads quietly under
-     the columns when a board has spoken, because "is it still on" is the
-     evening's question too. */
-  const headline = flightHeadline(segment, now)
+  /* How long there is, on the day: to the next thing, then to leaving, then
+     to the ground. Only what the ticket cannot say — a landing time is in
+     the far end's clock, and nobody in the air wants to do that sum. */
+  const headline = flightTimeLeft(segment, now)
   const source = flightSource(segment, now)
   /* Which aircraft, as the booking, the board or the transponder named it;
      the seat map draws that cabin. */
@@ -169,13 +167,13 @@ export default function SegmentCard({
       <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
         <span className="min-w-0 text-[10px] font-bold uppercase leading-snug tracking-[.12em] text-faint">
           {glyph} {segment.mode}
-          {/* By how much, next to the fact of it. "Delayed" on its own is the
-              start of a question rather than an answer. On a phone too narrow
-              for both the size takes the next line whole, never "25 MIN …". */}
-          {segment.status !== 'scheduled' && (
-            <span className="ml-2 text-tight">{segment.status}</span>
+          {/* Only the words the ticket has no other way to say. A delay is
+              the old time struck through beside the new one, and saying
+              "delayed 25 min later" above that said it three times. */}
+          {segment.status === 'cancelled' && <span className="ml-2 text-tight">cancelled</span>}
+          {segment.status !== 'cancelled' && segment.flight?.status === 'diverted' && (
+            <span className="ml-2 text-tight">diverted</span>
           )}
-          {moved && <span className="ml-2 whitespace-nowrap text-tight">{moved}</span>}
         </span>
         <span className="flex flex-none items-center gap-1.5">
           {segment.ref && (
