@@ -387,3 +387,37 @@ test(title(MODERN, AROUND), sweep(MODERN, AROUND))
 test(title(MODERN, ITSELF), sweep(MODERN, ITSELF))
 test(title(SMALLEST, AROUND), sweep(SMALLEST, AROUND))
 test(title(SMALLEST, ITSELF), sweep(SMALLEST, ITSELF))
+
+/* The grabber at the top of the day bar follows a finger: pull it down and
+   the bar collapses to the map, pull it up and the day's cards come back, a
+   short pull settles where it was, and a tap still toggles. */
+test('the day bar is dragged open and closed by its grabber, and still taps', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  const grabber = page.locator('.grabber')
+  await expect(grabber).toBeVisible()
+  const pull = async by => {
+    const box = await grabber.boundingBox()
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y + by / 2, { steps: 3 })
+    await page.mouse.move(x, y + by, { steps: 3 })
+    await page.mouse.up()
+  }
+  if ((await grabber.getAttribute('aria-expanded')) !== 'true') await grabber.click()
+  await expect(grabber).toHaveAttribute('aria-expanded', 'true')
+  await pull(60)
+  await expect(grabber).toHaveAttribute('aria-expanded', 'false')
+  await pull(-60)
+  await expect(grabber).toHaveAttribute('aria-expanded', 'true')
+  /* Short of the threshold the bar settles back where it was. */
+  await pull(12)
+  await expect(grabber).toHaveAttribute('aria-expanded', 'true')
+  await grabber.click()
+  await expect(grabber).toHaveAttribute('aria-expanded', 'false')
+  await grabber.click()
+  await expect(grabber).toHaveAttribute('aria-expanded', 'true')
+})
