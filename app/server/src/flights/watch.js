@@ -84,6 +84,10 @@ export function mergeBoards(departure, arrival) {
     view.baggageBelt = arrival.baggageBelt
     view.arrivalTerminal = arrival.terminal
     view.arrivalGate = arrival.gate
+    /* Which aircraft: the near board's word when it has one, else the far
+       board's — Regina names the type on its arrivals board, Pearson never
+       does, and a leg to Regina wants the seat map to know. */
+    view.aircraft = departure?.aircraft || arrival.aircraft || null
     view.origin = departure?.origin || arrival.origin
     view.destination = arrival.destination || departure?.destination || null
     if (['landed', 'arrived', 'diverted', 'cancelled'].includes(arrival.status)) {

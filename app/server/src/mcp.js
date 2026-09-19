@@ -836,6 +836,9 @@ function buildMcpServer({
     terminal: z.string().trim().max(40).nullable().optional(),
     gate: z.string().trim().max(20).nullable().optional(),
     platform: z.string().trim().max(20).nullable().optional(),
+    /* The type as the booking names it ("Airbus A220-300", "Dash 8-400"):
+       the seat map draws that cabin. */
+    aircraft: z.string().trim().max(60).nullable().optional(),
     passengers: z
       .array(
         z.object({
@@ -890,7 +893,7 @@ function buildMcpServer({
     'update_segment',
     {
       description:
-        'Update a travel leg — times, gate or platform, seats, deadlines, status. A gate change keeps its history. When amending from an airline or rail email, say so in statusNote (e.g. "gate change, from Air Canada’s email") and set status to delayed, changed or cancelled as the email says.',
+        'Update a travel leg — times, gate or platform, aircraft type, seats, deadlines, status. A gate change keeps its history. When amending from an airline or rail email, say so in statusNote (e.g. "gate change, from Air Canada’s email") and set status to delayed, changed or cancelled as the email says.',
       inputSchema: z.object({
         tripId: entityId,
         segmentId: entityId,

@@ -428,7 +428,7 @@ test('Pearson: the list becomes rows, with the IATA number, the codeshares and t
   )
   assert.equal(row.estimatedDeparture, '2026-09-17T11:00:00.000Z')
   assert.equal(row.status, 'cancelled')
-  assert.equal(row.statusText, 'CAN')
+  assert.equal(row.statusText, 'Cancelled', 'the code, said as the board says it')
   assert.equal(row.terminal, '3')
   assert.equal(row.gate, 'A10')
   assert.equal(row.baggageBelt, null)

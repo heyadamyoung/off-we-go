@@ -243,21 +243,22 @@ export function flightPhases(segment: Segment, now: number): FlightPhase[] {
 export interface TicketColumn {
   key: string
   label: string
-  /** null is drawn as a dash: the column is there before the board fills it */
+  /** null only under the gate or the platform: the column is there before the board names it */
   value: string | null
   was?: string | null
   /** under a dash, when the board has said when it will fill it: "by 12:35" */
   hint?: string | null
 }
 
-/* The columns a ticket has, whether or not anything is known for them yet.
-   A boarding pass prints TERMINAL, GATE and the rest as headings with the
-   value under each, and a traveller looks for the heading first — so the
-   headings are always there, with a dash under the ones the board has not
-   filled in, rather than appearing one by one as facts arrive and moving
-   everything else around when they do. The optional ones — pre-clearance,
-   the stand — are added only when the board says, because a dash under
-   "US pre-clearance" on a flight to Cork is a question nobody asked. */
+/* The columns a ticket has: what is known, in the order a boarding pass
+   prints it. The gate (a train's platform) is there before the board names
+   it, because it is the one thing everybody looks for and the dash under it
+   says "not yet" — with "by 12:35" when the board has said when. The rest —
+   the terminal, the check-in zone and desks, the walk, the queue, the
+   pre-clearance — appear as they are known: a row of dashes under headings
+   nobody asked about read as a ticket that was broken. The belt is the far
+   end's and is drawn there (see arrivalLine), not among the leaving; the
+   stand is the aircraft's business, not the traveller's. */
 export function ticketColumns(segment: Segment): TicketColumn[] {
   const flight = segment.flight || null
   const gate = segment.gate || flight?.gate || null
@@ -272,52 +273,36 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
         : flight.checkinZone
       : ''
     const desks = flight?.checkinDesks ? `Desks ${flight.checkinDesks.replace('-', '–')}` : ''
+    const checkin = [zone, desks].filter(Boolean).join(' · ')
     const queue = flight?.securityWaitMinutes
-    const columns: TicketColumn[] = [
-      { key: 'terminal', label: 'Terminal', value: terminalWord },
-      {
-        key: 'gate',
-        label: 'Gate',
-        value: gate,
-        was: segment.gateWas || null,
-        /* Dublin names the gate when it calls passengers to it, and it says
-           when that will be hours ahead — so a dash with "by 12:35" under it
-           answers the question the dash raises, which is not "where" but
-           "when will I know". The airline's own app may know sooner; the
-           board is what this reads. */
-        hint:
-          !gate && flight?.goToGateTime
-            ? `by ${localTime(flight.goToGateTime, segment.departTz)}`
-            : null,
-      },
-      {
-        key: 'checkin',
-        label: 'Check-in',
-        value: [zone, desks].filter(Boolean).join(' · ') || null,
-      },
-      {
-        key: 'walk',
-        label: 'Walk to gate',
-        value: flight?.walkMinutes ? `${flight.walkMinutes} min` : null,
-      },
-      {
+    const columns: TicketColumn[] = []
+    if (terminalWord) columns.push({ key: 'terminal', label: 'Terminal', value: terminalWord })
+    columns.push({
+      key: 'gate',
+      label: 'Gate',
+      value: gate,
+      was: segment.gateWas || null,
+      /* Dublin names the gate when it calls passengers to it, and it says
+         when that will be hours ahead — so a dash with "by 12:35" under it
+         answers the question the dash raises, which is not "where" but
+         "when will I know". The airline's own app may know sooner; the
+         board is what this reads. */
+      hint:
+        !gate && flight?.goToGateTime
+          ? `by ${localTime(flight.goToGateTime, segment.departTz)}`
+          : null,
+    })
+    if (checkin) columns.push({ key: 'checkin', label: 'Check-in', value: checkin })
+    if (flight?.walkMinutes)
+      columns.push({ key: 'walk', label: 'Walk to gate', value: `${flight.walkMinutes} min` })
+    if (queue != null)
+      columns.push({
         key: 'security',
         label: 'Security',
-        value: queue == null ? null : queue > 0 ? `${queue} min queue` : 'No queue',
-      },
-      /* Named for what a traveller looks for at the far end, not for the
-         board's word: "Belt" over a number, and then "Bag belt", told nobody
-         what it was. Baggage claim is the sign they walk towards; the belt
-         is which one. */
-      {
-        key: 'belt',
-        label: 'Baggage claim',
-        value: flight?.baggageBelt ? `Belt ${flight.baggageBelt}` : null,
-      },
-    ]
+        value: queue > 0 ? `${queue} min queue` : 'No queue',
+      })
     if (flight?.preClearance)
       columns.push({ key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' })
-    if (flight?.stand) columns.push({ key: 'stand', label: 'Stand', value: flight.stand })
     return columns
   }
   if (segment.mode === 'train' || segment.mode === 'bus') {
@@ -330,29 +315,37 @@ export function ticketColumns(segment: Segment): TicketColumn[] {
     ]
   }
   if (segment.mode === 'ferry') {
-    return [
-      { key: 'terminal', label: 'Terminal', value: terminalWord },
-      { key: 'gate', label: 'Gate', value: gate },
-    ]
+    const columns: TicketColumn[] = []
+    if (terminalWord) columns.push({ key: 'terminal', label: 'Terminal', value: terminalWord })
+    columns.push({ key: 'gate', label: 'Gate', value: gate })
+    return columns
   }
   return []
 }
 
-/** The ticket's first columns with something in them, as one line for a
-    pill or a card row: "T2 · gate 406 · Zone 15 · Desks 1501–1520". */
+/** The far end's word, drawn under where the leg lands rather than among
+    the leaving: "Baggage claim belt 5", once the board has named one. Named
+    for what a traveller looks for at the far end — "Belt" over a number
+    told nobody what it was; baggage claim is the sign they walk towards. */
+export function arrivalLine(segment: Segment): string | null {
+  const belt = segment.flight?.baggageBelt
+  return belt ? `Baggage claim belt ${belt}` : null
+}
+
+/** The ticket's first columns with something in them, and the far end's
+    word, as one line for a pill or a card row: "T2 · gate 406 · Zone 15 ·
+    Desks 1501–1520 · baggage claim belt 5". */
 export function ticketLine(segment: Segment): string {
   const said = (column: TicketColumn) =>
     column.key === 'gate' || column.key === 'platform'
       ? `${column.label.toLowerCase()} ${column.value}`
-      : column.key === 'belt'
-        ? `${column.label.toLowerCase()} ${column.value?.toLowerCase()}`
-        : column.value
-  return ticketColumns(segment)
-    .filter(
-      column => column.value && !['walk', 'security', 'preclearance', 'stand'].includes(column.key),
-    )
+      : column.value
+  const parts = ticketColumns(segment)
+    .filter(column => column.value && !['walk', 'security', 'preclearance'].includes(column.key))
     .map(said)
-    .join(' · ')
+  const far = arrivalLine(segment)
+  if (far) parts.push(far.toLowerCase())
+  return parts.join(' · ')
 }
 
 export interface SourceLine {

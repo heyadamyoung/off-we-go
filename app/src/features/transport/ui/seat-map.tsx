@@ -4,8 +4,10 @@ import Sheet from '../../../shared/ui/sheet'
 
 /* The cabin, drawn from the booking: a schematic fuselage with every booked
    seat lit and initialled, the wing shaded so "over the wing" is visible, and
-   exits marked where every airliner keeps them. Honest about what it is — a
-   typical layout for the body type the seat letters imply, not this exact
+   exits marked where every airliner keeps them. When the booking, the
+   airport's board or the transponder has named the aircraft, the cabin is
+   that type's — an A220's two-and-three, a Dash 8's two-and-two — and about
+   its length. Honest about the rest: a typical layout, not this exact
    aircraft's chart, which is licensed art no one gets for free. */
 
 const SEAT = 16
@@ -21,7 +23,10 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
   const booked = segment.passengers
     .map(person => ({ person, place: parseSeat(person.seat) }))
     .filter(entry => entry.place !== null)
-  const plan = cabinFor(segment.passengers.map(person => person.seat))
+  const plan = cabinFor(
+    segment.passengers.map(person => person.seat),
+    segment.aircraft || segment.flight?.aircraft,
+  )
 
   const columnX = new Map<string, number>()
   let x = LEFT + PAD
@@ -56,6 +61,15 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
           <span className="text-xs text-muted">No seat numbers on this leg yet.</span>
         )}
       </div>
+      {plan.aircraft && (
+        <p className="tkcraft m-0 text-center text-xs font-bold">
+          {plan.aircraft}
+          <span className="font-normal text-muted">
+            {' · '}
+            {plan.sections.map(section => section.length).join('–')} across
+          </span>
+        </p>
+      )}
 
       <div className="grid justify-center">
         <svg
@@ -171,8 +185,9 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
       </div>
 
       <p className="m-0 text-center text-[11px] leading-relaxed text-faint">
-        Schematic of a typical {plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your
-        seats are exact, rows and exits are representative rather than this aircraft’s chart.
+        {plan.aircraft
+          ? `Schematic of a typical ${plan.aircraft} cabin — your seats are exact; the rows and exits are representative rather than this aircraft’s own chart.`
+          : `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your seats are exact, rows and exits are representative rather than this aircraft’s chart. Put the aircraft on the leg and the cabin is drawn for it.`}
       </p>
     </Sheet>
   )

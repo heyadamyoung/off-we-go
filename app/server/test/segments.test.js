@@ -62,12 +62,14 @@ test('segments belong to editors: created, gate history kept, gone on delete', a
       toName: 'Regina',
       toCode: 'YQR',
       departsAt: '2026-09-19T16:10:00.000Z',
+      aircraft: 'Airbus A220-300',
       passengers: [{ name: 'Maya', seat: '14A' }],
     },
   })
   assert.equal(created.statusCode, 200)
   const segment = created.json()
   assert.equal(segment.deadlines.boardingAt, '2026-09-19T15:30:00.000Z', 'deadlines derive')
+  assert.equal(segment.aircraft, 'Airbus A220-300', 'the type, as the booking named it')
 
   /* The night the connection died mid-answer, a retried question created
      every leg twice. The same flight asked for again is the same flight. */

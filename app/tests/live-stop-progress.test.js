@@ -1698,6 +1698,7 @@ test('how long until the next thing reads as a span, and says when it has passed
   /* Being late is the most useful thing the line ever says, and a countdown
      that stops at nought is a countdown that lies about it. */
   assert.equal(dueLabel(74), 'in 1 h 14')
+  assert.equal(dueLabel(601), 'in 10 h 01', 'two digits beside an hour: "10 h 1" read as a typo')
   assert.equal(dueLabel(120), 'in 2 h')
   assert.equal(dueLabel(25), 'in 25 min')
   assert.equal(dueLabel(-25), '25 min ago')

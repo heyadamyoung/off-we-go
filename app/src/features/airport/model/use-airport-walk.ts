@@ -77,10 +77,16 @@ export default function useAirportWalk({
 
   const stage = currentStage(stages, state)
   const reached = !!stage && state.reached === stage.kind
-  const target = useMemo<WalkPoint | null>(
-    () => (stage?.at && !reached ? stage.at : null),
-    [stage, reached],
-  )
+  /* Keyed by content: the stages are rebuilt on every tick of the clock,
+     and a target that was a new object each time re-planned the route each
+     minute — and the floor picker, which follows a new route to its first
+     floor, snapped back to the ground floor within a minute of anybody
+     choosing another. The same place is the same target until the walk
+     moves on. */
+  const at = stage?.at && !reached ? stage.at : null
+  const targetKey = at ? `${at.ref}|${at.lng},${at.lat}|${at.levels.join(';')}` : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: targetKey carries the target's content
+  const target = useMemo<WalkPoint | null>(() => at, [targetKey])
   const next = useCallback(() => setState(current => skipStage(current, stages)), [stages])
   const index = stage ? stages.indexOf(stage) : -1
   return {

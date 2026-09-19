@@ -51,7 +51,7 @@ async function openTravel(page, options) {
 const ticketOf = (page, text) => page.locator('.ticket').filter({ hasText: text }).first()
 const column = (ticket, key) => ticket.locator(`.tkcol[data-key="${key}"]`)
 
-test('the ticket has its columns the evening before, with a dash where the board has not said', async ({
+test('the ticket has the columns the board has filled in the evening before, and no dashes', async ({
   page,
 }) => {
   await openTravel(page)
@@ -59,7 +59,7 @@ test('the ticket has its columns the evening before, with a dash where the board
   await page.getByRole('button', { name: /KL 677/ }).click()
   const flight = ticketOf(page, 'KL 677')
   await expect(flight).toHaveAttribute('data-face', 'eve')
-  for (const key of ['terminal', 'gate', 'checkin', 'walk', 'security', 'belt']) {
+  for (const key of ['terminal', 'gate', 'checkin', 'walk', 'security']) {
     await expect(column(flight, key), `no ${key} column`).toBeVisible()
   }
   await expect(column(flight, 'terminal')).toContainText('T3')
@@ -67,7 +67,16 @@ test('the ticket has its columns the evening before, with a dash where the board
   /* Two lines, the zone over the desks: one line was cut to "Des…" on a phone. */
   await expect(column(flight, 'checkin')).toContainText('Zone 3')
   await expect(column(flight, 'checkin')).toContainText('Desks 13–20')
-  await expect(column(flight, 'belt')).toContainText('—')
+  /* Nothing the board has not said: no belt yet, so no belt column and no
+     dash, and never a stand. */
+  await expect(flight.locator('.tkcol')).toHaveCount(5)
+  await expect(flight.locator('.tkcols')).not.toContainText('—')
+  await expect(flight.locator('.tkcols')).not.toContainText('Stand')
+  /* The aircraft the booking named, under the flight number; Edit lives in
+     the corner, not among the day's buttons. */
+  await expect(flight.locator('.tkcraft')).toHaveText('Boeing 787-9')
+  await expect(flight.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(flight.locator('.tkbags')).toContainText('Checked 1 × 23 kg · Carry-on 1 × 12 kg')
   /* A train has the columns a train has. */
   const train = ticketOf(page, 'IC 3155')
   await expect(column(train, 'platform')).toContainText('14b')
@@ -93,8 +102,9 @@ test('on the day the answer is on top, in words, with the phases and the board u
   await expect(flight.locator('.tkphase[data-state="now"]')).toHaveCount(1)
   await expect(flight.locator('.tkphase[data-state="now"]')).toContainText('Check-in')
   await expect(flight.locator('.tkphase[data-state="done"]')).toHaveCount(0)
-  /* Which board, how old, in its own words. */
-  await expect(flight.locator('.tksource')).toContainText('Schiphol · 2 min ago · On time')
+  /* Which board, how old — and not its status word again, which the headline
+     already said in ours. */
+  await expect(flight.locator('.tksource')).toHaveText('Schiphol · 2 min ago')
   /* The trail behind the word, on demand. */
   await flight.getByRole('button', { name: 'What the airport said' }).click()
   await expect(flight.locator('.tktrail li').first()).toContainText('moved from gate E17 to E19')

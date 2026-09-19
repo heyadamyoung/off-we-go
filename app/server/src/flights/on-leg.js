@@ -16,13 +16,18 @@ const number = value => (Number.isFinite(value) ? value : null)
 /**
  * @param {object|null|undefined} info  the snapshot's FlightInfo view
  * @param {string|null} [fetchedAt]  when the watch last read the boards
+ * @param {string|null} [note]  the watch's own last sentence in the leg's status note
  */
-export function flightOnLeg(info, fetchedAt = null) {
+export function flightOnLeg(info, fetchedAt = null, note = null) {
   if (!info || typeof info !== 'object') return null
   const extra = info.extra && typeof info.extra === 'object' ? info.extra : {}
   return {
     status: text(info.status) || 'unknown',
     statusText: text(info.statusText),
+    /* So the phone can tell the watch's sentence from one somebody typed:
+       the headline already says what the watch's says, and a note that is
+       the board's own is not drawn a second time under it. */
+    note: text(note),
     boardingStatus: text(info.boardingStatus),
     gate: text(info.gate),
     terminal: text(info.terminal),

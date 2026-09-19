@@ -19,6 +19,7 @@ import { track as trackEvent } from '../../../shared/lib/telemetry'
 import { withFace } from './faces'
 import { tripSubtitle } from './trip-items'
 import useMapLook from './use-map-look'
+import useMinuteClock from './use-minute-clock'
 import useTripDays from './use-trip-days'
 import type {
   Attraction,
@@ -164,11 +165,7 @@ export default function useTripPage({
   /* The tickets and bookings, onto the phone before anybody asks: the case is
      a check-in desk with no signal and a document nobody thought to open. */
   useOfflinePapers({ tripId, stops: ordered, segments: transport.segments })
-  const [clock, setClock] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setClock(Date.now()), 60_000)
-    return () => clearInterval(timer)
-  }, [])
+  const clock = useMinuteClock()
   const plane = usePlanePosition(tripId, transport.segments, clock) // over the family's dots
   const showGate = useCallback(
     (segment: { fromLng?: number | null; fromLat?: number | null }) => {

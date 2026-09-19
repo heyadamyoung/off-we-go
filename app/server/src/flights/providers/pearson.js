@@ -55,6 +55,35 @@ export const PEARSON_STATUS_CODES = Object.freeze({
   DIV: ['diverted', null], // Diverted
 })
 
+/* The words the site's own board shows beside each code. A row's statusText
+   is what the phone shows as "the board's own words", and "ONT" is not a
+   word anybody at a gate has read. */
+const PEARSON_STATUS_WORDS = Object.freeze({
+  CAN: 'Cancelled',
+  DEL: 'Delayed',
+  DLY: 'Delayed',
+  ONT: 'On time',
+  SCH: 'Scheduled',
+  EXP: 'Expected',
+  EST: 'Estimated',
+  EAR: 'Early',
+  GTO: 'Gate open',
+  GTC: 'Gate closed',
+  BRD: 'Boarding',
+  FNL: 'Final call',
+  DEP: 'Departed',
+  AIR: 'Airborne',
+  LND: 'Landed',
+  ARR: 'Arrived',
+  DIV: 'Diverted',
+})
+
+/** The board's words for a status code, or the code itself when it is not one. */
+export const pearsonStatusWords = code => {
+  const text = blankToNull(code)
+  return text ? PEARSON_STATUS_WORDS[text.toUpperCase()] || text : null
+}
+
 export function readPearsonStatus(code) {
   const text = blankToNull(code)
   if (!text) return { status: 'unknown', boardingStatus: null }
@@ -131,7 +160,7 @@ export function parsePearsonBoard(body, direction, { fetchedAt = new Date().toIS
     }
     row.status = status
     row.boardingStatus = boardingStatus
-    row.statusText = blankToNull(record.status)
+    row.statusText = pearsonStatusWords(record.status)
     row.terminal = normalizeTerminal(record.term)
     row.gate = blankToNull(record.gate)
     row.baggageBelt = blankToNull(record.carousel)

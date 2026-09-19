@@ -86,9 +86,13 @@ console.log(
 )
 
 const byRef = (a, b) =>
-  String(a.tags.ref || a.tags.name || '').localeCompare(String(b.tags.ref || b.tags.name || ''), undefined, {
-    numeric: true,
-  })
+  String(a.tags.ref || a.tags.name || '').localeCompare(
+    String(b.tags.ref || b.tags.name || ''),
+    undefined,
+    {
+      numeric: true,
+    },
+  )
 const show = (title, list) => {
   console.log(`\n== ${title}: ${list.length}`)
   for (const e of list.sort(byRef)) {

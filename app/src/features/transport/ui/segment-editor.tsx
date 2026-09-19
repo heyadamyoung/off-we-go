@@ -172,6 +172,20 @@ export default function SegmentEditor({
               onChange={e => field(draft.mode === 'train' ? 'platform' : 'gate')(e.target.value)}
             />
           </div>
+          {/* The type as the booking names it; the seat map draws that
+              cabin. The boards rarely say — Regina does, Pearson and Dublin
+              do not — and the airline's email always does. */}
+          {draft.mode === 'flight' && (
+            <div>
+              <div className={label}>Aircraft</div>
+              <input
+                className={input}
+                placeholder="e.g. Airbus A220-300"
+                value={draft.aircraft || ''}
+                onChange={e => field('aircraft')(e.target.value)}
+              />
+            </div>
+          )}
         </div>
         <div>
           <div className={label}>Seats</div>

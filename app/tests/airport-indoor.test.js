@@ -285,3 +285,53 @@ test('a terminal closes only when the camera leaves it, and never mid-route', ()
     { close: true },
   )
 })
+
+test('a bare-numbered gate out on the apron is a stand, kept but not a gate', () => {
+  /* Pearson, as the probe read it: the terminal's gates inside its outline,
+     the remote stands "541"–"547" tagged as gates nine hundred metres out,
+     and Terminal 3's lettered gates far from any outline because its
+     building is not a way the query brings back. */
+  const ring = (lon, lat, size) => [
+    { lon: lon - size, lat: lat - size },
+    { lon: lon + size, lat: lat - size },
+    { lon: lon + size, lat: lat + size },
+    { lon: lon - size, lat: lat + size },
+    { lon: lon - size, lat: lat - size },
+  ]
+  const terminal = {
+    type: 'way',
+    id: 1,
+    tags: { aeroway: 'terminal', name: 'Terminal 1' },
+    geometry: ring(4.7639, 52.3105, 0.004),
+  }
+  const gate = (id, ref, lon, lat) => ({
+    type: 'node',
+    id,
+    tags: { aeroway: 'gate', ref },
+    lon,
+    lat,
+  })
+  const elements = [
+    terminal,
+    gate(2, 'D43', 4.7645, 52.3108), // inside the outline
+    gate(3, '521', 4.765, 52.31), // inside, and a bare number is still a gate there
+    gate(4, '541', 4.775, 52.302), // a bare number nine hundred metres out: a stand
+    gate(5, 'A6', 4.775, 52.302), // lettered and far: a gate at a building the query missed
+    gate(6, '101', 4.7684, 52.3105), // a bare number thirty metres outside the wall: a gate
+  ]
+  const kinds = Object.fromEntries(
+    indoorFeatures({ elements })
+      .filter(f => f.properties.kind !== 'terminal')
+      .map(f => [f.properties.ref, f.properties.kind]),
+  )
+  assert.deepEqual(kinds, { D43: 'gate', 521: 'gate', 541: 'stand', A6: 'gate', 101: 'gate' })
+  /* No outline at all, and every gate is a gate: there is nothing to be far from. */
+  const bare = indoorFeatures({ elements: elements.slice(1) })
+  assert.ok(bare.every(f => f.properties.kind === 'gate'))
+  /* A floor outline counts as the building too. */
+  const floored = indoorFeatures({
+    elements: [{ ...terminal, tags: { indoor: 'level', level: '0' } }, ...elements.slice(1)],
+  })
+  assert.equal(floored.find(f => f.properties.ref === '541').properties.kind, 'stand')
+  assert.equal(floored.find(f => f.properties.ref === '521').properties.kind, 'gate')
+})

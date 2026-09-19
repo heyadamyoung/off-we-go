@@ -41,9 +41,17 @@ const view = () => ({
 })
 
 test('everything the departures board would tell you rides on the leg', () => {
-  const leg = flightOnLeg(view(), '2026-09-17T21:41:00.000Z')
+  const leg = flightOnLeg(
+    view(),
+    '2026-09-17T21:41:00.000Z',
+    'EI123 boards from gate 106. Dublin Airport, 22:40.',
+  )
   assert.equal(leg.status, 'scheduled')
   assert.equal(leg.statusText, 'GO TO GATE')
+  /* The watch's own sentence rides along, so the phone can tell it from a
+     note somebody typed and not draw it twice. */
+  assert.equal(leg.note, 'EI123 boards from gate 106. Dublin Airport, 22:40.')
+  assert.equal(flightOnLeg(view()).note, null)
   assert.equal(leg.boardingStatus, 'go-to-gate')
   assert.equal(leg.gate, '106')
   assert.equal(leg.terminal, '1')

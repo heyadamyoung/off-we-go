@@ -35,6 +35,7 @@ export function keepFarEnd(view, was) {
     arrivalGate: view.arrivalGate || was.arrivalGate || null,
     estimatedArrival: view.estimatedArrival || was.estimatedArrival || null,
     actualArrival: view.actualArrival || was.actualArrival || null,
+    aircraft: view.aircraft || was.aircraft || null,
     ...(settled ? { status: was.status, statusText: was.statusText } : {}),
     sources: unite(view.sources || [], was.sources || []),
   }
