@@ -67,6 +67,7 @@ test('the far end keeps what the arrivals board last said, and a landed flight s
     arrivalGate: '412',
     estimatedArrival: null,
     actualArrival: '2026-09-21T05:10:00.000Z',
+    aircraft: 'BCS3',
     sources: ['gtaa-fl-prod.azureedge.net', 'api.dublinairport.com'],
   }
   const nearOnly = {
@@ -77,6 +78,7 @@ test('the far end keeps what the arrivals board last said, and a landed flight s
     arrivalGate: null,
     estimatedArrival: null,
     actualArrival: null,
+    aircraft: null,
     sources: ['gtaa-fl-prod.azureedge.net'],
   }
   const kept = keepFarEnd(nearOnly, landed)
@@ -86,6 +88,7 @@ test('the far end keeps what the arrivals board last said, and a landed flight s
   assert.equal(kept.arrivalTerminal, '2')
   assert.equal(kept.arrivalGate, '412')
   assert.equal(kept.actualArrival, '2026-09-21T05:10:00.000Z')
+  assert.equal(kept.aircraft, 'BCS3', 'the type the far board named is kept too')
   assert.deepEqual(kept.sources, ['gtaa-fl-prod.azureedge.net', 'api.dublinairport.com'])
   /* A cancellation or diversion said by the near board is later news. */
   assert.equal(keepFarEnd({ ...nearOnly, status: 'cancelled' }, landed).status, 'cancelled')

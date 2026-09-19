@@ -192,8 +192,12 @@ export default function useAirportIndoor({
   /* A gate with no mapped path to it is worth saying out loud, once, to the
      person who asked; the walk keeps its words and waits. A routed one
      starts the story on the floor the walk begins — once per destination,
-     not every time the traveller moves and the line is drawn again. */
-  const shownFor = useRef<IndoorGate | null>(null)
+     not every time the traveller moves and the line is drawn again. The
+     destination is the place, not the object: a target rebuilt by the
+     clock with the same gate in it is not a new destination, and treating
+     it as one sent the floor picker back to the start floor every minute. */
+  const shownFor = useRef<string | null>(null)
+  const targetKey = target ? `${target.ref}|${target.lng},${target.lat}` : null
   useEffect(() => {
     if (!target || !graph) return
     if (!route) {
@@ -202,11 +206,11 @@ export default function useAirportIndoor({
       }
       tappedRef.current = false
       setTarget(null)
-    } else if (route.steps.length && shownFor.current !== target) {
-      shownFor.current = target
+    } else if (route.steps.length && shownFor.current !== targetKey) {
+      shownFor.current = targetKey
       setLevel(route.steps[0].level)
     }
-  }, [target, graph, route])
+  }, [target, targetKey, graph, route])
 
   const levels = useMemo(() => levelsOf(features || []), [features])
   const mapData = useMemo(() => {

@@ -191,7 +191,83 @@ function nameOf(t: Record<string, string>, kind: string | null, cat: string) {
   return t.ref || (kind === 'lift' ? 'Lift' : t.amenity === 'toilets' ? 'WC' : '')
 }
 
+/* A gate that is not at a terminal is a stand.
+
+   Pearson's data, read from a runner with open internet (the OSM airport
+   probe, 2026-09-19): every Terminal 1 gate sits inside the Terminal 1
+   outline and the Infield Concourse's inside its own — and then "541" to
+   "547", bare numbers with no building, nine hundred metres out on the
+   apron, are tagged aeroway=gate too, and were drawn as gates, numbers and
+   all, over the stands they mark. Terminal 3's lettered gates sit far from
+   any outline as well, because its building is not a way the query brings
+   back, so a bare number is the tell and the distance the confirmation. An
+   airport with no outline at all keeps every gate it has. A stand is kept,
+   unnamed and undrawn, because a flight that boards by bus still has a
+   place the walk can point at. */
+const STAND_METRES = 150
+const bareNumber = (ref: string) => /^\d+$/.test(ref.trim())
+
+const inside = (p: Position, ring: Position[]) => {
+  let hit = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]
+    const b = ring[j]
+    if (
+      a[1] > p[1] !== b[1] > p[1] &&
+      p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
+    )
+      hit = !hit
+  }
+  return hit
+}
+
+/* Metres from a point to a ring: none inside it, else to its nearest edge,
+   on a flat local grid — a terminal is small enough for one. */
+function metresToRing(p: Position, ring: Position[]): number {
+  if (inside(p, ring)) return 0
+  const east = 111_320 * Math.cos((p[1] * Math.PI) / 180)
+  const north = 110_540
+  let best = Number.POSITIVE_INFINITY
+  for (let i = 1; i < ring.length; i++) {
+    const ax = (ring[i - 1][0] - p[0]) * east
+    const ay = (ring[i - 1][1] - p[1]) * north
+    const bx = (ring[i][0] - p[0]) * east
+    const by = (ring[i][1] - p[1]) * north
+    const dx = bx - ax
+    const dy = by - ay
+    const length = dx * dx + dy * dy
+    const t = length ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length)) : 0
+    best = Math.min(best, Math.hypot(ax + dx * t, ay + dy * t))
+  }
+  return best
+}
+
+function markStands(features: IndoorFeature[]) {
+  const outlines: Position[][] = []
+  for (const f of features) {
+    if (
+      (f.properties.kind === 'terminal' || f.properties.kind === 'floor') &&
+      f.geometry.type === 'Polygon'
+    )
+      outlines.push(f.geometry.coordinates[0])
+  }
+  if (!outlines.length) return
+  for (const f of features) {
+    if (f.properties.kind !== 'gate' || f.geometry.type !== 'Point') continue
+    if (!bareNumber(f.properties.ref)) continue
+    const point = f.geometry.coordinates
+    if (!outlines.some(ring => metresToRing(point, ring) <= STAND_METRES))
+      f.properties.kind = 'stand'
+  }
+}
+
 export function indoorFeatures(json: OverpassResponse | null | undefined): IndoorFeature[] {
+  const out = readIndoorFeatures(json)
+  markStands(out)
+  return out
+}
+
+function readIndoorFeatures(json: OverpassResponse | null | undefined): IndoorFeature[] {
   const out: IndoorFeature[] = []
   for (const el of json?.elements || []) {
     const t = el.tags || {}

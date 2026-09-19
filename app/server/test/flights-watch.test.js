@@ -580,6 +580,7 @@ test('an arrivals board alone says nothing about leaving: its gate and terminal 
     baggageBelt: '8',
     terminal: '2',
     gate: '412',
+    aircraft: 'BCS3',
     extra: { stand: '112L' },
   })
   const alone = mergeBoards(null, arrival)
@@ -591,6 +592,13 @@ test('an arrivals board alone says nothing about leaving: its gate and terminal 
   assert.equal(alone.arrivalTerminal, '2')
   assert.equal(alone.status, 'landed')
   assert.equal(alone.baggageBelt, '8')
+  /* Which aircraft is the far board's word when the near board has none. */
+  assert.equal(alone.aircraft, 'BCS3')
+  assert.equal(mergeBoards(boardRow(), arrival).aircraft, 'BCS3')
+  assert.equal(
+    mergeBoards(boardRow({ aircraft: 'Airbus A220-300' }), arrival).aircraft,
+    'Airbus A220-300',
+  )
   /* Nothing to write about the gate: the leg's gate is where it left from. */
   assert.deepEqual(changesFor(leg(), alone), { arrivesAt: '2026-09-21T05:10:00.000Z' })
   /* With the departures board there too its gate is the gate, and the far

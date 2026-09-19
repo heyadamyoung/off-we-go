@@ -1,5 +1,5 @@
 import { expect, test } from './fixture.js'
-import { atDemoTime } from './demo-clock'
+import { atDemoTime, DEMO_NOW } from './demo-clock'
 import { serveOverpass } from './overpass-fixture.js'
 
 /* The walk through the terminal, on the day of the flight.
@@ -77,5 +77,16 @@ test('on the day of the flight the terminal opens itself and walks the family to
   // The floor pill opens on a tap and folds on a choice.
   await page.getByRole('button', { name: 'Floor 0 — choose a floor' }).click()
   await page.getByRole('button', { name: 'Floor 2', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
+  /* And the choice outlives the clock. The walk is rebuilt every minute,
+     and a target rebuilt as a new object was taken for a new destination,
+     whose route starts on the ground floor — so the pill snapped back to 0
+     within a minute of anybody choosing 2, which read as the floors not
+     changing at all. */
+  await page.clock.setFixedTime(new Date(DEMO_NOW.getTime() + 60_000))
+  await page.evaluate(() => window.__offwegoTick?.())
+  await expect(capsule).toContainText('Gate E19')
+  await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
+  await page.evaluate(() => window.__offwegoTick?.())
   await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
 })

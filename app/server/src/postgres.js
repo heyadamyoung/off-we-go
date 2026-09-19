@@ -81,6 +81,7 @@ const segmentRow = row =>
         terminal: row.terminal,
         gate: row.gate,
         gateWas: row.gate_was,
+        aircraft: row.aircraft ?? null,
         /* Where the departure was before it moved — see rescheduled(). The
            same idea as gateWas and, on a travel day, the more important of
            the two. */
@@ -1138,7 +1139,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
          payload they already have. */
       const result = await pool.query(
         `select s.*, coalesce(d.documents, '[]'::json) as documents,
-          f.info as flight_info, f.fetched_at as flight_fetched_at
+          f.info as flight_info, f.fetched_at as flight_fetched_at, f.note as flight_note
         from segments s
         left join lateral (
           select json_agg(json_build_object(
@@ -1157,6 +1158,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         flight: flightOnLeg(
           row.flight_info,
           row.flight_fetched_at ? new Date(row.flight_fetched_at).toISOString() : null,
+          row.flight_note ?? null,
         ),
       }))
     },
@@ -1183,9 +1185,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         (trip_id,mode,carrier,number,ref,from_name,from_code,from_lng,from_lat,
          to_name,to_code,to_lng,to_lat,departs_at,arrives_at,depart_tz,arrive_tz,
          terminal,gate,platform,passengers,bags,deadlines,cost_amount,cost_currency,
-         status,status_note,notes)
+         status,status_note,notes,aircraft)
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-               $20,$21,$22,$23,$24,$25,'scheduled',null,$26) returning *`,
+               $20,$21,$22,$23,$24,$25,'scheduled',null,$26,$27) returning *`,
         [
           tripId,
           input.mode,
@@ -1213,6 +1215,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.costAmount ?? null,
           input.costCurrency ?? null,
           input.notes ?? null,
+          input.aircraft ?? null,
         ],
       )
       return segmentRow({ ...result.rows[0], documents: [] })
@@ -1292,6 +1295,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         status: changes.status ?? row.status,
         status_note: changes.statusNote === undefined ? row.status_note : changes.statusNote,
         notes: changes.notes === undefined ? row.notes : changes.notes,
+        aircraft: changes.aircraft === undefined ? row.aircraft : changes.aircraft || null,
       }
       const result = await pool.query(
         `update segments set
@@ -1300,7 +1304,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           arrives_at=$16,depart_tz=$17,arrive_tz=$18,terminal=$19,gate=$20,gate_was=$21,
           platform=$22,passengers=$23,bags=$24,deadlines=$25,cost_amount=$26,
           cost_currency=$27,status=$28,status_note=$29,notes=$30,departs_was=$31,
-          updated_at=now()
+          aircraft=$32,updated_at=now()
         where id=$1 and trip_id=$2 returning *`,
         [
           segmentId,
@@ -1334,6 +1338,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           merged.status_note,
           merged.notes,
           moved ? moved.departsWas : row.departs_was,
+          merged.aircraft,
         ],
       )
       return result.rows[0] ? segmentRow({ ...result.rows[0], documents: undefined }) : null

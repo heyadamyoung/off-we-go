@@ -3,10 +3,10 @@ import type { Segment } from '../../../segments-core'
 
 /* The ticket's columns: TERMINAL, GATE, CHECK-IN and the rest as headings
    with the value under each, the way a boarding pass prints them and a
-   traveller looks for them. Always the same headings for the mode; a dash
-   under the ones the board has not filled in yet, so nothing moves when it
-   does. The gate is the one a family reads from across a hall, so it is the
-   one in colour; a gate that moved keeps the old one struck through. */
+   traveller looks for them — the ones that are known, and the gate whether
+   or not it is, with a dash until the board names it. The gate is the one
+   a family reads from across a hall, so it is the one in colour; a gate
+   that moved keeps the old one struck through. */
 
 export default function TicketColumns({ segment }: { segment: Segment }) {
   const columns = ticketColumns(segment)

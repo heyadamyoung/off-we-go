@@ -247,3 +247,35 @@ test("the walk opens the itinerary's own airport stop when there is one", () => 
   assert.ok(sameAirport(schiphol, leg()))
   assert.ok(!sameAirport(hotel, leg()))
 })
+
+test('a flight boarding from a remote stand still has somewhere to walk to', () => {
+  /* Pearson tags its remote stands as gates with bare numbers, out on the
+     apron; the map does not draw them as gates, but a leg whose gate is
+     "541" walks to the stand of that number. */
+  const size = 0.004
+  const outline = {
+    type: 'way',
+    id: 100,
+    tags: { aeroway: 'terminal' },
+    geometry: [
+      { lon: 4.7639 - size, lat: 52.3105 - size },
+      { lon: 4.7639 + size, lat: 52.3105 - size },
+      { lon: 4.7639 + size, lat: 52.3105 + size },
+      { lon: 4.7639 - size, lat: 52.3105 + size },
+      { lon: 4.7639 - size, lat: 52.3105 - size },
+    ],
+  }
+  const apron = indoorFeatures({
+    elements: [
+      outline,
+      node(7, GATE, { aeroway: 'gate', ref: 'E19' }),
+      node(8, [4.775, 52.302], { aeroway: 'gate', ref: '541' }),
+    ],
+  })
+  assert.equal(apron.find(f => f.properties.ref === '541').properties.kind, 'stand')
+  const stages = walkStages(leg({ gate: '541' }), apron, PLAZA, NOW)
+  const gate = stages[stages.length - 1]
+  assert.equal(gate.title, 'Gate 541')
+  assert.deepEqual([gate.at?.lng, gate.at?.lat], [4.775, 52.302])
+  assert.equal(walkStages(leg({ gate: 'E19' }), apron, PLAZA, NOW).at(-1).at?.ref, 'E19')
+})

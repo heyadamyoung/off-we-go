@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  arrivalLine,
   boardName,
   flightHeadline,
   flightPhases,
@@ -235,20 +236,14 @@ test('the phases are the deadlines, the board’s go-to-gate, then leaving and l
   )
 })
 
-test('the ticket has its columns whether or not the board has filled them: a dash until it does', () => {
-  /* A boarding pass prints TERMINAL and GATE as headings and the traveller
-     looks for the heading first, so the headings are always there. */
+test('the ticket has the columns that are known, and the gate whether or not it is', () => {
+  /* A leg nobody has watched, with nothing typed: the gate's heading is
+     there with a dash under it, because it is the one everybody looks for,
+     and nothing else is — a row of dashes read as a card that was broken. */
   const bare = ticketColumns(leg({ gate: null, terminal: null, flight: null }))
   assert.deepEqual(
     bare.map(one => `${one.label}:${one.value}`),
-    [
-      'Terminal:null',
-      'Gate:null',
-      'Check-in:null',
-      'Walk to gate:null',
-      'Security:null',
-      'Baggage claim:null',
-    ],
+    ['Gate:null'],
   )
   const full = ticketColumns(leg({ gateWas: '404' }))
   assert.deepEqual(full, [
@@ -257,20 +252,20 @@ test('the ticket has its columns whether or not the board has filled them: a das
     { key: 'checkin', label: 'Check-in', value: 'Zone 15 · Desks 1501–1520' },
     { key: 'walk', label: 'Walk to gate', value: '12 min' },
     { key: 'security', label: 'Security', value: '9 min queue' },
-    { key: 'belt', label: 'Baggage claim', value: null },
     { key: 'preclearance', label: 'US pre-clearance', value: 'Before the gate' },
   ])
+  /* The belt is the far end's, drawn under where the leg lands; the stand
+     is the aircraft's business and is on no ticket. */
   const arrived = ticketColumns(
     leg({}, { status: 'landed', baggageBelt: '5', stand: '171', securityWaitMinutes: 0 }),
   )
-  assert.equal(arrived.find(one => one.key === 'belt').value, 'Belt 5')
-  assert.equal(arrived.find(one => one.key === 'security').value, 'No queue')
-  assert.equal(arrived.find(one => one.key === 'stand').value, '171')
-  assert.equal(
-    arrived.some(one => one.key === 'preclearance'),
-    false,
-    'not a column on a flight the board did not flag',
+  assert.deepEqual(
+    arrived.map(one => one.key),
+    ['terminal', 'gate', 'security'],
   )
+  assert.equal(arrived.find(one => one.key === 'security').value, 'No queue')
+  assert.equal(arrivalLine(leg({}, { status: 'landed', baggageBelt: '5' })), 'Baggage claim belt 5')
+  assert.equal(arrivalLine(leg()), null)
   /* No gate yet, but the board has said when it will call passengers to
      it: the dash says when to look again. */
   const later = ticketColumns(
@@ -289,11 +284,16 @@ test('the ticket has its columns whether or not the board has filled them: a das
   assert.deepEqual(ticketColumns(leg({ mode: 'train', flight: null, platform: '14b' })), [
     { key: 'platform', label: 'Platform', value: '14b' },
   ])
+  /* A train's platform is its gate: there before it is named. */
   assert.deepEqual(ticketColumns(leg({ mode: 'bus', flight: null, platform: null })), [
     { key: 'platform', label: 'Bay', value: null },
   ])
   assert.deepEqual(ticketColumns(leg({ mode: 'drive', flight: null })), [])
   assert.equal(ticketLine(leg()), 'T2 · gate 406 · Zone 15 · Desks 1501–1520')
+  assert.equal(
+    ticketLine(leg({}, { status: 'landed', gate: '406', terminal: '2', baggageBelt: '5' })),
+    'T2 · gate 406 · baggage claim belt 5',
+  )
 })
 
 test('the source line says which board, how old, and calls a quiet board quiet', () => {

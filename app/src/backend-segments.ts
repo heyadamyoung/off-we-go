@@ -68,6 +68,9 @@ function sampleSegments(): Segment[] {
     arriveTz: 'America/Edmonton',
     terminal: '3',
     gate: 'E19',
+    /* As the booking named it, so the seat map draws a 787's three-three-
+       three rather than a guess from the seat letters. */
+    aircraft: 'Boeing 787-9',
     passengers: [
       { name: 'Maya', seat: '31A' },
       { name: 'Alex', seat: '31B' },

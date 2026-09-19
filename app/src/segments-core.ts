@@ -58,6 +58,9 @@ export interface Segment {
       server. The same idea as gateWas and, on a travel day, the bigger one. */
   departsWas?: string | null
   platform?: string | null
+  /** the aircraft type as the booking names it ("Airbus A220-300"), when
+      somebody typed it; the board's or the transponder's word rides on flight */
+  aircraft?: string | null
   passengers: SegmentPassenger[]
   bags?: { checked?: string; carryOn?: string; personal?: boolean } | null
   deadlines?: SegmentDeadlines | null
@@ -77,6 +80,8 @@ export interface Segment {
 export interface FlightOnLeg {
   status: string
   statusText?: string | null
+  /** the watch's own last sentence in the leg's status note, so a typed note can be told from it */
+  note?: string | null
   boardingStatus?: 'go-to-gate' | 'boarding' | 'final-call' | 'closed' | string | null
   gate?: string | null
   terminal?: string | null

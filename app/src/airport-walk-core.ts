@@ -197,9 +197,11 @@ function securityNear(
 function gateAt(features: readonly IndoorFeature[], gate: string): WalkPoint | null {
   const want = gateRef(gate)
   if (!want) return null
-  const found = features.find(
-    f => f.properties.kind === 'gate' && gateRef(f.properties.ref) === want,
-  )
+  /* A gate first; failing one, a stand of that number — a flight that
+     boards by bus from a remote stand still has somewhere to walk to. */
+  const found =
+    features.find(f => f.properties.kind === 'gate' && gateRef(f.properties.ref) === want) ||
+    features.find(f => f.properties.kind === 'stand' && gateRef(f.properties.ref) === want)
   return found ? pointOf(found) : null
 }
 

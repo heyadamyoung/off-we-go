@@ -1314,10 +1314,12 @@ test('a flight with seats shows where everyone sits, on a drawn cabin', async ({
   await page.getByRole('button', { name: 'Where we sit' }).click()
   const sheet = page.getByRole('dialog')
   await expect(sheet).toBeVisible()
-  // The demo family holds 31A and 31B on the flight home; the cabin is drawn.
+  // The demo family holds 31A and 31B on the flight home; the cabin is drawn,
+  // and it is the cabin of the aircraft the booking named.
   await expect(sheet.getByText('Maya · 31A')).toBeVisible()
   await expect(sheet.getByText('Alex · 31B')).toBeVisible()
   await expect(sheet.getByRole('img', { name: 'Cabin seat map' })).toBeVisible()
+  await expect(sheet.locator('.tkcraft')).toContainText('Boeing 787-9 · 3–3–3 across')
 })
 
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {

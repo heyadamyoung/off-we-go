@@ -144,6 +144,11 @@ export function dueLabel(inMinutes: number | null): string {
   if (away < 1) return 'now'
   const hours = Math.floor(away / 60)
   const minutes = away % 60
-  const span = hours ? (minutes ? `${hours} h ${minutes}` : `${hours} h`) : `${minutes} min`
+  /* "10 h 1" read as a typo; the minutes wear two digits beside an hour. */
+  const span = hours
+    ? minutes
+      ? `${hours} h ${String(minutes).padStart(2, '0')}`
+      : `${hours} h`
+    : `${minutes} min`
   return inMinutes < 0 ? `${span} ago` : `in ${span}`
 }
