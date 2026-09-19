@@ -39,6 +39,14 @@ export default function usePhotoGroups(
 
   const groups = useMemo(() => groupPhotos(photos, stops, mode), [photos, stops, mode])
 
+  /* Every card at once: rolled up to a list of headings, or all open. A trip
+     of forty stops is forty taps otherwise. */
+  const allCollapsed = groups.length > 0 && groups.every(group => collapsed.has(group.key))
+  const foldAll = useCallback(
+    (fold: boolean) => setCollapsed(fold ? new Set(groups.map(group => group.key)) : new Set()),
+    [groups],
+  )
+
   /* From the room there is, not a constant: this grid is a column on a phone
      and the whole screen on a desktop, and three tiles stretched across a
      desktop is not a gallery. */
@@ -65,5 +73,5 @@ export default function usePhotoGroups(
     [rows, height, box.scrolled, box.viewportHeight],
   )
 
-  return { ref, columns, groups, rows, height, visible, collapsed, toggle }
+  return { ref, columns, groups, rows, height, visible, collapsed, toggle, allCollapsed, foldAll }
 }

@@ -150,6 +150,29 @@ test('the picker offers the itinerary, and choosing one re-files the pictures', 
   expect(targetName).not.toEqual(wasUnder)
 })
 
+test('Delete takes the chosen pictures out of the trip, after asking', async ({ page }) => {
+  await openPhotos(page)
+  const before = await page.locator('.pgrid-photo').count()
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await page.locator('.pgrid-photo').first().click()
+  await page.locator('.pgrid-photo').nth(1).click()
+
+  /* Asked once, in numbers; a no leaves everything as it was. */
+  page.once('dialog', dialog => {
+    expect(dialog.message()).toBe('Delete 2 photos from the trip?')
+    dialog.dismiss()
+  })
+  await page.getByRole('button', { name: 'Delete the chosen photos' }).click()
+  await expect(page.getByText('2 items', { exact: true })).toBeVisible()
+  await expect(page.locator('.pgrid-photo')).toHaveCount(before)
+
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: 'Delete the chosen photos' }).click()
+  await expect(page.locator('.pgrid-photo')).toHaveCount(before - 2)
+  await expect(page.getByRole('toolbar', { name: /chosen photos/i })).toHaveCount(0)
+  await expect(page.locator('.toast').first()).toContainText('2 photos deleted')
+})
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
@@ -187,6 +210,35 @@ test.describe('on a phone', () => {
     const rowBox = await row.boundingBox()
     expect(rowBox.y + rowBox.height).toBeLessThanOrEqual(844)
     expect(rowBox.height).toBeGreaterThanOrEqual(44)
+  })
+
+  test('Select, Delete and Collapse all are on the screen in portrait', async ({ page }) => {
+    /* Reported from the road: the way into a selection, and what could be
+       done with one, only appeared once the phone was turned sideways. */
+    await openPhotos(page)
+    const select = page.getByRole('button', { name: 'Select', exact: true })
+    await expect(select).toBeVisible()
+    const box = await select.boundingBox()
+    expect(box.x + box.width).toBeLessThanOrEqual(390)
+
+    await select.click()
+    await page.locator('.pgrid-photo').first().click()
+    const bar = page.getByRole('toolbar', { name: /chosen photos/i })
+    await expect(bar.getByRole('button', { name: 'Delete the chosen photos' })).toBeVisible()
+    await expect(bar.getByRole('button', { name: 'Move', exact: true })).toBeVisible()
+    const barBox = await bar.boundingBox()
+    expect(barBox.x).toBeGreaterThanOrEqual(0)
+    expect(barBox.x + barBox.width).toBeLessThanOrEqual(390)
+    await page.keyboard.press('Escape')
+
+    /* Every card rolled up in one tap, and opened again in one. */
+    const fold = page.getByRole('button', { name: 'Collapse all' })
+    await expect(fold).toBeVisible()
+    await fold.click()
+    await expect(page.locator('.pgrid-photo')).toHaveCount(0)
+    await expect(page.locator('.pgrid-head[aria-expanded="false"]').first()).toBeVisible()
+    await page.getByRole('button', { name: 'Expand all' }).click()
+    await expect(page.locator('.pgrid-photo').first()).toBeVisible()
   })
 
   test('the scrim is the way out, and nothing is left chosen by accident', async ({ page }) => {

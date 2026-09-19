@@ -24,6 +24,10 @@ interface GalleryBarProps {
   count: number
   /** Starts choosing several. Absent for a read-only trip, or while choosing. */
   onSelect?: () => void
+  /** Whether every card is rolled up, and the one control that rolls them
+      all up or opens them all. Absent when there is nothing to fold. */
+  folded?: boolean
+  onFold?: (fold: boolean) => void
 }
 
 export default function GalleryBar({
@@ -38,6 +42,8 @@ export default function GalleryBar({
   onPhotoBy,
   count,
   onSelect,
+  folded,
+  onFold,
 }: GalleryBarProps) {
   /* Everything the gallery needs in one band: what it is, how it is arranged,
      whose it is, how much there is, and the way out. Two rows of chrome over a
@@ -134,13 +140,22 @@ export default function GalleryBar({
         <span className="text-[11px] tabular-nums text-muted max-sm:hidden">
           {count} {count === 1 ? 'item' : 'items'}
         </span>
-        {onSelect && (
-          /* The only discoverable way in. A long press is what a thumb
-             reaches for and nobody has to be taught, but nothing on the
-             screen says it is there — and a mouse has no long press at
-             all. */
+        {onFold && (
           <button
-            className="mini whitespace-nowrap max-sm:hidden"
+            className="mini whitespace-nowrap"
+            aria-label={folded ? 'Expand all' : 'Collapse all'}
+            title={folded ? 'Open every card' : 'Roll every card up'}
+            onClick={() => onFold(!folded)}>
+            {folded ? 'Expand all' : 'Collapse all'}
+          </button>
+        )}
+        {onSelect && (
+          /* The only discoverable way in, on every width. A long press is
+             what a thumb reaches for and nobody has to be taught, but
+             nothing on the screen says it is there — and it was hidden on a
+             phone in portrait, which is where the thumbs are. */
+          <button
+            className="mini whitespace-nowrap"
             /* Wrapped, not passed: React hands a click handler the event, and
                `begin` reads its first argument as a photograph to choose. */
             onClick={() => onSelect()}>

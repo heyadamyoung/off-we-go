@@ -141,7 +141,9 @@ test('the leg that matters now is on top, and the rest fold to a line', async ({
   // The gap between them still judges itself, above the folded flight.
   await expect(page.getByText(/to change —/)).toBeVisible()
 
-  const flight = page.getByRole('button', { name: /KL 677/ })
+  /* The fold's own line, not the ticket's route inside it — that is a
+     button too now, the door to the leg's own screen. */
+  const flight = page.locator('.legfold > button', { hasText: 'KL 677' })
   await expect(flight).toHaveAttribute('aria-expanded', 'false')
   await flight.click()
   await expect(flight).toHaveAttribute('aria-expanded', 'true')

@@ -497,8 +497,13 @@ for (const size of [
     for (const tone of ['success', 'warning', 'error']) {
       const positions = await page.evaluate(async kind => {
         window.__offwegoToast(`A ${kind} toast, long enough to wrap on a phone screen`, kind)
+        /* The toast of this tone, not the first toast on the screen: under
+           load the one before it is still on its way out. */
         const toast = await new Promise(resolve =>
-          requestAnimationFrame(() => resolve(document.querySelector('.toast'))),
+          requestAnimationFrame(() => {
+            const all = document.querySelectorAll(`.toast[data-tone="${kind}"]`)
+            resolve(all[all.length - 1])
+          }),
         )
         const centre = () => {
           const box = toast.getBoundingClientRect()
