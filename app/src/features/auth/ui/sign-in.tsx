@@ -136,7 +136,7 @@ export default function SignInScreen() {
       ? `Enter the code we sent to ${email.trim().toLowerCase()}.`
       : mode === 'signin'
         ? 'Sign in to plan the trip and keep everyone together.'
-        : 'Create an account to plan your own trip or accept a trip invitation.'
+        : 'Create an account to plan your own trip, or to see the one somebody added you to.'
 
   return (
     <Screen>

@@ -135,6 +135,16 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
           preferences: {},
           joinedAt: new Date().toISOString(),
         })
+        /* Added to a trip before the account existed: on it the moment the
+           account does, with nothing to accept. */
+        for (const trip of trips.values()) {
+          for (const invite of trip.invites) {
+            if (invite.email !== email || invite.claimedAt) continue
+            if (!trip.members.some(member => member.profileId === user.id))
+              trip.members.push({ profileId: user.id, role: invite.role })
+            invite.claimedAt = new Date()
+          }
+        }
       }
       return users.get(email)
     },
@@ -826,45 +836,26 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       if (!(await this.canManageTrip(user.id, tripId))) return null
       const trip = trips.get(tripId)
       let invite = trip.invites.find(value => value.email === input.email)
-      if (invite) {
-        Object.assign(invite, input)
-        const invitedUser = users.get(input.email)
-        const member = invitedUser && trip.members.find(value => value.profileId === invitedUser.id)
-        if (member && member.role !== 'owner') member.role = input.role
-      } else {
+      if (invite) Object.assign(invite, input)
+      else {
         invite = { id: fakeUuid(5, trip.invites.length + 1), ...input, claimedAt: null }
         trip.invites.push(invite)
       }
-      return { ...invite, tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title }
-    },
-    async listPendingInvites(user) {
-      return [...trips.values()].flatMap(trip =>
-        trip.invites
-          .filter(invite => invite.email === user.email && !invite.claimedAt)
-          .map(invite => ({
-            id: invite.id,
-            email: invite.email,
-            name: invite.name,
-            role: invite.role,
-            tripId: trip.id,
-            tripSlug: trip.slug,
-            tripTitle: trip.title,
-          })),
-      )
-    },
-    async acceptInvite(user, inviteId) {
-      for (const trip of trips.values()) {
-        const invite = trip.invites.find(
-          value => value.id === inviteId && value.email === user.email && !value.claimedAt,
-        )
-        if (!invite) continue
-        if (!trip.members.some(member => member.profileId === user.id)) {
-          trip.members.push({ profileId: user.id, role: invite.role })
-        }
-        invite.claimedAt = new Date()
-        return { tripId: trip.id, tripSlug: trip.slug, tripTitle: trip.title, role: invite.role }
+      /* An account that exists is on the trip now, in the role chosen. */
+      const account = users.get(input.email)
+      if (account) {
+        const member = trip.members.find(value => value.profileId === account.id)
+        if (!member) trip.members.push({ profileId: account.id, role: input.role })
+        else if (member.role !== 'owner') member.role = input.role
+        invite.claimedAt ||= new Date()
       }
-      return null
+      return {
+        ...invite,
+        joined: !!account,
+        tripId: trip.id,
+        tripSlug: trip.slug,
+        tripTitle: trip.title,
+      }
     },
     async listInvites(user, tripId) {
       if (!(await this.canManageTrip(user.id, tripId))) return null

@@ -47,12 +47,12 @@ test('the phones that asked to be told, in PostgreSQL', { skip: reachable }, asy
   const owner = await repository.ensureUser('owner@example.com')
   const home = await repository.ensureUser('home@example.com')
   const trip = await repository.createTrip(owner, { title: 'Prairie run' })
-  const invite = await repository.upsertInvite(owner, trip.id, {
+  // Added by email, so on the trip at once: nothing to accept.
+  await repository.upsertInvite(owner, trip.id, {
     email: 'home@example.com',
     name: 'Home',
     role: 'viewer',
   })
-  await repository.acceptInvite(home, invite.id)
   const leg = await repository.createSegment(owner, trip.id, {
     mode: 'flight',
     carrier: 'Air Canada',

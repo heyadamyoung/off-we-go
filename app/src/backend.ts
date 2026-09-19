@@ -30,7 +30,6 @@ import type {
   Coordinates,
   Id,
   MyProfile,
-  PendingInvite,
   Person,
   Stop,
   Trip,
@@ -107,7 +106,6 @@ export async function loadLanding(session: AuthSession | null): Promise<TripLand
           memberCount: value.family.length,
         },
       ],
-      invites: [],
     }
   }
   return loadTripLanding(session!)
@@ -131,15 +129,8 @@ export async function loadTripLanding(session: AuthSession): Promise<TripLanding
     slug: LANDING_SLUG,
     valid: isTripLandingData,
     load: async (): Promise<TripLandingData> => {
-      const result = await authClient.request<{ trips: TripSummary[]; invites: PendingInvite[] }>(
-        '/trips',
-      )
-      return {
-        landing: true,
-        email: session.user.email,
-        trips: result.trips || [],
-        invites: result.invites || [],
-      }
+      const result = await authClient.request<{ trips: TripSummary[] }>('/trips')
+      return { landing: true, email: session.user.email, trips: result.trips || [] }
     },
   })
 }

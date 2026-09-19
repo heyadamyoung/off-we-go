@@ -473,20 +473,12 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
     email: 'friend@example.com',
     handleReservationHash: 'friend-handle-reservation',
   })
-  assert.equal(await repository.loadCurrentTrip(friend, trip.slug), null)
-  assert.deepEqual(await repository.listPendingInvites(friend), [
-    {
-      id: invitation.id,
-      email: 'friend@example.com',
-      name: 'Friend',
-      role: 'editor',
-      tripId: trip.id,
-      tripSlug: trip.slug,
-      tripTitle: 'Renamed without breaking links',
-    },
-  ])
-  assert.equal((await repository.acceptInvite(friend, invitation.id)).tripId, trip.id)
-  assert.deepEqual(await repository.listPendingInvites(friend), [])
+  /* Added before the account existed: on the trip the moment it is made. */
+  assert.equal(invitation.joined, false)
+  assert.ok(
+    (await repository.listInvites(user, trip.id)).find(row => row.id === invitation.id).claimedAt,
+    'the row records that the account is on the trip now',
+  )
   assert.equal(
     (await repository.loadCurrentTrip(friend, trip.slug)).members.find(
       value => value.profileId === friend.id,

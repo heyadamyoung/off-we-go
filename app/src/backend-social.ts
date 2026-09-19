@@ -1,18 +1,10 @@
-import { authClient, hasBackend, isSample, tripPath } from './backend-base'
+import { authClient, isSample, tripPath } from './backend-base'
 import { sampleResult, sampleTrip, uid } from './sample-trip-core'
 import { localId } from './offline-edits-core'
 import { withOfflineEdit } from './offline-edits'
-import type {
-  AcceptedInvite,
-  Id,
-  Invite,
-  PendingInvite,
-  TripComment,
-  TripPhoto,
-  UploadInput,
-} from './shared/model/types'
+import type { Id, Invite, TripComment, TripPhoto, UploadInput } from './shared/model/types'
 
-/* Comments, likes, invites and photographs: the parts of the API where people
+/* Comments, likes, the people added by email and photographs: the parts of the API where people
    leave something for each other. */
 export async function addComment(tripId: Id, photoId: Id, body: string): Promise<TripComment> {
   if (isSample(tripId)) {
@@ -69,14 +61,6 @@ export async function setLike(tripId: Id, photoId: Id, on: boolean): Promise<unk
 export async function listInvites(tripId: Id): Promise<Invite[]> {
   if (isSample(tripId)) return sampleTrip().invites.map(item => ({ ...item }))
   return authClient.request(`${tripPath(tripId)}/invites`)
-}
-export async function listPendingInvites(): Promise<PendingInvite[]> {
-  if (!hasBackend) return []
-  return authClient.request('/invites/pending')
-}
-export async function acceptInvite(id: Id): Promise<AcceptedInvite> {
-  if (!hasBackend) throw new Error('No backend configured')
-  return authClient.request(`/invites/${encodeURIComponent(id)}/accept`, { method: 'POST' })
 }
 export async function invitePerson(
   tripId: Id,

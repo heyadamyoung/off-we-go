@@ -165,12 +165,16 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
       setInvites(list => [...list.filter(item => item.id !== row.id), row])
       setEmail('')
       setName('')
-      // The invitation stands either way; say plainly which happened, because
-      // "Invited" over a mail that never went is how somebody ends up waiting.
+      /* They are on the trip either way; say plainly what happened, because a
+         cheerful toast over a mail that never went is how somebody ends up
+         never hearing. An address with no account yet is on the trip the
+         moment the account is made. */
+      const who = row.name || row.email
+      const now = row.joined
+        ? `${who} is on the trip`
+        : `${who} will be on the trip as soon as they sign up with ${row.email}`
       toast(
-        row.mailed
-          ? `Invited ${row.email} — invitation email sent`
-          : `${row.email} can join, but the invitation email could not be sent`,
+        row.mailed ? `${now} — email sent` : `${now}, but the email could not be sent`,
         row.mailed ? 'success' : 'warning',
       )
     } catch (error) {
@@ -184,7 +188,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
     try {
       await revokeInvite(tripId, id)
       setInvites(list => list.filter(item => item.id !== id))
-      toast('Invitation cancelled')
+      toast('Taken off the trip')
     } catch (error) {
       toast(appErrorMessage(error, 'remove-invite'), 'error')
     }
@@ -261,13 +265,15 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
             </span>
             <div className="min-w-0 flex-1">
               <b className="block text-sm">{invite.name || invite.email}</b>
-              <span className="text-xs text-muted">Invited — not signed in yet</span>
+              <span className="text-xs text-muted">
+                On the trip the moment they sign up with {invite.email}
+              </span>
             </div>
             {canManage && (
               <button
                 className="grid size-7 place-items-center rounded-lg text-faint hover:text-danger"
                 onClick={() => revoke(invite.id)}
-                title="Cancel invitation">
+                title="Take them off the trip">
                 <Icon n="x" s={13} />
               </button>
             )}
@@ -296,8 +302,9 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
       {canManage ? (
         <>
           <p className="hint">
-            Everyone signs in, including people just following along. Invite them by the email
-            address they will use — that is what grants access.
+            Everyone signs in, including people just following along. Add them by the email address
+            they sign in with — they are on the trip the moment you do, with nothing to accept. An
+            address with no account yet is on it the moment the account is made.
           </p>
           <form onSubmit={add} className="flex flex-col gap-2">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -331,7 +338,7 @@ function PeopleTab({ tripId, family, me, appLink, toast, trip }: SettingsProps) 
                 className="btn btn-accent flex-none"
                 type="submit"
                 disabled={busy || !email.trim()}>
-                {busy ? 'Inviting…' : 'Invite'}
+                {busy ? 'Adding…' : 'Add'}
               </button>
             </div>
           </form>

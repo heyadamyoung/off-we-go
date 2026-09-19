@@ -276,7 +276,24 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       if (chosenHandle || attempt === 100)
         throw new Error('Could not allocate a unique profile handle')
     }
+    await claimInvites(client, user)
     return user
+  }
+
+  /* Somebody added to a trip by email is on it the moment an account with
+     that email exists: added after signing up, at once (see upsertInvite);
+     added before, the moment they sign up. There is nothing to accept. */
+  const claimInvites = async (client, user) => {
+    await client.query(
+      `insert into trip_members(trip_id,profile_id,role)
+      select trip_id,$2,role from trip_invites where email=$1 and claimed_at is null
+      on conflict(trip_id,profile_id) do nothing`,
+      [user.email, user.id],
+    )
+    await client.query(
+      'update trip_invites set claimed_at=now() where email=$1 and claimed_at is null',
+      [user.email],
+    )
   }
 
   const memberRole = async (client, userId, tripId) => {
@@ -1683,69 +1700,33 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           where m.trip_id=$1 and m.profile_id=u.id and u.email=$2 and m.role<>'owner'`,
           [tripId, input.email, input.role],
         )
+        /* An account that exists is on the trip now; one that does not is on
+           it the moment it is made (see claimInvites). */
+        const account = await client.query('select id from users where email=$1', [input.email])
+        if (account.rows[0]) {
+          await client.query(
+            `insert into trip_members(trip_id,profile_id,role)
+            values($1,$2,$3) on conflict(trip_id,profile_id) do nothing`,
+            [tripId, account.rows[0].id, input.role],
+          )
+          await client.query(
+            'update trip_invites set claimed_at=coalesce(claimed_at,now()) where id=$1',
+            [result.rows[0].id],
+          )
+        }
         await client.query('commit')
         const value = result.rows[0]
+        const joined = !!account.rows[0]
         return {
           id: value.id,
           email: value.email,
           name: value.name,
           role: value.role,
-          claimedAt: value.claimed_at,
+          claimedAt: joined ? value.claimed_at || new Date() : value.claimed_at,
+          joined,
           tripId: value.trip_id,
           tripSlug: value.trip_slug,
           tripTitle: value.trip_title,
-        }
-      } catch (error) {
-        await client.query('rollback')
-        throw error
-      } finally {
-        client.release()
-      }
-    },
-    async listPendingInvites(user) {
-      const result = await pool.query(
-        `select i.*,t.slug trip_slug,t.title trip_title
-        from trip_invites i join trips t on t.id=i.trip_id
-        where i.email=$1 and i.claimed_at is null order by i.created_at`,
-        [user.email],
-      )
-      return result.rows.map(value => ({
-        id: value.id,
-        email: value.email,
-        name: value.name,
-        role: value.role,
-        tripId: value.trip_id,
-        tripSlug: value.trip_slug,
-        tripTitle: value.trip_title,
-      }))
-    },
-    async acceptInvite(user, inviteId) {
-      const client = await pool.connect()
-      try {
-        await client.query('begin')
-        const result = await client.query(
-          `select i.*,t.slug trip_slug,t.title trip_title
-          from trip_invites i join trips t on t.id=i.trip_id
-          where i.id=$1 and i.email=$2 and i.claimed_at is null for update of i`,
-          [inviteId, user.email],
-        )
-        const invite = result.rows[0]
-        if (!invite) {
-          await client.query('rollback')
-          return null
-        }
-        await client.query(
-          `insert into trip_members(trip_id,profile_id,role)
-          values($1,$2,$3) on conflict(trip_id,profile_id) do nothing`,
-          [invite.trip_id, user.id, invite.role],
-        )
-        await client.query('update trip_invites set claimed_at=now() where id=$1', [invite.id])
-        await client.query('commit')
-        return {
-          tripId: invite.trip_id,
-          tripSlug: invite.trip_slug,
-          tripTitle: invite.trip_title,
-          role: invite.role,
         }
       } catch (error) {
         await client.query('rollback')

@@ -263,7 +263,7 @@ export function isTripData(value: unknown): value is TripData {
 export function isTripLandingData(value: unknown): value is TripLandingData {
   if (!value || typeof value !== 'object') return false
   const bag = value as Partial<TripLandingData>
-  return bag.landing === true && Array.isArray(bag.trips) && Array.isArray(bag.invites)
+  return bag.landing === true && Array.isArray(bag.trips)
 }
 
 /* Read out loud on the chip, so "offline" is never mistaken for "up to date".

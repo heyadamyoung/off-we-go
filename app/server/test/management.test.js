@@ -106,25 +106,13 @@ test('profile handles resolve only for authenticated people who share a trip', a
   })
   assert.equal(privateProfile.statusCode, 404)
 
-  const invitation = (
-    await app.inject({
-      method: 'POST',
-      url: `/api/trips/${trip.id}/invites`,
-      headers: { authorization },
-      payload: { email: 'friend@example.com', role: 'viewer' },
-    })
-  ).json()
+  await app.inject({
+    method: 'POST',
+    url: `/api/trips/${trip.id}/invites`,
+    headers: { authorization },
+    payload: { email: 'friend@example.com', role: 'viewer' },
+  })
   const friendAuthorization = await authenticate(repository, 'friend@example.com')
-  assert.equal(
-    (
-      await app.inject({
-        method: 'POST',
-        url: `/api/invites/${invitation.id}/accept`,
-        headers: { authorization: friendAuthorization },
-      })
-    ).statusCode,
-    200,
-  )
 
   const visibleProfile = await app.inject({
     method: 'GET',

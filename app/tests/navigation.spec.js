@@ -122,13 +122,7 @@ test('the new trip wizard walks three steps and can be left at any of them', asy
   await expect(page).toHaveURL('/new?step=2')
 })
 
-test('invitations and past trips are their own pages, reachable from home', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('link', { name: /Invitations/ }).click()
-  await expect(page).toHaveURL('/invitations')
-  await expect(page.getByRole('heading', { name: 'Invitations' })).toBeVisible()
-  await expect(page.getByText('Nothing waiting.')).toBeVisible()
-
+test('past trips is its own page, reachable from home', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: /Past trips/ }).click()
   await expect(page).toHaveURL('/past')
@@ -340,7 +334,7 @@ test('form controls do not trigger Safari focus zoom on a phone', async ({ page 
 
 test('no screen creates a wider layout than the phone it is on', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  for (const path of ['/', '/profile', '/new', '/past', '/invitations']) {
+  for (const path of ['/', '/profile', '/new', '/past']) {
     await page.goto(path)
     await page.waitForTimeout(300)
     const overflow = await page.evaluate(

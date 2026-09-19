@@ -228,10 +228,10 @@ test('an account is identified by id, then by email, and otherwise not at all', 
   assert.equal(offlineAccountId(null), null)
 })
 
-test('the landing list is recognised only when it carries both of its lists', () => {
-  assert.equal(isTripLandingData({ landing: true, trips: [], invites: [] }), true)
-  assert.equal(isTripLandingData({ landing: true, trips: [] }), false)
-  assert.equal(isTripLandingData({ trips: [], invites: [] }), false)
+test('the landing list is recognised only when it carries its list of trips', () => {
+  assert.equal(isTripLandingData({ landing: true, trips: [] }), true)
+  assert.equal(isTripLandingData({ landing: true }), false)
+  assert.equal(isTripLandingData({ trips: [] }), false)
 })
 
 test('the age reads as plain English at every scale', () => {

@@ -105,6 +105,9 @@ export interface TripPhoto {
   seq?: number
 }
 
+/* A person added to a trip by email. `claimedAt` set means an account with
+   that email is on the trip; unset, the trip is waiting for the account to be
+   made. Nothing is ever accepted. */
 export interface Invite {
   id: Id
   email: string
@@ -112,21 +115,10 @@ export interface Invite {
   role?: string
   claimedAt?: string | null
   claimed_at?: string | null
+  /** whether an account existed when they were added, so they are on the trip now */
+  joined?: boolean
   mailed?: boolean
   mailError?: string
-}
-
-export interface PendingInvite extends Invite {
-  tripId: Id
-  tripSlug: string
-  tripTitle: string
-}
-
-export interface AcceptedInvite {
-  tripId: Id
-  tripSlug: string
-  tripTitle: string
-  role: string
 }
 
 export interface Device {
@@ -222,7 +214,6 @@ export interface TripLandingData {
   offlineAt?: number
   email?: string
   trips: TripSummary[]
-  invites: PendingInvite[]
 }
 
 export interface AccountArchive {

@@ -14,8 +14,9 @@ const STEPS = [
     detail: 'Flights, hotels and plans can come later, or straight from your inbox.',
   },
   {
-    title: "Invite who's coming — and who's following",
-    detail: 'Travellers add photos and stops. Followers see everything, live.',
+    title: "Add who's coming — and who's following",
+    detail:
+      'Travellers add photos and stops. Followers see everything, live. No invitations to accept.',
   },
   {
     title: 'Link your phone',
@@ -24,7 +25,7 @@ const STEPS = [
 ]
 
 export default function HomePage() {
-  const { trips, invites, profile, offlineAt, loading, error, reload } = useLanding()
+  const { trips, profile, offlineAt, loading, error, reload } = useLanding()
   const current = pickCurrentTrip(trips)
   const scene = globeScene(current, profile)
   const past = trips.filter(trip => isPast(trip))
@@ -47,16 +48,12 @@ export default function HomePage() {
       {offlineAt != null && (
         <OfflineNote at={offlineAt} className="absolute left-1/2 top-4 z-20 -translate-x-1/2" />
       )}
-      {trips.length ? (
-        <Returning trip={current!} invites={invites.length} past={past.length} />
-      ) : (
-        <FirstVisit invites={invites.length} />
-      )}
+      {trips.length ? <Returning trip={current!} past={past.length} /> : <FirstVisit />}
     </HomeShell>
   )
 }
 
-function FirstVisit({ invites }: { invites: number }) {
+function FirstVisit() {
   return (
     <>
       <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-accent">
@@ -89,17 +86,12 @@ function FirstVisit({ invites }: { invites: number }) {
           <Icon n="plus" s={14} />
           Start your first trip
         </Link>
-        {invites > 0 && (
-          <Link className="btn btn-ghost px-5 py-3 text-sm" to="/invitations">
-            {invites} invitation{invites === 1 ? '' : 's'} waiting
-          </Link>
-        )}
       </div>
     </>
   )
 }
 
-function Returning({ trip, invites, past }: { trip: TripSummary; invites: number; past: number }) {
+function Returning({ trip, past }: { trip: TripSummary; past: number }) {
   const progress = tripProgress(trip)
   const dates = trip.dates || formatRange(trip.startsOn, trip.endsOn)
   const counted = [
@@ -162,13 +154,6 @@ function Returning({ trip, invites, past }: { trip: TripSummary; invites: number
           icon="plus"
           title="Start a new trip"
           detail="Plan the next one while this one is still going."
-        />
-        <MoreLink
-          to="/invitations"
-          icon="people"
-          title="Invitations"
-          detail="Trips you've been asked to join or follow."
-          note={invites ? `${invites} waiting` : undefined}
         />
         <MoreLink
           to="/past"
