@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { cabinFor, parseSeat } from '../../../seatmap-core'
 import type { Segment } from '../../../segments-core'
 import Sheet from '../../../shared/ui/sheet'
@@ -45,6 +46,13 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
   const wingTop = rowY(plan.wing[0])
   const wingBottom = rowY(plan.wing[1]) + SEAT
   const title = [segment.carrier, segment.number].filter(Boolean).join(' ')
+  /* The sheet opens on the seats, not on the nose: a wide-body is forty-odd
+     rows tall and the family's row was off the bottom of every phone. */
+  const frontRow = Math.min(...booked.map(entry => entry.place?.row ?? Number.POSITIVE_INFINITY))
+  const mine = useRef<SVGGElement>(null)
+  useEffect(() => {
+    mine.current?.scrollIntoView({ block: 'center' })
+  }, [])
 
   return (
     <Sheet title={`Seats — ${title || segment.toName}`} onClose={onClose}>
@@ -76,6 +84,9 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
           width={width}
           height={height}
           viewBox={`0 0 ${width} ${height}`}
+          /* Its own size where there is room, and never wider than the sheet:
+             a wide-body's three banks are wider than a small phone. */
+          style={{ maxWidth: '100%', height: 'auto' }}
           role="img"
           aria-label="Cabin seat map">
           {/* wings first, under the fuselage */}
@@ -137,7 +148,7 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
             const row = index + 1
             const y = rowY(row)
             return (
-              <g key={row}>
+              <g key={row} ref={row === frontRow ? mine : undefined}>
                 {row % 5 === 0 && (
                   <text
                     x={LEFT - 8}

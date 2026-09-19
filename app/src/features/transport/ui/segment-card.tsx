@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { Fragment, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { aircraftName } from '../../../cabin-core'
 import { arrivalLine, flightHeadline, flightSource } from '../../../flight-day-core'
 import { papersOfSegment, type Paper } from '../../../papers-core'
@@ -27,11 +27,11 @@ import TicketColumns from './ticket-columns'
    Opened from its folded line in the chain, a future or past leg shows its
    ticket too — that is what the tap asked for.
 
-   What is on the card is what is known. A dash under a heading the board
-   has not filled in, a stand number, the board's own sentence repeated
-   under a headline that already said it, and its raw status code at the
-   end of the line: each was one more thing to read past on the way to the
-   gate, and together they read as a card that was broken. */
+   What is on the card is what is known, laid out so that it reads the same
+   on a 360-pixel phone and in a 440-pixel panel: a headline that wraps only
+   between its phrases, never inside "2 h 57"; phases dealt in equal rows;
+   buttons in two columns on a phone, so none of them is ever alone on a
+   line; the cost and the board's name on one quiet line. */
 
 const STRIP_ORDER: Array<keyof SegmentDeadlines> = [
   'checkinClosesAt',
@@ -49,8 +49,33 @@ const TONE: Record<string, string> = {
 }
 
 const chip = 'rounded-md border border-line bg-canvas px-2 py-0.5'
+/* On a phone every button fills its half of the row and an odd last one
+   fills the row; from a tablet up they sit in a row at their own width. */
+const actions =
+  'tkactions grid grid-cols-2 gap-2 px-3 py-2.5 sm:flex sm:flex-wrap sm:items-center ' +
+  '[&>:last-child:nth-child(odd)]:col-span-2'
+/* A label wraps inside its half of a narrow phone rather than running out
+   of its button; at a desk every label fits on one line. */
 const button =
-  'whitespace-nowrap rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-bold'
+  'rounded-lg border border-line bg-canvas px-2.5 py-2 text-xs font-bold leading-snug sm:whitespace-nowrap sm:px-3 sm:py-1.5'
+
+/* "On time · gate D43 · check-in closes in 2 h 57" as phrases: a line breaks
+   between them, never in the middle of a time. */
+function Headline({ text, className }: { text: string; className: string }) {
+  const pieces = text.split(' · ')
+  /* The separator sits between the phrases as ordinary text, so its spaces
+     are where a line may break; inside a nowrap span they would not be. */
+  return (
+    <div className={className}>
+      {pieces.map((piece, index) => (
+        <Fragment key={piece}>
+          {index > 0 && <span className="text-faint"> · </span>}
+          <span className="whitespace-nowrap">{piece}</span>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
 
 export default function SegmentCard({
   segment,
@@ -129,6 +154,9 @@ export default function SegmentCard({
   const note =
     segment.statusNote && segment.statusNote !== segment.flight?.note ? segment.statusNote : null
   const bags = segment.bags?.checked || segment.bags?.carryOn ? segment.bags : null
+  const cost =
+    segment.costAmount != null ? `${segment.costAmount} ${segment.costCurrency || ''}`.trim() : null
+  const showGate = segment.mode === 'flight' && segment.fromLng != null && !!onShowGate
 
   return (
     <div
@@ -136,16 +164,17 @@ export default function SegmentCard({
       data-face={face}
       data-tone={headline.tone}>
       <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
-        <span className="text-[10px] font-bold uppercase tracking-[.12em] text-faint">
+        <span className="min-w-0 text-[10px] font-bold uppercase leading-snug tracking-[.12em] text-faint">
           {glyph} {segment.mode}
+          {/* By how much, next to the fact of it. "Delayed" on its own is the
+              start of a question rather than an answer. On a phone too narrow
+              for both the size takes the next line whole, never "25 MIN …". */}
           {segment.status !== 'scheduled' && (
             <span className="ml-2 text-tight">{segment.status}</span>
           )}
-          {/* By how much, next to the fact of it. "Delayed" on its own is the
-              start of a question rather than an answer. */}
-          {moved && <span className="ml-1.5 text-tight">{moved}</span>}
+          {moved && <span className="ml-2 whitespace-nowrap text-tight">{moved}</span>}
         </span>
-        <span className="flex items-center gap-1.5">
+        <span className="flex flex-none items-center gap-1.5">
           {segment.ref && (
             <button
               className="hitslop rounded-md border border-line bg-canvas px-1.5 py-0.5 font-mono text-[11px]"
@@ -167,15 +196,15 @@ export default function SegmentCard({
       </div>
 
       {face === 'day' && (
-        <div
-          className={`tkhead px-3 pt-1 text-[15px] font-extrabold leading-snug ${TONE[headline.tone]}`}>
-          {headline.text}
-        </div>
+        <Headline
+          text={headline.text}
+          className={`tkhead px-3 pt-1 text-[15px] font-extrabold leading-snug ${TONE[headline.tone]}`}
+        />
       )}
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 px-3 pt-1.5">
-        <div>
-          <div className="text-lg font-extrabold tracking-[-.01em]">
+        <div className="min-w-0">
+          <div className="text-lg font-extrabold leading-tight tracking-[-.01em]">
             {segment.fromCode || segment.fromName}
           </div>
           {/* The old time struck through beside the new one, the way a changed
@@ -189,13 +218,13 @@ export default function SegmentCard({
             )}
           </div>
         </div>
-        <div className="pt-1 text-center text-[11px] leading-tight text-faint">
+        <div className="min-w-0 pt-1 text-center text-[11px] leading-tight text-faint">
           {segment.carrier}
           <div className="text-xs font-bold text-ink">{segment.number}</div>
           {aircraft && <div className="tkcraft mt-0.5 text-[10px]">{aircraft}</div>}
         </div>
-        <div className="text-right">
-          <div className="text-lg font-extrabold tracking-[-.01em]">
+        <div className="min-w-0 text-right">
+          <div className="text-lg font-extrabold leading-tight tracking-[-.01em]">
             {segment.toCode || segment.toName}
           </div>
           <div className="font-mono text-[11.5px] text-muted">
@@ -222,8 +251,8 @@ export default function SegmentCard({
               const passed = new Date(at).getTime() <= now
               const isNext = upcoming?.key === key
               return (
-                <div key={key} className="flex-1 text-center">
-                  <div className="text-[9px] font-bold uppercase tracking-[.06em] text-faint">
+                <div key={key} className="min-w-0 flex-1 text-center">
+                  <div className="truncate text-[9px] font-bold uppercase tracking-[.06em] text-faint">
                     {DEADLINE_LABELS[key]}
                   </div>
                   <div
@@ -241,7 +270,7 @@ export default function SegmentCard({
       )}
 
       {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
-      {(segment.passengers.length > 0 || hasSeatMap) && (
+      {segment.passengers.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 text-[11px]">
           {segment.passengers.map(person => (
             <span key={person.name} className={chip}>
@@ -249,13 +278,6 @@ export default function SegmentCard({
               {person.seat && <b className="ml-1">{person.seat}</b>}
             </span>
           ))}
-          {hasSeatMap && (
-            <button
-              className="ml-auto whitespace-nowrap rounded-lg border border-line bg-canvas px-2.5 py-1 text-[11px] font-bold"
-              onClick={() => setSeats(true)}>
-              Where we sit
-            </button>
-          )}
         </div>
       )}
       {/* The allowance, as a line rather than two chips: what the booking
@@ -289,16 +311,26 @@ export default function SegmentCard({
         </div>
       )}
 
-      {/* Which board, how old; a quiet board is called quiet rather than
-          shown as fresh. On the eve it also carries the answer, in words,
-          that the day puts on top. The board's own status word is not
-          repeated after it — the headline already said it in ours. */}
-      {source && (
-        <div className="tksource px-3 pt-1.5 text-[11px] text-muted" data-quiet={source.quiet}>
-          {face === 'eve' && <b className={TONE[headline.tone]}>{headline.text} · </b>}
-          {source.name}
-          {source.age && ` · ${source.age}`}
-          {source.quiet && ' · has not answered since, showing what it last said'}
+      {/* Which board, how old, and what the leg cost, on one quiet line; a
+          quiet board is called quiet rather than shown as fresh. On the eve
+          the line also carries the answer, in words, that the day puts on
+          top. The board's own status word is not repeated — the headline
+          already said it in ours. */}
+      {(source || cost) && (
+        <div className="flex items-baseline justify-between gap-3 px-3 pt-1.5 text-[11px] text-muted">
+          {source ? (
+            <span className="tksource min-w-0" data-quiet={source.quiet}>
+              {face === 'eve' && <b className={TONE[headline.tone]}>{headline.text} · </b>}
+              {source.name}
+              {source.age && ` · ${source.age}`}
+              {source.quiet && ' · has not answered since, showing what it last said'}
+            </span>
+          ) : (
+            <span />
+          )}
+          {cost && (
+            <span className="tkcost flex-none font-mono text-[10.5px] text-faint">{cost}</span>
+          )}
         </div>
       )}
 
@@ -306,15 +338,20 @@ export default function SegmentCard({
 
       {trail && tripId && <FlightTrail tripId={tripId} segment={segment} />}
 
-      {/* Buttons that wrap as buttons: on a phone three of them do not fit
-          one row, and a row that squeezed them wrapped each one's words into
-          a tall block instead. */}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-        {segment.mode === 'flight' && segment.fromLng != null && onShowGate && (
+      {canEdit && onAttach && (
+        <input ref={picker} type="file" accept="image/*,application/pdf" hidden onChange={pick} />
+      )}
+      <div className={actions}>
+        {showGate && (
           <button
-            className="whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-ink"
-            onClick={() => onShowGate(segment)}>
+            className="rounded-lg border border-transparent bg-accent px-2.5 py-2 text-xs font-bold leading-snug text-accent-ink sm:whitespace-nowrap sm:px-3 sm:py-1.5"
+            onClick={() => onShowGate?.(segment)}>
             Show gate on the map
+          </button>
+        )}
+        {hasSeatMap && (
+          <button className={button} onClick={() => setSeats(true)}>
+            Where we sit
           </button>
         )}
         {face === 'day' && segment.flight && tripId && (
@@ -323,23 +360,9 @@ export default function SegmentCard({
           </button>
         )}
         {canEdit && onAttach && (
-          <>
-            <input
-              ref={picker}
-              type="file"
-              accept="image/*,application/pdf"
-              hidden
-              onChange={pick}
-            />
-            <button className={button} onClick={() => picker.current?.click()}>
-              Add a paper
-            </button>
-          </>
-        )}
-        {segment.costAmount != null && (
-          <span className="ml-auto font-mono text-[10.5px] text-faint">
-            {segment.costAmount} {segment.costCurrency}
-          </span>
+          <button className={button} onClick={() => picker.current?.click()}>
+            Add a paper
+          </button>
         )}
       </div>
     </div>

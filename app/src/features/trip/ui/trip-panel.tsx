@@ -246,7 +246,11 @@ function Travel({ transport }: PanelProps) {
       </p>
     )
   return (
-    <div className="px-3 pt-3">
+    /* A ticket is a ticket's width. On a tablet the panel is the screen less
+       its margins, and a card stretched across seven hundred pixels put the
+       gate a hand's breadth from the terminal; the column is capped and
+       centred instead, the way a boarding pass is not the size of the desk. */
+    <div className="mx-auto w-full max-w-[600px] px-3 pt-3">
       {/* The one thing on this screen no competitor can build, at the top of
           the screen it is about. It floated over the map and the map hides it
           the moment a panel opens — so on the tab whose whole subject is
