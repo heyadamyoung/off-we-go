@@ -1,40 +1,7 @@
 import { memo, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import type { PhoneMarker } from '../../../live-markers-core'
-import type { Segment } from '../../../segments-core'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
 import type { Attraction, Coordinates } from '../../../shared/model/types'
-import { MakeIt } from '../../transport'
-
-/* The advisory storey: the make-it meter, floated in its own layer above the
-   chrome row. Squeezed INTO the phone's one-line row it crushed the Now
-   capsule to a bare dot. The quiet-phone banner used to live here too and was
-   evicted as noise: the Now capsule already says how long the silence is, the
-   marker dims, and a banner repeating that on the map's midriff earned its
-   keep with nobody. */
-export function Advisories({
-  segments,
-  markers,
-  now,
-}: {
-  segments: Segment[]
-  markers: PhoneMarker[]
-  now: number
-}) {
-  return (
-    <div
-      className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--trip-1)+56px)] z-[4]
-                 flex flex-col items-center gap-2">
-      <MakeIt
-        segments={segments}
-        travellers={markers
-          .filter(marker => !marker.stale)
-          .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
-        now={now}
-      />
-    </div>
-  )
-}
 
 /* What the screen is quietly saying about itself, stacked in one corner.
  *
@@ -224,14 +191,12 @@ export const MapControls = memo(function MapControls({
   compassOn,
   onCompass,
   onZoom,
-  onFit,
 }: {
   following: boolean
   onFollow: () => void
   compassOn: boolean
   onCompass: () => void
   onZoom: (by: number) => void
-  onFit: () => void
 }) {
   /* 44px on a phone, the platform's touch floor — a hit-slop shadow would be
      clipped by the pill's own overflow, so the buttons are simply that size. */
@@ -260,9 +225,6 @@ export const MapControls = memo(function MapControls({
       </button>
       <button className={button + ' max-sm:hidden'} title="Zoom out" onClick={() => onZoom(-1)}>
         <Icon n="minus" s={17} />
-      </button>
-      <button className={button} title="Fit the whole trip" onClick={onFit}>
-        <Icon n="expand" s={16} />
       </button>
     </div>
   )

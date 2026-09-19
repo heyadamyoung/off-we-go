@@ -217,3 +217,42 @@ test('a journey opens where its seats and its boarding pass are', async ({ page 
   await page.locator('.trow.tgo').first().click()
   await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
 })
+
+/* Newest first, and found by a word. The days are read the way a journal
+   is kept — the last day, or today, at the top and the first morning at the
+   bottom — the order flips on one control and stays flipped for this
+   browser, and a word narrows the trip to the rows that carry it. The
+   arithmetic is proved in tests/timeline-rows; this is that the screen
+   wires it. */
+test('newest first by default, the order flips, and a word narrows the trip', async ({ page }) => {
+  await openTimeline(page)
+  const days = () => page.locator('.tday').evaluateAll(nodes => nodes.map(node => node.dataset.iso))
+  const shown = await days()
+  expect(shown.length).toBeGreaterThan(1)
+  expect(shown).toEqual([...shown].sort().reverse())
+  /* Today is the top of the screen, not the top of the list: the day after
+     it is above, where a journal keeps what is still to come. */
+  await expect(page.locator('.tday.now')).toBeVisible()
+
+  const order = page.getByRole('button', { name: /Newest first/ })
+  await order.click()
+  await expect(page.getByRole('button', { name: /Oldest first/ })).toBeVisible()
+  expect(await days()).toEqual([...shown].sort())
+  await page.reload()
+  await expect(page.locator('.tline')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Oldest first/ })).toBeVisible()
+  expect(await days()).toEqual([...shown].sort(), 'the order is remembered')
+  await page.getByRole('button', { name: /Oldest first/ }).click()
+
+  const filter = page.getByLabel('Filter the timeline')
+  await filter.fill('rijks')
+  await expect(page.locator('.trow')).toHaveCount(1)
+  await expect(page.locator('.trow')).toContainText('Rijksmuseum')
+  await expect(page.locator('.tday')).toHaveCount(1)
+  await expect(page.locator('.tleg')).toHaveCount(0)
+  await filter.fill('nothing of the sort')
+  await expect(page.locator('.trow')).toHaveCount(0)
+  await expect(page.getByText('Nothing on the trip matches “nothing of the sort”.')).toBeVisible()
+  await filter.fill('')
+  expect(await days()).toEqual(shown)
+})

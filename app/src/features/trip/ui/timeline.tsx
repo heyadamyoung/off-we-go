@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import useGridBox from '../model/use-grid-box'
 import { legLabel } from '../../../legs-core'
 import { photoItem, stopItem, type TripItem } from '../model/trip-items'
 import { driftLabel, stayLabel, visitLabel } from '../../../stop-visit-core'
+import { filterRows, orderRows, type TimelineOrder } from '../../../timeline-find-core'
 import {
   timelineRows,
   windowRows,
@@ -51,6 +52,25 @@ export interface TimelineProps {
   onAddOnDay?: (iso: string) => void
 }
 
+/* Newest first unless this browser was told otherwise: on the trip, today is
+   the top of the screen; afterwards, the last day is, and the first morning
+   is at the bottom where a journal keeps it. */
+const ORDER_KEY = 'offwego.timeline.order'
+const rememberedOrder = (): TimelineOrder => {
+  try {
+    return localStorage.getItem(ORDER_KEY) === 'oldest' ? 'oldest' : 'newest'
+  } catch {
+    return 'newest'
+  }
+}
+const rememberOrder = (order: TimelineOrder) => {
+  try {
+    localStorage.setItem(ORDER_KEY, order)
+  } catch {
+    /* private mode: it opens newest first next time, which is the default anyway */
+  }
+}
+
 const todayIso = (now: number) => {
   const when = new Date(now)
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -70,11 +90,22 @@ export default function Timeline({
 }: TimelineProps) {
   const { ref, box, scroller } = useGridBox()
   const today = todayIso(now)
-  const rows = useMemo(
+  const [order, setOrder] = useState<TimelineOrder>(rememberedOrder)
+  const [query, setQuery] = useState('')
+  const everything = useMemo(
     () => timelineRows({ stops, photos, segments, legs, today }),
     [stops, photos, segments, legs, today],
   )
+  const rows = useMemo(
+    () => filterRows(orderRows(everything, order), query),
+    [everything, order, query],
+  )
   const view = windowRows(rows, box)
+  const flip = () => {
+    const next: TimelineOrder = order === 'newest' ? 'oldest' : 'newest'
+    rememberOrder(next)
+    setOrder(next)
+  }
 
   /* Opened at today rather than at the first morning of the trip.
      
@@ -94,57 +125,97 @@ export default function Timeline({
     scroller.current?.scrollTo({ top: above })
   }, [rows, box.viewportHeight, scroller])
 
-  if (!rows.length)
+  if (!everything.length)
     return <p className="hint p-4">No stops yet. Place a pin on the map to start.</p>
 
+  /* A word to find things by and the order to read them in, on one row that
+     stays put while the trip scrolls under it. Outside the windowed list,
+     which measures itself from its own top. */
+  const bar = (
+    <div className="tbar sticky top-0 z-[2] flex items-center gap-2 bg-strong px-1 pb-2 pt-1">
+      <input
+        type="search"
+        className="tfilter min-w-0 flex-1 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-xs"
+        placeholder="Find a stop, a place, a flight"
+        aria-label="Filter the timeline"
+        value={query}
+        onChange={event => setQuery(event.target.value)}
+      />
+      <button
+        className="mini flex-none whitespace-nowrap"
+        onClick={flip}
+        aria-label={
+          order === 'newest'
+            ? 'Newest first; switch to oldest first'
+            : 'Oldest first; switch to newest first'
+        }>
+        {order === 'newest' ? 'Newest first' : 'Oldest first'}
+      </button>
+    </div>
+  )
+  if (!rows.length)
+    return (
+      <>
+        {bar}
+        <p className="hint p-4">Nothing on the trip matches “{query.trim()}”.</p>
+      </>
+    )
+
   return (
-    <div ref={ref} className="tline">
-      {/* Standing in for everything above and below the slice, so the
+    <>
+      {bar}
+      <div ref={ref} className="tline">
+        {/* Standing in for everything above and below the slice, so the
           scrollbar tells the truth about how long the trip is. */}
-      <div style={{ height: view.above }} />
-      {view.rows.map(row => {
-        if (row.kind === 'day')
-          return (
-            <div key={row.key} className={row.today ? 'tday now' : 'tday'} style={rowHeight(row)}>
-              <b>{row.label}</b>
-              <span className="tdaycount">{whatIsOn(row.stops, row.journeys)}</span>
-              {row.today && <span className="tnow">Today</span>}
-              {/* Planning a day from the day, rather than from the map with
+        <div style={{ height: view.above }} />
+        {view.rows.map(row => {
+          if (row.kind === 'day')
+            return (
+              <div
+                key={row.key}
+                className={row.today ? 'tday now' : 'tday'}
+                data-iso={row.iso ?? undefined}
+                style={rowHeight(row)}>
+                <b>{row.label}</b>
+                <span className="tdaycount">{whatIsOn(row.stops, row.journeys)}</span>
+                {row.today && <span className="tnow">Today</span>}
+                {/* Planning a day from the day, rather than from the map with
                   the right chip already chosen. It does what somebody would
                   have done by hand: picks the day and hands the map over for
                   a pin, which is still where a place is chosen because a stop
                   without one is a stop nothing can draw. */}
-              {onAddOnDay && row.iso && (
-                <button
-                  className="tadd hitslop"
-                  onClick={() => onAddOnDay(row.iso as string)}
-                  aria-label={`Add a stop on ${row.label}`}>
-                  <Icon n="plus" s={12} />
-                </button>
-              )}
-            </div>
-          )
-        if (row.kind === 'leg')
-          return (
-            /* The road between this stop and the next — a fact of the world
+                {onAddOnDay && row.iso && (
+                  <button
+                    className="tadd hitslop"
+                    onClick={() => onAddOnDay(row.iso as string)}
+                    aria-label={`Add a stop on ${row.label}`}>
+                    <Icon n="plus" s={12} />
+                  </button>
+                )}
+              </div>
+            )
+          if (row.kind === 'leg')
+            return (
+              /* The road between this stop and the next — a fact of the world
                rather than a row of the plan, so it stays quiet. */
-            <div key={row.key} className="tleg" style={rowHeight(row)}>
-              ↓ {legLabel(row.leg)}
-            </div>
+              <div key={row.key} className="tleg" style={rowHeight(row)}>
+                ↓ {legLabel(row.leg)}
+              </div>
+            )
+          if (row.kind === 'travel') return <Travel key={row.key} row={row} onOpen={onTravel} />
+          if (row.kind === 'shots') return <Shots key={row.key} row={row} onSelect={onSelect} />
+          return (
+            <StopLine
+              key={row.key}
+              row={row}
+              selected={selected === row.stop.id}
+              onSelect={onSelect}
+            />
           )
-        if (row.kind === 'travel') return <Travel key={row.key} row={row} onOpen={onTravel} />
-        if (row.kind === 'shots') return <Shots key={row.key} row={row} onSelect={onSelect} />
-        return (
-          <StopLine
-            key={row.key}
-            row={row}
-            selected={selected === row.stop.id}
-            onSelect={onSelect}
-          />
-        )
-      })}
-      <div style={{ height: view.below }} />
-    </div>
+        })}
+        <div style={{ height: view.below }} />
+      </div>
+    </>
   )
 }
 

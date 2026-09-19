@@ -663,19 +663,6 @@ test('the trip chrome stays clear of itself on a phone', async ({ page }) => {
   ).toBeLessThanOrEqual(bar.y + 1)
 })
 
-test('fit the whole trip reveals every stop on the smallest phone viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 568 })
-  await open(page)
-  await page.locator('.wctl .wc').last().click()
-  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
-  const inside = await page.evaluate(() => {
-    const map = window.__offwegoMap
-    const bounds = map.getBounds()
-    return [...document.querySelectorAll('.mstop')].length > 0 && !!bounds
-  })
-  expect(inside).toBe(true)
-})
-
 /* ------------------------------------------------------------ selection */
 
 /* Asking to follow the travellers used to send two camera commands: the toggle

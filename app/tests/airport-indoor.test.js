@@ -9,6 +9,7 @@ import {
   onLevel,
   overpassQueryFor,
   parseLevels,
+  cameraOverTerminal,
 } from '../src/airport-indoor-core.ts'
 
 test('an airport is recognised by its name or keywords, a hotel is not', () => {
@@ -334,4 +335,22 @@ test('a bare-numbered gate out on the apron is a stand, kept but not a gate', ()
   })
   assert.equal(floored.find(f => f.properties.ref === '541').properties.kind, 'stand')
   assert.equal(floored.find(f => f.properties.ref === '521').properties.kind, 'gate')
+})
+
+test('the floor picker follows the camera even when the walk keeps the terminal', () => {
+  const schiphol = { id: 's', name: 'Schiphol', icon: 'plane', lng: 4.7639, lat: 52.3105 }
+  assert.equal(cameraOverTerminal({ center: [4.7639, 52.3105], zoom: 16 }, schiphol), true)
+  assert.equal(cameraOverTerminal({ center: [4.7639, 52.3105], zoom: 13.8 }, schiphol), true)
+  assert.equal(
+    cameraOverTerminal({ center: [4.7639, 52.3105], zoom: 9 }, schiphol),
+    false,
+    'zoomed away',
+  )
+  assert.equal(
+    cameraOverTerminal({ center: [4.9, 52.37], zoom: 16 }, schiphol),
+    false,
+    'over the city',
+  )
+  assert.equal(cameraOverTerminal(null, schiphol), false)
+  assert.equal(cameraOverTerminal({ center: [4.7639, 52.3105], zoom: 16 }, null), false)
 })

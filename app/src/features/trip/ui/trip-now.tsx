@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import NowCard, { type LegBlock } from './now-card'
+import NowCard, { type LegBlock, type PaceLine } from './now-card'
 import { papersOfSegment, type Paper } from '../../../papers-core'
 import { NowCapsule } from './trip-chrome'
 import { flightSource, ticketLine } from '../../../flight-day-core'
@@ -8,7 +8,7 @@ import { tripNow } from '../../../trip-now-core'
 import useTripNotices from '../model/use-trip-notices'
 import type { deriveLiveStopProgress } from '../../../live-stop-progress-core'
 import { landedSegments } from '../../../segment-arrival-core'
-import type { Segment } from '../../../segments-core'
+import { localTime, makeIt, type Segment, type Traveller } from '../../../segments-core'
 import type { LiveFix, Stop, TripPhoto } from '../../../shared/model/types'
 
 /* The one thing on the map screen that talks.
@@ -32,6 +32,7 @@ export default function TripNow({
   liveStop,
   segments,
   fixes,
+  travellers = [],
   onSelect,
   onFollow,
   onPhotos,
@@ -56,6 +57,8 @@ export default function TripNow({
   segments: readonly Segment[]
   /** the phones' own trail, which is the only thing that knows they did */
   fixes: readonly LiveFix[]
+  /** everybody's live position, for the make-it meter in the card */
+  travellers?: readonly Traveller[]
   onSelect: (stop: Stop) => void
   onFollow: (stop: Stop | null) => void
   onPhotos: (photo: TripPhoto) => void
@@ -130,8 +133,9 @@ export default function TripNow({
       line: ticketLine(day.leg),
       source: source ? [source.name, source.age].filter(Boolean).join(' · ') : null,
       papers: papersOfSegment(day.leg),
+      ...paceOf(day.leg, travellers, clock),
     }
-  }, [day, clock])
+  }, [day, clock, travellers])
 
   return (
     <>
@@ -180,4 +184,36 @@ export default function TripNow({
       )}
     </>
   )
+}
+
+/* The make-it meter as lines for the card: each traveller's live position
+   against the doors, walking pace inside the airport's own walk when the
+   board says how long it is. Nothing before the day, nothing once the
+   doors are long shut, nothing with nobody's position to judge by. */
+const STATE_WORDS = { here: 'here', ok: 'on pace', tight: 'tight', late: 'too far out' } as const
+
+function paceOf(
+  leg: Segment,
+  travellers: readonly Traveller[],
+  now: number,
+): Pick<LegBlock, 'pace' | 'walkNote'> {
+  const none = { pace: [] as PaceLine[], walkNote: null }
+  if (!travellers.length || new Date(leg.departsAt).getTime() <= now) return none
+  const verdicts = makeIt(leg, [...travellers], now, { walkMinutes: leg.flight?.walkMinutes ?? 0 })
+  if (!verdicts || verdicts.minutesLeft > 6 * 60 || verdicts.minutesLeft < -30) return none
+  return {
+    walkNote:
+      verdicts.walkMinutes > 0
+        ? `${verdicts.walkMinutes} min from the door to the gate, counted`
+        : null,
+    pace: verdicts.people.map(person => ({
+      name: person.name,
+      state: person.state,
+      words:
+        person.state === 'here'
+          ? 'here'
+          : `${person.minutesAway} min away · ${STATE_WORDS[person.state]}`,
+      leaveBy: person.leaveBy ? `leave by ${localTime(person.leaveBy, leg.departTz)}` : null,
+    })),
+  }
 }

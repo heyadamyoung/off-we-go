@@ -20,14 +20,7 @@ import TripNow from './trip-now'
 import usePapers from '../model/use-papers'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
-import {
-  Advisories,
-  MapChrome,
-  MapControls,
-  ScopeToggle,
-  StandingNotices,
-  TripTitle,
-} from './trip-chrome'
+import { MapChrome, MapControls, ScopeToggle, StandingNotices, TripTitle } from './trip-chrome'
 import { TripCluster } from './trip-cluster'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
@@ -81,7 +74,7 @@ function Trip({
     theme, toggleTheme, trip, stops, family, me, viewers, placing, setPlacing, planOnDay, photoBy, setPhotoBy,
     streetNames, toggleStreetNames,
     asking, setAsking, assistant, view, setView, selected, query, day, days, toast,
-    mapView, setMapView, following, setFollowing, toggleFollow, fitAll,
+    mapView, setMapView, following, setFollowing, toggleFollow,
     phones, setPhones, fixes, sun, mapTheme, markers, progress, progressCopy, openViewer,
     latestGpsPosition, lastSeenPosition, liveStop, liveDay, liveStops, transport,
     setSegmentEditing, clock, showGate, saveTrip, uploads, origin, panelOpen, subtitle,
@@ -226,8 +219,6 @@ function Trip({
         fixes={fixes}
         now={clock}
       />
-      {!panelOpen && <Advisories segments={transport.segments} markers={markers} now={clock} />}
-
       <MapChrome>
         <ScopeToggle
           shifted={panelOpen}
@@ -249,6 +240,9 @@ function Trip({
             photos={photos}
             segments={transport.segments}
             fixes={fixes}
+            travellers={markers
+              .filter(marker => !marker.stale)
+              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
             clock={clock}
             travelling={canEdit}
             liveStop={liveStop}
@@ -274,7 +268,6 @@ function Trip({
           onFollow={toggleFollow}
           compassOn={ask.compass.on}
           onCompass={ask.compass.toggle}
-          onFit={fitAll}
           onZoom={by => {
             setFollowing(false)
             setMapView(current => ({
