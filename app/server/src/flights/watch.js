@@ -18,7 +18,7 @@
 
 import { event, span } from '../tracing.js'
 import { describeFlightEvent, detectFlightEvents } from './events.js'
-import { bestArrival, bestDeparture, flightNumberOf, matchFlight } from './model.js'
+import { bestArrival, bestDeparture, flightNumberOf, inFlyingWindow, matchFlight } from './model.js'
 import { callsignFor, verdictFromPosition } from './providers/adsb.js'
 import { keepFarEnd, keepNearEnd } from './quiet.js'
 
@@ -267,6 +267,36 @@ export async function watchFlights({
             aircraft: aircraft.type || (view || snapshot.info).aircraft || null,
             sources: [...((view || snapshot.info).sources || []), sources.adsb.source],
             lastUpdated: new Date(now).toISOString(),
+          }
+        }
+      }
+      /* Which aircraft, when nobody has said. A board that names no type —
+         Pearson never does — left the seat map drawing a guess for a leg
+         whose booking named none either. The transponder knows the type
+         from the moment the crew set the callsign at the gate, so through
+         the flying window a view with no type asks the sky for one, once
+         in a while: the type only, the status stays the board's. */
+      let typed = view || snapshot?.info || null
+      /* A board that names no type must not unsay one already known. */
+      if (typed && !typed.aircraft && snapshot?.info?.aircraft) {
+        view = { ...typed, aircraft: snapshot.info.aircraft }
+        typed = view
+      }
+      if (
+        typed &&
+        !typed.aircraft &&
+        sources.adsb &&
+        inFlyingWindow(leg, now) &&
+        now - (asked.get(leg.id) || 0) > ADSB_EVERY_MS
+      ) {
+        asked.set(leg.id, now)
+        const callsign = callsignFor(number)
+        const heard = callsign ? await sources.adsb.byCallsign(callsign).catch(() => null) : null
+        if (heard?.type) {
+          view = {
+            ...typed,
+            aircraft: heard.type,
+            sources: [...new Set([...(typed.sources || []), sources.adsb.source])],
           }
         }
       }

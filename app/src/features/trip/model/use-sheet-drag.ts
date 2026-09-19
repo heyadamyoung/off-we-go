@@ -32,6 +32,8 @@ export const PEEK_PX = 80
 export const OPEN_PX = 208
 /** A fast short flick decides too. */
 const FLICK_PX_PER_MS = 0.45
+/** The margin between the bar's top and the chrome standing on it, as --trip-1 declares it. */
+const CHROME_GAP_PX = 16
 
 const resist = (px: number) => Math.sqrt(Math.max(0, px)) * 4
 
@@ -98,7 +100,16 @@ export default function useSheetDrag(
 
   /* A move down is a transform; a move up is a taller bar. Zero is home:
      both come off, and with `eased` the stylesheet's own height glides the
-     bar to wherever its class now says it belongs. */
+     bar to wherever its class now says it belongs.
+
+     Everything standing on the bar — the map's controls, the pill, the
+     card — stands on --trip-1, the bar's height plus a margin, which the
+     stylesheet derives from the bar's class. While the finger is down that
+     is written by hand too, on the screen the chrome lives in, from the
+     bar's visible height on every move: the chrome rides the bar's top
+     edge frame by frame rather than waiting at the old height and gliding
+     over after the finger has gone. Home takes it off again, and the
+     stylesheet's own transition glides it the last of the way. */
   const place = useCallback((dy: number, eased: boolean) => {
     const element = sheet.current
     if (!element) return
@@ -109,6 +120,15 @@ export default function useSheetDrag(
     } else {
       element.style.height = ''
       element.style.transform = dy ? `translate3d(0, ${dy}px, 0)` : ''
+    }
+    const screen = element.closest<HTMLElement>('.tripscreen')
+    if (!screen) return
+    if (dy === 0) {
+      screen.removeAttribute('data-bardrag')
+      screen.style.removeProperty('--trip-1')
+    } else {
+      screen.setAttribute('data-bardrag', '')
+      screen.style.setProperty('--trip-1', `${(start.current?.height ?? 0) - dy + CHROME_GAP_PX}px`)
     }
   }, [])
 

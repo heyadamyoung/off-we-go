@@ -134,6 +134,7 @@ export default function SegmentChain(props: ChainProps) {
         <FlightScreen
           segment={shownLeg}
           now={now}
+          tripId={props.tripId}
           canEdit={props.canEdit}
           onClose={() => setShown(null)}
           onEdit={props.onEdit}

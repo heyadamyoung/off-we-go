@@ -218,3 +218,18 @@ export function emptyFlight(airportCode, direction, source, lastUpdated) {
     source,
   }
 }
+
+/* When the sky is worth asking about a leg: from a little before it is due
+   to leave — the crew set the callsign at the gate, and an early pushback is
+   still a flight — to a while after it was due to land, for the late one.
+   Outside that, nobody is asked. */
+export const FLYING_BEFORE_MS = 30 * 60_000
+export const FLYING_AFTER_MS = 2 * 60 * 60_000
+
+/** Whether `now` is inside the leg's flying window. */
+export function inFlyingWindow(leg, now) {
+  const departs = new Date(leg.departsAt).getTime()
+  const arrives = leg.arrivesAt ? new Date(leg.arrivesAt).getTime() : departs
+  if (!Number.isFinite(departs)) return false
+  return now >= departs - FLYING_BEFORE_MS && now <= arrives + FLYING_AFTER_MS
+}

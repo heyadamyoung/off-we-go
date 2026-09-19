@@ -316,6 +316,57 @@ test('when a board has gone quiet about a flight that should have left, the sky 
   assert.equal(asked.length, 1, 'not again a minute later')
 })
 
+test('a flight in its window with no aircraft named asks the sky for the type, and only the type', async () => {
+  /* Pearson's board never names a type, and a booking may not either; the
+     transponder always does. The status stays the board's word. */
+  const gone = boardRow({ status: 'departed', statusText: 'Departed' })
+  const repository = store({
+    legs: [leg()],
+    snapshot: { info: mergeBoards(gone, null), fetchedAt: '2026-09-20T22:40:00.000Z' },
+  })
+  const asked = []
+  const adsb = {
+    source: 'api.adsb.lol',
+    async byCallsign(callsign) {
+      asked.push(callsign)
+      return { callsign, airborne: true, onGround: false, lat: 47.5, lon: -52.7, type: 'BCS3' }
+    },
+  }
+  const later = Date.parse('2026-09-20T23:10:00.000Z')
+  const memory = new Map()
+  await watchFlights({
+    repository,
+    sources: sourcesWith({ boards: { 'YYZ:departure': [gone] }, adsb }),
+    now: later,
+    asked: memory,
+  })
+  assert.deepEqual(asked, ['ACA872'])
+  const info = repository.snapshots.at(-1).info
+  assert.equal(info.aircraft, 'BCS3')
+  assert.equal(info.status, 'departed')
+  assert.ok(info.sources.includes('api.adsb.lol'))
+  /* Known now — and a board that still names no type does not unsay it —
+     so the sky is not asked again. */
+  const known = store({ legs: [leg()], snapshot: { info, fetchedAt: '2026-09-20T23:10:00.000Z' } })
+  await watchFlights({
+    repository: known,
+    sources: sourcesWith({ boards: { 'YYZ:departure': [gone] }, adsb }),
+    now: later + 11 * 60_000,
+    asked: new Map(),
+  })
+  assert.equal(asked.length, 1)
+  assert.equal(known.snapshots.at(-1).info.aircraft, 'BCS3')
+  /* Hours before the flight the sky has nothing to say, and is not asked. */
+  const early = store({ legs: [leg()], snapshot: null })
+  await watchFlights({
+    repository: early,
+    sources: sourcesWith({ boards: { 'YYZ:departure': [boardRow()] }, adsb }),
+    now: NOW,
+    asked: new Map(),
+  })
+  assert.equal(asked.length, 1)
+})
+
 test('the first comparison is the leg as typed; the boards merge with the later stage winning', () => {
   const typed = baselineFromSegment(leg({ status: 'delayed' }))
   assert.equal(typed.flightNumber, 'AC872')

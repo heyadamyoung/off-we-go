@@ -47,6 +47,7 @@ function End({ end, align }: { end: ScreenEnd; align: 'left' | 'right' }) {
 export default function FlightScreen({
   segment,
   now,
+  tripId,
   canEdit,
   onClose,
   onEdit,
@@ -55,6 +56,8 @@ export default function FlightScreen({
 }: {
   segment: Segment
   now: number
+  /** the trip the leg is on, for the seat map to ask the sky which aircraft */
+  tripId?: string
   canEdit: boolean
   onClose: () => void
   onEdit?: (segment: Segment) => void
@@ -256,7 +259,9 @@ export default function FlightScreen({
                   Where we sit
                 </button>
               )}
-              {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
+              {seats && (
+                <SeatMap segment={segment} tripId={tripId} onClose={() => setSeats(false)} />
+              )}
             </section>
           )}
 

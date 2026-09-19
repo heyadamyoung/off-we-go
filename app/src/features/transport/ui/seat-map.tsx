@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { loadCabin } from '../../../backend-segments'
+import { loadCabin, loadSegmentPosition } from '../../../backend-segments'
 import { aircraftFamily } from '../../../cabin-core'
 import { type AirlineCabin, airlineCodeOf } from '../../../cabin-library-core'
 import { cabinFor, cabinGeometry, classOf, parseSeat, SEAT } from '../../../seatmap-core'
@@ -15,11 +15,42 @@ import Sheet from '../../../shared/ui/sheet'
    named, the cabin is that type's cross-section and about its length.
    Honest about the rest: representative, not this registration's chart. */
 
+/* The flying window, as the server keeps it: the transponder knows the
+   aircraft from the gate to a while after it was due down. */
+const FLYING_BEFORE_MS = 30 * 60_000
+const FLYING_AFTER_MS = 2 * 60 * 60_000
+
+/* Which aircraft, when neither the booking nor a board has said: through the
+   flying window the transponder is asked, once, when the sheet opens. The
+   watch writes the same answer onto the leg for everybody in a while; this
+   is for the family looking now. */
+function useHeardType(tripId: string | undefined, segment: Segment): string | null {
+  const [type, setType] = useState<string | null>(null)
+  const known = !!(segment.aircraft || segment.flight?.aircraft)
+  useEffect(() => {
+    if (!tripId || known) return
+    const now = Date.now()
+    const departs = Date.parse(segment.departsAt)
+    const arrives = segment.arrivesAt ? Date.parse(segment.arrivesAt) : departs
+    if (!(now >= departs - FLYING_BEFORE_MS && now <= arrives + FLYING_AFTER_MS)) return
+    let alive = true
+    loadSegmentPosition(tripId, segment.id)
+      .then(found => {
+        if (alive && found.aircraft?.type) setType(found.aircraft.type)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [tripId, known, segment.id, segment.departsAt, segment.arrivesAt])
+  return type
+}
+
 /* The airline's configuration for this leg, when the server has one. */
-function useAirlineCabin(segment: Segment): AirlineCabin | null {
+function useAirlineCabin(segment: Segment, aircraft: string | null): AirlineCabin | null {
   const [cabin, setCabin] = useState<AirlineCabin | null>(null)
   const airline = airlineCodeOf(segment)
-  const family = aircraftFamily(segment.aircraft || segment.flight?.aircraft)?.code ?? null
+  const family = aircraftFamily(aircraft)?.code ?? null
   useEffect(() => {
     let alive = true
     loadCabin(airline, family).then(found => {
@@ -32,14 +63,25 @@ function useAirlineCabin(segment: Segment): AirlineCabin | null {
   return cabin
 }
 
-export default function SeatMap({ segment, onClose }: { segment: Segment; onClose: () => void }) {
-  const library = useAirlineCabin(segment)
+export default function SeatMap({
+  segment,
+  tripId,
+  onClose,
+}: {
+  segment: Segment
+  /** the trip the leg is on, so the sky can be asked which aircraft; the map works without */
+  tripId?: string
+  onClose: () => void
+}) {
+  const heard = useHeardType(tripId, segment)
+  const aircraft = segment.aircraft || segment.flight?.aircraft || heard
+  const library = useAirlineCabin(segment, aircraft)
   const booked = segment.passengers
     .map(person => ({ person, place: parseSeat(person.seat) }))
     .filter(entry => entry.place !== null)
   const plan = cabinFor(
     segment.passengers.map(person => person.seat),
-    segment.aircraft || segment.flight?.aircraft,
+    aircraft,
     library,
   )
   const g = cabinGeometry(plan)
