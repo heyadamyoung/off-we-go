@@ -56,7 +56,6 @@ export default function GalleryBar({
      there is one, is the grid's own row pinned, not a second band. */
   return (
     <div className="sticky top-0 z-[2] border-b border-line bg-strong backdrop-blur-xl">
-      {stuck && <div className="order-last border-t border-line">{stuck}</div>}
       <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-6">
         {/* One line, always. Where the controls outgrow a phone they slide
           rather than wrapping: a second band of chrome costs every screen
@@ -170,6 +169,9 @@ export default function GalleryBar({
           )}
         </div>
       </div>
+      {/* Under the band, never over it: the band is the gallery's own chrome
+          and the card's name is pinned beneath it. */}
+      {stuck && <div className="border-t border-line">{stuck}</div>}
     </div>
   )
 }

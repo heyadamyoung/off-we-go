@@ -136,6 +136,10 @@ test('the card under the bar is named there while its own row is scrolled off', 
   const stuck = page.locator('.pgrid-stuck')
   await expect(stuck).toBeVisible()
   await expect(stuck).toContainText(title)
+  /* Under the gallery's own band, never over it. */
+  const band = await page.getByRole('button', { name: 'By place' }).boundingBox()
+  const pinned = await stuck.boundingBox()
+  expect(pinned.y).toBeGreaterThanOrEqual(band.y + band.height - 1)
   /* The pinned copy is not counted among the grid's own headings. */
   const headings = await page.locator('.pgrid-head').count()
   /* And it works: the card rolls up from here. */
