@@ -143,3 +143,26 @@ export function downloadUrl(src: string, name: string): string {
 export function oursToServe(src: string | null | undefined): boolean {
   return String(src ?? '').includes('/api/media/')
 }
+
+/**
+ * What to say after saving several at once: one line, the count, where they
+ * went, and how many did not make it when any did not — a person who asked
+ * for twelve and got nine must be told, not left to count.
+ */
+export function downloadManyOutcome(
+  saved: number,
+  failed: number,
+  way: DownloadWay | null,
+  platform?: string,
+): string {
+  const things = (count: number) => `${count} ${count === 1 ? 'photo' : 'photos'}`
+  if (!saved) return failed ? `${things(failed)} did not save` : 'Nothing to save'
+  const where =
+    way === 'device'
+      ? platform === 'ios'
+        ? ' to Files, under Off We Go'
+        : ' to your Documents folder'
+      : ''
+  const short = failed ? ` · ${failed} did not save` : ''
+  return `Saved ${things(saved)}${where}${short}`
+}

@@ -183,6 +183,7 @@ function Trip({
           onAddPhotos={canEdit ? () => patch({ sheet: 'add' }) : undefined}
           onMovePhotos={canEdit ? movePhotos : undefined}
           onDeletePhotos={canEdit ? removePhotos : undefined}
+          toast={toast}
           legs={legs}
           onAddOnDay={canEdit ? planOnDay : undefined}
           onTravel={() => patch({ view: 'travel' })}

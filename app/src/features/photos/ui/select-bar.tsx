@@ -20,6 +20,8 @@ interface SelectBarProps {
   onMove: () => void
   /** Absent when nothing here may be deleted. */
   onDelete?: () => void
+  /** Saving every chosen picture to the device. */
+  onDownload?: () => void
   onAll: () => void
   onDone: () => void
   busy?: boolean
@@ -30,6 +32,7 @@ export default function SelectBar({
   total,
   onMove,
   onDelete,
+  onDownload,
   onAll,
   onDone,
   busy,
@@ -56,6 +59,17 @@ export default function SelectBar({
         <button className="mini whitespace-nowrap" onClick={onAll} disabled={busy}>
           {every ? 'None' : 'All'}
         </button>
+        {onDownload && (
+          <button
+            className="mini inline-flex items-center gap-1 whitespace-nowrap"
+            onClick={onDownload}
+            disabled={busy || !count}
+            title="Save the chosen photos to this device"
+            aria-label="Download the chosen photos">
+            <Icon n="download" s={13} />
+            <span className="max-sm:hidden">Download</span>
+          </button>
+        )}
         {onDelete && (
           <button
             className="mini whitespace-nowrap text-danger"
