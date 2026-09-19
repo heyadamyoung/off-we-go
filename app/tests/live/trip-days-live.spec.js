@@ -81,6 +81,12 @@ test('the timeline heads those days the same way, in the same order', async ({ p
   await page.locator('.sheet div.flex-1.overflow-y-auto').evaluate(node => {
     node.scrollTop = 0
   })
+  /* The timeline draws its window a frame after the scroll: read too soon
+     and the rows are still the tail of the newest-first pass. Wait for the
+     top to be the top. */
+  await expect
+    .poll(async () => flat(await page.locator('.tday b').first().innerText()), { timeout: 8000 })
+    .toBe('fri 4 sep')
   const headings = await headingsInOrder()
   expect(headings.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
   expect(headings.at(-1)).toBe('no date yet', 'and the stop with no day is drawn, last')
