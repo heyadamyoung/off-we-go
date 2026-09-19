@@ -285,6 +285,43 @@ test('a terminal closes only when the camera leaves it, and never mid-route', ()
     autoIndoorMove({ ...quiet, view: { center: [4.85, 52.31], zoom: 15 }, active: SCHIPHOL }),
     { close: true },
   )
+  /* Panned a couple of kilometres at street level, with the terminal well off
+     the screen: gone, the same as zooming out. Used to take four kilometres —
+     screens and screens of city. A kilometre, the width of the terminal
+     itself, stays. */
+  const phone = { width: 390, height: 844 }
+  const east = metres => [
+    4.7639 + metres / (111_320 * Math.cos((52.3105 * Math.PI) / 180)),
+    52.3105,
+  ]
+  assert.deepEqual(
+    autoIndoorMove({
+      ...quiet,
+      view: { center: east(2500), zoom: 16 },
+      active: SCHIPHOL,
+      screen: phone,
+    }),
+    { close: true },
+  )
+  assert.equal(
+    autoIndoorMove({
+      ...quiet,
+      view: { center: east(1000), zoom: 16 },
+      active: SCHIPHOL,
+      screen: phone,
+    }),
+    null,
+  )
+  /* A desk shows more, so it may pan further before the terminal is off it. */
+  assert.equal(
+    autoIndoorMove({
+      ...quiet,
+      view: { center: east(3000), zoom: 14 },
+      active: SCHIPHOL,
+      screen: { width: 1440, height: 900 },
+    }),
+    null,
+  )
 })
 
 test('a bare-numbered gate out on the apron is a stand, kept but not a gate', () => {
@@ -350,6 +387,11 @@ test('the floor picker follows the camera even when the walk keeps the terminal'
     cameraOverTerminal({ center: [4.9, 52.37], zoom: 16 }, schiphol),
     false,
     'over the city',
+  )
+  assert.equal(
+    cameraOverTerminal({ center: [4.8, 52.3105], zoom: 16 }, schiphol, { width: 390, height: 844 }),
+    false,
+    'panned off the terminal at street level',
   )
   assert.equal(cameraOverTerminal(null, schiphol), false)
   assert.equal(cameraOverTerminal({ center: [4.7639, 52.3105], zoom: 16 }, null), false)

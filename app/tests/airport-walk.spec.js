@@ -111,6 +111,13 @@ test('on the day of the flight the terminal opens itself and walks the family to
   await expect(capsule).toContainText('Gate E19')
   await page.evaluate(() => window.__offwegoMap?.jumpTo({ center: [4.7639, 52.3105], zoom: 16 }))
   await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
+  /* Panned away at the same zoom, a couple of kilometres east with the
+     terminal off the screen: the picker goes the same way — leaving is
+     leaving, whichever way the camera got there — and comes back with it. */
+  await page.evaluate(() => window.__offwegoMap?.jumpTo({ center: [4.8, 52.3105], zoom: 16 }))
+  await expect(page.getByRole('button', { name: /choose a floor/ })).toHaveCount(0)
+  await page.evaluate(() => window.__offwegoMap?.jumpTo({ center: [4.7639, 52.3105], zoom: 16 }))
+  await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
 })
 
 /* "Show the gate on the map" lands on the gate. It used to put the camera
