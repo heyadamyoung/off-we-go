@@ -98,6 +98,36 @@ test('the manual-signing workflow does not request automatic provisioning update
   assert.doesNotMatch(workflow, /-allowProvisioningUpdates/)
 })
 
+/* The Lock Screen card is an extension with a bundle of its own, and every
+   TestFlight build after it was added failed in its first minute for want of
+   a profile nobody had made in the portal. The workflows make it themselves
+   with the App Store Connect key, so no secret holds it and no step demands
+   one. */
+test('the Lock Screen card is signed with profiles the workflows make themselves', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const fastfile = await readFile(path.join(appRoot, 'fastlane', 'Fastfile'), 'utf8')
+  assert.match(fastfile, /TravelActivity/)
+  assert.match(fastfile, /BundleId\.create/, 'the App ID is registered when it is missing')
+  assert.match(fastfile, /lane :sign_lock_screen_card/)
+  for (const name of ['testflight.yml', 'ios-adhoc.yml']) {
+    const workflow = await readFile(path.join(appRoot, '..', '.github', 'workflows', name), 'utf8')
+    assert.doesNotMatch(workflow, /secrets\.IOS_ACTIVITY_PROVISIONING_PROFILE\b/, name)
+    assert.doesNotMatch(workflow, /needs its own/, `${name} demands a profile made by hand`)
+    assert.match(
+      workflow,
+      /IOS_ACTIVITY_PROVISIONING_PROFILE_NAME \|\| 'Wayfare Activity App Store CI'/,
+      `${name} names the profile the Xcode project signs the extension with`,
+    )
+    assert.match(workflow, /fastlane ios /, `${name} runs the lane that makes the profiles`)
+  }
+  /* The name the workflows default to is the one the project signs with. */
+  const project = await readFile(
+    path.join(appRoot, 'ios/App/App.xcodeproj/project.pbxproj'),
+    'utf8',
+  )
+  assert.match(project, /PROVISIONING_PROFILE_SPECIFIER = "Wayfare Activity App Store CI"/)
+})
+
 test('the iOS compile workflow installs pnpm before setup-node configures its pnpm cache', async () => {
   const workflow = await import('node:fs/promises').then(({ readFile }) =>
     readFile(path.join(appRoot, '..', '.github', 'workflows', 'ios-build.yml'), 'utf8'),
