@@ -275,7 +275,7 @@ export default function SegmentCard({
         )
       )}
 
-      {seats && <SeatMap segment={segment} onClose={() => setSeats(false)} />}
+      {seats && <SeatMap segment={segment} tripId={tripId} onClose={() => setSeats(false)} />}
       {segment.passengers.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 text-[11px]">
           {segment.passengers.map(person => (

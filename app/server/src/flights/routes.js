@@ -8,17 +8,23 @@
  * is, for the map, while the leg is in the air. All behind a login, like
  * every other /api route, and the trip ones behind membership. */
 
-import { flightNumberOf, matchFlight, normalizeFlightNumber } from './model.js'
+import {
+  FLYING_AFTER_MS,
+  FLYING_BEFORE_MS,
+  flightNumberOf,
+  inFlyingWindow,
+  matchFlight,
+  normalizeFlightNumber,
+} from './model.js'
 import { callsignFor } from './providers/adsb.js'
 
 const BOARDS = { departures: 'departure', arrivals: 'arrival' }
 const DAY = /^\d{4}-\d\d-\d\d$/
 
-/* When the sky is worth asking about a leg: from a little before it is due
-   to leave — an early pushback is still a flight — to a while after it was
-   due to land, for the late one. Outside that, nobody is asked. */
-export const POSITION_BEFORE_MS = 30 * 60_000
-export const POSITION_AFTER_MS = 2 * 60 * 60_000
+/* The window is the model's (the watch keeps the same one); the names stay
+   for whoever imports them here. */
+export const POSITION_BEFORE_MS = FLYING_BEFORE_MS
+export const POSITION_AFTER_MS = FLYING_AFTER_MS
 
 export function registerFlightRoutes(app, { repository, sources, authenticated }) {
   app.get('/api/flights/airports', async (request, reply) => {
@@ -114,11 +120,7 @@ export function registerFlightRoutes(app, { repository, sources, authenticated }
     const callsign = callsignFor(flightNumberOf(leg))
     if (!callsign) return { callsign: null, aircraft: null, reason: 'no-callsign' }
     const now = typeof sources.now === 'function' ? sources.now() : Date.now()
-    const departs = new Date(leg.departsAt).getTime()
-    const arrives = leg.arrivesAt ? new Date(leg.arrivesAt).getTime() : departs
-    if (!(now >= departs - POSITION_BEFORE_MS && now <= arrives + POSITION_AFTER_MS)) {
-      return { callsign, aircraft: null, reason: 'not-flying' }
-    }
+    if (!inFlyingWindow(leg, now)) return { callsign, aircraft: null, reason: 'not-flying' }
     const heard = await sources.position(callsign)
     return {
       callsign,

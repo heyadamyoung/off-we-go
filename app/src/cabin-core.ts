@@ -72,14 +72,14 @@ const FAMILIES: Array<CabinFamily & { match: RegExp }> = [
     name: 'Airbus A220-100',
     sections: N23,
     rows: 30,
-    match: /^(BCS1|A221|221)$|A220100|CS100/,
+    match: /^(BCS1|A221|221|CS1)$|A220100|CS100/,
   },
   {
     code: 'BCS3',
     name: 'Airbus A220-300',
     sections: N23,
     rows: 36,
-    match: /^(BCS3|A223|223)$|A220|CS300/,
+    match: /^(BCS3|A223|223|CS3)$|A220|CS300/,
   },
   {
     code: 'A21N',

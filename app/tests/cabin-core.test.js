@@ -11,7 +11,7 @@ import { cabinFor } from '../src/seatmap-core.ts'
    and a type nobody knows is drawn as before, from the letters alone. */
 
 test('the boards’ codes, the airlines’ codes and the words name one family', () => {
-  for (const said of ['BCS3', 'A223', '223', 'Airbus A220-300', 'A220', 'a220-300']) {
+  for (const said of ['BCS3', 'A223', '223', 'CS3', 'Airbus A220-300', 'A220', 'a220-300']) {
     assert.equal(aircraftFamily(said)?.name, 'Airbus A220-300', said)
   }
   assert.equal(aircraftFamily('BCS1').name, 'Airbus A220-100')
