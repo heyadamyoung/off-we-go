@@ -1,14 +1,17 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import sharp from 'sharp'
 
 const modulePath = fileURLToPath(import.meta.url)
 const appRoot = path.resolve(path.dirname(modulePath), '..')
-/* The ground a launcher icon stands on, and the app's own background. They
-   are a shade apart and both deliberate: the icon's is the darker of the two
-   so the portal reads on a bright home screen, and the splash uses the
-   webview's exact colour so there is no seam when the app takes over. */
+/* Every icon the app has, cut from one master: the wordmark — "Off we go."
+   stacked three lines deep in the display face — drawn by
+   scripts/render-wordmark.mjs onto nothing. The ground a launcher icon
+   stands on, and the app's own background, are a shade apart and both
+   deliberate: the icon's is the darker of the two so the tile reads on a
+   bright home screen, and the splash uses the webview's exact colour so
+   there is no seam when the app takes over. */
 const background = { r: 10, g: 12, b: 16, alpha: 1 }
 const canvas = { r: 11, g: 13, b: 17, alpha: 1 }
 const transparent = { r: 0, g: 0, b: 0, alpha: 0 }
@@ -31,7 +34,6 @@ const black = { r: 0, g: 0, b: 0, alpha: 1 }
    same picture — the same margin in pixels would be a different icon at each
    size. */
 const SAFE_MARGIN = 0.95
-const transparentExportSizes = [16, 32, 48, 64, 128, 256, 512, 1024]
 
 const androidDensities = new Map([
   ['mdpi', { launcher: 48, foreground: 108 }],
@@ -304,9 +306,18 @@ async function tile(
     : placed
 }
 
-async function transparentIcon(sourcePath, size) {
-  return sharp(sourcePath)
-    .resize(size, size, { fit: 'contain', background: transparent, kernel: sharp.kernel.lanczos3 })
+/* A dark tile with its corners rounded off, the way a favicon or a mark on a
+   page reads as an icon rather than a square. White words on nothing were
+   invisible on a light browser tab; the ground comes with them. */
+async function roundedTile(source, box, size, fill, radius = 0.2237) {
+  const square = await tile(source, box, { size, fill, ground: background })
+  const mask = Buffer.from(
+    `<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" ` +
+      `rx="${size * radius}" ry="${size * radius}" fill="#fff"/></svg>`,
+  )
+  return sharp(square)
+    .ensureAlpha()
+    .composite([{ input: mask, blend: 'dest-in' }])
     .png()
     .toBuffer()
 }
@@ -332,9 +343,9 @@ async function roundLauncher(source, box, size, safe) {
   return sharp(data, { raw: info }).png().toBuffer()
 }
 
-/* The themed-icon layer: the drawing as a silhouette, so Android can tint it
-   to whatever the wallpaper made of the hour. The cream road and sun are the
-   parts that read as "lit", so they become the holes. */
+/* The themed-icon layer: the words as a silhouette, so Android can tint them
+   to whatever the wallpaper made of the hour. The mark is type, so its
+   silhouette is simply its ink — every drawn pixel, white. */
 async function monochromeMaster(sourcePath, side = 2048) {
   const { data, info } = await sharp(sourcePath)
     .resize(side, side, { fit: 'contain', background: transparent, kernel: sharp.kernel.lanczos3 })
@@ -342,28 +353,20 @@ async function monochromeMaster(sourcePath, side = 2048) {
     .raw()
     .toBuffer({ resolveWithObject: true })
   const output = Buffer.alloc(data.length)
-
   for (let index = 0; index < data.length; index += 4) {
-    const red = data[index]
-    const green = data[index + 1]
-    const blue = data[index + 2]
-    const alpha = data[index + 3]
-    const isCream = red > 180 && green > 170 && blue > 150
     output[index] = 255
     output[index + 1] = 255
     output[index + 2] = 255
-    output[index + 3] = isCream ? 0 : alpha
+    output[index + 3] = data[index + 3]
   }
-
   return sharp(output, { raw: { width: info.width, height: info.height, channels: 4 } })
     .png()
     .toBuffer()
 }
 
 /* The iOS tinted appearance: the system takes a grayscale picture and maps
-   its luminance onto whatever tint somebody chose. So it wants the drawing's
-   light and shade, not a silhouette — the sun bright, the sky between, the
-   road a pale ribbon out of a dark foreground. */
+   its luminance onto whatever tint somebody chose. The words are light and
+   the full stop a shade under them, which is all the shading type has. */
 async function greyMaster(sourcePath, side = 2048) {
   return sharp(sourcePath)
     .resize(side, side, { fit: 'contain', background: transparent, kernel: sharp.kernel.lanczos3 })
@@ -450,25 +453,17 @@ export function fills(aspect) {
 }
 
 export async function generateBrandIcons({ sourcePath, outputRoot }) {
-  const vectorMaster = await readFile(sourcePath)
   const box = await inkBox(sourcePath)
   const share = fills(box.aspect)
   const monochrome = await monochromeMaster(sourcePath)
   const monoBox = await inkBox(monochrome)
   const publicDirectory = path.join(outputRoot, 'public')
 
-  await writeAsset(path.join(publicDirectory, 'offwego-icon.svg'), vectorMaster)
+  /* The mark for anywhere on the web that wants one picture of the app: the
+     words on their dark tile, corners rounded, at a size a card can use. */
   await writeAsset(
     path.join(publicDirectory, 'offwego-icon.png'),
-    await transparentIcon(sourcePath, 512),
-  )
-  await Promise.all(
-    transparentExportSizes.map(async size =>
-      writeAsset(
-        path.join(publicDirectory, 'brand', `offwego-icon-${size}.png`),
-        await transparentIcon(sourcePath, size),
-      ),
-    ),
+    await roundedTile(sourcePath, box, 512, share.ios),
   )
 
   /* The touch icon is an iOS home screen icon by another name, and the 512 is
@@ -490,7 +485,10 @@ export async function generateBrandIcons({ sourcePath, outputRoot }) {
   )
 
   const faviconImages = await Promise.all(
-    [16, 32, 48, 256].map(async size => ({ size, bytes: await transparentIcon(sourcePath, size) })),
+    [16, 32, 48, 256].map(async size => ({
+      size,
+      bytes: await roundedTile(sourcePath, box, size, share.ios),
+    })),
   )
   await writeAsset(path.join(publicDirectory, 'favicon.ico'), createIco(faviconImages))
 
@@ -570,7 +568,7 @@ function argumentValue(name) {
 
 if (path.resolve(process.argv[1] || '') === modulePath) {
   const sourcePath = path.resolve(
-    argumentValue('--source') || path.join(appRoot, 'public', 'offwego-icon.svg'),
+    argumentValue('--source') || path.join(appRoot, 'public', 'brand', 'wordmark.png'),
   )
   const outputRoot = path.resolve(argumentValue('--output-root') || appRoot)
   await generateBrandIcons({ sourcePath, outputRoot })
