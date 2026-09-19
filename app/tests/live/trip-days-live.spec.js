@@ -44,8 +44,10 @@ test('many stops on one date make one chip', async ({ page }) => {
     .filter(chip => chip !== 'all days')
   /* Drawn as labels and ordered by date — the whole point of storing the date.
      Sorting the text would put Friday above Saturday by luck and Thursday
-     below both by spelling. */
-  expect(chips.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
+     below both by spelling. The trip is behind us, so the chips count back
+     from its last day; the fourth, once, is the last of them. */
+  expect(chips.slice(-2)).toEqual(['sat 5 sep', 'fri 4 sep'])
+  expect(chips.filter(chip => chip === 'fri 4 sep')).toHaveLength(1)
 })
 
 test('the timeline heads those days the same way, in the same order', async ({ page }) => {
@@ -81,6 +83,12 @@ test('the timeline heads those days the same way, in the same order', async ({ p
   await page.locator('.sheet div.flex-1.overflow-y-auto').evaluate(node => {
     node.scrollTop = 0
   })
+  /* The timeline draws its window a frame after the scroll: read too soon
+     and the rows are still the tail of the newest-first pass. Wait for the
+     top to be the top. */
+  await expect
+    .poll(async () => flat(await page.locator('.tday b').first().innerText()), { timeout: 8000 })
+    .toBe('fri 4 sep')
   const headings = await headingsInOrder()
   expect(headings.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
   expect(headings.at(-1)).toBe('no date yet', 'and the stop with no day is drawn, last')

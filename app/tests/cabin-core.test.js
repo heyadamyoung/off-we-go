@@ -56,7 +56,11 @@ test('a ticket says the family’s name, or the words somebody typed, never a ba
   assert.equal(aircraftName('BCS3'), 'Airbus A220-300')
   assert.equal(aircraftName('Airbus A220-300'), 'Airbus A220-300')
   assert.equal(aircraftName('Pilatus PC-12'), 'Pilatus PC-12')
-  assert.equal(aircraftName('GLF6'), null)
+  /* A code the file does not know is said as it came: a type worth seeing,
+     and how the file grows. Nothing at all is still nothing. */
+  assert.equal(aircraftName('GLF6'), 'GLF6')
+  assert.equal(aircraftName('a22'), 'Airbus A220-300')
+  assert.equal(aircraftName('??'), null)
   assert.equal(aircraftName(null), null)
 })
 

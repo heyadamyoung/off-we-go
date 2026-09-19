@@ -36,7 +36,7 @@ for (const [where, width, height] of [
   ['a phone', 390, 844],
   ['a desktop', 1440, 900],
 ]) {
-  test(`the day bar runs in date order on ${where}`, async ({ page }) => {
+  test(`the day bar counts back from the last day on ${where}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     await page.goto(`/trips/${stack.trip.slug}`)
     await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 30_000 })
@@ -46,9 +46,10 @@ for (const [where, width, height] of [
       chip.trim().toLowerCase(),
     )
     expect(chips[0]).toBe('all days')
-    /* Every day in date order, and no chip for the stop that has no day —
-       "All days" is already where that one lives. */
-    expect(chips.slice(1)).toEqual(DAYS)
+    /* Every day, counting back from the last — this trip is behind us, so
+       the day nearest today leads — and no chip for the stop that has no
+       day: "All days" is already where that one lives. */
+    expect(chips.slice(1)).toEqual([...DAYS].reverse())
   })
 }
 

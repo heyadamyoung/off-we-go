@@ -5,13 +5,15 @@ import Img from '../../../shared/ui/img'
 import MediaThumb from '../../../shared/ui/media-thumb'
 import { ALL_DAYS } from '../../../trip-search-core'
 import type { TripItem } from '../model/trip-items'
-import type { TripDay } from '../../../trip-days-core'
+import { chipOrder, type TripDay } from '../../../trip-days-core'
 
 interface TripBarProps {
   items: TripItem[]
   days: TripDay[]
   day: string
   liveDay?: string
+  /** today's date, which the chips count back from */
+  today?: string
   selected?: string
   query: string
   onDay: (day: string) => void
@@ -34,6 +36,7 @@ const TripBar = memo(function TripBar({
   days,
   day,
   liveDay,
+  today,
   selected,
   query,
   onDay,
@@ -104,9 +107,12 @@ const TripBar = memo(function TripBar({
             }}>
             All days
           </button>
-          {days.map(value => (
+          {/* Today first, then back to the beginning: the day being lived is
+              the one wanted, and the first day of a fortnight the least. */}
+          {chipOrder(days, liveDay || today).map(value => (
             <button
               key={value.iso}
+              data-iso={value.iso}
               className={'chip hitslop' + (day === value.iso ? ' sel' : '')}
               onClick={() => {
                 onDay(value.iso)

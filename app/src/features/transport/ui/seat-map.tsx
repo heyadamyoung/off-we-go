@@ -94,6 +94,9 @@ export default function SeatMap({
   useEffect(() => {
     mine.current?.scrollIntoView({ block: 'center' })
   }, [])
+  /* A type a board or the transponder named that the file does not know
+     yet: said, so whoever reads it can say what it was. */
+  const unknown = aircraft && !aircraftFamily(aircraft) ? aircraft : null
   const across = (plan.cabins || [{ sections: plan.sections }])
     .map(cabin => cabin.sections.map(section => section.length).join('–'))
     .join(' · ')
@@ -259,7 +262,9 @@ export default function SeatMap({
           ? `${plan.aircraft} as the airline configures it — your seats are exact; the classes, doors and wing are representative of the type rather than this aircraft’s own chart.`
           : plan.aircraft
             ? `Schematic of a typical ${plan.aircraft} cabin — your seats are exact; the rows and exits are representative rather than this aircraft’s own chart.`
-            : `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your seats are exact, rows and exits are representative rather than this aircraft’s chart. Put the aircraft on the leg and the cabin is drawn for it.`}
+            : unknown
+              ? `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — the aircraft was named as “${unknown}”, which is not on file yet, so the rows and exits are representative rather than its own.`
+              : `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your seats are exact, rows and exits are representative rather than this aircraft’s chart. Put the aircraft on the leg and the cabin is drawn for it.`}
       </p>
     </Sheet>
   )
