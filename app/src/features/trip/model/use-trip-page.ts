@@ -6,6 +6,7 @@ import { useAssistant } from '../../assistant'
 import type { Segment } from '../../../segments-core'
 import { useAirportIndoor } from '../../airport'
 import { usePlanePosition, useSegments } from '../../transport'
+import type { BarStage } from './use-sheet-drag'
 import { useItineraryEditor } from '../../itinerary'
 import { useTripPhotos } from '../../photos'
 import { useTripCamera } from './use-trip-camera'
@@ -139,8 +140,9 @@ export default function useTripPage({
     lastSeenPosition,
   } = useLiveTrip({ tripId, trip, route, stops: ordered, family, mapOverride })
 
-  // Phone only: the bar's peek, owned here so the camera's band tracks it.
-  const [barPeek, setBarPeek] = useState(false)
+  // Phone only: the bar's stage, owned here so the camera's band tracks it.
+  const [barStage, setBarStage] = useState<BarStage>('open')
+  const barPeek = barStage === 'peek'
   const {
     following,
     setFollowing,
@@ -387,7 +389,7 @@ export default function useTripPage({
     addSight, attractions, attrFilling, attrCount, toggleAttractions,
     addAttraction, showSight, showAttractions,
     items, selectedItem, select, pickStop, onMapClicked, addStopAt: onMapClick,
-    saveTrip, uploads, here, origin, panelOpen, subtitle, waitingEdits, barPeek, setBarPeek,
+    saveTrip, uploads, here, origin, panelOpen, subtitle, waitingEdits, barStage, setBarStage,
     offlineAt: data.offlineAt ?? null,
   }
 }

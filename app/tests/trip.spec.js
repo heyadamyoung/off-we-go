@@ -1613,6 +1613,14 @@ test('the timeline heads its days the way the day bar does', async ({ page }) =>
   }
 })
 
+test('Photos is the second tab, after Map', async ({ page }) => {
+  /* In the order they are reached for: the pictures are what a family opens
+     most once the day is under way, so they sit beside the map. */
+  await open(page)
+  const names = (await page.locator('.tbv').allInnerTexts()).map(t => t.trim()).filter(Boolean)
+  expect(names.slice(0, 3)).toEqual(['Map', 'Photos', 'Timeline'])
+})
+
 test('the day chips count back from today, after All days', async ({ page }) => {
   /* The day being lived is the one wanted and the first day of a fortnight
      the least: All days, then today (or the last day, once the trip is

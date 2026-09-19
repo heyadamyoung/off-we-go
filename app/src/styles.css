@@ -258,10 +258,24 @@
      opens or collapses, in step with the bar's own height. Snapping there
      the instant the finger let go was the "chrome jumping about" of the
      drag; the bar's height and the chrome's feet move together now. */
-  .tripbar { transition: height .18s ease }
+  /* The bar is always as tall as it can be — the screen to the top chrome —
+     hung from the bottom with the part past its stage below the edge. Every
+     stage is one transform, which the compositor does without a layout, and
+     a drag (use-sheet-drag) is the same transform written by hand: nothing
+     is laid out per frame and there is never a gap under it. The bar's
+     visible height is still --trip-bar, which is what the chrome stands on. */
+  :root { --bar-tall: calc(100dvh - var(--trip-top)) }
+  .tripscreen .tripbar {
+    height: var(--bar-tall);
+    transform: translate3d(0, calc(var(--bar-tall) - var(--trip-bar)), 0);
+    transition: transform .22s ease;
+  }
   .mapchrome, .nowpill, .wctl, .edithint, .nowcard { transition: bottom .18s ease }
-  /* Under a finger the chrome is placed by hand on every move (see
-     use-sheet-drag) and must not ease toward each: it rides the bar. */
+  /* Under a finger the bar and the chrome are placed by hand on every move
+     and must not ease toward each: the chrome rides the bar. The mark stays
+     on a frame past the stage change, so the bottom the chrome stands on
+     does not ease from the old stage to the new one under it either. */
+  .tripscreen[data-bardrag] .tripbar,
   .tripscreen[data-bardrag] :is(.mapchrome, .nowpill, .wctl, .edithint, .nowcard) { transition: none }
   .barpeek {
     --trip-bar: calc(80px + env(safe-area-inset-bottom, 0px));
@@ -270,6 +284,24 @@
     --trip-3: calc(var(--trip-2) + 42px);
     --trip-4: calc(var(--trip-3) + 42px);
   }
+  .bartall {
+    --trip-bar: var(--bar-tall);
+    --trip-1: calc(var(--trip-bar) + 16px);
+    --trip-2: calc(var(--trip-1) + 46px);
+    --trip-3: calc(var(--trip-2) + 42px);
+    --trip-4: calc(var(--trip-3) + 42px);
+  }
+  /* The cards: a row at their own height at the open stage, where the bar
+     below them is under the edge of the screen; at the tall stage a grid
+     that wraps and scrolls, with pictures big enough to look at. */
+  .tripbar .fcards { flex: none; align-items: flex-start }
+  .tripbar[data-stage="tall"] .fcards {
+    flex: 1 1 auto; min-height: 0; flex-wrap: wrap; align-content: flex-start;
+    overflow-x: hidden; overflow-y: auto; padding-bottom: 16px;
+  }
+  .tripbar[data-stage="tall"] .fcard { width: calc(50% - 4px) }
+  .tripbar[data-stage="tall"] .fcard > div:first-child { height: 150px }
+  .tripbar[data-stage="tall"] .fcard .t { -webkit-line-clamp: 2 }
 
   /* The chat takes the phone screen while it is open, exactly as the stop
      editor does and for the same reason: floating above the bar it was
