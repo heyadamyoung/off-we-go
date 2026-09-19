@@ -72,6 +72,19 @@ for (const size of SIZES) {
       const box = await piece.boundingBox()
       expect(box.width).toBeLessThan(size.width)
     }
+    /* The columns: five known on this ticket, dealt three and two, each row's
+       columns the same width to the pixel and centred — not three headings
+       spread by the lengths of their words with one alone under them. */
+    await expect(flight.locator('.tkcol')).toHaveCount(5)
+    expect(await rowsOf(page, '.ticket[data-face="day"] .tkcol')).toEqual([3, 2])
+    const widths = await flight
+      .locator('.tkrow')
+      .evaluateAll(rows =>
+        rows.map(row =>
+          [...row.children].map(cell => Math.round(cell.getBoundingClientRect().width)),
+        ),
+      )
+    for (const row of widths) expect(new Set(row).size, `uneven columns: ${row}`).toBe(1)
     /* Six phases: two rows of three, not four and two. */
     await expect(flight.locator('.tkphase')).toHaveCount(6)
     expect(await rowsOf(page, '.ticket[data-face="day"] .tkphase')).toEqual([3, 3])

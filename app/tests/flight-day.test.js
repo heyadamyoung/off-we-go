@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   boardName,
+  dealRows,
   flightHeadline,
   flightPhases,
   flightSource,
@@ -365,4 +366,23 @@ test('the capsule leads with the live leg on its day, and with nothing on any ot
   const after = travelCapsule([train, landed], NOW + 9 * H)
   assert.equal(after.text, '✈ EI 123 · Landed 22:41 · baggage claim belt 5')
   assert.equal(after.tone, 'arrived')
+})
+
+test('the columns are dealt into rows that differ by at most one, never three and then one', () => {
+  const deal = n =>
+    dealRows(
+      Array.from({ length: n }, (_, i) => i),
+      3,
+    ).map(row => row.length)
+  assert.deepEqual(deal(0), [])
+  assert.deepEqual(deal(1), [1])
+  assert.deepEqual(deal(3), [3])
+  assert.deepEqual(deal(4), [2, 2])
+  assert.deepEqual(deal(5), [3, 2])
+  assert.deepEqual(deal(6), [3, 3])
+  assert.deepEqual(deal(7), [3, 2, 2])
+  assert.deepEqual(dealRows(['a', 'b', 'c', 'd', 'e'], 3), [
+    ['a', 'b', 'c'],
+    ['d', 'e'],
+  ])
 })
