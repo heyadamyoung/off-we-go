@@ -79,7 +79,7 @@ const FAMILIES: Array<CabinFamily & { match: RegExp }> = [
     name: 'Airbus A220-300',
     sections: N23,
     rows: 36,
-    match: /^(BCS3|A223|223|CS3)$|A220|CS300/,
+    match: /^(BCS3|A223|223|CS3|A22|BCS)$|A220|CS300/,
   },
   {
     code: 'A21N',
@@ -365,11 +365,14 @@ export function aircraftFamily(text: string | null | undefined): CabinFamily | n
     : null
 }
 
-/** What to call the aircraft on a ticket: the family's name, else the words
-    a person typed, never a bare code nobody reads. */
+/** What to call the aircraft on a ticket: the family's name; else the words
+    a person typed; else the code a board or the transponder gave, said as
+    it came — a type not on file yet is still worth seeing, and is how the
+    file grows. */
 export function aircraftName(text: string | null | undefined): string | null {
   const family = aircraftFamily(text)
   if (family) return family.name
   const raw = String(text ?? '').trim()
-  return /\s/.test(raw) && raw.length >= 6 ? raw : null
+  if (/\s/.test(raw) && raw.length >= 6) return raw
+  return /^[A-Za-z0-9-]{3,8}$/.test(raw) ? raw.toUpperCase() : null
 }

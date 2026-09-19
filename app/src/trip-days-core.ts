@@ -170,3 +170,28 @@ export function onDay(thingDay: string | null | undefined, chosen: string): bool
   const mine = dayIsoOf(thingDay)
   return !!mine && mine === dayIsoOf(chosen)
 }
+
+/** Today, as the day it is where the phone is: the chip to start from. */
+export function localDayIso(at: number = Date.now()): string {
+  const date = new Date(at)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/**
+ * The chips' order on the bar: today first when the trip is under way — else
+ * its last day — and then back a day at a time to the beginning. The day
+ * being lived is the one wanted; yesterday is the next most likely; the
+ * first day of a fortnight is the least. Days still to come, when there are
+ * any, follow the beginning, nearest first, so tomorrow is one scroll away
+ * rather than at the far end of the strip.
+ */
+export function chipOrder(days: readonly TripDay[], today?: string | null): TripDay[] {
+  const sorted = [...days].sort((a, b) => a.iso.localeCompare(b.iso))
+  const from = today ? sorted.filter(day => day.iso <= today) : sorted
+  const ahead = today ? sorted.filter(day => day.iso > today) : []
+  /* Before the trip, "today" is before every day: it is the last day that
+     leads, and the count back covers the whole trip. */
+  if (!from.length) return [...sorted].reverse()
+  return [...from.reverse(), ...ahead]
+}

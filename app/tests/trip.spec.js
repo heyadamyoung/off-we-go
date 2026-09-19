@@ -1611,6 +1611,27 @@ test('the timeline heads its days the way the day bar does', async ({ page }) =>
   }
 })
 
+test('the day chips count back from today, after All days', async ({ page }) => {
+  /* The day being lived is the one wanted and the first day of a fortnight
+     the least: All days, then today (or the last day, once the trip is
+     over), then back to the beginning; days still to come follow. */
+  await open(page)
+  await expect(page.locator('.fdays .chip').first()).toHaveText('All days')
+  const isos = await page
+    .locator('.fdays .chip[data-iso]')
+    .evaluateAll(chips => chips.map(chip => chip.dataset.iso))
+  expect(isos.length).toBeGreaterThan(1)
+  const today = await page.evaluate(() => {
+    const now = new Date()
+    const pad = value => String(value).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  })
+  const sorted = [...isos].sort()
+  const back = sorted.filter(iso => iso <= today).reverse()
+  const ahead = sorted.filter(iso => iso > today)
+  expect(isos).toEqual(back.length ? [...back, ...ahead] : [...sorted].reverse())
+})
+
 test('a long name and place do not burst the viewer header', async ({ page }) => {
   /* "8 Sept 2026, 12:09 · Enterprise, Edinburgh Airport" wrapped to three
      lines on a phone, grew the bar past its own fixed height, and was clipped

@@ -1,3 +1,4 @@
+import { localDayIso } from '../../../trip-days-core'
 import { useCallback, useEffect, useRef } from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { absoluteTripHref } from '../../../app-routes-core'
@@ -299,6 +300,7 @@ function Trip({
         days={days}
         day={day}
         liveDay={liveDay ?? undefined}
+        today={localDayIso(clock)}
         selected={selected}
         behindPanel={panelOpen}
         onAddStop={
