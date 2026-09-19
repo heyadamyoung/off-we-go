@@ -23,10 +23,11 @@ export function absoluteTripHref(slug: string, currentOrigin: string, apiUrl = '
   return absoluteOrigin(currentOrigin, apiUrl) + tripHref(slug)
 }
 
-/* The pairing handshake: a QR code on the organiser's screen, scanned by the
-   phone that will do the sharing. The payload rides in the URL fragment —
-   fragments never reach server logs or proxies — and the universal link opens
-   the native app directly on the phone. */
+/* The pairing handshake as a link, for a tracker that can open one: the
+   payload rides in the URL fragment — fragments never reach server logs or
+   proxies — and the universal link opens the native app directly on the
+   phone. The screens pair by a typed code now; the link form is kept for
+   whatever still carries one. */
 export interface PairPayload {
   endpoint: string
   token: string

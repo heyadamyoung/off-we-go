@@ -8,6 +8,7 @@ import fsp from 'node:fs/promises'
 import { bboxOf, indexTar, packSlices } from './routing-pack.js'
 import { registerMcpRoutes } from './mcp.js'
 import { clientAddress, createWindowRateLimiter } from './rateLimit.js'
+import { isPairCode, makePairCode, normalizePairCode, PAIR_CODE_TTL_MS } from './pair-code.js'
 import { createLiveStream } from './live-stream.js'
 import { changeKind } from './change-kind.js'
 import { shareGone, sharePage } from './share-page.js'
@@ -2192,6 +2193,67 @@ export async function buildServer({
       userId: device.userId,
       lastSeen: device.lastSeen?.toISOString?.() || device.lastSeen || null,
       token,
+    }
+  })
+
+  /* Six characters on the organiser's screen, typed on the phone that will
+     share. Issuing rotates the phone's token — the same honesty as New code
+     — and the code hands that token over once, to whoever types it first
+     within the quarter hour; the issuer gets it too, for "use this phone". */
+  app.post('/api/trips/:tripId/devices/:deviceId/pair-code', async (request, reply) => {
+    const user = await authenticated(request, reply)
+    if (!user) return
+    const token = newToken()
+    const code = makePairCode()
+    const expiresAt = new Date(clock().getTime() + PAIR_CODE_TTL_MS)
+    const device = await repository.createPairCode(
+      user,
+      request.params.tripId,
+      request.params.deviceId,
+      { code, token, tokenHash: tokenHash(token), expiresAt },
+    )
+    if (!device) return reply.code(404).send({ error: 'Phone not found' })
+    stamp({ 'device.id': device.id })
+    return reply.code(201).send({
+      id: device.id,
+      name: device.name,
+      code,
+      token,
+      expiresAt: expiresAt.toISOString(),
+    })
+  })
+
+  /* No session: the code is the whole credential, and it buys exactly one
+     thing — this phone's own token. Ten tries a minute per address is a
+     family fumbling, not a search. */
+  const pairClaimLimiter = createWindowRateLimiter({ clock: () => clock().getTime() })
+  app.post('/api/pair/claim', { bodyLimit: 1024 }, async (request, reply) => {
+    const retryAfter = pairClaimLimiter.hit(`pair:${clientAddress(request)}`, {
+      max: 10,
+      windowMs: 60_000,
+    })
+    if (retryAfter) {
+      return reply
+        .header('retry-after', String(retryAfter))
+        .code(429)
+        .send({ error: 'Too many tries. Wait a minute, then type the code again.' })
+    }
+    const code = normalizePairCode(request.body?.code)
+    if (!isPairCode(code)) {
+      return reply.code(400).send({ error: 'A pairing code is six letters and numbers' })
+    }
+    const claimed = await repository.claimPairCode(code, clock())
+    if (!claimed) {
+      return reply
+        .code(404)
+        .send({ error: 'That code is not valid any more. Ask for a new one and try again.' })
+    }
+    stamp({ 'device.id': claimed.deviceId, 'trip.id': claimed.tripId })
+    return {
+      endpoint: `${publicUrl.replace(/\/$/, '')}/api/ingest/track`,
+      token: claimed.token,
+      deviceId: claimed.deviceId,
+      name: claimed.name,
     }
   })
 

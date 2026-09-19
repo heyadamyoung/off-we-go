@@ -2562,6 +2562,48 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           .rowCount > 0
       )
     },
+    /* One live code per phone: issuing rotates the phone's token, so a code
+       somebody photographed off a screen last week opens nothing now. */
+    async createPairCode(user, tripId, deviceId, { code, token, tokenHash, expiresAt }) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const device = await client.query(
+          'update devices set token_hash=$3 where id=$1 and trip_id=$2 returning id,name',
+          [deviceId, tripId, tokenHash],
+        )
+        if (!device.rows[0]) {
+          await client.query('rollback')
+          return null
+        }
+        await client.query('delete from device_pair_codes where device_id=$1 or expires_at<now()', [
+          deviceId,
+        ])
+        await client.query(
+          'insert into device_pair_codes(code,device_id,token,expires_at) values($1,$2,$3,$4)',
+          [code, deviceId, token, expiresAt],
+        )
+        await client.query('commit')
+        return { id: device.rows[0].id, name: device.rows[0].name }
+      } catch (error) {
+        await client.query('rollback')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+    /* Spent on first use, expired or not: a code that is touched is gone. */
+    async claimPairCode(code, now) {
+      const result = await pool.query(
+        `delete from device_pair_codes c using devices d where c.code=$1 and c.device_id=d.id
+        returning c.token, c.expires_at, d.id device_id, d.name, d.trip_id`,
+        [code],
+      )
+      const row = result.rows[0]
+      if (!row || new Date(row.expires_at).getTime() <= now.getTime()) return null
+      return { token: row.token, deviceId: row.device_id, name: row.name, tripId: row.trip_id }
+    },
     async findDeviceByTokenHash(hash) {
       const result = await pool.query('select * from devices where token_hash=$1', [hash])
       const value = result.rows[0]

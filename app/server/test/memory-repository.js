@@ -47,6 +47,7 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
   const trips = new Map()
   const shares = new Map()
   const devices = new Map()
+  const pairCodes = new Map()
   const positions = new Map()
   const mcpClients = new Map()
   const mcpCodes = new Map()
@@ -1055,6 +1056,23 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
     },
     async findDeviceByTokenHash(hash) {
       return [...devices.values()].find(device => device.tokenHash === hash) || null
+    },
+    async createPairCode(user, tripId, deviceId, { code, token, tokenHash, expiresAt }) {
+      if (!(await this.canEditTrip(user.id, tripId))) return null
+      const device = devices.get(deviceId)
+      if (!device || device.tripId !== tripId) return null
+      device.tokenHash = tokenHash
+      for (const [key, value] of pairCodes) if (value.deviceId === deviceId) pairCodes.delete(key)
+      pairCodes.set(code, { deviceId, token, expiresAt })
+      return { id: device.id, name: device.name }
+    },
+    async claimPairCode(code, now) {
+      const found = pairCodes.get(code)
+      pairCodes.delete(code)
+      if (!found || found.expiresAt.getTime() <= now.getTime()) return null
+      const device = devices.get(found.deviceId)
+      if (!device) return null
+      return { token: found.token, deviceId: device.id, name: device.name, tripId: device.tripId }
     },
     /* ---- connected mailboxes ---- */
     async startMailboxConnection({ userId, provider, stateHash, verifier, redirectTo, expiresAt }) {
