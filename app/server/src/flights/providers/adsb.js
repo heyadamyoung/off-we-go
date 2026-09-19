@@ -18,6 +18,16 @@
 
 export const ADSB_SOURCE = 'api.adsb.lol'
 export const ADSB_BASE = 'https://api.adsb.lol/v2'
+/* Three community networks, each fed by different receivers, all answering
+   in readsb's shape at the same paths. Asked in turn until one hears the
+   aircraft: over the prairies one network's nearest receiver may be a
+   province away while another's is under the flight path, and one network
+   down must not be the seat map drawing a guess. */
+export const ADSB_NETWORKS = Object.freeze([
+  { base: ADSB_BASE, source: ADSB_SOURCE },
+  { base: 'https://api.airplanes.live/v2', source: 'api.airplanes.live' },
+  { base: 'https://opendata.adsb.fi/api/v2', source: 'opendata.adsb.fi' },
+])
 
 /* IATA → ICAO, for the callsign. */
 export const ICAO_CODES = Object.freeze({
@@ -118,31 +128,55 @@ export function readAircraft(record, { now = Date.now() } = {}) {
  * Where a flight is, or null when nobody is hearing it. Near `airport`
  * ({lat, lon}) on the ground within 8 km is "at the airport".
  */
-export function createAdsbProvider({ fetch = globalThis.fetch, now = () => Date.now() } = {}) {
-  const ask = async pathname => {
-    const response = await fetch(`${ADSB_BASE}/${pathname}`, {
+export function createAdsbProvider({
+  fetch = globalThis.fetch,
+  now = () => Date.now(),
+  networks = ADSB_NETWORKS,
+} = {}) {
+  const askOne = async (network, pathname) => {
+    const response = await fetch(`${network.base}/${pathname}`, {
       headers: { accept: 'application/json' },
     })
-    if (!response.ok) throw new Error(`${ADSB_SOURCE} answered ${response.status}`)
+    if (!response.ok) throw new Error(`${network.source} answered ${response.status}`)
     const body = await response.json()
     return Array.isArray(body?.ac) ? body.ac : []
   }
+  /* Each network in turn until one has the aircraft. A network that fails
+     is skipped for one that may answer; only when every one failed is the
+     failure the answer, so "not heard" is never said about a network that
+     was never reached. */
+  const ask = async (pathname, pick) => {
+    let failure = null
+    let answered = false
+    for (const network of networks) {
+      try {
+        const found = pick(await askOne(network, pathname))
+        answered = true
+        if (found) return { ...readAircraft(found, { now: now() }), network: network.source }
+      } catch (error) {
+        failure = error
+      }
+    }
+    if (!answered && failure) throw failure
+    return null
+  }
   return {
     source: ADSB_SOURCE,
-    async byCallsign(callsign) {
+    networks: networks.map(network => network.source),
+    byCallsign(callsign) {
       const wanted = String(callsign || '').toUpperCase()
-      if (!wanted) return null
-      const found = (await ask(`callsign/${encodeURIComponent(wanted)}`)).find(
-        one =>
-          String(one.flight || '')
-            .trim()
-            .toUpperCase() === wanted,
+      if (!wanted) return Promise.resolve(null)
+      return ask(`callsign/${encodeURIComponent(wanted)}`, list =>
+        list.find(
+          one =>
+            String(one.flight || '')
+              .trim()
+              .toUpperCase() === wanted,
+        ),
       )
-      return found ? readAircraft(found, { now: now() }) : null
     },
-    async byHex(hex) {
-      const found = (await ask(`hex/${encodeURIComponent(String(hex || '').toLowerCase())}`))[0]
-      return found ? readAircraft(found, { now: now() }) : null
+    byHex(hex) {
+      return ask(`hex/${encodeURIComponent(String(hex || '').toLowerCase())}`, list => list[0])
     },
   }
 }

@@ -725,3 +725,43 @@ test('Pearson’s aisle is the check-in zone, in the airport’s own word, besid
     'kept under the ticket’s name only',
   )
 })
+
+test('ADS-B: the networks are asked in turn until one hears; a network down is skipped, not the answer', async () => {
+  const { createAdsbProvider } = await import('../src/flights/providers/adsb.js')
+  const heard = {
+    hex: 'c05f1a',
+    flight: 'ACA1115 ',
+    t: 'BCS3',
+    alt_baro: 31000,
+    lat: 50.4,
+    lon: -104.6,
+    seen: 3,
+  }
+  const answers = {
+    'api.adsb.lol': { ok: true, status: 200, json: async () => ({ ac: [] }) },
+    'api.airplanes.live': { ok: true, status: 200, json: async () => ({ ac: [heard] }) },
+  }
+  const asked = []
+  const fetch = async url => {
+    const host = new URL(url).host
+    asked.push(host)
+    const answer = answers[host]
+    if (!answer) throw new Error(`${host} unreachable`)
+    return answer
+  }
+  const sky = createAdsbProvider({ fetch, now: () => Date.parse('2026-09-19T19:10:00Z') })
+  /* The first network hears nothing; the second has it. */
+  const found = await sky.byCallsign('ACA1115')
+  assert.equal(found.type, 'BCS3')
+  assert.equal(found.network, 'api.airplanes.live')
+  assert.deepEqual(asked, ['api.adsb.lol', 'api.airplanes.live'])
+  /* The first network down is skipped for the second. */
+  answers['api.adsb.lol'] = { ok: false, status: 503 }
+  assert.equal((await sky.byCallsign('ACA1115')).type, 'BCS3')
+  /* Nobody hears: null, not a failure — one network did answer. */
+  answers['api.airplanes.live'] = { ok: true, status: 200, json: async () => ({ ac: [] }) }
+  assert.equal(await sky.byCallsign('ACA1115'), null)
+  /* Every network down is the failure it is. */
+  delete answers['api.airplanes.live']
+  await assert.rejects(sky.byCallsign('ACA1115'), /unreachable|503/)
+})

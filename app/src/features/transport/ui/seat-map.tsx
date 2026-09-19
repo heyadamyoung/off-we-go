@@ -21,13 +21,20 @@ import Sheet from '../../../shared/ui/sheet'
    the callsign is the number's earlier rotation, and its type is what this
    leg will usually fly — said as that. The watch writes the same answers
    onto the leg for everybody in a while; this is for the family looking now. */
-function useHeardType(
-  tripId: string | undefined,
-  segment: Segment,
-): { type: string | null; usual: boolean } {
-  const [heard, setHeard] = useState<{ type: string | null; usual: boolean }>({
+interface Heard {
+  type: string | null
+  usual: boolean
+  /** what became of the ask, when it named no type: the sheet says so */
+  reason: string | null
+  callsign: string | null
+}
+
+function useHeardType(tripId: string | undefined, segment: Segment): Heard {
+  const [heard, setHeard] = useState<Heard>({
     type: null,
     usual: false,
+    reason: null,
+    callsign: null,
   })
   const known = !!(segment.aircraft || segment.flight?.aircraft)
   useEffect(() => {
@@ -36,15 +43,43 @@ function useHeardType(
     loadSegmentPosition(tripId, segment.id)
       .then(found => {
         if (!alive) return
-        if (found.aircraft?.type) setHeard({ type: found.aircraft.type, usual: false })
-        else if (found.usual) setHeard({ type: found.usual, usual: true })
+        const callsign = found.callsign
+        if (found.aircraft?.type)
+          setHeard({ type: found.aircraft.type, usual: false, reason: null, callsign })
+        else if (found.usual) setHeard({ type: found.usual, usual: true, reason: null, callsign })
+        else if (found.aircraft) setHeard({ type: null, usual: false, reason: 'no-type', callsign })
+        else setHeard({ type: null, usual: false, reason: found.reason, callsign })
       })
-      .catch(() => {})
+      .catch(() => {
+        if (alive) setHeard({ type: null, usual: false, reason: 'unavailable', callsign: null })
+      })
     return () => {
       alive = false
     }
   }, [tripId, known, segment.id])
   return heard
+}
+
+/* Why the cabin is a guess, in words that say what to do: the sky was
+   asked, and this is what came back. */
+function askOutcome(heard: Heard): string | null {
+  const who = heard.callsign || 'this flight'
+  switch (heard.reason) {
+    case 'not-heard':
+      return `Nobody on the transponder networks is hearing ${who} right now, so which aircraft it is has not been said yet.`
+    case 'unavailable':
+      return `The transponder networks could not be reached to ask which aircraft ${who} is.`
+    case 'no-type':
+      return `${who} is being heard, but the networks do not know the airframe's type.`
+    case 'not-flying':
+      return `Which aircraft is not known yet: the transponder says from the gate, and this number has not been heard flying lately.`
+    case 'no-callsign':
+      return 'The flight number names no airline the transponder networks know, so the sky was not asked.'
+    case 'sample':
+      return null
+    default:
+      return null
+  }
 }
 
 /* The airline's configuration for this leg, when the server has one. */
@@ -276,6 +311,13 @@ export default function SeatMap({
               ? `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — the aircraft was named as “${unknown}”, which is not on file yet, so the rows and exits are representative rather than its own.`
               : `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your seats are exact, rows and exits are representative rather than this aircraft’s chart. Put the aircraft on the leg and the cabin is drawn for it.`}
       </p>
+      {!aircraft && askOutcome(heard) && (
+        <p
+          className="tkask m-0 text-center text-[11px] leading-relaxed text-faint"
+          data-reason={heard.reason}>
+          {askOutcome(heard)}
+        </p>
+      )}
     </Sheet>
   )
 }
