@@ -23,9 +23,12 @@ struct TravelActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 6) {
-                        Text(context.attributes.glyph)
-                        Text(context.attributes.title).font(.headline.weight(.bold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Wordmark(size: 10)
+                        HStack(spacing: 6) {
+                            Text(context.attributes.glyph)
+                            Text(context.attributes.title).font(.headline.weight(.bold))
+                        }
                     }
                     .padding(.leading, 4)
                 }
@@ -33,20 +36,31 @@ struct TravelActivityWidget: Widget {
                     Where(state: context.state).padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(context.attributes.from + " → " + context.attributes.to)
-                            .font(.caption).foregroundStyle(Palette.muted)
-                        Spacer()
-                        Text(context.state.deadlineLabel).font(.caption).foregroundStyle(Palette.muted)
-                        Countdown(state: context.state).font(.title3.monospacedDigit().weight(.semibold))
-                        Verdict(state: context.state)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Headline(state: context.state).font(.caption.weight(.semibold))
+                        Journey(attributes: context.attributes, state: context.state)
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(context.attributes.from + " → " + context.attributes.to)
+                                .font(.caption).foregroundStyle(Palette.muted)
+                            Spacer()
+                            Text(context.state.deadlineLabel).font(.caption).foregroundStyle(Palette.muted)
+                            Countdown(state: context.state).font(.title3.monospacedDigit().weight(.semibold))
+                            Verdict(state: context.state)
+                        }
                     }
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
+                /* Before the doors close the gate is the one thing worth the
+                   island's few characters; in the air and after, the leg. */
                 HStack(spacing: 4) {
                     Text(context.attributes.glyph)
-                    Text(context.attributes.title).font(.caption.weight(.semibold))
+                    if let gate = context.state.gate, !gate.isEmpty,
+                       context.state.phase == "before" || context.state.phase == "boarding" {
+                        Text(gate).font(.caption.weight(.bold)).foregroundStyle(Palette.accent)
+                    } else {
+                        Text(context.attributes.title).font(.caption.weight(.semibold))
+                    }
                 }
             } compactTrailing: {
                 Countdown(state: context.state)
@@ -77,12 +91,18 @@ struct LockScreenCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
+                Wordmark(size: 11)
+                Spacer()
+                Where(state: state)
+            }
+            HStack(alignment: .firstTextBaseline) {
                 Text(attributes.glyph)
                 Text(attributes.title).font(.headline.weight(.bold))
                 Text(attributes.from + " → " + attributes.to).font(.subheadline).foregroundStyle(Palette.muted)
                 Spacer()
-                Where(state: state)
             }
+            Headline(state: state).font(.subheadline.weight(.semibold))
+            Journey(attributes: attributes, state: state)
             HStack(alignment: .lastTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(state.deadlineLabel.uppercased())
@@ -102,6 +122,65 @@ struct LockScreenCard: View {
         }
         .padding(14)
         .foregroundStyle(Palette.ink)
+    }
+}
+
+/* The brand, so the card says whose it is: the words and the amber full
+   stop, as the app's own corner draws them. */
+struct Wordmark: View {
+    let size: CGFloat
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("Off we go").font(.system(size: size, weight: .heavy)).foregroundStyle(Palette.muted)
+            Text(".").font(.system(size: size, weight: .heavy)).foregroundStyle(Palette.accent)
+        }
+    }
+}
+
+/* The Travel tab's own sentence — "On time · gate E19", "Boarding · gate
+   E19", "Landed 16:02 · baggage claim belt 14" — in the tone the tab gives
+   it. A card from before the sentence was sent has none, and says nothing. */
+struct Headline: View {
+    let state: TravelActivityAttributes.ContentState
+
+    var body: some View {
+        if let headline = state.headline, !headline.isEmpty {
+            Text(headline).foregroundStyle(tone).lineLimit(2)
+        }
+    }
+
+    private var tone: Color {
+        if state.status == "cancelled" { return Palette.tight }
+        if state.phase == "boarding" || !state.moved.isEmpty { return Palette.accent }
+        if state.phase == "landed" { return Palette.ok }
+        return Palette.ink
+    }
+}
+
+/* In the air, how far along: a bar the system fills by itself between
+   leaving and landing, the codes at either end; on the ground after, the
+   belt to walk to. Nothing before take-off — the countdown is the story
+   then. */
+struct Journey: View {
+    let attributes: TravelActivityAttributes
+    let state: TravelActivityAttributes.ContentState
+
+    var body: some View {
+        if state.phase == "airborne", let arrives = state.arrivesAt, arrives > state.departsAt {
+            HStack(spacing: 6) {
+                Text(attributes.from).font(.caption2.weight(.bold)).foregroundStyle(Palette.muted)
+                ProgressView(timerInterval: state.departsAt...arrives, countsDown: false, label: { EmptyView() }, currentValueLabel: { EmptyView() })
+                    .progressViewStyle(.linear)
+                    .tint(Palette.accent)
+                Text(attributes.to).font(.caption2.weight(.bold)).foregroundStyle(Palette.muted)
+            }
+        } else if state.phase == "landed", let belt = state.belt, !belt.isEmpty {
+            HStack(spacing: 4) {
+                Text("Baggage").font(.caption).foregroundStyle(Palette.muted)
+                Text("belt " + belt).font(.caption.weight(.bold)).foregroundStyle(Palette.accent)
+            }
+        }
     }
 }
 
