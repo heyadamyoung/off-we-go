@@ -32,6 +32,12 @@ export const WATCH_AFTER_MS = 4 * 60 * 60 * 1000
    network's rate limit is theirs to set. */
 const ADSB_SILENCE_MS = 20 * 60_000
 const ADSB_EVERY_MS = 10 * 60_000
+/* Through the flying window a leg with no type yet asks more often: over
+   the prairies a flight is heard by one receiver for a few minutes, and
+   every ten minutes missed a whole flight. Two minutes is one request a
+   minute for a family with two legs in the air; the network's limit is
+   nowhere near. */
+const ADSB_FLYING_EVERY_MS = 2 * 60_000
 /* Before the flying window the sky is asked for the number's earlier
    rotation — a flight that is up for an hour is heard at this cadence. */
 const ADSB_EARLY_EVERY_MS = 20 * 60_000
@@ -309,12 +315,20 @@ export async function watchFlights({
         view = { ...typed, aircraft: snapshot.info.aircraft }
         typed = view
       }
+      /* At once when the board has just said departed or landed — the
+         aircraft is at an airport, under the densest receivers there are —
+         else every couple of minutes. */
+      const justMoved =
+        typed &&
+        snapshot?.info &&
+        ['departed', 'landed', 'arrived'].includes(typed.status) &&
+        typed.status !== snapshot.info.status
       if (
         typed &&
         !typed.aircraft &&
         sources.adsb &&
         inFlyingWindow(leg, now) &&
-        now - (asked.get(leg.id) || 0) > ADSB_EVERY_MS
+        (justMoved || now - (asked.get(leg.id) || 0) > ADSB_FLYING_EVERY_MS)
       ) {
         asked.set(leg.id, now)
         const callsign = callsignFor(number)

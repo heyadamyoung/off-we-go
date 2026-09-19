@@ -578,10 +578,21 @@ async function record(probe) {
         return { kind: 'json' }
       }
       console.log(`${list.length} flights`)
-      for (const one of list) {
+      const sample = list[0]
+      if (sample?.icao24) {
+        metadataFollowUps.push(
+          json(
+            `opensky-metadata-sample-${sample.icao24}`,
+            `${OPENSKY}/metadata/aircraft/icao/${sample.icao24}`,
+            {},
+            { full: true },
+          ),
+        )
+      }
+      for (const [index, one] of list.entries()) {
         const callsign = String(one.callsign || '').trim()
         const mine = callsign === CALLSIGN
-        if (mine || list.length <= 40) {
+        if (mine || index < 8) {
           console.log(
             `    ${mine ? '>>' : '  '} ${callsign.padEnd(8)} hex ${one.icao24}  ${one.estDepartureAirport || '????'} -> ${one.estArrivalAirport || '????'}  ${new Date(one.firstSeen * 1000).toISOString()} .. ${new Date(one.lastSeen * 1000).toISOString()}`,
           )
