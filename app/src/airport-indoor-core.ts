@@ -43,17 +43,57 @@ export function isAirportStop(stop: Stop | null | undefined) {
   return AIRPORT.test(`${stop.name || ''} ${stop.kw || ''} ${stop.kind || ''}`)
 }
 
+export interface Screen {
+  width: number
+  height: number
+}
+
+/** The screen the map is on, for how far a pan carries; a test rig has none. */
+const screenNow = (): Screen => ({
+  width: globalThis.innerWidth || 390,
+  height: globalThis.innerHeight || 844,
+})
+
+/** Metres to a pixel of the map at this zoom and latitude (512-pixel tiles). */
+const metresPerPixel = (zoom: number, lat: number) =>
+  (78271.517 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom
+
+/* How far from an airport's pin the camera may be and still be looking at
+   the airport: a couple of kilometres, or half again what the screen shows
+   when it shows more than that. Panning away from the terminal used to keep
+   it open for four kilometres at every zoom — screens and screens of city at
+   street level — while zooming out closed it at once. */
+export function terminalReach(view: { zoom: number; center: Coordinates }, screen: Screen) {
+  const half =
+    (metresPerPixel(view.zoom, view.center[1]) * Math.hypot(screen.width, screen.height)) / 2
+  return Math.max(2000, 1.5 * half)
+}
+
+/** Whether the camera has left this airport: zoomed out past the terminal,
+    or panned beyond its reach — either is leaving. */
+export function cameraAwayFrom(
+  view: { center: Coordinates; zoom: number },
+  stop: Stop,
+  screen: Screen = screenNow(),
+): boolean {
+  return (
+    view.zoom < 13.8 || stepMetres(view.center, [stop.lng, stop.lat]) > terminalReach(view, screen)
+  )
+}
+
 /* Zooming into an airport is asking to see inside it; no button needed. The
    thresholds are apart on purpose — open past one zoom, close below a lower
    one — so the terminal does not flicker at the boundary. A terminal closes
-   only the way it opened, by the camera leaving, and never while a line to
-   somewhere in it is up or a walk through it is on. */
+   only the way it opened, by the camera leaving — zooming out or panning
+   away — and never while a line to somewhere in it is up or a walk through
+   it is on. */
 export function autoIndoorMove({
   view,
   stops,
   active,
   routing,
   keep = false,
+  screen = screenNow(),
 }: {
   view: { center: Coordinates; zoom: number } | null
   stops?: Stop[]
@@ -62,6 +102,8 @@ export function autoIndoorMove({
   routing: boolean
   /** the walk on the day of a flight wants this terminal, wherever the camera is */
   keep?: boolean
+  /** the screen the map is on, for how far a pan carries */
+  screen?: Screen
 }): { open: Stop } | { close: true } | null {
   if (!view) return null
   if (!active) {
@@ -72,10 +114,7 @@ export function autoIndoorMove({
     return stop ? { open: stop } : null
   }
   if (routing || keep) return null
-  if (view.zoom < 13.8 || stepMetres(view.center, [active.lng, active.lat]) > 4000) {
-    return { close: true }
-  }
-  return null
+  return cameraAwayFrom(view, active, screen) ? { close: true } : null
 }
 
 /* Whether the camera is over this terminal at all, by the same thresholds
@@ -87,9 +126,10 @@ export function autoIndoorMove({
 export function cameraOverTerminal(
   view: { center: Coordinates; zoom: number } | null | undefined,
   stop: Stop | null | undefined,
+  screen: Screen = screenNow(),
 ): boolean {
   if (!view || !stop) return false
-  return view.zoom >= 13.8 && stepMetres(view.center, [stop.lng, stop.lat]) <= 4000
+  return !cameraAwayFrom(view, stop, screen)
 }
 
 /* Ways carry their own coordinates with `out geom`, so no second lookup and no
