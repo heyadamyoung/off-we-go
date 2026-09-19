@@ -499,6 +499,10 @@ test('pulled up past open, the bar covers the map up to the top chrome, and come
   expect(Math.round((await bar.boundingBox()).y)).toBeLessThanOrEqual(
     Math.round(tabs.y + tabs.height) + 12,
   )
+  /* What stood on the bar is gone, not standing over the title. */
+  const chrome = page.locator('.mapchrome')
+  await expect.poll(() => chrome.evaluate(el => getComputedStyle(el).opacity)).toBe('0')
+  expect(await chrome.evaluate(el => getComputedStyle(el).pointerEvents)).toBe('none')
   /* The cards, two to a row, with room. */
   const cards = bar.locator('.fcard')
   const first = await cards.nth(0).boundingBox()
@@ -510,6 +514,10 @@ test('pulled up past open, the bar covers the map up to the top chrome, and come
   await pull(80)
   await expect(bar).toHaveAttribute('data-stage', 'open')
   await expect.poll(async () => Math.round(844 - (await bar.boundingBox()).y)).toBe(208)
+  /* And the chrome is back on the bar, where it was. */
+  await expect.poll(() => chrome.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
+  const rested = await chrome.boundingBox()
+  expect(Math.round((await bar.boundingBox()).y - (rested.y + rested.height))).toBe(16)
   await pull(80)
   await expect(bar).toHaveAttribute('data-stage', 'peek')
 })

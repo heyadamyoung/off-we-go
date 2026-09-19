@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { autoIndoorMove, cameraOverTerminal } from '../src/airport-camera-core.ts'
 import {
-  autoIndoorMove,
   defaultLevel,
   indoorFeatures,
   isAirportStop,
@@ -9,7 +9,6 @@ import {
   onLevel,
   overpassQueryFor,
   parseLevels,
-  cameraOverTerminal,
 } from '../src/airport-indoor-core.ts'
 
 test('an airport is recognised by its name or keywords, a hotel is not', () => {

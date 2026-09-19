@@ -270,7 +270,10 @@
     transform: translate3d(0, calc(var(--bar-tall) - var(--trip-bar)), 0);
     transition: transform .22s ease;
   }
-  .mapchrome, .nowpill, .wctl, .edithint, .nowcard { transition: bottom .18s ease }
+  .mapchrome, .nowpill, .wctl, .edithint, .nowcard { transition: bottom .18s ease, opacity .18s ease }
+  /* Tall, the bar covers the map, and what stood on the bar would stand
+     over the title: gone, and out of the way of a tap. */
+  .bartall :is(.mapchrome, .nowpill, .wctl, .edithint, .nowcard) { opacity: 0; pointer-events: none }
   /* Under a finger the bar and the chrome are placed by hand on every move
      and must not ease toward each: the chrome rides the bar. The mark stays
      on a frame past the stage change, so the bottom the chrome stands on

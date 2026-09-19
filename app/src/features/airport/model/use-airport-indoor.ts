@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  autoIndoorMove,
-  defaultLevel,
-  levelsOf,
-  onLevel,
-  type IndoorFeature,
-  cameraOverTerminal,
-} from '../../../airport-indoor-core'
+import { autoIndoorMove, cameraOverTerminal } from '../../../airport-camera-core'
+import { defaultLevel, levelsOf, onLevel, type IndoorFeature } from '../../../airport-indoor-core'
 import {
   describeIndoorRoute,
   planGateRoute,

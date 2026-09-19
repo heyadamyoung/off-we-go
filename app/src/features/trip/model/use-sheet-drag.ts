@@ -39,6 +39,8 @@ const FLICK_PX_PER_MS = 0.45
 const SETTLE_MS = 220
 /** Everything that stands on the bar. */
 const CHROME = '.mapchrome, .nowpill, .wctl, .edithint, .nowcard'
+/** How far past the open height the chrome takes to fade out on the way up. */
+const FADE_PX = 120
 
 const resist = (px: number) => Math.sqrt(Math.max(0, px)) * 4
 
@@ -133,7 +135,10 @@ export default function useSheetDrag(
   )
 
   /* The bar and the chrome at a visible height, by hand: a transform on the
-     bar, a translate on each of the chrome, and — eased — the settle. */
+     bar, a translate on each of the chrome, and — eased — the settle. Past
+     the open height the chrome fades as it rises: it stands on the bar's top
+     edge, and carried all the way up it stood over the title. Tall, it is
+     gone; on the way down it is back. */
   const place = useCallback((visible: number, from: Press, eased: boolean) => {
     const element = sheet.current
     if (!element) return
@@ -142,9 +147,11 @@ export default function useSheetDrag(
     element.style.transition = eased ? `transform ${ease}` : 'none'
     element.style.transform = `translate3d(0, ${from.heights.tall - visible}px, 0)`
     const shift = from.heights[from.stage] - visible
+    const fade = Math.max(0, Math.min(1, 1 - (visible - from.heights.open) / FADE_PX))
     for (const standing of chrome(element)) {
-      standing.style.transition = eased ? `translate ${ease}` : 'none'
+      standing.style.transition = eased ? `translate ${ease}, opacity ${ease}` : 'none'
       standing.style.translate = `0 ${shift}px`
+      standing.style.opacity = String(fade)
     }
   }, [])
 
@@ -161,6 +168,7 @@ export default function useSheetDrag(
     for (const standing of chrome(element)) {
       standing.style.transition = ''
       standing.style.translate = ''
+      standing.style.opacity = ''
       standing.style.willChange = ''
     }
     const screen = element.closest('.tripscreen')
@@ -199,7 +207,7 @@ export default function useSheetDrag(
       moved.current = 0
       event.currentTarget.setPointerCapture?.(event.pointerId)
       element.style.willChange = 'transform'
-      for (const standing of chrome(element)) standing.style.willChange = 'translate'
+      for (const standing of chrome(element)) standing.style.willChange = 'translate, opacity'
       setDragging(true)
     },
     [stage, release],
