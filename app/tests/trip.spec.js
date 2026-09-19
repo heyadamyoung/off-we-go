@@ -499,12 +499,14 @@ for (const size of [
         window.__offwegoToast(`A ${kind} toast, long enough to wrap on a phone screen`, kind)
         /* The toast of this tone, not the first toast on the screen: under
            load the one before it is still on its way out. */
-        const toast = await new Promise(resolve =>
-          requestAnimationFrame(() => {
+        const toast = await new Promise(resolve => {
+          const look = () => {
             const all = document.querySelectorAll(`.toast[data-tone="${kind}"]`)
-            resolve(all[all.length - 1])
-          }),
-        )
+            if (all.length) resolve(all[all.length - 1])
+            else requestAnimationFrame(look)
+          }
+          look()
+        })
         const centre = () => {
           const box = toast.getBoundingClientRect()
           return box.left + box.width / 2 - document.documentElement.clientWidth / 2

@@ -21,6 +21,10 @@ import { LiveMarker, MapMarker, YouBeam } from './map-marker'
 import PlaneMarker from './plane-marker'
 import type { MapCanvasProps } from '../model/map-props'
 
+/** How much of a zoom level one notch of a mouse wheel is worth: a hundred
+    units of wheel is most of a level. MapLibre's own is a fifth. */
+const WHEEL_ZOOM_RATE = 1 / 120
+
 setWorkerUrl(maplibreWorkerUrl)
 /* Worker pool up at module load: the chunk lands ~30ms, the map builds ~100ms,
    so the workers are waiting instead of starting on the critical path. */
@@ -105,9 +109,24 @@ const MapCanvas = memo(function MapCanvas({
       container: holder.current,
       center: v.center,
       zoom: v.zoom,
-      minZoom: 3,
+      /* The whole world, as far out as Google Maps goes: a trip across an
+         ocean is a line across the globe, and stopping at a continent made
+         the far end of it something to scroll to. */
+      minZoom: 1,
       maxZoom: 18,
       interactive,
+      /* Three device pixels per CSS pixel is nine times the fill of a desk
+         for the same screen, and a pinch on a phone paid for it in dropped
+         frames. The tiles are drawn at two, which no eye tells apart on a
+         phone. */
+      pixelRatio: Math.min(globalThis.devicePixelRatio || 1, 2),
+      /* Tiles asked for mid-pinch were dropped the moment the zoom changed
+         again, so the map arrived blank and filled in after the fingers
+         lifted. What was on its way is drawn. */
+      cancelPendingTileRequestsWhileZooming: false,
+      /* A shorter cross-fade as tiles arrive: the long one read as the map
+         still catching up after the gesture had ended. */
+      fadeDuration: 120,
       // The credit is our own control, added below — bottom-left, clear of
       // the map controls, resting at the one line the licences insist on.
       attributionControl: false,
@@ -120,6 +139,10 @@ const MapCanvas = memo(function MapCanvas({
     m.setStyle(STYLE[themeRef.current === 'light' ? 'light' : 'dark'], styleSwap())
     m.addControl(creditControl(), 'bottom-right')
     m.touchZoomRotate?.disableRotation?.()
+    /* A notch of the wheel is most of a zoom level, eased, the way Google
+       Maps does it — not a fifth of one, which took five notches and read
+       as the map resisting. A trackpad keeps its own finer rate. */
+    m.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE)
     setMap(m)
     // A handle for the test suite: the attraction layer is drawn by the GPU,
     // so there is no element to select and assert against.
