@@ -260,6 +260,9 @@
      drag; the bar's height and the chrome's feet move together now. */
   .tripbar { transition: height .18s ease }
   .mapchrome, .nowpill, .wctl, .edithint, .nowcard { transition: bottom .18s ease }
+  /* Under a finger the chrome is placed by hand on every move (see
+     use-sheet-drag) and must not ease toward each: it rides the bar. */
+  .tripscreen[data-bardrag] :is(.mapchrome, .nowpill, .wctl, .edithint, .nowcard) { transition: none }
   .barpeek {
     --trip-bar: calc(80px + env(safe-area-inset-bottom, 0px));
     --trip-1: calc(var(--trip-bar) + 16px);
@@ -922,7 +925,7 @@
 @media (max-width: 640px) {
   /* On a phone the capsule sits in the chrome row rather than over the map, so
      the card it opens belongs above that row, not on top of it. */
-  .nowcard { bottom: calc(var(--trip-bar) + 56px); width: calc(100% - 1.5rem) }
+  .nowcard { bottom: calc(var(--trip-1) + 40px); width: calc(100% - 1.5rem) }
 }
 .nchead { display: flex; align-items: baseline; gap: 10px; padding-right: 22px }
 /* The headline is the way to the live dot — what the pill used to do the

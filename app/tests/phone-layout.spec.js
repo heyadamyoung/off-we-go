@@ -450,6 +450,11 @@ test('pulled up while collapsed, the bar grows from the bottom edge and never li
   expect(held.height).toBeGreaterThanOrEqual(rest.height + 55)
   /* And the day is in it as it rises, not a stretch of empty glass. */
   await expect(bar.locator('.fcard').first()).toBeVisible()
+  /* The chrome standing on the bar rides its top edge as it rises, the
+     same sixteen pixels above it as at rest — not left at the old height
+     to catch up after the finger has gone. */
+  const chrome = await page.locator('.mapchrome').boundingBox()
+  expect(Math.round(held.y - (chrome.y + chrome.height))).toBe(16)
   await page.mouse.up()
   await expect(grabber).toHaveAttribute('aria-expanded', 'true')
   await expect
