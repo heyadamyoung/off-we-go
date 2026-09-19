@@ -150,6 +150,10 @@ export function parseReginaBoard(xml, direction, { fetchedAt = new Date().toISOS
     row.terminal = normalizeTerminal(tag(block, 'TERMINAL'))
     row.gate = blankToNull(tag(block, 'GATE'))
     row.baggageBelt = blankToNull(tag(block, 'CAROUSEL'))
+    /* Never seen in the feed yet; read the same way as Dublin's, should the
+       vendor's words ever say it. */
+    row.bagsInHall =
+      direction === 'arrival' && /in hall|baggage|bags on belt|bags out/i.test(tag(block, 'STATUS'))
     row.aircraft = blankToNull(tag(block, 'AIRCRAFT'))
     row.codeshares = [...tag(block, 'CODESHARES').matchAll(/[A-Z0-9]{2}\s?\d{1,4}[A-Z]?/g)]
       .map(one => normalizeFlightNumber(one[0]))

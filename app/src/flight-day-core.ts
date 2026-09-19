@@ -85,7 +85,8 @@ export function flightHeadline(segment: Segment, now: number): { text: string; t
   if (status && LANDED.has(status)) {
     const when = flight?.actualArrival || flight?.estimatedArrival || segment.arrivesAt
     const belt = flight?.baggageBelt ? ` · baggage claim belt ${flight.baggageBelt}` : ''
-    return { text: `Landed ${localTime(when, segment.arriveTz)}${belt}`, tone: 'done' }
+    const bags = flight?.bagsInHall ? ' · bags in the hall' : ''
+    return { text: `Landed ${localTime(when, segment.arriveTz)}${belt}${bags}`, tone: 'done' }
   }
   if (status === 'departed') {
     const left = localTime(flight?.actualDeparture || segment.departsAt, segment.departTz)

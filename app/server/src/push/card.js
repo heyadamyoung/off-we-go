@@ -106,6 +106,7 @@ export function flightCard(leg, info, now) {
     gate: view?.gate || leg.gate || null,
     terminal: view?.terminal || leg.terminal || null,
     belt: view?.baggageBelt || null,
+    bags: view?.bagsInHall === true,
     boarding: view?.boardingStatus || null,
     departs: new Date(departs).toISOString(),
     arrives: arrives === null ? null : new Date(arrives).toISOString(),
@@ -131,6 +132,13 @@ export function flightCard(leg, info, now) {
     const when = landedAt ?? arrives ?? now
     if (now > when + HOLD_AFTER_LANDING_MS) return null
     const belt = base.belt ? ` · baggage claim belt ${base.belt}` : ''
+    if (base.bags) {
+      return {
+        ...base,
+        phase: 'landed',
+        body: `Bags in the hall${base.belt ? ` · belt ${base.belt}` : ''} · landed ${clock(when, az)}`,
+      }
+    }
     return { ...base, phase: 'landed', body: `Landed ${clock(when, az)}${belt}` }
   }
   /* Nothing heard for long enough after it was due down: the card goes,
@@ -208,6 +216,9 @@ export function whatWakes(previous, next, role) {
   } else if (next.phase === 'landed' && was?.phase !== 'landed') {
     return 'landed'
   }
+  /* The bags out: whoever is waiting in arrivals, and whoever is standing
+     at the wrong belt. */
+  if (next.phase === 'landed' && next.bags && !was?.bags) return 'bags'
   return null
 }
 

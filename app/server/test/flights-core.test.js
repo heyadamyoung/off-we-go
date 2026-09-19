@@ -334,3 +334,22 @@ test('a board is fetched once per interval for everyone, and served stale rather
   assert.equal(back.stale, false)
   assert.equal(cache.health()['DUB:departure'].failures, 0, 'a success clears the streak')
 })
+
+test('the bags coming out is one event, said with the belt, and only once', () => {
+  const landed = { ...before, status: 'arrived', baggageBelt: '5', bagsInHall: false }
+  const out = { ...landed, bagsInHall: true }
+  const events = detectFlightEvents(landed, out)
+  assert.deepEqual(
+    events.map(one => one.type),
+    ['BagsInHall'],
+  )
+  assert.equal(events[0].newValue, '5')
+  assert.equal(
+    describeFlightEvent(events[0], { flight: 'EI 123' }),
+    'Bags from EI 123 are in the hall, belt 5.',
+  )
+  assert.deepEqual(detectFlightEvents(out, out), [])
+  /* A first look at a board already saying it is the news, not silence. */
+  assert.ok(detectFlightEvents(null, out).some(one => one.type === 'BagsInHall'))
+  assert.ok(detectFlightEvents({ status: 'arrived' }, out).some(one => one.type === 'BagsInHall'))
+})

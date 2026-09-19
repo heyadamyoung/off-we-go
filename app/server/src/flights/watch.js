@@ -117,6 +117,7 @@ export function mergeBoards(departure, arrival) {
     view.baggageBelt = arrival.baggageBelt
     view.arrivalTerminal = arrival.terminal
     view.arrivalGate = arrival.gate
+    view.bagsInHall = arrival.bagsInHall === true
     /* Which aircraft: the near board's word when it has one, else the far
        board's — Regina names the type on its arrivals board, Pearson never
        does, and a leg to Regina wants the seat map to know. */
@@ -178,6 +179,7 @@ const NOTE_ORDER = [
   /* Landed before departed: a first look at a flight that has already
      landed is news of a landing, and the leaving is history. */
   'FlightLanded',
+  'BagsInHall',
   'FlightDeparted',
   'ArrivalEstimateChanged',
   'BaggageUpdated',
@@ -186,7 +188,12 @@ const NOTE_ORDER = [
 
 const GONE_FOR_GOOD = new Set(['departed', 'landed', 'arrived'])
 /* The far end's news: said by the arrivals board, in the far end's clock. */
-export const ARRIVAL_SIDE = new Set(['FlightLanded', 'ArrivalEstimateChanged', 'BaggageUpdated'])
+export const ARRIVAL_SIDE = new Set([
+  'FlightLanded',
+  'ArrivalEstimateChanged',
+  'BaggageUpdated',
+  'BagsInHall',
+])
 
 export function noteFor(
   events,

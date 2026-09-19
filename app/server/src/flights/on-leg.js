@@ -47,6 +47,8 @@ export function flightOnLeg(info, fetchedAt = null, note = null) {
     /** US pre-clearance before the gate — Dublin says which flights */
     preClearance: extra.preClearance === true ? true : null,
     aircraft: text(info.aircraft),
+    /** the arrivals board says the bags are out; only some boards ever do */
+    bagsInHall: info.bagsInHall === true,
     /** the type the same number flew last time it was heard, for a leg nothing has named the day's for yet */
     usualAircraft: text(info.usualAircraft),
     sources:

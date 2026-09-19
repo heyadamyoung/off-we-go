@@ -101,6 +101,8 @@ export interface FlightOnLeg {
   /** US pre-clearance before the gate, where the board says so */
   preClearance?: boolean | null
   aircraft?: string | null
+  /** the arrivals board says the bags are out — Dublin says so; most boards never do */
+  bagsInHall?: boolean | null
   /** the type the same number flew last time it was heard, while nothing has named the day's */
   usualAircraft?: string | null
   sources?: string[]

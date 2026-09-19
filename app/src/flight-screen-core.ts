@@ -111,7 +111,11 @@ function stepNote(step: FlightPhase, segment: Segment): string | null {
       return was ? `Scheduled ${was}` : null
     }
     case 'lands': {
-      const belt = flight?.baggageBelt ? `Baggage belt ${flight.baggageBelt}` : null
+      const belt = flight?.bagsInHall
+        ? `Bags in the hall${flight.baggageBelt ? ` · belt ${flight.baggageBelt}` : ''}`
+        : flight?.baggageBelt
+          ? `Baggage belt ${flight.baggageBelt}`
+          : null
       const planned = flight?.scheduledArrival || segment.arrivesAt || null
       const moved = flight?.actualArrival || flight?.estimatedArrival || null
       const { was } = clocks(planned, moved, segment.arriveTz)
