@@ -2,14 +2,68 @@ require 'json'
 
 default_platform(:ios)
 
+# The Lock Screen card is an app extension with a bundle of its own
+# (<IOS_BUNDLE_ID>.TravelActivity). Apple wants an App ID registered for it
+# and a profile for every way it ships, and the day that was left to a person
+# with the developer portal was the day the beta stopped shipping: every
+# TestFlight build after the card was added failed in its first minute for
+# want of a profile nobody had made. The App Store Connect key the workflows
+# already hold can register the App ID and make the profiles itself, so it
+# does, on every build, and nothing waits on a portal.
+
+def activity_identifier
+  "#{ENV.fetch('IOS_BUNDLE_ID')}.TravelActivity"
+end
+
+def connect_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch('APP_STORE_CONNECT_KEY_ID'),
+    issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID'),
+    key_content: ENV.fetch('APP_STORE_CONNECT_API_KEY_P8')
+  )
+end
+
+# The App ID, registered once and found every time after.
+def ensure_app_id(api_key, identifier, name)
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(hash: api_key)
+  known = Spaceship::ConnectAPI::BundleId.all(filter: { identifier: identifier })
+  if known.any? { |bundle| bundle.identifier == identifier }
+    UI.message("The App ID #{identifier} is registered")
+    return
+  end
+  UI.important("Registering the App ID #{identifier}")
+  Spaceship::ConnectAPI::BundleId.create(
+    name: name,
+    platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
+    identifier: identifier
+  )
+end
+
+# The card's App Store profile, under the name the Xcode project signs it
+# with: made when there is none, remade when there is, with the distribution
+# certificate installed on this machine, and installed where Xcode looks.
+def fetch_activity_app_store_profile(api_key)
+  ensure_app_id(api_key, activity_identifier, 'Off We Go Travel Activity')
+  get_provisioning_profile(
+    force: true,
+    app_identifier: activity_identifier,
+    team_id: ENV.fetch('APPLE_TEAM_ID'),
+    provisioning_name: ENV.fetch('IOS_ACTIVITY_PROVISIONING_PROFILE_NAME'),
+    filename: 'Wayfare_Activity_App_Store.mobileprovision',
+    output_path: ENV.fetch('RUNNER_TEMP'),
+    api_key: api_key
+  )
+end
+
 platform :ios do
-  desc 'Register the private test devices and refresh the Ad Hoc profile'
+  desc 'Register the Lock Screen card and make the App Store profile that signs it'
+  lane :sign_lock_screen_card do
+    fetch_activity_app_store_profile(connect_api_key)
+  end
+
+  desc 'Register the private test devices and refresh the Ad Hoc profiles'
   lane :refresh_adhoc_profile do
-    api_key = app_store_connect_api_key(
-      key_id: ENV.fetch('APP_STORE_CONNECT_KEY_ID'),
-      issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID'),
-      key_content: ENV.fetch('APP_STORE_CONNECT_API_KEY_P8')
-    )
+    api_key = connect_api_key
     devices = JSON.parse(File.read(ENV.fetch('IOS_ADHOC_DEVICES_PATH')))
 
     register_devices(
@@ -18,6 +72,9 @@ platform :ios do
       team_id: ENV.fetch('APPLE_TEAM_ID'),
       api_key: api_key
     )
+    # The archive is signed with the App Store profiles and re-signed for the
+    # devices at export, so the card needs both of its profiles here.
+    fetch_activity_app_store_profile(api_key)
     get_provisioning_profile(
       adhoc: true,
       force: true,
@@ -28,12 +85,11 @@ platform :ios do
       output_path: ENV.fetch('RUNNER_TEMP'),
       api_key: api_key
     )
-    # The Lock Screen card is an extension with a bundle of its own, and the
-    # devices have to be on its profile as much as on the app's.
+    # The devices have to be on the card's profile as much as on the app's.
     get_provisioning_profile(
       adhoc: true,
       force: true,
-      app_identifier: "#{ENV.fetch('IOS_BUNDLE_ID')}.TravelActivity",
+      app_identifier: activity_identifier,
       team_id: ENV.fetch('APPLE_TEAM_ID'),
       provisioning_name: ENV.fetch('IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME'),
       filename: 'Wayfare_Activity_Ad_Hoc.mobileprovision',

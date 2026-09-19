@@ -35,9 +35,11 @@ jobs:
       IOS_ADHOC_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ADHOC_PROVISIONING_PROFILE_NAME }}
       # The Lock Screen card is an app extension with a bundle of its own
       # (<IOS_BUNDLE_ID>.TravelActivity): archived under its App Store profile
-      # like the app, then re-signed for the devices with an Ad Hoc one.
-      IOS_ACTIVITY_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ACTIVITY_PROVISIONING_PROFILE_NAME }}
-      IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME }}
+      # like the app, then re-signed for the devices with an Ad Hoc one. Both
+      # profiles are made by fastlane with the App Store Connect key, under
+      # these names; the App Store one is the name the Xcode project signs with.
+      IOS_ACTIVITY_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ACTIVITY_PROVISIONING_PROFILE_NAME || 'Wayfare Activity App Store CI' }}
+      IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME || 'Wayfare Activity iPad Ad Hoc' }}
       WAYFARE_DOMAIN: offwego.to
       GH_TOKEN: ${{ github.token }}
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -70,23 +72,16 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
-          IOS_ACTIVITY_PROVISIONING_PROFILE: ${{ secrets.IOS_ACTIVITY_PROVISIONING_PROFILE }}
         run: |
-          if [ -z "$IOS_ACTIVITY_PROVISIONING_PROFILE" ] || [ -z "$IOS_ACTIVITY_PROVISIONING_PROFILE_NAME" ] || [ -z "$IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME" ]; then
-            echo "::error::The TravelActivity extension needs its own profiles: the App Store one (secret IOS_ACTIVITY_PROVISIONING_PROFILE, variable IOS_ACTIVITY_PROVISIONING_PROFILE_NAME) to archive, and the name of an Ad Hoc one for ${IOS_BUNDLE_ID}.TravelActivity (variable IOS_ACTIVITY_ADHOC_PROVISIONING_PROFILE_NAME) for fastlane to refresh."
-            exit 1
-          fi
           KEYCHAIN_PATH="$RUNNER_TEMP/off-we-go-adhoc-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           CERTIFICATE_PATH="$RUNNER_TEMP/off-we-go-distribution.p12"
           PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
           APP_STORE_PROFILE_PATH="$PROFILE_DIRECTORY/OffWeGo_App_Store_CI.mobileprovision"
-          ACTIVITY_PROFILE_PATH="$PROFILE_DIRECTORY/OffWeGo_Activity_App_Store_CI.mobileprovision"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
           mkdir -p "$PROFILE_DIRECTORY"
           printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 -D > "$APP_STORE_PROFILE_PATH"
-          printf '%s' "$IOS_ACTIVITY_PROVISIONING_PROFILE" | base64 -D > "$ACTIVITY_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -98,7 +93,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-      - name: Register devices and refresh Ad Hoc profile
+      - name: Register devices, sign the Lock Screen card and refresh the Ad Hoc profiles
         env:
           APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
           IOS_ADHOC_DEVICES: ${{ secrets.IOS_ADHOC_DEVICES }}

@@ -35,8 +35,10 @@ jobs:
       IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
       IOS_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_PROVISIONING_PROFILE_NAME }}
       # The Lock Screen card is an app extension: its own bundle
-      # (<IOS_BUNDLE_ID>.TravelActivity) with an App Store profile of its own.
-      IOS_ACTIVITY_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ACTIVITY_PROVISIONING_PROFILE_NAME }}
+      # (<IOS_BUNDLE_ID>.TravelActivity) with an App Store profile of its own,
+      # made by the workflow itself (see fastlane/Fastfile) under the name the
+      # Xcode project signs the extension with.
+      IOS_ACTIVITY_PROVISIONING_PROFILE_NAME: ${{ vars.IOS_ACTIVITY_PROVISIONING_PROFILE_NAME || 'Wayfare Activity App Store CI' }}
       WAYFARE_DOMAIN: offwego.to
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -54,21 +56,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # Said here, in the first minute, rather than by xcodebuild in the
-      # twentieth: the archive embeds the TravelActivity extension, and an
-      # extension is signed with a profile of its own. Without one the export
-      # fails with a line about a missing profile for an identifier nobody
-      # remembers creating.
-      - name: Check the Lock Screen card can be signed
-        env:
-          IOS_ACTIVITY_PROVISIONING_PROFILE: ${{ secrets.IOS_ACTIVITY_PROVISIONING_PROFILE }}
-        run: |
-          if [ -z "$IOS_ACTIVITY_PROVISIONING_PROFILE" ] || [ -z "$IOS_ACTIVITY_PROVISIONING_PROFILE_NAME" ]; then
-            echo "::error::The TravelActivity extension needs its own App Store provisioning profile."
-            echo "::error::In the Apple Developer portal: register the App ID ${IOS_BUNDLE_ID}.TravelActivity, create an App Store profile for it with the distribution certificate, then set the repository variable IOS_ACTIVITY_PROVISIONING_PROFILE_NAME to the profile's name and the secret IOS_ACTIVITY_PROVISIONING_PROFILE to the .mobileprovision file, base64-encoded."
-            exit 1
-          fi
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -105,19 +92,16 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
-          IOS_ACTIVITY_PROVISIONING_PROFILE: ${{ secrets.IOS_ACTIVITY_PROVISIONING_PROFILE }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/off-we-go-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           CERTIFICATE_PATH="$RUNNER_TEMP/off-we-go-distribution.p12"
           PROFILE_DIRECTORY="$HOME/Library/MobileDevice/Provisioning Profiles"
           PROFILE_PATH="$PROFILE_DIRECTORY/OffWeGo_App_Store_CI.mobileprovision"
-          ACTIVITY_PROFILE_PATH="$PROFILE_DIRECTORY/OffWeGo_Activity_App_Store_CI.mobileprovision"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
           mkdir -p "$PROFILE_DIRECTORY"
           printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 -D > "$PROFILE_PATH"
-          printf '%s' "$IOS_ACTIVITY_PROVISIONING_PROFILE" | base64 -D > "$ACTIVITY_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -128,6 +112,20 @@ jobs:
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      # The archive embeds the TravelActivity extension, and an extension is
+      # signed with a profile of its own. Rather than fail for want of one, the
+      # workflow registers the extension's App ID and makes the profile with
+      # the App Store Connect key, after the certificate is in the keychain so
+      # the profile is made for that certificate.
+      - name: Sign the Lock Screen card
+        env:
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          if ! command -v fastlane >/dev/null 2>&1; then
+            gem install fastlane --no-document
+          fi
+          fastlane ios sign_lock_screen_card
 
       - name: Create export configuration
         run: >-

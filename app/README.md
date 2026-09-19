@@ -164,6 +164,6 @@ pnpm android:sync
 docker compose config
 ```
 
-The iOS project is in `ios/`. `.github/workflows/ios-build.yml` performs an unsigned iPhone/iPad simulator compile, while `.github/workflows/testflight.yml` creates an automatically signed archive and uploads it to App Store Connect from a GitHub-hosted Mac. Apple credentials remain in GitHub Actions secrets; see `docs/app-store/release-checklist.md`.
+The iOS project is in `ios/`. `.github/workflows/ios-build.yml` performs an unsigned iPhone/iPad simulator compile, while `.github/workflows/testflight.yml` creates a manually signed archive on a GitHub-hosted Mac, uploads it to App Store Connect and releases it to the tester group. The distribution certificate and the app's App Store profile are GitHub Actions secrets; the Lock Screen card's App ID and profiles are registered and made by `fastlane/Fastfile` with the App Store Connect key on every build, so nothing about the extension is set up by hand.
 
 The Kotlin Android project is in `android/`. `.github/workflows/android-build.yml` compiles and tests a debug APK with JDK 21 and Android SDK 35. Open it with `pnpm android:open`; release and App Links setup are documented in `docs/google-play/release-checklist.md`.
