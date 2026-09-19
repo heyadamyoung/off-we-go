@@ -44,8 +44,10 @@ test('many stops on one date make one chip', async ({ page }) => {
     .filter(chip => chip !== 'all days')
   /* Drawn as labels and ordered by date — the whole point of storing the date.
      Sorting the text would put Friday above Saturday by luck and Thursday
-     below both by spelling. */
-  expect(chips.slice(0, 2)).toEqual(['fri 4 sep', 'sat 5 sep'])
+     below both by spelling. The trip is behind us, so the chips count back
+     from its last day; the fourth, once, is the last of them. */
+  expect(chips.slice(-2)).toEqual(['sat 5 sep', 'fri 4 sep'])
+  expect(chips.filter(chip => chip === 'fri 4 sep')).toHaveLength(1)
 })
 
 test('the timeline heads those days the same way, in the same order', async ({ page }) => {
