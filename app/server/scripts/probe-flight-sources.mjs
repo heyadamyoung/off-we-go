@@ -25,6 +25,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import https from 'node:https'
 import path from 'node:path'
+import { ADSB_NETWORKS, callsignFor } from '../src/flights/providers/adsb.js'
 
 /* One flight, looked up on the boards right now: `--flight TS231` adds the
    Dublin listings narrowed to it, today and tomorrow, printed whole — the
@@ -97,8 +98,35 @@ const PEARSON_LIST = 'https://gtaa-fl-prod.azureedge.net/api/flights/list'
    "public code" means a public repository requests it today; "probe" means
    an earlier run of this script found it. */
 const tomorrowDay = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+/* The sky, for the one flight: its callsign on each of the three networks
+   the server asks in turn, and — so an empty answer can be told from a
+   network that is not answering anybody — everything each network hears
+   within sixty nautical miles of Regina right now, with the types. */
+const CALLSIGN = FLIGHT ? callsignFor(FLIGHT) : null
+const SKY_PROBES = CALLSIGN
+  ? ADSB_NETWORKS.flatMap(network => [
+      json(
+        `adsb-${network.source}-callsign-${CALLSIGN}`,
+        `${network.base}/callsign/${CALLSIGN}`,
+        {},
+        {
+          full: true,
+        },
+      ),
+      json(
+        `adsb-${network.source}-near-regina`,
+        `${network.base}/point/50.43/-104.67/60`,
+        {},
+        {
+          full: true,
+        },
+      ),
+    ])
+  : []
+
 const FLIGHT_PROBES = FLIGHT
   ? [
+      ...SKY_PROBES,
       json(
         `dub-flight-${FLIGHT}-departures-today`,
         `${DUB_LISTING}/departures?date=${today}&limit=200&filter=${FLIGHT}`,
