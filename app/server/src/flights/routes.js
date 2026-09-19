@@ -120,8 +120,13 @@ export function registerFlightRoutes(app, { repository, sources, authenticated }
     const callsign = callsignFor(flightNumberOf(leg))
     if (!callsign) return { callsign: null, aircraft: null, reason: 'no-callsign' }
     const now = typeof sources.now === 'function' ? sources.now() : Date.now()
-    if (!inFlyingWindow(leg, now)) return { callsign, aircraft: null, reason: 'not-flying' }
     const heard = await sources.position(callsign)
+    /* Outside the flying window whatever answers to the callsign is an
+       earlier rotation of the number — not this leg's aircraft, but the type
+       it will almost surely be, which is what the seat map wants. */
+    if (!inFlyingWindow(leg, now)) {
+      return { callsign, aircraft: null, usual: heard.value?.type || null, reason: 'not-flying' }
+    }
     return {
       callsign,
       aircraft: heard.value || null,

@@ -209,11 +209,18 @@ export function loadCabin(
 export async function loadSegmentPosition(
   tripId: Id,
   segmentId: string,
-): Promise<{ callsign: string | null; aircraft: AircraftHeard | null; reason: string | null }> {
+): Promise<{
+  callsign: string | null
+  aircraft: AircraftHeard | null
+  /** outside the flying window: the type the number's earlier rotation flew */
+  usual?: string | null
+  reason: string | null
+}> {
   if (isSample(tripId)) return { callsign: null, aircraft: null, reason: 'sample' }
   return authClient.request<{
     callsign: string | null
     aircraft: AircraftHeard | null
+    usual?: string | null
     reason: string | null
   }>(`${tripPath(tripId)}/segments/${encodeURIComponent(segmentId)}/position`)
 }

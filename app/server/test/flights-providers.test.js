@@ -517,6 +517,14 @@ test('ADS-B: a callsign is the ICAO code and the number, and a position is a ver
   assert.equal(callsignFor('AC872'), 'ACA872')
   assert.equal(callsignFor('FR457'), 'RYR457')
   assert.equal(callsignFor('ZZ1'), null)
+  /* The carriers that fly an airline's numbers file their own callsigns. */
+  assert.equal(callsignFor('AC8123'), 'JZA8123')
+  assert.equal(callsignFor('AC7501'), 'JZA7501')
+  assert.equal(callsignFor('AC1938'), 'ROU1938')
+  assert.equal(callsignFor('WS3412'), 'WEN3412')
+  assert.equal(callsignFor('KL1234'), 'KLC1234')
+  assert.equal(callsignFor('KL677'), 'KLM677')
+  assert.equal(callsignFor('EI3211'), 'EAI3211')
   const airborne = readAircraft(
     {
       hex: '4caa58',

@@ -7,6 +7,7 @@ import {
   noteFor,
   watchFlights,
 } from '../src/flights/watch.js'
+import { flightOnLeg } from '../src/flights/on-leg.js'
 
 /* The airports looking at the legs. What these pin: a leg finds its row on
    the boards at both ends and what differs is written onto it and said as a
@@ -356,7 +357,9 @@ test('a flight in its window with no aircraft named asks the sky for the type, a
   })
   assert.equal(asked.length, 1)
   assert.equal(known.snapshots.at(-1).info.aircraft, 'BCS3')
-  /* Hours before the flight the sky has nothing to say, and is not asked. */
+  /* Hours before the flight the sky is asked all the same: whatever
+     answers to the callsign then is the number's earlier rotation, and its
+     type is what this leg will usually fly — said apart from the day's. */
   const early = store({ legs: [leg()], snapshot: null })
   await watchFlights({
     repository: early,
@@ -364,7 +367,24 @@ test('a flight in its window with no aircraft named asks the sky for the type, a
     now: NOW,
     asked: new Map(),
   })
-  assert.equal(asked.length, 1)
+  assert.equal(asked.length, 2)
+  const usual = early.snapshots.at(-1).info
+  assert.equal(usual.aircraft, null)
+  assert.equal(usual.usualAircraft, 'BCS3')
+  /* Kept across passes without asking again, and the leg says it. */
+  const kept = store({
+    legs: [leg()],
+    snapshot: { info: usual, fetchedAt: '2026-09-20T17:30:00.000Z' },
+  })
+  await watchFlights({
+    repository: kept,
+    sources: sourcesWith({ boards: { 'YYZ:departure': [boardRow()] }, adsb }),
+    now: NOW + 60_000,
+    asked: new Map(),
+  })
+  assert.equal(asked.length, 2)
+  assert.equal(kept.snapshots.at(-1).info.usualAircraft, 'BCS3')
+  assert.equal(flightOnLeg(kept.snapshots.at(-1).info).usualAircraft, 'BCS3')
 })
 
 test('the first comparison is the leg as typed; the boards merge with the later stage winning', () => {

@@ -52,12 +52,30 @@ export const ICAO_CODES = Object.freeze({
   '5T': 'MPE',
 })
 
-/** "AC872" → "ACA872"; null when the airline's ICAO code is not known. */
+/* The numbers an airline gives to the carriers that fly for it, which file
+   their own callsigns: an Air Canada 8123 to Regina is Jazz's aircraft on
+   the transponder as JZA8123, and asked for as ACA8123 it is never heard.
+   By the block of numbers, as each airline publishes it. */
+const FLOWN_BY = [
+  { airline: 'AC', from: 7000, to: 8999, icao: 'JZA' },
+  { airline: 'AC', from: 1900, to: 1999, icao: 'ROU' },
+  { airline: 'WS', from: 3000, to: 3999, icao: 'WEN' },
+  { airline: 'KL', from: 1000, to: 1999, icao: 'KLC' },
+  { airline: 'EI', from: 3000, to: 3999, icao: 'EAI' },
+]
+
+/** "AC872" → "ACA872", "AC8123" → "JZA8123"; null when the airline's ICAO
+    code is not known. */
 export function callsignFor(flightNumber) {
-  const match = /^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/.exec(String(flightNumber || '').toUpperCase())
+  const match = /^([A-Z0-9]{2})(\d{1,4})([A-Z]?)$/.exec(String(flightNumber || '').toUpperCase())
   if (!match) return null
-  const icao = ICAO_CODES[match[1]]
-  return icao ? `${icao}${match[2]}` : null
+  const [, airline, digits, suffix] = match
+  const number = Number(digits)
+  const regional = FLOWN_BY.find(
+    block => block.airline === airline && number >= block.from && number <= block.to,
+  )
+  const icao = regional?.icao || ICAO_CODES[airline]
+  return icao ? `${icao}${digits}${suffix}` : null
 }
 
 const EARTH_METRES = 6_371_000

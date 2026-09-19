@@ -317,6 +317,8 @@ test('where the aircraft is, for the map, only while the leg is plausibly flying
   const skyAsked = []
   const sky = async url => {
     skyAsked.push(url)
+    /* The network answers for the callsign it was asked, whichever leg's. */
+    const callsign = decodeURIComponent(url.split('/').pop())
     return {
       ok: true,
       status: 200,
@@ -324,7 +326,8 @@ test('where the aircraft is, for the map, only while the leg is plausibly flying
         ac: [
           {
             hex: '484a9b',
-            flight: 'KLM677  ',
+            flight: `${callsign}  `,
+            t: 'B789',
             alt_baro: 36000,
             gs: 471,
             track: 289,
@@ -399,12 +402,16 @@ test('where the aircraft is, for the map, only while the leg is plausibly flying
   await ask(flying)
   assert.equal(skyAsked.length, 1, 'a second phone asking within the minute shares the answer')
 
+  /* Tomorrow's leg is not flying, so no position — but the number answered
+     the sky just now, and that is what it usually flies. */
   const later = await ask(tomorrow)
   assert.equal(later.json().reason, 'not-flying')
   assert.equal(later.json().aircraft, null)
+  assert.equal(later.json().usual, 'B789')
+  assert.equal(skyAsked.length, 2, 'tomorrow asks the sky for the earlier rotation')
   const unknown = await ask(nameless)
   assert.equal(unknown.json().reason, 'no-callsign')
-  assert.equal(skyAsked.length, 1, 'neither of those asked the sky')
+  assert.equal(skyAsked.length, 2, 'a number with no callsign never asks')
 
   assert.equal((await ask(flying, stranger)).statusCode, 404)
   await app.close()

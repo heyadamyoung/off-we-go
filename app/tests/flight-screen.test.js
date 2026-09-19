@@ -144,3 +144,18 @@ test('a span reads in hours and minutes, and never runs backwards', () => {
   assert.equal(spanWords(2 * H, 0), null)
   assert.equal(spanWords(null, 0), null)
 })
+
+test('with nothing naming the day’s aircraft, the type the number usually flies is said as usual', () => {
+  /* A Jazz number to Regina: no booking type, Pearson never names one, and
+     the flying window is hours off — but the sky heard yesterday's rotation. */
+  const usual = leg({ aircraft: null, flight: { status: 'scheduled', usualAircraft: 'CRJ9' } })
+  assert.equal(flightScreen(usual, NOW).aircraft, 'Bombardier CRJ900 · usually')
+  /* The day's own word, from any source, outranks it. */
+  const named = leg({
+    aircraft: null,
+    flight: { status: 'scheduled', aircraft: 'E75L', usualAircraft: 'CRJ9' },
+  })
+  assert.equal(flightScreen(named, NOW).aircraft, 'Embraer 175')
+  const none = leg({ aircraft: null, flight: { status: 'scheduled' } })
+  assert.equal(flightScreen(none, NOW).aircraft, null)
+})

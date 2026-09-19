@@ -149,7 +149,9 @@ export default function SegmentCard({
   const source = flightSource(segment, now)
   /* Which aircraft, as the booking, the board or the transponder named it;
      the seat map draws that cabin. */
-  const aircraft = aircraftName(segment.aircraft || segment.flight?.aircraft)
+  const named = aircraftName(segment.aircraft || segment.flight?.aircraft)
+  const usual = named ? null : aircraftName(segment.flight?.usualAircraft)
+  const aircraft = named || (usual ? `${usual} · usually` : null)
   /* The watch's own sentence is already the headline and the columns; it is
      drawn only when somebody typed a note of their own. */
   const note =
