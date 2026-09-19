@@ -2,13 +2,15 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 import type { TripView } from '../../../trip-search-core'
 
+/* In the order they are reached for: the map, then the pictures — the thing
+   a family opens most once the day is under way — then the plan. */
 export const VIEWS: Array<[TripView, string, string]> = [
   ['map', 'Map', 'map'],
+  ['photos', 'Photos', 'grid'],
   ['timeline', 'Timeline', 'list'],
   ['travel', 'Travel', 'plane'],
   ['papers', 'Papers', 'note'],
   ['chat', 'Chat', 'comment'],
-  ['photos', 'Photos', 'grid'],
   ['sights', 'Sights', 'star'],
   ['people', 'People', 'people'],
 ]
