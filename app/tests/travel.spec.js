@@ -44,12 +44,15 @@ async function openTravel(page, { size = PHONE, travelDay = false } = {}) {
   await expect(page.getByRole('heading', { name: 'Travel' })).toBeVisible()
 }
 
-test('a departure that moved says so, and says by how much', async ({ page }) => {
-  /* "Delayed" on its own is the start of a question rather than an answer. */
+test('a departure that moved is not called delayed on top: the struck time says it once', async ({
+  page,
+}) => {
+  /* "delayed · 25 min later" above a ticket whose old time is already struck
+     through beside the new one said the same thing three times. */
   await openTravel(page)
   const train = page.locator('.rounded-xl').filter({ hasText: 'IC 3155' }).first()
-  await expect(train).toContainText('delayed')
-  await expect(train).toContainText('25 min later')
+  await expect(train.locator('s')).toBeVisible()
+  await expect(train).not.toContainText(/delayed|later/i)
 })
 
 test('the time it was meant to go is struck through beside the time it goes', async ({ page }) => {

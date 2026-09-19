@@ -67,7 +67,7 @@ for (const size of SIZES) {
     /* The headline is one line, or breaks between phrases: no phrase is
        ever split, so its own words never run past their span. */
     const head = flight.locator('.tkhead')
-    await expect(head).toContainText('On time · gate E19 · check-in closes in 2 h')
+    await expect(head).toContainText('Check-in closes in 2 h')
     for (const piece of await head.locator('span.whitespace-nowrap').all()) {
       const box = await piece.boundingBox()
       expect(box.width).toBeLessThan(size.width)

@@ -1,6 +1,5 @@
 import { aircraftName } from './cabin-core'
 import {
-  flightHeadline,
   flightPhases,
   flightSource,
   ticketColumns,
@@ -9,6 +8,7 @@ import {
   type SourceLine,
   type TicketColumn,
 } from './flight-day-core'
+import { flightTimeLeft } from './flight-left-core'
 import { localTime, segmentName, type Segment } from './segments-core'
 import { legDay } from './travel-order-core'
 
@@ -142,7 +142,7 @@ export function flightScreen(segment: Segment, now: number): FlightScreenModel {
   return {
     title: segmentName({ carrier: segment.carrier, number: segment.number, mode: segment.mode }),
     date: legDay(segment.departsAt, segment.departTz),
-    status: flightHeadline(segment, now),
+    status: flightTimeLeft(segment, now),
     from: {
       code: segment.fromCode || segment.fromName,
       name: segment.fromName,
