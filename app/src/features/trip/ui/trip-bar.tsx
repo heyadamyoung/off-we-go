@@ -50,6 +50,10 @@ const TripBar = memo(function TripBar({
      toggles. The bar is moved by hand while the finger is on it (see
      use-sheet-drag), so nothing here re-renders per move. */
   const drag = useSheetDrag(!!peek, collapsed => onPeek?.(collapsed))
+  /* Collapsed, the search and the cards are off the screen; under a finger
+     pulling the bar up they are back, so the bar growing from the bottom
+     reveals the day rather than a stretch of empty glass. */
+  const tucked = !!peek && !drag.dragging
 
   // Keep the chosen day in view when it changes from somewhere else — picking a
   // stop off the map moves the day with it.
@@ -121,7 +125,7 @@ const TripBar = memo(function TripBar({
           className={
             'fsearch flex h-8 w-[230px] flex-none items-center gap-2 rounded-full border ' +
             'border-line bg-raised px-3 text-faint max-sm:h-10 max-sm:w-full' +
-            (peek ? ' max-sm:hidden' : '')
+            (tucked ? ' max-sm:hidden' : '')
           }>
           <Icon n="search" s={14} />
           <input
@@ -139,7 +143,7 @@ const TripBar = memo(function TripBar({
         className={
           'flex flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden px-4 ' +
           'pb-3.5 pt-1.5 max-sm:gap-2 max-sm:px-3 max-sm:pb-2.5' +
-          (peek ? ' max-sm:hidden' : '')
+          (tucked ? ' max-sm:hidden' : '')
         }>
         {items.length ? (
           items.map((item, index) => (

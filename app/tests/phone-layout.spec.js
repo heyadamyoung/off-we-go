@@ -420,3 +420,40 @@ test('the day bar is dragged open and closed by its grabber, and still taps', as
   await grabber.click()
   await expect(grabber).toHaveAttribute('aria-expanded', 'true')
 })
+
+/* Pulled up from its collapsed place, the bar grows from the bottom of the
+   screen under the finger — its feet never leave the edge. Sliding it up
+   left a strip of map under it and then snapped it back to its feet before
+   growing it, which read as the chrome coming loose. */
+test('pulled up while collapsed, the bar grows from the bottom edge and never lifts off it', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/trips/sample')
+  await expect(page.locator('.mapcanvas canvas')).toBeVisible({ timeout: 9000 })
+  const grabber = page.locator('.grabber')
+  const bar = page.locator('.tripbar')
+  if ((await grabber.getAttribute('aria-expanded')) !== 'false') await grabber.click()
+  await expect(grabber).toHaveAttribute('aria-expanded', 'false')
+  const rest = await bar.boundingBox()
+  const box = await grabber.boundingBox()
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y - 30, { steps: 3 })
+  await page.mouse.move(x, y - 60, { steps: 3 })
+  const held = await bar.boundingBox()
+  const bottom = await page.evaluate(() => window.innerHeight)
+  expect(Math.round(held.y + held.height)).toBe(Math.round(rest.y + rest.height))
+  expect(Math.round(held.y + held.height)).toBe(bottom)
+  expect(held.height).toBeGreaterThanOrEqual(rest.height + 55)
+  /* And the day is in it as it rises, not a stretch of empty glass. */
+  await expect(bar.locator('.fcard').first()).toBeVisible()
+  await page.mouse.up()
+  await expect(grabber).toHaveAttribute('aria-expanded', 'true')
+  await expect
+    .poll(async () => Math.round((await bar.boundingBox()).height))
+    .toBe(Math.round(rest.height) + 128)
+  expect(await bar.evaluate(el => el.style.height)).toBe('')
+})
