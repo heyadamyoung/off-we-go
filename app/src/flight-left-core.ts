@@ -53,6 +53,12 @@ export function flightTimeLeft(segment: Segment, now: number): { text: string; t
   )
   const down = flying ? 'landed' : 'arrived'
   if (status && LANDED.has(status)) {
+    /* The bags out is the last word, and the one the hall wants. */
+    if (flight?.bagsInHall)
+      return {
+        text: `Bags in the hall${flight.baggageBelt ? ` · belt ${flight.baggageBelt}` : ''}`,
+        tone: 'done',
+      }
     const word = flying ? 'Landed' : 'Arrived'
     /* An actual behind us is "12 min ago"; an estimate the board has not
        corrected yet is not "in 5 min" — the board says it is down. */

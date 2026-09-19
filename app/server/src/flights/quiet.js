@@ -36,6 +36,7 @@ export function keepFarEnd(view, was) {
     estimatedArrival: view.estimatedArrival || was.estimatedArrival || null,
     actualArrival: view.actualArrival || was.actualArrival || null,
     aircraft: view.aircraft || was.aircraft || null,
+    bagsInHall: view.bagsInHall === true || was.bagsInHall === true,
     ...(settled ? { status: was.status, statusText: was.statusText } : {}),
     sources: unite(view.sources || [], was.sources || []),
   }

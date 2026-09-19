@@ -72,6 +72,9 @@ export function clockInMessage(message, nearIso, zone = DUBLIN_ZONE) {
   return best?.iso ?? null
 }
 
+/** Whether the board's words say the bags are out. */
+export const bagsOut = words => /in hall|baggage|bags on belt|bags out/i.test(String(words || ''))
+
 export function readDublinStatus(record) {
   const words = blankToNull(record?.statusMessage)
   let status = 'unknown'
@@ -140,6 +143,8 @@ export function parseDublinBoard(body, direction, { fetchedAt = new Date().toISO
     row.status = status
     row.boardingStatus = boardingStatus
     row.statusText = blankToNull(record.statusMessage)
+    /* The one board that says when the bags are out: "BAGGAGE IN HALL". */
+    row.bagsInHall = direction === 'arrival' && bagsOut(record.statusMessage)
     /* "LANDED AT 23:28" names the moment, and the estimate beside it goes on
        being the on-blocks estimate. Without a clock in the words, a board
        that says it has happened and gives one time gave the actual. */

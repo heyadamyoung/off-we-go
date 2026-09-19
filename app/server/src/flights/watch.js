@@ -32,6 +32,12 @@ export const WATCH_AFTER_MS = 4 * 60 * 60 * 1000
    network's rate limit is theirs to set. */
 const ADSB_SILENCE_MS = 20 * 60_000
 const ADSB_EVERY_MS = 10 * 60_000
+/* Through the flying window a leg with no type yet asks more often: over
+   the prairies a flight is heard by one receiver for a few minutes, and
+   every ten minutes missed a whole flight. Two minutes is one request a
+   minute for a family with two legs in the air; the network's limit is
+   nowhere near. */
+const ADSB_FLYING_EVERY_MS = 2 * 60_000
 /* Before the flying window the sky is asked for the number's earlier
    rotation — a flight that is up for an hour is heard at this cadence. */
 const ADSB_EARLY_EVERY_MS = 20 * 60_000
@@ -111,6 +117,7 @@ export function mergeBoards(departure, arrival) {
     view.baggageBelt = arrival.baggageBelt
     view.arrivalTerminal = arrival.terminal
     view.arrivalGate = arrival.gate
+    view.bagsInHall = arrival.bagsInHall === true
     /* Which aircraft: the near board's word when it has one, else the far
        board's — Regina names the type on its arrivals board, Pearson never
        does, and a leg to Regina wants the seat map to know. */
@@ -172,6 +179,7 @@ const NOTE_ORDER = [
   /* Landed before departed: a first look at a flight that has already
      landed is news of a landing, and the leaving is history. */
   'FlightLanded',
+  'BagsInHall',
   'FlightDeparted',
   'ArrivalEstimateChanged',
   'BaggageUpdated',
@@ -180,7 +188,12 @@ const NOTE_ORDER = [
 
 const GONE_FOR_GOOD = new Set(['departed', 'landed', 'arrived'])
 /* The far end's news: said by the arrivals board, in the far end's clock. */
-export const ARRIVAL_SIDE = new Set(['FlightLanded', 'ArrivalEstimateChanged', 'BaggageUpdated'])
+export const ARRIVAL_SIDE = new Set([
+  'FlightLanded',
+  'ArrivalEstimateChanged',
+  'BaggageUpdated',
+  'BagsInHall',
+])
 
 export function noteFor(
   events,
@@ -309,12 +322,20 @@ export async function watchFlights({
         view = { ...typed, aircraft: snapshot.info.aircraft }
         typed = view
       }
+      /* At once when the board has just said departed or landed — the
+         aircraft is at an airport, under the densest receivers there are —
+         else every couple of minutes. */
+      const justMoved =
+        typed &&
+        snapshot?.info &&
+        ['departed', 'landed', 'arrived'].includes(typed.status) &&
+        typed.status !== snapshot.info.status
       if (
         typed &&
         !typed.aircraft &&
         sources.adsb &&
         inFlyingWindow(leg, now) &&
-        now - (asked.get(leg.id) || 0) > ADSB_EVERY_MS
+        (justMoved || now - (asked.get(leg.id) || 0) > ADSB_FLYING_EVERY_MS)
       ) {
         asked.set(leg.id, now)
         const callsign = callsignFor(number)

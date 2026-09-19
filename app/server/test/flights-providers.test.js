@@ -7,6 +7,7 @@ import {
   createDublinProvider,
   parseDublinBoard,
   readDublinStatus,
+  bagsOut,
 } from '../src/flights/providers/dublin.js'
 import {
   createPearsonProvider,
@@ -764,4 +765,34 @@ test('ADS-B: the networks are asked in turn until one hears; a network down is s
   /* Every network down is the failure it is. */
   delete answers['opendata.adsb.fi']
   await assert.rejects(sky.byCallsign('ACA1115'), /unreachable|503/)
+})
+
+test('Dublin: "BAGGAGE IN HALL" on the arrivals board is the bags out, on top of arrived', () => {
+  assert.equal(bagsOut('BAGGAGE IN HALL'), true)
+  assert.equal(bagsOut('LANDED AT 23:28'), false)
+  assert.equal(bagsOut(null), false)
+  const row = parseDublinBoard(
+    {
+      content: [
+        {
+          internalFlightId: 'EI123-20260919',
+          flightIdentity: 'EI123',
+          airportCode: 'LHR',
+          carrierCode: 'EI',
+          carrierName: 'Aer Lingus',
+          scheduledDateTime: '2026-09-19T21:00:00.000Z',
+          estimatedDateTime: '2026-09-19T21:04:00.000Z',
+          status: 9,
+          statusMessage: 'BAGGAGE IN HALL',
+          terminalName: 'T2',
+          baggageBelt: '5',
+          codeShares: [],
+        },
+      ],
+    },
+    'arrival',
+  )[0]
+  assert.equal(row.status, 'arrived')
+  assert.equal(row.bagsInHall, true)
+  assert.equal(row.baggageBelt, '5')
 })

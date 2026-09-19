@@ -40,6 +40,7 @@
  * @property {string|null} baggageBelt
  * @property {BoardingStatus|null} boardingStatus
  * @property {string|null} aircraft       type or registration, when a board says
+ * @property {boolean} [bagsInHall]        the arrivals board says the bags are out — Dublin says so; most boards never do
  * @property {string[]} codeshares        other numbers the same aircraft flies under
  * @property {string} lastUpdated         when the source said, else when it was read
  * @property {string} source              hostname of the board
@@ -213,6 +214,7 @@ export function emptyFlight(airportCode, direction, source, lastUpdated) {
     baggageBelt: null,
     boardingStatus: null,
     aircraft: null,
+    bagsInHall: false,
     codeshares: [],
     lastUpdated,
     source,

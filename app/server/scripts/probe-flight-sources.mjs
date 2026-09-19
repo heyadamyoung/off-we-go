@@ -131,6 +131,35 @@ const SKY_PROBES = CALLSIGN
     ])
   : []
 
+/* OpenSky remembers: which airframes arrived and departed where, over a
+   window, by callsign — so a flight that has landed, or flew yesterday,
+   can still be named. Asked anonymously, the way the server would. */
+const NOW_S = Math.floor(Date.now() / 1000)
+const OPENSKY = 'https://opensky-network.org/api'
+const OPENSKY_PROBES = CALLSIGN
+  ? [
+      json(
+        'opensky-arrivals-CYQR-6h',
+        `${OPENSKY}/flights/arrival?airport=CYQR&begin=${NOW_S - 6 * 3600}&end=${NOW_S}`,
+        {},
+        { opensky: true },
+      ),
+      json(
+        'opensky-departures-CYYZ-10h',
+        `${OPENSKY}/flights/departure?airport=CYYZ&begin=${NOW_S - 10 * 3600}&end=${NOW_S}`,
+        {},
+        { opensky: true },
+      ),
+      json(
+        'opensky-departures-CYYZ-yesterday',
+        `${OPENSKY}/flights/departure?airport=CYYZ&begin=${NOW_S - 34 * 3600}&end=${NOW_S - 24 * 3600}`,
+        {},
+        { opensky: true },
+      ),
+    ]
+  : []
+const metadataFollowUps = []
+
 const FLIGHT_PROBES = FLIGHT
   ? [
       json(
@@ -539,6 +568,51 @@ async function record(probe) {
     return { kind: 'js' }
   }
   const trimmed = text.trim()
+  if (probe.opensky) {
+    /* One line per flight; the one asked about is marked and its airframe
+       looked up. */
+    try {
+      const list = JSON.parse(trimmed)
+      if (!Array.isArray(list)) {
+        console.log(`not a list: ${JSON.stringify(text.slice(0, 300))}`)
+        return { kind: 'json' }
+      }
+      console.log(`${list.length} flights`)
+      const sample = list[0]
+      if (sample?.icao24) {
+        metadataFollowUps.push(
+          json(
+            `opensky-metadata-sample-${sample.icao24}`,
+            `${OPENSKY}/metadata/aircraft/icao/${sample.icao24}`,
+            {},
+            { full: true },
+          ),
+        )
+      }
+      for (const [index, one] of list.entries()) {
+        const callsign = String(one.callsign || '').trim()
+        const mine = callsign === CALLSIGN
+        if (mine || index < 8) {
+          console.log(
+            `    ${mine ? '>>' : '  '} ${callsign.padEnd(8)} hex ${one.icao24}  ${one.estDepartureAirport || '????'} -> ${one.estArrivalAirport || '????'}  ${new Date(one.firstSeen * 1000).toISOString()} .. ${new Date(one.lastSeen * 1000).toISOString()}`,
+          )
+        }
+        if (mine && one.icao24) {
+          metadataFollowUps.push(
+            json(
+              `opensky-metadata-${one.icao24}`,
+              `${OPENSKY}/metadata/aircraft/icao/${one.icao24}`,
+              {},
+              { full: true },
+            ),
+          )
+        }
+      }
+    } catch (error) {
+      console.log(`not JSON (${error.message}); first bytes: ${JSON.stringify(text.slice(0, 300))}`)
+    }
+    return { kind: 'json' }
+  }
   if (probe.sky) {
     /* One line per aircraft: callsign, type, registration, where, how high. */
     try {
@@ -630,6 +704,16 @@ if (followUps.length) {
 if (SKY_PROBES.length) {
   console.log(`\n${'#'.repeat(78)}\nTHE SKY (${SKY_PROBES.length})\n${'#'.repeat(78)}`)
   for (const probe of SKY_PROBES) await record(probe)
+}
+if (OPENSKY_PROBES.length) {
+  console.log(`\n${'#'.repeat(78)}\nOPENSKY (${OPENSKY_PROBES.length})\n${'#'.repeat(78)}`)
+  for (const probe of OPENSKY_PROBES) await record(probe)
+  const seen = new Set()
+  for (const probe of metadataFollowUps) {
+    if (seen.has(probe.id)) continue
+    seen.add(probe.id)
+    await record(probe)
+  }
 }
 
 console.log(

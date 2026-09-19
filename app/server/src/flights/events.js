@@ -26,6 +26,7 @@ export const FLIGHT_EVENT_TYPES = Object.freeze([
   'AircraftChanged',
   'FlightDeparted',
   'FlightLanded',
+  'BagsInHall',
 ])
 
 /* Under this, a new estimate is the board rounding, not the flight moving.
@@ -93,6 +94,11 @@ export function detectFlightEvents(previous, current) {
   }
   if (current.aircraft && was.aircraft && !same(was.aircraft, current.aircraft)) {
     add('AircraftChanged', was.aircraft, current.aircraft)
+  }
+  /* The bags are out: the last thing the far end has to say, and the one
+     the person waiting in arrivals wants most. */
+  if (current.bagsInHall === true && was.bagsInHall !== true) {
+    add('BagsInHall', null, current.baggageBelt || null)
   }
 
   /* Boarding: entered, then over — over by the gate closing or by the
@@ -179,6 +185,8 @@ export function describeFlightEvent(event, { flight, zone = 'UTC' } = {}) {
       return `${who} has departed${event.newValue ? ` at ${at(event.newValue)}` : ''}.`
     case 'FlightLanded':
       return `${who} has landed${event.newValue ? ` at ${at(event.newValue)}` : ''}.`
+    case 'BagsInHall':
+      return `Bags from ${who} are in the hall${event.newValue ? `, belt ${event.newValue}` : ''}.`
     default:
       return `${who}: ${event.type}.`
   }
