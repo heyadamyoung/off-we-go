@@ -34,6 +34,10 @@ struct TravelActivityAttributes: ActivityAttributes {
         /// here · ok · tight · late, or nil when nobody's position says
         var verdict: String?
         var verdictWord: String
+        /// the Travel tab's own sentence — "On time · gate E19" — less any countdown
+        var headline: String?
+        /// the baggage belt, once the board has named one
+        var belt: String?
     }
 
     var segmentId: String

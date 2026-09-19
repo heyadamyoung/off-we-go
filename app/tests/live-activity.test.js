@@ -4,6 +4,7 @@ import {
   ACTIVITY_BEFORE_MS,
   HOLD_AFTER_LANDING_MS,
   LANDED_GRACE_MS,
+  cardHeadline,
   sameActivity,
   travelActivity,
 } from '../src/live-activity-core.ts'
@@ -198,4 +199,33 @@ test('the card is only redrawn when something on it changed', () => {
   assert.equal(sameActivity(a, c), false)
   assert.equal(sameActivity(null, null), true)
   assert.equal(sameActivity(a, null), false)
+})
+
+/* The card carries the Travel tab's own sentence and, once there is one,
+   the belt — without the countdown phrase, which the system draws and
+   which would otherwise change the card every minute. */
+test('the card says what the Travel tab says, less the countdown, and names the belt', () => {
+  const before = travelActivity([flight()], [], [], T0 + 30 * M)
+  assert.equal(before.state.headline, 'Scheduled · gate D7')
+  assert.equal(before.state.belt, null)
+  const a = travelActivity([flight()], [], [], T0 + 30 * M)
+  const b = travelActivity([flight()], [], [], T0 + 47 * M)
+  assert.equal(sameActivity(a, b), true, 'the minutes ticking are not a change')
+
+  const boarding = flight({
+    flight: { status: 'scheduled', boardingStatus: 'boarding', gate: 'D7' },
+  })
+  assert.equal(cardHeadline(boarding, T0 + 3 * H + 25 * M), 'Boarding · gate D7')
+
+  const landed = flight({
+    flight: {
+      status: 'landed',
+      actualArrival: new Date(T0 + 12 * H + 50 * M).toISOString(),
+      baggageBelt: '14',
+    },
+  })
+  const down = travelActivity([landed], [], [], T0 + 12 * H + 55 * M)
+  assert.equal(down.state.phase, 'landed')
+  assert.equal(down.state.belt, '14')
+  assert.match(down.state.headline, /^Landed .* · baggage claim belt 14$/)
 })

@@ -1,3 +1,4 @@
+import { flightHeadline } from './flight-day-core'
 import { landedSegments } from './segment-arrival-core'
 import {
   delayLabel,
@@ -70,6 +71,13 @@ export interface ActivityState {
   /** the make-it meter's word, when there are positions to judge by */
   verdict: 'here' | 'ok' | 'tight' | 'late' | null
   verdictWord: string
+  /** the Travel tab's own sentence — "On time · gate E19", "Boarding · gate
+      E19", "Landed 16:02 · baggage claim belt 14" — less any countdown,
+      which the system draws itself and which would otherwise redraw the
+      card every minute */
+  headline: string
+  /** the belt, once the board has named one: the last thing the card can say */
+  belt: string | null
 }
 
 export interface TravelActivity {
@@ -179,6 +187,7 @@ export function travelActivity(
   }
 
   const said = segmentName({ carrier: leg.carrier, number: leg.number })
+  const headline = cardHeadline(leg, now)
   return {
     attributes: {
       segmentId: leg.id,
@@ -204,8 +213,21 @@ export function travelActivity(
       moved: delayLabel(leg),
       verdict,
       verdictWord: verdict ? VERDICT_WORDS[verdict] : '',
+      headline,
+      belt: leg.flight?.baggageBelt || null,
     },
   }
+}
+
+/* The Travel tab's headline as the card wants it: the same words, without
+   the phrase that counts — "check-in closes in 2 h 57" is a countdown the
+   system already draws, and a sentence that changes every minute is a card
+   redrawn every minute. */
+export function cardHeadline(leg: Segment, now: number): string {
+  return flightHeadline(leg, now)
+    .text.split(' · ')
+    .filter(piece => !/\bin \d/.test(piece) && !/^leaves (in|now)/.test(piece))
+    .join(' · ')
 }
 
 /** Whether two cards say the same thing — the system ticks the countdown, so
