@@ -43,17 +43,6 @@ export function parseSeat(seat: string | null | undefined): SeatPlace | null {
   return { row, letter: m[2].toUpperCase() }
 }
 
-const NARROW: string[][] = [
-  ['A', 'B', 'C'],
-  ['D', 'E', 'F'],
-]
-/* The wide superset: 3-4-3 holds every letter an A330's 2-4-2, a 787's
-   3-3-3 or a 777's 3-4-3 can book (I is skipped by every airline). */
-const WIDE: string[][] = [
-  ['A', 'B', 'C'],
-  ['D', 'E', 'F', 'G'],
-  ['H', 'J', 'K'],
-]
 /* Two-and-two lettered the other way, for an airline that books a B. */
 const ABCD: string[][] = [
   ['A', 'B'],
@@ -65,15 +54,26 @@ const widest = (cabins: CabinClass[]): string[][] =>
     cabin.sections.flat().length > best.sections.flat().length ? cabin : best,
   ).sections
 
+/** Why no cabin is drawn, when none is: for the sheet to say. */
+export type NoCabin = 'no-aircraft' | 'unknown-type' | 'seats-not-on-chart' | 'seats-not-on-type'
+
+/* The cabin to draw, or the reason there is none. Never a guess: a cabin
+   is drawn only when the leg's aircraft is named and every booked seat
+   exists on it — on the airline's own chart when the server has one, else
+   on the type's cross-section. A booking the chart cannot seat means the
+   chart, the type or the booking is wrong, and drawing any of them would
+   be drawing a lie; a cabin made up from the seat letters alone was a
+   guess dressed as a diagram, and is gone. */
 export function cabinFor(
   seats: Array<string | null | undefined>,
   aircraft?: string | null,
   library?: AirlineCabin | null,
-): CabinPlan {
+): CabinPlan | NoCabin {
   const places = seats.map(parseSeat).filter((place): place is SeatPlace => place !== null)
   const letters = new Set(places.map(place => place.letter))
   const deepest = Math.max(0, ...places.map(place => place.row))
-  if (library && seatsFit(places, library)) {
+  if (library) {
+    if (!seatsFit(places, library)) return 'seats-not-on-chart'
     const sections = widest(library.cabins)
     return {
       sections,
@@ -85,41 +85,27 @@ export function cabinFor(
       exits: library.exits,
     }
   }
+  if (!String(aircraft ?? '').trim()) return 'no-aircraft'
   const family = aircraftFamily(aircraft)
-  if (family) {
-    let sections = family.sections
-    if (sections.length === 2 && sections.flat().length === 4 && letters.has('B')) sections = ABCD
-    /* A booked letter the family has no seat for is a booking on a
-       different aircraft than the one named, and the booking is the one
-       thing here that is certainly true: draw for it, and say no type. */
-    if (places.every(place => sections.flat().includes(place.letter))) {
-      const rows = Math.max(family.rows, deepest + 2)
-      return {
-        sections,
-        rows,
-        wing: wingOf(rows),
-        kind: sections.length > 2 ? 'wide' : 'narrow',
-        aircraft: family.name,
-        cabins: null,
-        exits: null,
-      }
-    }
-  }
-  const wide = places.some(place => place.letter > 'F')
-  const sections = wide ? WIDE : NARROW
-  /* Enough cabin behind the deepest booked row that it never sits on the
-     tail cone, and never fewer rows than the family the layout belongs to. */
-  const rows = Math.max(deepest + 6, wide ? 46 : 32)
+  if (!family) return 'unknown-type'
+  let sections = family.sections
+  if (sections.length === 2 && sections.flat().length === 4 && letters.has('B')) sections = ABCD
+  if (!places.every(place => sections.flat().includes(place.letter))) return 'seats-not-on-type'
+  const rows = Math.max(family.rows, deepest + 2)
   return {
     sections,
     rows,
     wing: wingOf(rows),
-    kind: wide ? 'wide' : 'narrow',
-    aircraft: null,
+    kind: sections.length > 2 ? 'wide' : 'narrow',
+    aircraft: family.name,
     cabins: null,
     exits: null,
   }
 }
+
+/** A plan, as opposed to the reason there is none. */
+export const isCabinPlan = (plan: CabinPlan | NoCabin): plan is CabinPlan =>
+  typeof plan !== 'string'
 
 const wingOf = (rows: number): [number, number] => [Math.ceil(rows * 0.34), Math.floor(rows * 0.62)]
 

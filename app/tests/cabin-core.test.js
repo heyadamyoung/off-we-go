@@ -95,17 +95,10 @@ test('the seat map draws the named aircraft’s cabin, about its length', () => 
   assert.equal(cabinFor(['44A'], 'B789').rows, 46)
 })
 
-test('a booking the named aircraft cannot seat is drawn for the booking, and unnamed as before', () => {
-  /* 14B does not exist on an A220, whose left bank is A and C: the booking
-     is the truth, so the cabin is the letters’ and no type is claimed. */
-  const other = cabinFor(['14A', '14B'], 'A220')
-  assert.equal(other.aircraft, null)
-  assert.deepEqual(other.sections, [
-    ['A', 'B', 'C'],
-    ['D', 'E', 'F'],
-  ])
-  const unknown = cabinFor(['31A', '31K'], 'GLF6')
-  assert.equal(unknown.aircraft, null)
-  assert.equal(unknown.kind, 'wide')
-  assert.equal(cabinFor(['14A'], null).rows, 32)
+test('a booking the named aircraft cannot seat is no cabin, and nothing is drawn unnamed', () => {
+  /* 14B does not exist on an A220, whose left bank is A and C: the type or
+     the booking is wrong, and neither is drawn. */
+  assert.equal(cabinFor(['14A', '14B'], 'A220'), 'seats-not-on-type')
+  assert.equal(cabinFor(['31A', '31K'], 'GLF6'), 'unknown-type')
+  assert.equal(cabinFor(['14A'], null), 'no-aircraft')
 })

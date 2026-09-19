@@ -1409,6 +1409,46 @@ test("with the airline's configuration on file the cabin is the airline's: class
   await expect(sheet.locator('.tknote')).toContainText('as the airline configures it')
 })
 
+test('a seat the airline’s chart has no place for draws no cabin, and says which seat', async ({
+  page,
+}) => {
+  /* Never a guess: a chart on which 31A does not exist means the chart, the
+     aircraft or the booking is wrong, and the sheet says so instead of
+     drawing any of them. */
+  await page.addInitScript(() => {
+    window.__offwegoCabin = {
+      airline: 'KL',
+      family: 'B789',
+      name: 'Boeing 787-9',
+      seats: 200,
+      cabins: [
+        { name: 'World Business', rows: [1, 8], sections: [['A'], ['D', 'E'], ['K']] },
+        {
+          name: 'Economy',
+          rows: [14, 30],
+          sections: [
+            ['A', 'B', 'C'],
+            ['D', 'E', 'F'],
+            ['G', 'H', 'J'],
+          ],
+        },
+      ],
+      exits: [1, 14, 30],
+      wing: [18, 26],
+    }
+  })
+  await open(page)
+  await page.getByRole('button', { name: 'Travel', exact: true }).click()
+  await page.getByRole('button', { name: /KL 677/ }).click()
+  await page.getByRole('button', { name: 'Where we sit' }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByText('Maya · 31A')).toBeVisible()
+  await expect(sheet.locator('.tkwhy')).toHaveAttribute('data-reason', 'seats-not-on-chart')
+  await expect(sheet.locator('.tkwhy')).toContainText('has no seat 31A, 31B')
+  await expect(sheet.getByRole('img', { name: 'Cabin seat map' })).toHaveCount(0)
+  await expect(sheet.locator('.tkcraft')).toHaveCount(0)
+})
+
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Travel', exact: true }).click()
