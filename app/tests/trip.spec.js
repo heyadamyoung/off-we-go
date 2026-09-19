@@ -1348,6 +1348,63 @@ test('a flight with seats shows where everyone sits, on a drawn cabin', async ({
   await expect(sheet.getByText('Alex · 31B')).toBeVisible()
   await expect(sheet.getByRole('img', { name: 'Cabin seat map' })).toBeVisible()
   await expect(sheet.locator('.tkcraft')).toContainText('Boeing 787-9 · 3–3–3 across')
+  await expect(sheet.getByRole('img', { name: 'Cabin seat map' })).toHaveAttribute(
+    'data-library',
+    'type',
+  )
+})
+
+test("with the airline's configuration on file the cabin is the airline's: classes, doors, wing", async ({
+  page,
+}) => {
+  /* The server keeps the airlines' cabins; the sample trip has no server,
+     so the one KLM flies on a 787-9 is planted where the loader looks. */
+  await page.addInitScript(() => {
+    window.__offwegoCabin = {
+      airline: 'KL',
+      family: 'B789',
+      name: 'Boeing 787-9',
+      seats: 275,
+      cabins: [
+        { name: 'World Business', rows: [1, 8], sections: [['A'], ['D', 'E'], ['K']] },
+        {
+          name: 'Premium Comfort',
+          rows: [10, 12],
+          sections: [
+            ['A', 'C'],
+            ['D', 'E', 'F'],
+            ['G', 'J'],
+          ],
+        },
+        {
+          name: 'Economy',
+          rows: [14, 38],
+          sections: [
+            ['A', 'B', 'C'],
+            ['D', 'E', 'F'],
+            ['G', 'H', 'J'],
+          ],
+        },
+      ],
+      exits: [1, 10, 28, 38],
+      wing: [20, 31],
+    }
+  })
+  await open(page)
+  await page.getByRole('button', { name: 'Travel', exact: true }).click()
+  await page.getByRole('button', { name: /KL 677/ }).click()
+  await page.getByRole('button', { name: 'Where we sit' }).click()
+  const sheet = page.getByRole('dialog')
+  const map = sheet.getByRole('img', { name: 'Cabin seat map' })
+  await expect(map).toHaveAttribute('data-library', 'airline')
+  await expect(map.locator('.cabinband')).toHaveText([
+    'WORLD BUSINESS',
+    'PREMIUM COMFORT',
+    'ECONOMY',
+  ])
+  await expect(sheet.getByText('Maya · 31A · Economy')).toBeVisible()
+  await expect(sheet.locator('.tkcraft')).toContainText('1–2–1 · 2–3–2 · 3–3–3 across')
+  await expect(sheet.locator('.tknote')).toContainText('as the airline configures it')
 })
 
 test('the getting-there chain renders the travel legs with their countdowns', async ({ page }) => {

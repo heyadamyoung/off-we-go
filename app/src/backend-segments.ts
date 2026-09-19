@@ -1,4 +1,5 @@
-import { authClient, isSample, tripPath } from './backend-base'
+import { authClient, hasBackend, isSample, tripPath } from './backend-base'
+import { type AirlineCabin, isAirlineCabin } from './cabin-library-core'
 import type { AircraftHeard } from './plane-core'
 import { uid } from './sample-trip-core'
 import { isTravelDay } from './shared/lib/still'
@@ -175,6 +176,33 @@ export async function loadSegmentFlight(
   return authClient.request<{ snapshot: unknown; events: FlightTrailEvent[] }>(
     `${tripPath(tripId)}/segments/${encodeURIComponent(segmentId)}/flight`,
   )
+}
+
+/* The airline's cabin for a type, from the server's library, once per
+   pair per page: the library changes with a deploy, not with the day. The
+   seam beside it is for the browser tests, the same shape as `__offwegoStill`:
+   the sample trip has no server to ask, and without it the one drawing the
+   library exists for could not be looked at by a test. */
+const cabins = new Map<string, Promise<AirlineCabin | null>>()
+export function loadCabin(
+  airline: string | null,
+  family: string | null,
+): Promise<AirlineCabin | null> {
+  const planted = (globalThis as { __offwegoCabin?: unknown }).__offwegoCabin
+  if (isAirlineCabin(planted)) return Promise.resolve(planted)
+  if (!airline || !family || !hasBackend) return Promise.resolve(null)
+  const key = `${airline}/${family}`
+  let pending = cabins.get(key)
+  if (!pending) {
+    pending = authClient
+      .request<{ cabin: unknown }>(
+        `/cabins/${encodeURIComponent(airline)}/${encodeURIComponent(family)}`,
+      )
+      .then(result => (isAirlineCabin(result?.cabin) ? result.cabin : null))
+      .catch(() => null)
+    cabins.set(key, pending)
+  }
+  return pending
 }
 
 /** Where the aircraft is, as the transponder network last heard it. */

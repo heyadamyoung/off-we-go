@@ -1,50 +1,49 @@
-import { useEffect, useRef } from 'react'
-import { cabinFor, parseSeat } from '../../../seatmap-core'
+import { useEffect, useRef, useState } from 'react'
+import { loadCabin } from '../../../backend-segments'
+import { aircraftFamily } from '../../../cabin-core'
+import { type AirlineCabin, airlineCodeOf } from '../../../cabin-library-core'
+import { cabinFor, cabinGeometry, classOf, parseSeat, SEAT } from '../../../seatmap-core'
 import type { Segment } from '../../../segments-core'
 import Sheet from '../../../shared/ui/sheet'
 
 /* The cabin, drawn from the booking: a schematic fuselage with every booked
    seat lit and initialled, the wing shaded so "over the wing" is visible, and
-   exits marked where every airliner keeps them. When the booking, the
-   airport's board or the transponder has named the aircraft, the cabin is
-   that type's — an A220's two-and-three, a Dash 8's two-and-two — and about
-   its length. Honest about the rest: a typical layout, not this exact
-   aircraft's chart, which is licensed art no one gets for free. */
+   exits marked. When the server has the airline's own configuration for the
+   type, the cabin is that one: business at two across up front, premium
+   economy behind it, economy from row 12, the doors where the airline puts
+   them, the wing under the rows it is under. When only the aircraft is
+   named, the cabin is that type's cross-section and about its length.
+   Honest about the rest: representative, not this registration's chart. */
 
-const SEAT = 16
-const GAP = 4
-const AISLE = 14
-const ROW_H = SEAT + GAP
-const LEFT = 30 // row numbers live here
-const PAD = 12
-const NOSE = 56
-const TAIL = 48
+/* The airline's configuration for this leg, when the server has one. */
+function useAirlineCabin(segment: Segment): AirlineCabin | null {
+  const [cabin, setCabin] = useState<AirlineCabin | null>(null)
+  const airline = airlineCodeOf(segment)
+  const family = aircraftFamily(segment.aircraft || segment.flight?.aircraft)?.code ?? null
+  useEffect(() => {
+    let alive = true
+    loadCabin(airline, family).then(found => {
+      if (alive) setCabin(found)
+    })
+    return () => {
+      alive = false
+    }
+  }, [airline, family])
+  return cabin
+}
 
 export default function SeatMap({ segment, onClose }: { segment: Segment; onClose: () => void }) {
+  const library = useAirlineCabin(segment)
   const booked = segment.passengers
     .map(person => ({ person, place: parseSeat(person.seat) }))
     .filter(entry => entry.place !== null)
   const plan = cabinFor(
     segment.passengers.map(person => person.seat),
     segment.aircraft || segment.flight?.aircraft,
+    library,
   )
-
-  const columnX = new Map<string, number>()
-  let x = LEFT + PAD
-  for (const section of plan.sections) {
-    for (const letter of section) {
-      columnX.set(letter, x)
-      x += SEAT + GAP
-    }
-    x += AISLE - GAP
-  }
-  const bodyRight = x - AISLE + GAP + PAD
-  const width = bodyRight + 4
-  const rowY = (row: number) => NOSE + (row - 1) * ROW_H
-  const height = rowY(plan.rows) + SEAT + TAIL
-  const midX = LEFT + (bodyRight - LEFT) / 2
-  const wingTop = rowY(plan.wing[0])
-  const wingBottom = rowY(plan.wing[1]) + SEAT
+  const g = cabinGeometry(plan)
+  const midX = g.left + (g.right - g.left) / 2
   const title = [segment.carrier, segment.number].filter(Boolean).join(' ')
   /* The sheet opens on the seats, not on the nose: a wide-body is forty-odd
      rows tall and the family's row was off the bottom of every phone. */
@@ -53,6 +52,9 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
   useEffect(() => {
     mine.current?.scrollIntoView({ block: 'center' })
   }, [])
+  const across = (plan.cabins || [{ sections: plan.sections }])
+    .map(cabin => cabin.sections.map(section => section.length).join('–'))
+    .join(' · ')
 
   return (
     <Sheet title={`Seats — ${title || segment.toName}`} onClose={onClose}>
@@ -63,6 +65,9 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
             className="rounded-md bg-accent px-2 py-0.5 text-[11px] font-bold text-accent-ink">
             {person.name} · {place?.row}
             {place?.letter}
+            {place && classOf(plan, place.row) && (
+              <span className="font-normal opacity-80"> · {classOf(plan, place.row)}</span>
+            )}
           </span>
         ))}
         {booked.length === 0 && (
@@ -74,38 +79,39 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
           {plan.aircraft}
           <span className="font-normal text-muted">
             {' · '}
-            {plan.sections.map(section => section.length).join('–')} across
+            {across} across
           </span>
         </p>
       )}
 
       <div className="grid justify-center">
         <svg
-          width={width}
-          height={height}
-          viewBox={`0 0 ${width} ${height}`}
+          width={g.width}
+          height={g.height}
+          viewBox={`0 0 ${g.width} ${g.height}`}
           /* Its own size where there is room, and never wider than the sheet:
              a wide-body's three banks are wider than a small phone. */
           style={{ maxWidth: '100%', height: 'auto' }}
           role="img"
-          aria-label="Cabin seat map">
+          aria-label="Cabin seat map"
+          data-library={plan.cabins ? 'airline' : plan.aircraft ? 'type' : 'letters'}>
           {/* wings first, under the fuselage */}
           <polygon
-            points={`${LEFT},${wingTop + 20} ${LEFT - 26},${wingBottom + 30} ${LEFT - 26},${wingBottom + 44} ${LEFT},${wingBottom}`}
+            points={`${g.left},${g.wing.top + 20} ${g.left - 26},${g.wing.bottom + 30} ${g.left - 26},${g.wing.bottom + 44} ${g.left},${g.wing.bottom}`}
             fill="var(--c-raised)"
             stroke="var(--c-line)"
           />
           <polygon
-            points={`${bodyRight},${wingTop + 20} ${bodyRight + 26},${wingBottom + 30} ${bodyRight + 26},${wingBottom + 44} ${bodyRight},${wingBottom}`}
+            points={`${g.right},${g.wing.top + 20} ${g.right + 26},${g.wing.bottom + 30} ${g.right + 26},${g.wing.bottom + 44} ${g.right},${g.wing.bottom}`}
             fill="var(--c-raised)"
             stroke="var(--c-line)"
           />
           {/* the fuselage: nose cone, straight body, tail taper */}
           <path
             d={
-              `M ${LEFT} ${NOSE - 8} Q ${LEFT} ${8} ${midX} ${4} Q ${bodyRight} ${8} ${bodyRight} ${NOSE - 8} ` +
-              `L ${bodyRight} ${height - TAIL + 10} Q ${bodyRight - 8} ${height - 6} ${midX} ${height - 4} ` +
-              `Q ${LEFT + 8} ${height - 6} ${LEFT} ${height - TAIL + 10} Z`
+              `M ${g.left} 48 Q ${g.left} ${8} ${midX} ${4} Q ${g.right} ${8} ${g.right} 48 ` +
+              `L ${g.right} ${g.height - 38} Q ${g.right - 8} ${g.height - 6} ${midX} ${g.height - 4} ` +
+              `Q ${g.left + 8} ${g.height - 6} ${g.left} ${g.height - 38} Z`
             }
             fill="var(--c-panel-solid)"
             stroke="var(--c-line)"
@@ -113,18 +119,18 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
           />
           {/* the wing band across the cabin */}
           <rect
-            x={LEFT}
-            y={wingTop}
-            width={bodyRight - LEFT}
-            height={wingBottom - wingTop}
+            x={g.left}
+            y={g.wing.top}
+            width={g.right - g.left}
+            height={g.wing.bottom - g.wing.top}
             fill="var(--c-raised)"
             opacity="0.5"
           />
-          {/* exits: front pair, over the wing, rear pair */}
-          {[NOSE - 2, wingTop - 6, wingBottom + 2, rowY(plan.rows) + SEAT + 6].map(y => (
+          {/* the doors, both walls */}
+          {g.exits.map(y => (
             <g key={y}>
               <rect
-                x={LEFT - 3}
+                x={g.left - 3}
                 y={y}
                 width={5}
                 height={12}
@@ -133,7 +139,7 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
                 opacity="0.65"
               />
               <rect
-                x={bodyRight - 2}
+                x={g.right - 2}
                 y={y}
                 width={5}
                 height={12}
@@ -143,62 +149,75 @@ export default function SeatMap({ segment, onClose }: { segment: Segment; onClos
               />
             </g>
           ))}
+          {/* the classes, each named above its first row */}
+          {g.bands.map(band => (
+            <text
+              key={band.name + band.y}
+              className="cabinband"
+              x={midX}
+              y={band.y + 12}
+              textAnchor="middle"
+              fontSize="9"
+              fontWeight="700"
+              letterSpacing="0.08em"
+              fill="var(--c-muted)">
+              {band.name.toUpperCase()}
+            </text>
+          ))}
           {/* seats */}
-          {Array.from({ length: plan.rows }, (_, index) => {
-            const row = index + 1
-            const y = rowY(row)
-            return (
-              <g key={row} ref={row === frontRow ? mine : undefined}>
-                {row % 5 === 0 && (
-                  <text
-                    x={LEFT - 8}
-                    y={y + SEAT - 4}
-                    textAnchor="end"
-                    fontSize="9"
-                    fill="var(--c-faint)"
-                    style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    {row}
-                  </text>
-                )}
-                {plan.sections.flat().map(letter => {
-                  const mine = booked.find(
-                    entry => entry.place?.row === row && entry.place.letter === letter,
-                  )
-                  return (
-                    <g key={letter}>
-                      <rect
-                        x={columnX.get(letter)}
-                        y={y}
-                        width={SEAT}
-                        height={SEAT}
-                        rx={4}
-                        fill={mine ? 'var(--c-accent)' : 'var(--c-raised)'}
-                        stroke={mine ? 'var(--c-accent)' : 'var(--c-line)'}
-                      />
-                      {mine && (
-                        <text
-                          x={(columnX.get(letter) || 0) + SEAT / 2}
-                          y={y + SEAT - 4.5}
-                          textAnchor="middle"
-                          fontSize="10"
-                          fontWeight="800"
-                          fill="var(--c-accent-ink)">
-                          {mine.person.name.trim().charAt(0).toUpperCase()}
-                        </text>
-                      )}
-                    </g>
-                  )
-                })}
-              </g>
-            )
-          })}
+          {g.rows.map(({ row, y, seats }) => (
+            <g key={row} ref={row === frontRow ? mine : undefined}>
+              {(row % 5 === 0 || row === 1) && (
+                <text
+                  x={g.left - 8}
+                  y={y + SEAT - 4}
+                  textAnchor="end"
+                  fontSize="9"
+                  fill="var(--c-faint)"
+                  style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {row}
+                </text>
+              )}
+              {seats.map(seat => {
+                const held = booked.find(
+                  entry => entry.place?.row === row && entry.place.letter === seat.letter,
+                )
+                return (
+                  <g key={seat.letter}>
+                    <rect
+                      x={seat.x}
+                      y={y}
+                      width={seat.w}
+                      height={SEAT}
+                      rx={4}
+                      fill={held ? 'var(--c-accent)' : 'var(--c-raised)'}
+                      stroke={held ? 'var(--c-accent)' : 'var(--c-line)'}
+                    />
+                    {held && (
+                      <text
+                        x={seat.x + seat.w / 2}
+                        y={y + SEAT - 4.5}
+                        textAnchor="middle"
+                        fontSize="10"
+                        fontWeight="800"
+                        fill="var(--c-accent-ink)">
+                        {held.person.name.trim().charAt(0).toUpperCase()}
+                      </text>
+                    )}
+                  </g>
+                )
+              })}
+            </g>
+          ))}
         </svg>
       </div>
 
-      <p className="m-0 text-center text-[11px] leading-relaxed text-faint">
-        {plan.aircraft
-          ? `Schematic of a typical ${plan.aircraft} cabin — your seats are exact; the rows and exits are representative rather than this aircraft’s own chart.`
-          : `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your seats are exact, rows and exits are representative rather than this aircraft’s chart. Put the aircraft on the leg and the cabin is drawn for it.`}
+      <p className="tknote m-0 text-center text-[11px] leading-relaxed text-faint">
+        {plan.cabins
+          ? `${plan.aircraft} as the airline configures it — your seats are exact; the classes, doors and wing are representative of the type rather than this aircraft’s own chart.`
+          : plan.aircraft
+            ? `Schematic of a typical ${plan.aircraft} cabin — your seats are exact; the rows and exits are representative rather than this aircraft’s own chart.`
+            : `Schematic of a typical ${plan.kind === 'wide' ? 'wide-body' : 'narrow-body'} cabin — your seats are exact, rows and exits are representative rather than this aircraft’s chart. Put the aircraft on the leg and the cabin is drawn for it.`}
       </p>
     </Sheet>
   )

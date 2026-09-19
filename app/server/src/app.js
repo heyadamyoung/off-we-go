@@ -36,6 +36,7 @@ import { deriveDeadlines, SEGMENT_MODES } from './segments.js'
 import { createFlightSources } from './flights/registry.js'
 import { registerFlightRoutes } from './flights/routes.js'
 import { registerPushRoutes } from './push/routes.js'
+import { registerCabinRoutes } from './cabins/index.js'
 import {
   contentDisposition,
   isPlaylistPath,
@@ -3470,6 +3471,9 @@ export async function buildServer({
      cached boards between them. */
   const flightSources = flights || createFlightSources()
   registerFlightRoutes(app, { repository, sources: flightSources, authenticated })
+  /* The airlines' cabins, for the seat map: which rows are which class,
+     where the doors are, which rows are over the wing. */
+  registerCabinRoutes(app, { authenticated })
   registerPushRoutes(app, {
     repository,
     authenticate: authenticated,
