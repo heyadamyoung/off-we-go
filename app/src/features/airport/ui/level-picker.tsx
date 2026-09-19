@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from '../../../shared/ui/icon'
 
 /* The floors of the terminal, folded to the one showing: a square at the top
@@ -7,8 +7,10 @@ import Icon from '../../../shared/ui/icon'
    panel reads) when tapped and folds again once one is chosen. On a phone it
    sits under the capsule's row when there is one, so the two never fight for
    the width; at a desk there is room beside it. A terminal with one floor
-   has nothing to choose, and shows nothing. Nothing here closes the
-   terminal — the camera does that, by leaving. */
+   has nothing to choose, and shows nothing. A tap anywhere else while the
+   column is open folds it back to the square — the column, not the
+   terminal; nothing here closes the terminal, the camera does that, by
+   leaving. */
 export default function LevelPicker({
   levels,
   level,
@@ -24,6 +26,26 @@ export default function LevelPicker({
   below?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const column = useRef<HTMLDivElement>(null)
+  /* Open, the column listens for the finger landing anywhere but on it —
+     the map, the capsule, the chrome — and folds. On the capture phase, so
+     the map's own handling of the tap cannot keep it from hearing; the tap
+     still goes wherever it was going. Escape folds it too. */
+  useEffect(() => {
+    if (!open) return
+    const away = (event: Event) => {
+      if (!column.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', away, true)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('pointerdown', away, true)
+      document.removeEventListener('keydown', key)
+    }
+  }, [open])
   const box =
     'glass absolute right-4 z-[6] w-11 rounded-xl ' +
     (below
@@ -56,7 +78,7 @@ export default function LevelPicker({
     )
   }
   return (
-    <div className={box + ' flex flex-col overflow-hidden text-[15px] font-extrabold'}>
+    <div ref={column} className={box + ' flex flex-col overflow-hidden text-[15px] font-extrabold'}>
       {[...levels]
         .sort((a, b) => b - a)
         .map(value => (

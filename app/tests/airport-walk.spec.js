@@ -81,6 +81,14 @@ test('on the day of the flight the terminal opens itself and walks the family to
   await page.getByRole('button', { name: 'Floor 0 — choose a floor' }).click()
   await page.getByRole('button', { name: 'Floor 2', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
+  /* Opened and left alone, a tap anywhere else folds the column — the
+     column only: the floor and the terminal stay as they were. */
+  await page.getByRole('button', { name: 'Floor 2 — choose a floor' }).click()
+  await expect(page.getByRole('button', { name: 'Floor 0', exact: true })).toBeVisible()
+  await capsule.click()
+  await expect(page.getByRole('button', { name: 'Floor 0', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
+  await expect(capsule).toContainText('Gate E19')
   /* And the choice outlives the clock. The walk is rebuilt every minute,
      and a target rebuilt as a new object was taken for a new destination,
      whose route starts on the ground floor — so the pill snapped back to 0
