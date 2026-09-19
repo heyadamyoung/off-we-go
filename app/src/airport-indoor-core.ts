@@ -78,6 +78,20 @@ export function autoIndoorMove({
   return null
 }
 
+/* Whether the camera is over this terminal at all, by the same thresholds
+   that would fold it. The walk keeps a terminal open wherever the camera
+   goes, because its line and its words want the floor plan; the floor
+   picker is another matter — a control for floors nobody can see is a
+   control in the way of the map — so it follows the camera even when the
+   terminal does not. */
+export function cameraOverTerminal(
+  view: { center: Coordinates; zoom: number } | null | undefined,
+  stop: Stop | null | undefined,
+): boolean {
+  if (!view || !stop) return false
+  return view.zoom >= 13.8 && stepMetres(view.center, [stop.lng, stop.lat]) <= 4000
+}
+
 /* Ways carry their own coordinates with `out geom`, so no second lookup and no
    converter library. The radius takes in the whole airfield from a pin dropped
    anywhere on it; the trailing count caps a runaway hub at something a phone

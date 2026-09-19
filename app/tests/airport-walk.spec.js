@@ -89,4 +89,15 @@ test('on the day of the flight the terminal opens itself and walks the family to
   await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
   await page.evaluate(() => window.__offwegoTick?.())
   await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
+
+  /* Zoomed away, the picker goes with the camera — a control for floors
+     nobody can see was sitting over the map of the whole trip — and the
+     walk keeps its capsule, which is what to do next wherever the map is.
+     Back over the terminal, the picker is back, on the floor that was
+     chosen. */
+  await page.evaluate(() => window.__offwegoMap?.jumpTo({ center: [4.9, 52.37], zoom: 9 }))
+  await expect(page.getByRole('button', { name: /choose a floor/ })).toHaveCount(0)
+  await expect(capsule).toContainText('Gate E19')
+  await page.evaluate(() => window.__offwegoMap?.jumpTo({ center: [4.7639, 52.3105], zoom: 16 }))
+  await expect(page.getByRole('button', { name: 'Floor 2 — choose a floor' })).toBeVisible()
 })

@@ -20,14 +20,7 @@ import TripNow from './trip-now'
 import usePapers from '../model/use-papers'
 import useStopDocs from '../model/use-stop-docs'
 import useTripPage from '../model/use-trip-page'
-import {
-  Advisories,
-  MapChrome,
-  MapControls,
-  ScopeToggle,
-  StandingNotices,
-  TripTitle,
-} from './trip-chrome'
+import { MapChrome, MapControls, ScopeToggle, StandingNotices, TripTitle } from './trip-chrome'
 import { TripCluster } from './trip-cluster'
 import TripBar from './trip-bar'
 import TripPanel from './trip-panel'
@@ -226,8 +219,6 @@ function Trip({
         fixes={fixes}
         now={clock}
       />
-      {!panelOpen && <Advisories segments={transport.segments} markers={markers} now={clock} />}
-
       <MapChrome>
         <ScopeToggle
           shifted={panelOpen}
@@ -249,6 +240,9 @@ function Trip({
             photos={photos}
             segments={transport.segments}
             fixes={fixes}
+            travellers={markers
+              .filter(marker => !marker.stale)
+              .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
             clock={clock}
             travelling={canEdit}
             liveStop={liveStop}

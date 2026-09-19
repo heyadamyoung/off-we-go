@@ -1,40 +1,7 @@
 import { memo, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import type { PhoneMarker } from '../../../live-markers-core'
-import type { Segment } from '../../../segments-core'
 import Icon from '../../../shared/ui/icon'
 import OfflineNote from '../../../shared/ui/offline-note'
 import type { Attraction, Coordinates } from '../../../shared/model/types'
-import { MakeIt } from '../../transport'
-
-/* The advisory storey: the make-it meter, floated in its own layer above the
-   chrome row. Squeezed INTO the phone's one-line row it crushed the Now
-   capsule to a bare dot. The quiet-phone banner used to live here too and was
-   evicted as noise: the Now capsule already says how long the silence is, the
-   marker dims, and a banner repeating that on the map's midriff earned its
-   keep with nobody. */
-export function Advisories({
-  segments,
-  markers,
-  now,
-}: {
-  segments: Segment[]
-  markers: PhoneMarker[]
-  now: number
-}) {
-  return (
-    <div
-      className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--trip-1)+56px)] z-[4]
-                 flex flex-col items-center gap-2">
-      <MakeIt
-        segments={segments}
-        travellers={markers
-          .filter(marker => !marker.stale)
-          .map(marker => ({ name: marker.name, lng: marker.lng, lat: marker.lat }))}
-        now={now}
-      />
-    </div>
-  )
-}
 
 /* What the screen is quietly saying about itself, stacked in one corner.
  *

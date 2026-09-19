@@ -5,6 +5,7 @@ import {
   levelsOf,
   onLevel,
   type IndoorFeature,
+  cameraOverTerminal,
 } from '../../../airport-indoor-core'
 import {
   describeIndoorRoute,
@@ -220,9 +221,13 @@ export default function useAirportIndoor({
     return fc
   }, [stop, features, level, route])
   const routeText = useMemo(() => (route ? describeIndoorRoute(route) : null), [route])
+  /* The walk keeps the terminal; the camera decides whether its chrome is
+     worth the screen. */
+  const inView = cameraOverTerminal(view, stop)
 
   return {
     active: !!stop,
+    inView,
     stop,
     open,
     level,

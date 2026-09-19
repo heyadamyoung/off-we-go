@@ -20,6 +20,26 @@ export interface LegBlock {
   /** "Schiphol · 2 min ago", or null when no board has spoken */
   source: string | null
   papers: Paper[]
+  /** the make-it meter, a line a person: where they are against the doors */
+  pace: PaceLine[]
+  /** "9 min from the door to the gate, counted", when the board says how far */
+  walkNote: string | null
+}
+
+export interface PaceLine {
+  name: string
+  state: 'here' | 'ok' | 'tight' | 'late'
+  /** "10 min away · on pace" */
+  words: string
+  /** "leave by 11:30", or null once they are here */
+  leaveBy: string | null
+}
+
+const PACE_DOT: Record<PaceLine['state'], string> = {
+  here: 'bg-ok',
+  ok: 'bg-ok',
+  tight: 'bg-accent',
+  late: 'bg-tight',
 }
 
 /* What is happening, opened out.
@@ -210,6 +230,26 @@ export default memo(function NowCard({
               {leg.source && <span className="ncmeta ncsrc">{leg.source}</span>}
             </span>
           </button>
+          {/* The make-it meter, where the pill opens rather than boxed over
+              the map: everyone's distance against the doors, and when
+              whoever is still away has to leave. */}
+          {leg.pace.length > 0 && (
+            <div className="ncpace flex flex-col gap-1 px-3 pb-2 text-[11px] text-muted">
+              {leg.walkNote && <span className="text-faint">{leg.walkNote}</span>}
+              {leg.pace.map(person => (
+                <div key={person.name} className="flex items-center gap-2">
+                  <span
+                    className={'h-1.5 w-1.5 flex-none rounded-full ' + PACE_DOT[person.state]}
+                  />
+                  <b className="text-ink">{person.name}</b>
+                  <span>{person.words}</span>
+                  {person.leaveBy && (
+                    <span className="mkleave ml-auto font-mono text-faint">{person.leaveBy}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {travelling && leg.papers.length > 0 && (
             <div className="ncpapers">
               {leg.papers.map(paper => (
