@@ -113,3 +113,17 @@ export function prunedTo(selection: Selection, order: readonly Id[]): Selection 
 export function chosenInOrder(selection: Selection, order: readonly Id[]): Id[] {
   return order.filter(id => selection.ids.has(id))
 }
+
+/**
+ * These ones, in or out — all of them the same way. What a finger sweeping
+ * across tiles does: the first tile it pressed decided whether this sweep
+ * chooses or unchooses, and every tile it crosses after that follows, rather
+ * than each one flipping on its own. The last one crossed is the anchor.
+ */
+export function setChosen(selection: Selection, ids: readonly Id[], chosen: boolean): Selection {
+  const next = new Set(selection.ids)
+  for (const id of ids)
+    if (chosen) next.add(id)
+    else next.delete(id)
+  return { ids: next, anchor: ids.length ? ids[ids.length - 1] : selection.anchor }
+}

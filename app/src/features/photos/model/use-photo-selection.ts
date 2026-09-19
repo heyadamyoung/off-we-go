@@ -4,6 +4,7 @@ import {
   chosenInOrder,
   extendTo,
   prunedTo,
+  setChosen,
   toggleMany,
   toggleOne,
   type Selection,
@@ -20,12 +21,24 @@ import type { Id, TripPhoto } from '../../../shared/model/types'
    which is how every phone gallery has worked since about 2012 and needs no
    teaching; and a button, which is how a mouse does it and is also the only
    part of this that is discoverable by looking. Once in, a tap toggles, a
-   shift-click takes a range, and Escape gets out. */
+   shift-click takes a range, and Escape gets out.
+
+   And a sweep: the finger that pressed a tile, still down, moves across the
+   tiles beside it, and each one it crosses follows the first — chosen if the
+   first became chosen, let go if it was let go. The tiles let the page have
+   up and down (touch-action: pan-y), so a sweep is sideways or slantwise,
+   and a straight pull is still a scroll. */
 
 /** How long a press has to last to mean "these ones" rather than "this one". */
 const PRESS_MS = 450
 /** How far a thumb may wander in that time and still be a press, not a scroll. */
 const WOBBLE = 10
+/** How long after a hold or a sweep its own click is still on its way. */
+const CLICK_AFTER_MS = 600
+
+/** The tile under a point on the screen, by the id the grid writes on it. */
+const tileAt = (x: number, y: number): Id | null =>
+  document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-photo-id]')?.dataset.photoId ?? null
 
 export interface PhotoSelection {
   on: boolean
@@ -56,8 +69,15 @@ export type PressKind = 'tap' | 'range' | 'add'
 export default function usePhotoSelection(reading: TripPhoto[]): PhotoSelection {
   const [selection, setSelection] = useState<Selection>(NOTHING)
   const [on, setOn] = useState(false)
-  /* Set by a long press, read by the click it is about to cause. */
-  const swallow = useRef(false)
+  /* Set by a long press or a sweep, read by the click either is about to
+     cause. A deadline rather than a flag: a sweep that ends off any tile
+     sends no click at all, and a flag left set would have eaten the next
+     honest tap. */
+  const swallowUntil = useRef(0)
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+  const onRef = useRef(on)
+  onRef.current = on
 
   const order = useMemo(() => reading.map(photo => photo.id), [reading])
   const orderRef = useRef(order)
@@ -105,8 +125,8 @@ export default function usePhotoSelection(reading: TripPhoto[]): PhotoSelection 
       /* The click that follows the long press that started all this. Without
          swallowing it the picture is chosen by the hold and unchosen by the
          tap a millisecond later, and a long press appears to do nothing. */
-      if (swallow.current) {
-        swallow.current = false
+      if (Date.now() < swallowUntil.current) {
+        swallowUntil.current = 0
         return true
       }
       /* A shift- or cmd-click on a desktop starts a selection without any
@@ -141,12 +161,38 @@ export default function usePhotoSelection(reading: TripPhoto[]): PhotoSelection 
   /* The long press. A pointer that moves is a scroll and a pointer that lifts
      early is a tap, so both cancel it; what is left is somebody holding still
      on one picture, which means one thing and nothing else. */
-  const held = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
+  const held = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    x: number
+    y: number
+    id: Id
+    pointerId: number
+    target: Element
+  } | null>(null)
+  /* A sweep in progress: which way it sets the tiles, and the ones it has
+     crossed, so a finger wobbling over the same tile does not flip it. */
+  const sweep = useRef<{ choose: boolean; seen: Set<Id> } | null>(null)
   const clearHold = useCallback(() => {
-    if (held.current) clearTimeout(held.current.timer)
+    if (held.current?.timer) clearTimeout(held.current.timer)
     held.current = null
+    sweep.current = null
   }, [])
   useEffect(() => clearHold, [clearHold])
+
+  /* From this tile, the way its own state decides: pressed while chosen, the
+     sweep lets go; pressed while not, it chooses. The tile itself is first. */
+  const startSweep = useCallback((id: Id, pointerId: number, target: Element) => {
+    const choose = !selectionRef.current.ids.has(id)
+    sweep.current = { choose, seen: new Set([id]) }
+    setOn(true)
+    setSelection(current => setChosen(current, [id], choose))
+    swallowUntil.current = Date.now() + CLICK_AFTER_MS
+    try {
+      target.setPointerCapture?.(pointerId)
+    } catch {
+      /* a pointer already gone is nothing to capture */
+    }
+  }, [])
 
   const holdProps = useCallback(
     (id: Id) => ({
@@ -155,14 +201,18 @@ export default function usePhotoSelection(reading: TripPhoto[]): PhotoSelection 
         /* A mouse has a button and a keyboard for this. Holding one still is
            how somebody reads a caption, not how they select. */
         if (event.pointerType === 'mouse') return
-        const { clientX: x, clientY: y } = event
+        const { clientX: x, clientY: y, pointerId, currentTarget: target } = event
         held.current = {
           x,
           y,
+          id,
+          pointerId,
+          target,
           timer: setTimeout(() => {
-            held.current = null
-            swallow.current = true
-            begin(id)
+            if (held.current) held.current.timer = null
+            /* The hold chooses this one and opens the sweep from it, so a
+               finger that then moves takes the next ones too. */
+            startSweep(id, pointerId, target)
             /* The phone says it happened. Without it a long press is half a
                second of nothing followed by a screen that changed by itself. */
             navigator.vibrate?.(8)
@@ -172,7 +222,28 @@ export default function usePhotoSelection(reading: TripPhoto[]): PhotoSelection 
       onPointerMove: (event: React.PointerEvent) => {
         const start = held.current
         if (!start) return
-        if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > WOBBLE) clearHold()
+        if (!sweep.current) {
+          if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= WOBBLE) return
+          /* Moved before the hold matured: while choosing, a finger drawn
+             across the tiles is a sweep from the one it pressed; otherwise
+             it is a scroll, and the press is forgotten. */
+          if (start.timer) clearTimeout(start.timer)
+          start.timer = null
+          if (!onRef.current) {
+            clearHold()
+            return
+          }
+          startSweep(start.id, start.pointerId, start.target)
+        }
+        /* The tile under the finger now — this same move, when it is the
+           one that began the sweep, since the finger is already past the
+           tile it pressed. */
+        const under = tileAt(event.clientX, event.clientY)
+        const going = sweep.current
+        if (going && under && !going.seen.has(under)) {
+          going.seen.add(under)
+          setSelection(current => setChosen(current, [under], going.choose))
+        }
       },
       onPointerUp: clearHold,
       onPointerCancel: clearHold,
@@ -184,7 +255,7 @@ export default function usePhotoSelection(reading: TripPhoto[]): PhotoSelection 
         begin(id)
       },
     }),
-    [begin, clearHold],
+    [begin, clearHold, startSweep],
   )
 
   const photos = useMemo(() => {

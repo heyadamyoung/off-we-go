@@ -73,5 +73,18 @@ export default function usePhotoGroups(
     [rows, height, box.scrolled, box.viewportHeight],
   )
 
-  return { ref, columns, groups, rows, height, visible, collapsed, toggle, allCollapsed, foldAll }
+  return {
+    ref,
+    columns,
+    groups,
+    rows,
+    height,
+    visible,
+    /** how far the grid's top has scrolled under the scroller's top edge */
+    scrolled: box.scrolled,
+    collapsed,
+    toggle,
+    allCollapsed,
+    foldAll,
+  }
 }

@@ -8,6 +8,7 @@ import {
   extendTo,
   isChosen,
   prunedTo,
+  setChosen,
   toggleMany,
   toggleOne,
 } from '../src/photo-select-core.ts'
@@ -112,4 +113,15 @@ test('the chosen come back in the order they are read', () => {
      reads like a different set of pictures. */
   const chosen = chose('e', 'a', 'c')
   assert.deepEqual(chosenInOrder(chosen, order), ['a', 'c', 'e'])
+})
+
+test('a sweep sets every tile it crosses the same way, whichever way each one was', () => {
+  const some = chose('b')
+  const swept = setChosen(some, ['a', 'b', 'c'], true)
+  assert.deepEqual(listed(swept), ['a', 'b', 'c'])
+  assert.equal(swept.anchor, 'c')
+  const cleared = setChosen(swept, ['b', 'c'], false)
+  assert.deepEqual(listed(cleared), ['a'])
+  assert.equal(setChosen(cleared, [], true).anchor, cleared.anchor)
+  assert.deepEqual(listed(some), ['b'], 'never edited in place')
 })
