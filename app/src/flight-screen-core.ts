@@ -156,7 +156,11 @@ export function flightScreen(segment: Segment, now: number): FlightScreenModel {
       day: legDay(segment.arrivesAt, segment.arriveTz),
     },
     duration: spanWords(leaves, lands),
-    aircraft: aircraftName(segment.aircraft || segment.flight?.aircraft) || null,
+    aircraft:
+      aircraftName(segment.aircraft || segment.flight?.aircraft) ||
+      (segment.flight?.usualAircraft
+        ? `${aircraftName(segment.flight.usualAircraft)} · usually`
+        : null),
     board: ticketColumns(segment),
     steps: flightPhases(segment, now).map(step => ({ ...step, note: stepNote(step, segment) })),
     people: segment.passengers.map(person => ({ name: person.name, seat: person.seat || null })),

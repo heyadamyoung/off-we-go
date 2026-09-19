@@ -15,35 +15,36 @@ import Sheet from '../../../shared/ui/sheet'
    named, the cabin is that type's cross-section and about its length.
    Honest about the rest: representative, not this registration's chart. */
 
-/* The flying window, as the server keeps it: the transponder knows the
-   aircraft from the gate to a while after it was due down. */
-const FLYING_BEFORE_MS = 30 * 60_000
-const FLYING_AFTER_MS = 2 * 60 * 60_000
-
-/* Which aircraft, when neither the booking nor a board has said: through the
-   flying window the transponder is asked, once, when the sheet opens. The
-   watch writes the same answer onto the leg for everybody in a while; this
-   is for the family looking now. */
-function useHeardType(tripId: string | undefined, segment: Segment): string | null {
-  const [type, setType] = useState<string | null>(null)
+/* Which aircraft, when neither the booking nor a board has said: the sky is
+   asked, once, when the sheet opens. Through the flying window the
+   transponder names this leg's own aircraft; before it, whatever answers to
+   the callsign is the number's earlier rotation, and its type is what this
+   leg will usually fly — said as that. The watch writes the same answers
+   onto the leg for everybody in a while; this is for the family looking now. */
+function useHeardType(
+  tripId: string | undefined,
+  segment: Segment,
+): { type: string | null; usual: boolean } {
+  const [heard, setHeard] = useState<{ type: string | null; usual: boolean }>({
+    type: null,
+    usual: false,
+  })
   const known = !!(segment.aircraft || segment.flight?.aircraft)
   useEffect(() => {
     if (!tripId || known) return
-    const now = Date.now()
-    const departs = Date.parse(segment.departsAt)
-    const arrives = segment.arrivesAt ? Date.parse(segment.arrivesAt) : departs
-    if (!(now >= departs - FLYING_BEFORE_MS && now <= arrives + FLYING_AFTER_MS)) return
     let alive = true
     loadSegmentPosition(tripId, segment.id)
       .then(found => {
-        if (alive && found.aircraft?.type) setType(found.aircraft.type)
+        if (!alive) return
+        if (found.aircraft?.type) setHeard({ type: found.aircraft.type, usual: false })
+        else if (found.usual) setHeard({ type: found.usual, usual: true })
       })
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [tripId, known, segment.id, segment.departsAt, segment.arrivesAt])
-  return type
+  }, [tripId, known, segment.id])
+  return heard
 }
 
 /* The airline's configuration for this leg, when the server has one. */
@@ -74,7 +75,9 @@ export default function SeatMap({
   onClose: () => void
 }) {
   const heard = useHeardType(tripId, segment)
-  const aircraft = segment.aircraft || segment.flight?.aircraft || heard
+  const named = segment.aircraft || segment.flight?.aircraft || (!heard.usual && heard.type) || null
+  const usual = named ? null : segment.flight?.usualAircraft || heard.type || null
+  const aircraft = named || usual
   const library = useAirlineCabin(segment, aircraft)
   const booked = segment.passengers
     .map(person => ({ person, place: parseSeat(person.seat) }))
@@ -139,7 +142,8 @@ export default function SeatMap({
           style={{ maxWidth: '100%', height: 'auto' }}
           role="img"
           aria-label="Cabin seat map"
-          data-library={plan.cabins ? 'airline' : plan.aircraft ? 'type' : 'letters'}>
+          data-library={plan.cabins ? 'airline' : plan.aircraft ? 'type' : 'letters'}
+          data-usual={usual && plan.aircraft ? '' : undefined}>
           {/* wings first, under the fuselage */}
           <polygon
             points={`${g.left},${g.wing.top + 20} ${g.left - 26},${g.wing.bottom + 30} ${g.left - 26},${g.wing.bottom + 44} ${g.left},${g.wing.bottom}`}
@@ -258,6 +262,12 @@ export default function SeatMap({
       </div>
 
       <p className="tknote m-0 text-center text-[11px] leading-relaxed text-faint">
+        {usual && plan.aircraft && (
+          <>
+            Nobody has named the day’s aircraft yet; this is what {title || 'this flight'} flew the
+            last time it was heard, and the type is confirmed from the gate.{' '}
+          </>
+        )}
         {plan.cabins
           ? `${plan.aircraft} as the airline configures it — your seats are exact; the classes, doors and wing are representative of the type rather than this aircraft’s own chart.`
           : plan.aircraft

@@ -32,6 +32,9 @@ export const WATCH_AFTER_MS = 4 * 60 * 60 * 1000
    network's rate limit is theirs to set. */
 const ADSB_SILENCE_MS = 20 * 60_000
 const ADSB_EVERY_MS = 10 * 60_000
+/* Before the flying window the sky is asked for the number's earlier
+   rotation — a flight that is up for an hour is heard at this cadence. */
+const ADSB_EARLY_EVERY_MS = 20 * 60_000
 
 const SEGMENT_STATUS = { cancelled: 'cancelled', done: 'arrived', delayed: 'delayed' }
 const SETTLED = new Set(['departed', 'landed', 'arrived', 'cancelled', 'diverted'])
@@ -299,6 +302,29 @@ export async function watchFlights({
             sources: [...new Set([...(typed.sources || []), sources.adsb.source])],
           }
         }
+      }
+      /* Which aircraft it will be, before anybody can say: the same number
+         flew the same way yesterday, or this morning, and the sky asked for
+         the callsign outside the flying window hears that rotation. Its
+         type is what this leg will almost surely fly — kept apart from the
+         day's own type, so a swap on the day is news and a guess is not,
+         and let go the moment a board or the transponder names the day's. */
+      if (typed && !typed.usualAircraft && snapshot?.info?.usualAircraft) {
+        view = { ...typed, usualAircraft: snapshot.info.usualAircraft }
+        typed = view
+      }
+      if (
+        typed &&
+        !typed.aircraft &&
+        !typed.usualAircraft &&
+        sources.adsb &&
+        !inFlyingWindow(leg, now) &&
+        now - (asked.get(leg.id) || 0) > ADSB_EARLY_EVERY_MS
+      ) {
+        asked.set(leg.id, now)
+        const callsign = callsignFor(number)
+        const heard = callsign ? await sources.adsb.byCallsign(callsign).catch(() => null) : null
+        if (heard?.type) view = { ...typed, usualAircraft: heard.type }
       }
       if (!view) continue
       stats.matched += 1

@@ -101,6 +101,8 @@ export interface FlightOnLeg {
   /** US pre-clearance before the gate, where the board says so */
   preClearance?: boolean | null
   aircraft?: string | null
+  /** the type the same number flew last time it was heard, while nothing has named the day's */
+  usualAircraft?: string | null
   sources?: string[]
   lastUpdated?: string | null
   fetchedAt?: string | null
