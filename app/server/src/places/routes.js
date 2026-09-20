@@ -40,6 +40,7 @@ import { createPlaceFallback } from './fallback.js'
 import { OSM_LICENSE, OVERTURE_LICENSE } from './overture.js'
 import {
   CONFIDENCE_FLOOR,
+  MARK_ZOOM,
   MAX_RADIUS_METRES,
   VIEW_WEIGHT,
   markRank,
@@ -111,6 +112,11 @@ const PLACE_CACHE = 'private, max-age=86400'
 const NEARBY_CACHE = 'private, max-age=120'
 const SEARCH_CACHE = 'private, max-age=30'
 const DEGRADED_CACHE = 'no-store'
+/* A tile is the same bytes for everybody, and stays so until the data behind
+   it is re-ingested — which is a release, not a minute. `public` because
+   there is nothing of anybody's trip in it, and the whole point of a tiled
+   map is that the second look at a square is free. */
+const TILE_CACHE = 'public, max-age=3600, stale-while-revalidate=86400'
 
 /* The notices a client must render, by licence. ODbL is the one with teeth:
    OpenStreetMap's licence requires the attribution to be shown wherever the
@@ -269,6 +275,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
    the size of the solar system. The pin limit is generous — a map draws
    hundreds of dots happily and clusters the rest — and the floor is the same
    suppression floor every other query uses. */
+/* A tile address. Integers, and bounded by the deepest zoom the map goes to —
+   an unbounded z is an unbounded ST_TileEnvelope and a query nobody asked
+   for. 20 is past the point where the basemap itself has detail. */
+const tileQuery = z.object({
+  z: z.coerce.number().int().min(0).max(20),
+  x: z.coerce.number().int().min(0),
+  y: z.coerce.number().int().min(0),
+})
+
 const viewQuery = z
   .object({
     west: z.coerce.number().min(-180).max(180),
@@ -618,6 +633,65 @@ export function registerPlaceRoutes(
    * trip and carry nothing private. Bounded by MAX_PINS and by the envelope
    * itself, so being public costs one index scan.
    */
+  /* A tile of places, which is what a map should have been asking for all
+   * along.
+   *
+   * `/in-view` below answers "what is in this box", and a map asks it again
+   * on every camera move: a different box, a different best three hundred,
+   * and dots at the edges appearing and vanishing for no reason anybody
+   * looking at the screen could name. It was reported as janky and it was
+   * exactly that — the instability was in the question, not in the data.
+   *
+   * z/x/y names one fixed square of the world at one zoom. Its contents are
+   * decided once and are the same for everybody, so panning back over ground
+   * you have already seen gets what you already have rather than a fresh
+   * opinion, and the map library keeps and drops tiles itself. No debounce,
+   * no refetch on a pan, nothing to re-rank.
+   *
+   * It is also the only shape in which the zoom is known at query time, which
+   * is what lets the database drop the places that would not be drawn instead
+   * of sending them to be hidden.
+   *
+   * Unauthenticated, like the viewport query it replaces: a map's pins are
+   * built from nobody's trip and carry nothing private. */
+  app.get('/api/places/tiles/:z/:x/:y', async (request, reply) => {
+    if (!servable || !repository.placeTile) return unavailable(reply)
+    const asked = tileQuery.safeParse(request.params || {})
+    if (!asked.success) return reply.code(400).send({ error: message(asked.error) })
+    const { z, x, y } = asked.data
+    /* Outside the square grid of this zoom there is no tile to be wrong
+       about — 2^z by 2^z — and a request for one is a bug in a client rather
+       than an empty part of the world. */
+    const side = 2 ** z
+    if (x >= side || y >= side) return reply.code(404).send({ error: 'No such tile' })
+
+    return span('places tile', { 'places.tile.z': z }, async () => {
+      const started = Date.now()
+      const body = await repository.placeTile(
+        { z, x, y },
+        /* How many a tile may carry is the store's to decide — it is a fact
+           about the shape of a tile, not about this route. */
+        { floor: CONFIDENCE_FLOOR, zooms: MARK_ZOOM, weights: VIEW_WEIGHT },
+      )
+      stamp({
+        'places.query.kind': 'tile',
+        'places.query.ms': Date.now() - started,
+        'places.tile.bytes': body.length,
+      })
+      /* A tile is the same bytes for everybody for as long as the data behind
+         it holds, which is a release — so it is cached hard and at the edge.
+         This is the other half of why a tiled map does not flicker: the
+         second look at a square costs nothing at all. */
+      reply.header('cache-control', TILE_CACHE)
+      reply.header('content-type', 'application/vnd.mapbox-vector-tile')
+      /* An empty tile is a real answer — that square has nothing in it — and
+         204 is how a vector source is told so without it treating the square
+         as broken and asking again. */
+      if (!body.length) return reply.code(204).send()
+      return reply.send(body)
+    })
+  })
+
   app.get('/api/places/in-view', async (request, reply) => {
     if (!servable) return unavailable(reply)
     const parsed = viewQuery.safeParse(request.query || {})

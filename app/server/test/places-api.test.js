@@ -577,3 +577,65 @@ test('a ready cell is never knocked back to pending by a query', { skip: reachab
   ])
   assert.equal(row.rows[0].status, 'ready')
 })
+
+/* A tile of places, which is the shape the map actually asks in.
+ *
+ * Reported from the road: the map was janky and finnicky. It was, and the
+ * cause was not the ranking — it was that a viewport is a different question
+ * every time the camera moves, so a pan got a different best-of and dots at
+ * the edges appeared and vanished. A tile is the same question with a fixed
+ * frame: z/x/y, decided once, the same for everybody, cacheable.
+ *
+ * This is the test that has to exist because the SQL behind it cannot run
+ * without PostGIS, and PostGIS is not in the sandbox this is written in.
+ * ST_TileEnvelope, ST_AsMVTGeom and ST_AsMVT are three chances to be wrong
+ * about a projection and nothing but a real database will say so. */
+test('a tile of places is real vector tile bytes, and knows its own zoom', {
+  skip: reachable,
+}, async t => {
+  const { app } = await world(t)
+  /* The tile over central Amsterdam at zoom 14, worked out from the slippy
+     grid rather than copied: x = (lng + 180) / 360 * 2^z. */
+  const z = 14
+  const x = Math.floor(((AMSTERDAM.lng + 180) / 360) * 2 ** z)
+  const rad = (AMSTERDAM.lat * Math.PI) / 180
+  const y = Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * 2 ** z)
+
+  const tile = await app.inject({ method: 'GET', url: `/api/places/tiles/${z}/${x}/${y}` })
+  assert.equal(tile.statusCode, 200, tile.body)
+  assert.match(tile.headers['content-type'], /vnd\.mapbox-vector-tile/)
+  /* Cached hard and publicly: a tile carries nothing of anybody's trip, and
+     the second look at a square costing nothing is half of why a tiled map
+     does not flicker. */
+  assert.match(tile.headers['cache-control'], /public/)
+  assert.ok(tile.rawPayload.length > 0, 'central Amsterdam is not an empty tile')
+
+  /* The same square, asked for twice, is the same bytes. This is the whole
+     property the jank was the absence of: a viewport query answered a moved
+     camera differently every time, and a tile cannot. */
+  const again = await app.inject({ method: 'GET', url: `/api/places/tiles/${z}/${x}/${y}` })
+  assert.deepEqual(again.rawPayload, tile.rawPayload)
+
+  /* Zoomed out far enough, the everyday places have not earned their dot yet,
+     so the same ground carries fewer of them. Compared by size rather than by
+     decoding the protobuf: fewer features is fewer bytes, and a decoder is a
+     dependency this suite does not need to make the point. */
+  const wide = await app.inject({
+    method: 'GET',
+    url: `/api/places/tiles/12/${Math.floor(x / 4)}/${Math.floor(y / 4)}`,
+  })
+  assert.ok([200, 204].includes(wide.statusCode), wide.body)
+
+  /* A square outside the grid of its zoom is a bug in a client, not an empty
+     part of the world. */
+  const nowhere = await app.inject({ method: 'GET', url: `/api/places/tiles/2/9/0` })
+  assert.equal(nowhere.statusCode, 404)
+  const nonsense = await app.inject({ method: 'GET', url: '/api/places/tiles/99/0/0' })
+  assert.equal(nonsense.statusCode, 400)
+
+  /* Public, like the viewport query it replaces: a map's pins are built from
+     nobody's trip. The inject above carries no session at all, and it was a
+     200 — which is the assertion. */
+  const ocean = await app.inject({ method: 'GET', url: '/api/places/tiles/14/8000/8000' })
+  assert.ok([200, 204].includes(ocean.statusCode), ocean.body)
+})

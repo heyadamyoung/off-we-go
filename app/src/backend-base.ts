@@ -8,6 +8,15 @@ const API_URL = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 export const hasBackend = Boolean(API_URL)
 export const functionsUrl = hasBackend ? `${API_URL}/ingest` : null
 
+/* Where the map fetches its places from, as a tile template the map library
+   expands itself. Null in the demo, which has no server and draws its own
+   canned Amsterdam from a GeoJSON source instead.
+   Relative when nothing named an API, because that is the same-origin case
+   and a relative tile URL is one MapLibre resolves against the page. */
+export const placeTilesUrl = hasBackend
+  ? `${API_URL}/places/tiles/{z}/{x}/{y}`
+  : '/api/places/tiles/{z}/{x}/{y}'
+
 export const authClient = createApiClient({
   baseUrl: API_URL || '/api',
   storage: sessionStorage,

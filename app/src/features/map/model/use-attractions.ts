@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Feature, FeatureCollection, Point } from 'geojson'
+import { hasBackend } from '../../../backend'
 import { loadPlacePins } from '../../places'
 import { MIN_ZOOM_KEY, RANK_KEY } from '../../../place-marks-core'
 import { trackError } from '../../../shared/lib/telemetry'
@@ -68,6 +69,10 @@ const HEADLINE_BELOW_ZOOM = 10.5
 const MIN_ZOOM = 5
 /* A pan settles before it asks: a drag across a city is one query, not forty. */
 const SETTLE_MS = 260
+/* Whether the map draws from tiles. When it does this hook stops being the
+   thing that fetches the pins and becomes only the thing that knows whether
+   the ground has been ingested — see the comment at the call below. */
+const tiled = hasBackend
 
 function useAttractions(view: MapView, enabled: boolean) {
   const [data, setData] = useState<FeatureCollection>(EMPTY_FC)
@@ -90,7 +95,13 @@ function useAttractions(view: MapView, enabled: boolean) {
       try {
         const found = await loadPlacePins(
           boxFor(view),
-          { headline: view.zoom < HEADLINE_BELOW_ZOOM },
+          /* With a tiled map this call is not fetching pins any more — the
+             map does that itself, one square at a time — it is asking the
+             one question the tiles cannot answer: is the ground under this
+             view ingested yet. So it asks for a single place rather than
+             three hundred, and reads only `degraded` and the attribution off
+             the answer. The demo, which has no tiles, still wants its pins. */
+          { headline: view.zoom < HEADLINE_BELOW_ZOOM, limit: tiled ? 1 : 300 },
           controller.signal,
         )
         if (controller.signal.aborted) return
@@ -106,6 +117,9 @@ function useAttractions(view: MapView, enabled: boolean) {
         if (found.retry) return
         setFilling(found.degraded)
         setAttribution(found.attribution || [])
+        /* Nothing to hold on a tiled map: the tiles on screen are the pins on
+           screen, and MapLibre keeps them across a pan by itself. */
+        if (tiled) return
         /* The previous view's pins stay on screen while a cell is still
            filling, so panning into an uningested country does not blank the
            map between one answer and the next. */
