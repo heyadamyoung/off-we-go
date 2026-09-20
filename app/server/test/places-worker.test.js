@@ -9,7 +9,7 @@ import {
   LABEL_ZOOMS,
   VIEW_WEIGHT,
 } from '../src/places/rank.js'
-import { assignLabelZoom, placeTile } from '../src/places/store.js'
+import { assignLabelZoom, markRequested, placeTile } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
 
 /* The thing that drains the coverage queue on the box that serves queries.
@@ -462,6 +462,45 @@ test('the queue drainer', { skip: unreachable, concurrency: false }, async t => 
     const { worker, handed } = workerOver(pool)
     await worker.once()
     assert.deepEqual(handed, ['N52E004'])
+  })
+
+  /* London, and why priority had to exist.
+   *
+   * The planet puts 53,333 cells in this table. The drain takes four a
+   * minute. A cell somebody is looking at right now, queued by age alone,
+   * joins a line forty-two thousand long and is reached in about a week —
+   * so London sat `pending` with a traveller looking at it and nothing in
+   * the system would have got there before the sweep did, hours later. */
+  await t.test('a cell somebody is looking at goes before the planet backfill', async t => {
+    const pool = await freshDatabase(t)
+    /* The backfill, queued long ago, as the planet is. */
+    for (let at = 0; at < 8; at += 1) {
+      await coverage(pool, `S01E00${at}`, { requestedAt: new Date('2026-01-01') })
+    }
+    /* And one cell a viewport just asked about — newest of all, so age alone
+       would put it last. */
+    await markRequested(pool, ['N51W001'], new Date())
+
+    const { worker, handed } = workerOver(pool, { cellsPerTick: 2 })
+    await worker.once()
+    assert.ok(handed.includes('N51W001'), `${handed.join(',')} does not include the asked-for cell`)
+  })
+
+  await t.test('asking promotes a cell the backfill queued, and never demotes one', async t => {
+    const pool = await freshDatabase(t)
+    await coverage(pool, 'N51W001', { requestedAt: new Date('2026-01-01') })
+    await markRequested(pool, ['N51W001'], new Date())
+    const promoted = await pool.query('select priority from place_coverage where cell = $1', [
+      'N51W001',
+    ])
+    assert.equal(promoted.rows[0].priority, 0, 'looking at it moved it to the front')
+
+    /* And the backfill sweeping past must not push it back. */
+    await markRequested(pool, ['N51W001'], new Date(), 1)
+    const still = await pool.query('select priority from place_coverage where cell = $1', [
+      'N51W001',
+    ])
+    assert.equal(still.rows[0].priority, 0, 'and nothing puts it back')
   })
 
   /* The case that would otherwise starve the queue: old failures sort ahead

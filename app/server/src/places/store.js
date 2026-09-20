@@ -443,9 +443,15 @@ export async function coverageFor(db, cells) {
      and re-stamping it every time a trip is edited would send a cell that has
      waited a week to the back of the queue on the day somebody renames a
      stop. */
+/* Somebody is waiting on this one. */
+export const WANTED_NOW = 0
+/* The planet, queued by nobody in particular. */
+export const WANTED_EVENTUALLY = 1
+
 const MARK_REQUESTED_SQL = `
-  insert into place_coverage (cell, west, south, east, north, status, requested_at)
-  select c.cell, c.west, c.south, c.east, c.north, 'pending', $6::timestamptz
+  insert into place_coverage
+    (cell, west, south, east, north, status, requested_at, priority)
+  select c.cell, c.west, c.south, c.east, c.north, 'pending', $6::timestamptz, $7::smallint
   from unnest($1::text[], $2::float8[], $3::float8[], $4::float8[], $5::float8[])
     as c(cell, west, south, east, north)
   on conflict (cell) do update set
@@ -453,7 +459,11 @@ const MARK_REQUESTED_SQL = `
                   else 'pending' end,
     requested_at = least(
       coalesce(place_coverage.requested_at, excluded.requested_at),
-      excluded.requested_at)
+      excluded.requested_at),
+    -- Asking promotes and never demotes. A traveller looking at a cell the
+    -- planet backfill had merely queued moves it to the front; the backfill
+    -- sweeping past a cell somebody is waiting on must not push it back.
+    priority = least(place_coverage.priority, excluded.priority)
   returning cell, status, requested_at`
 
 /**
@@ -465,7 +475,7 @@ const MARK_REQUESTED_SQL = `
  * @param {Date} [at]
  * @returns {Promise<Array<{cell: string, status: string, requestedAt: string|null}>>}
  */
-export async function markRequested(db, cells, at = new Date()) {
+export async function markRequested(db, cells, at = new Date(), priority = WANTED_NOW) {
   const wanted = [...new Set(cells || [])].filter(Boolean)
   if (!wanted.length) return []
   const bounds = wanted.map(cell => cellBounds(cell))
@@ -476,6 +486,7 @@ export async function markRequested(db, cells, at = new Date()) {
     bounds.map(box => box.east),
     bounds.map(box => box.north),
     at.toISOString(),
+    priority,
   ])
   return result.rows.map(row => ({
     cell: row.cell,

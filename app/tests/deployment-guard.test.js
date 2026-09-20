@@ -712,6 +712,41 @@ const runEntrypoint = (script, { mc, seconds = 1 }) => {
   })
 }
 
+/* Push to live is four minutes, and the deploy's own backup is what put it
+   at twenty-three.
+ *
+ * The places tables are a cache of Overture: ten million rows and seventeen
+ * gigabytes in a database that was under two before they arrived. Dumping
+ * them before every release meant a deploy spent thirteen minutes and
+ * forty-two seconds writing out a copy of somebody else's open data so it
+ * could be restored over the top of itself. Measured, on deploy 360.
+ *
+ * The rule, guarded here because the next person to touch backup.sh will not
+ * know it: the quick dump leaves out data the worker can rebuild, the full
+ * one keeps everything. */
+test('the deploy backup does not copy out the places cache', () => {
+  const backup = readFileSync(path.join(appRoot, 'deploy/backup.sh'), 'utf8')
+
+  assert.match(
+    backup,
+    /--exclude-table-data='place\*'/,
+    'the quick dump leaves out the places rows',
+  )
+  assert.match(backup, /--exclude-table-data='osm_landmarks'/, 'and the landmarks it matches on')
+
+  /* Only the rows. A dump with the table definitions missing restores a
+     database the code cannot start against. */
+  assert.ok(
+    !/--exclude-table='place/.test(backup),
+    'the definitions still go in; it is the rows that do not',
+  )
+
+  /* And only on the quick path. The nightly backup is the disaster copy, and
+     restoring sixteen gigabytes beats re-reading the planet for half a day. */
+  const guarded = /if \(\( QUICK \)\); then\n\s*PLACES_DATA=\(/.test(backup)
+  assert.ok(guarded, 'the exclusion is on the quick path only')
+})
+
 /* The API runs its migrations before it listens, and a migration can be
    waiting its turn for a table the sweep is writing to. Twelve probes over
    two minutes was the whole budget once, and deploy 357 — a release that was

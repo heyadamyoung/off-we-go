@@ -97,14 +97,24 @@ const STUCK_SQL = `
  * Waiting work first, retries only with the room left. Failures are old by
  * definition, and ordering by requested_at puts them in front of a traveller
  * who asked a minute ago — a handful of permanently broken cells would fill
- * every window for ever. */
+ * every window for ever.
+ *
+ * And within the waiting, priority before age. "Oldest ask first" was the
+ * only ordering this table could express, and it was right while the queue
+ * held the cells travellers had asked about. The planet put 53,333 cells in
+ * it; at four a minute a cell somebody is looking at right now joins a line
+ * forty-two thousand long. So a viewport or a trip asks at priority 0 and
+ * the backfill at 1, age decides between equals, and a person never waits
+ * behind a batch. */
 const CLAIM_SQL = `
   with waiting as (
-    (select cell, 0 as queue, requested_at from place_coverage
+    (select cell, priority as queue, requested_at from place_coverage
       where status in ('pending', 'stale')
-      order by requested_at asc nulls last, cell asc limit $1)
+      order by priority asc, requested_at asc nulls last, cell asc limit $1)
     union all
-    (select cell, 1 as queue, requested_at from place_coverage
+    -- Retries after everything waiting, whatever their priority: a failure
+    -- is old by definition and a first look beats a second.
+    (select cell, 9 as queue, requested_at from place_coverage
       where status = 'failed' and coalesce(next_attempt_at, requested_at) <= now()
       order by next_attempt_at asc nulls first, requested_at asc nulls last, cell asc
       limit $1)
