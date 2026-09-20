@@ -8,6 +8,20 @@
 # before every release was taking the site down for a minute and a half each
 # time to archive a volume the nightly run already keeps. A quick backup
 # restores the databases and leaves the uploads as they are.
+#
+# The quick dump leaves out the places data, and that is the difference
+# between a four-minute deploy and a twenty-three-minute one. The places
+# tables are a cache of Overture: ten million rows, seventeen gigabytes of a
+# database that was under two before they arrived, and every one of them
+# re-ingestable. Dumping them before each release meant a push to live spent
+# thirteen minutes and forty-two seconds writing out a copy of somebody
+# else's open data so that it could be restored over the top of itself.
+#
+# The schema still goes in — only the rows are left out — so a restore gives
+# back empty tables the worker refills rather than a database missing tables
+# the code expects. And the nightly full backup keeps everything, because
+# that is the disaster copy and restoring sixteen gigabytes beats re-reading
+# the planet for half a day.
 set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -22,7 +36,15 @@ if (( ! QUICK )); then
   trap restart_services EXIT
   docker compose stop api logto >/dev/null
 fi
-docker compose exec -T db pg_dump -U wayfare -d wayfare -Fc > "$PARTIAL/database.dump"
+# Derived from Overture and OpenStreetMap, and rebuilt by the worker. Their
+# definitions are dumped; their rows are not. Patterns rather than a list, so
+# a table added to this layer later is covered without anybody remembering.
+PLACES_DATA=()
+if (( QUICK )); then
+  PLACES_DATA=(--exclude-table-data='place*' --exclude-table-data='osm_landmarks')
+fi
+docker compose exec -T db pg_dump -U wayfare -d wayfare -Fc "${PLACES_DATA[@]}" \
+  > "$PARTIAL/database.dump"
 docker compose exec -T logto-db pg_dump -U logto -d logto -Fc > "$PARTIAL/logto.dump"
 if (( ! QUICK )); then
   tar -C data -czf "$PARTIAL/uploads.tar.gz" uploads
