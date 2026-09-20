@@ -159,6 +159,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+      # Boot is allowed to take a while, because migrations run before the
+      # server listens and a migration can be waiting its turn for a table
+      # the sweep is writing to. Twelve probes over two minutes was the whole
+      # budget once, and a release that was doing exactly the right thing —
+      # asking politely for a lock, backing off, asking again — was declared
+      # dead and rolled back. Failures inside the start period do not count
+      # against the retries, so this buys time without making a genuinely
+      # broken release take any longer to be spotted.
+      start_period: 300s
 
   # The planet, once, in the background.
   #

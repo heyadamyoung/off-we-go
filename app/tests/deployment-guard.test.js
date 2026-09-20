@@ -84,6 +84,28 @@ test('the deployment SSH entrypoint rejects arbitrary commands', () => {
   assert.match(result.stderr, /refusing unauthorized deploy command/i)
 })
 
+/** The settings `docker compose config` needs before it will render. */
+const composeEnv = () => ({
+  ...process.env,
+  WAYFARE_DOMAIN: 'offwego.example.com',
+  WAYFARE_ADMIN_EMAIL: 'owner@example.com',
+  APPLE_TEAM_ID: 'R65UN25Q64',
+  POSTGRES_PASSWORD: 'database-secret',
+  WAYFARE_SESSION_SECRET: 'session-secret-that-is-long-enough',
+  WAYFARE_OAUTH_SECRET: 'oauth-secret-that-is-long-enough',
+  WAYFARE_OIDC_ISSUER: 'https://auth.example.com/oidc',
+  WAYFARE_OIDC_CLIENT_ID: 'offwego-web',
+  WAYFARE_OIDC_CLIENT_SECRET: 'oidc-secret',
+  LOGTO_DOMAIN: 'auth.example.com',
+  LOGTO_ADMIN_DOMAIN: 'auth-admin.example.com',
+  LOGTO_POSTGRES_PASSWORD: 'logto-database-secret',
+  LOGTO_SECRET_VAULT_KEK: 'base64-key',
+  SMTP_HOST: 'smtp.example.com',
+  SMTP_FROM: 'Off We Go <owner@example.com>',
+  MINIO_ROOT_PASSWORD: 'object-store-root-secret',
+  S3_SECRET_ACCESS_KEY: 'object-store-app-secret',
+})
+
 test('production compose runs a private pinned Logto service behind the existing web proxy', {
   skip: dockerAvailable ? false : 'docker is not installed on this machine',
 }, () => {
@@ -689,6 +711,45 @@ const runEntrypoint = (script, { mc, seconds = 1 }) => {
     timeout: 90_000,
   })
 }
+
+/* The API runs its migrations before it listens, and a migration can be
+   waiting its turn for a table the sweep is writing to. Twelve probes over
+   two minutes was the whole budget once, and deploy 357 — a release that was
+   doing exactly the right thing, asking for a lock, backing off, asking
+   again — was declared dead and rolled back, taking the label_zoom work with
+   it. Failures inside the start period do not count against the retries. */
+test('the api is given time to boot before a probe can roll a release back', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const result = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
+    cwd: appRoot,
+    env: composeEnv(),
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  const health = JSON.parse(result.stdout).services.api.healthcheck
+
+  /* Compose renders Go durations: `5m0s`, `1h30m0s`, `10s`. */
+  const SCALE = { h: 3600, m: 60, s: 1, ms: 1e-3, us: 1e-6, ns: 1e-9 }
+  const seconds = value => {
+    let total = 0
+    for (const [, amount, unit] of String(value).matchAll(/(\d+(?:\.\d+)?)(ms|us|ns|h|m|s)/g)) {
+      total += Number(amount) * SCALE[unit]
+    }
+    return total
+  }
+  assert.ok(health.start_period, 'the api healthcheck has a start period')
+  assert.ok(
+    seconds(health.start_period) >= 120,
+    `a boot may take at least two minutes, not ${health.start_period}`,
+  )
+
+  /* And once the start period is over the probe is still strict: a release
+     that is genuinely broken is caught within a couple of minutes, not left
+     serving errors for the length of the start period a second time. */
+  assert.ok(seconds(health.interval) <= 30, 'still probed often once it is up')
+  assert.ok(Number(health.retries) <= 12, 'and still given a bounded number of chances')
+})
 
 test('the object store has no healthcheck that can fail a deploy', {
   skip: dockerAvailable ? false : 'docker is not installed on this machine',
