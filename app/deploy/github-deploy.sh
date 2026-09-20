@@ -194,6 +194,39 @@ trap - ERR
 # that is already live and answering is not worth rolling back over it.
 docker compose exec -T api node server/scripts/day-census.mjs || true
 
+# The planet, filling itself in the background.
+#
+# The queue inside the API drains four one-degree cells a minute, which is the
+# right rate for the cells a trip touches and about nine days for the 53,333
+# the Overture release has data in. Panning to somewhere nobody has been yet
+# finds empty ground until then, and that was the report.
+#
+# So the other job runs here: read the sixteen Parquet parts once each and put
+# every row into the cell it falls in (server/src/places/sweep.js). Measured at
+# 7,250 places a second, which is the whole planet in under three hours and
+# about 88 GB of table and index against the 544 GB this box has free.
+#
+# Its own profiled compose service rather than an `exec` into the API, and
+# that is the reason this line can run on every release: `compose up` does not
+# touch a profiled service, so a deploy no longer kills a run three hours in.
+# --resume means a restarted one pays only for the cells still owing, and a
+# run with nothing to do exits in seconds.
+#
+# Every line ends in `|| true`, like the capacity block below: a sweep that
+# will not start is worth a sentence in the log, and is not worth rolling back
+# a release that is live and answering.
+places_ask() {
+  docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
+}
+echo "places: $(places_ask 'select count(*) from places') places in $(places_ask "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
+if [ -n "$(docker compose --profile sweep ps --status running -q places-sweep 2>/dev/null || true)" ]; then
+  echo "places: a sweep is already running; left alone"
+elif docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
+  echo "places: sweep started — docker compose logs -f places-sweep"
+else
+  echo "places: the sweep could not be started"
+fi
+
 # Media onto the object store, once, with the release already live and
 # answering. Deliberately after the trap comes off: a copy that will not
 # finish must not roll back a deploy that is otherwise perfectly good, and

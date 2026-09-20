@@ -687,22 +687,34 @@ export function createIngest({
   }
 
   /**
-   * One cell, end to end.
+   * One cell, from records already read to a committed transaction.
+   *
+   * Two things arrive here and only one of them is a query. The cell path
+   * asks the bucket for a square's worth of rows. The sweep reads the release
+   * once and posts every row into the square it falls in, so by the time a
+   * square gets here its records were gathered from the same groups that
+   * served its neighbours (see sweep.js). Both then want exactly the same
+   * thing — cluster, de-duplicate, count, and write it in one transaction
+   * with the collapse guard, the orphan redirects, the coverage row and the
+   * tile sweep — which is why that is written here once rather than twice
+   * with a drift between them nobody notices for a month.
+   *
    * @param {string} cell
+   * @param {() => Promise<Record<string, {places: object[], read: number,
+   *          skipped?: number, groups?: number}>>} gather
    */
-  async function ingestCell(cell) {
+  async function finishCell(cell, gather) {
     if (!isCellKey(cell)) throw new Error(`places: not a cell key: ${cell}`)
     const started = Date.now()
     const bounds = cellBounds(cell)
     await markStarted(cell, bounds)
     try {
-      const read = {}
-      for (const source of sources) {
-        if (controller.signal.aborted) throw new Error('places: ingest interrupted')
-        read[source] = await readSource(source, cell, bounds)
-      }
+      const read = await gather()
+      /* The sources this cell actually has records from, which is not always
+         every source the ingest was built with: a sweep reads one. */
+      const named = sources.filter(source => read[source])
       const base = read.overture?.places || []
-      const others = sources
+      const others = named
         .filter(source => source !== 'overture')
         .flatMap(source => read[source].places)
       const clusters = clusterPlaces(base, others)
@@ -720,13 +732,13 @@ export function createIngest({
         dropped,
         redirected: loaded.redirected,
         swept: loaded.swept,
-        read: Object.fromEntries(sources.map(source => [source, read[source].read])),
-        groups: sources.reduce((total, source) => total + read[source].groups, 0),
+        read: Object.fromEntries(named.map(source => [source, read[source].read])),
+        groups: named.reduce((total, source) => total + (read[source].groups || 0), 0),
         ms: Date.now() - started,
         quality: report,
       }
       log(
-        `${cell} ${outcome.status} ${outcome.places} places (${sources
+        `${cell} ${outcome.status} ${outcome.places} places (${named
           .map(source => `${source} ${read[source].read}`)
           .join(', ')}, merged ${outcome.merged}) in ${(outcome.ms / 1000).toFixed(1)}s`,
         outcome,
@@ -744,6 +756,71 @@ export function createIngest({
         ms: Date.now() - started,
       }
     }
+  }
+
+  /**
+   * One cell, end to end: read it from the bucket, then write it.
+   * @param {string} cell
+   */
+  async function ingestCell(cell) {
+    if (!isCellKey(cell)) throw new Error(`places: not a cell key: ${cell}`)
+    const bounds = cellBounds(cell)
+    return finishCell(cell, async () => {
+      const read = {}
+      for (const source of sources) {
+        if (controller.signal.aborted) throw new Error('places: ingest interrupted')
+        read[source] = await readSource(source, cell, bounds)
+      }
+      return read
+    })
+  }
+
+  /**
+   * One row group's records, normalised, for a sweep to post into squares.
+   *
+   * Here rather than in the script because this is where a source's columns
+   * and its normaliser are already paired: sweep.js is handed records that
+   * know which square they are in and never learns what Parquet or Overture
+   * is, and the caller does not have to keep a second copy of that pairing in
+   * step with this one.
+   *
+   * @param {{url: string, size: number}} part
+   * @param {{s: number, e: number}} group
+   */
+  async function readSwept(part, group) {
+    const source = sources[0]
+    const rows = await reader.readGroup(part, group, columnsFor(source), {
+      signal: controller.signal,
+    })
+    return normalise(source, rows, releases[source]).places
+  }
+
+  /**
+   * One cell, from records a sweep has already read out of the release.
+   *
+   * Refused outright when the ingest carries more than one source, and the
+   * refusal is the point rather than a caution. Two sources are clustered
+   * together inside a cell, and the load then deletes the `place_sources`
+   * rows of every source it was built with that this run did not produce —
+   * so a single-source sweep loading into a two-source ingest would throw
+   * away everything the other source said about every place it touched, in
+   * the same transaction that made the cell look freshly ingested. The cell
+   * path already does the right thing with two sources; this says so.
+   *
+   * @param {string} cell
+   * @param {object[]} places  normalised records, all of them in this cell
+   */
+  async function loadSwept(cell, places) {
+    if (sources.length !== 1) {
+      throw new Error(
+        `places: a sweep reads one source and this ingest has ${sources.join(' and ')} — ` +
+          'two sources are clustered together inside a cell, so sweeping one of them ' +
+          'would drop what the other said; ingest these cells the cell-at-a-time way',
+      )
+    }
+    return finishCell(cell, async () => ({
+      [sources[0]]: { places, read: places.length, skipped: 0, groups: 0 },
+    }))
   }
 
   /** The cells already finished, so `--resume` can skip them, and the cursor
@@ -804,6 +881,9 @@ export function createIngest({
   return {
     ingestCell,
     ingestCells,
+    readSwept,
+    loadSwept,
+    progressFor,
     versions,
     sources,
     /** Stop after the cell in flight. The coverage row stays `ingesting` with

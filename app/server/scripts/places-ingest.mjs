@@ -23,13 +23,21 @@
  *   node server/scripts/places-ingest.mjs --cells N52E004,N51E004
  *   node server/scripts/places-ingest.mjs --bbox 4,52,5,53
  *   node server/scripts/places-ingest.mjs --trip <uuid>
- *   node server/scripts/places-ingest.mjs --planet --concurrency 4 --resume
+ *   node server/scripts/places-ingest.mjs --planet --sweep --resume
  * Options:
  *   --release <version>   pin Overture's release; re-checked, and replaced
  *                         with the newest if it has expired
  *   --dry-run             read, normalise, merge, report; write nothing
- *   --concurrency N       cells at a time (default 1)
+ *   --sweep               read each row group once and post its rows into the
+ *                         cells they fall in, instead of asking cell by cell.
+ *                         The planet is 10.5 GB read this way and about 190 GB
+ *                         the other way, so anything bigger than a country
+ *                         wants this. One source only; see places/sweep.js.
+ *   --concurrency N       cells at a time (default 1); --sweep uses its own
  *   --resume              skip cells already ready or empty
+ *   --drop-indexes        take the name-search indexes off for the duration
+ *                         and rebuild them after; faster, and search is
+ *                         genuinely worse in between
  *   --index-dir <path>    where built release indexes and footers are cached
  */
 
@@ -46,6 +54,7 @@ import {
 } from '../src/places/ingest.js'
 import { createParquetReader } from '../src/places/parquet.js'
 import { createIndexStore, discoverRelease, releaseIndex } from '../src/places/release.js'
+import { createSweep, sweepPlan } from '../src/places/sweep.js'
 
 const argv = process.argv.slice(2)
 const flag = name => argv.includes(`--${name}`)
@@ -64,6 +73,8 @@ const options = {
   trip: value('trip'),
   release: value('release'),
   dryRun: flag('dry-run'),
+  sweep: flag('sweep'),
+  dropIndexes: flag('drop-indexes'),
   resume: flag('resume'),
   concurrency: Math.max(1, Number(value('concurrency', '1')) || 1),
   indexDirectory:
@@ -181,7 +192,8 @@ if (!cells.length) {
   process.exit(0)
 }
 say(
-  `${cells.length} cell${cells.length === 1 ? '' : 's'}${options.dryRun ? ', dry run' : ''}, ${options.concurrency} at a time`,
+  `${cells.length} cell${cells.length === 1 ? '' : 's'}${options.dryRun ? ', dry run' : ''}, ` +
+    (options.sweep ? 'read in one sweep of the release' : `${options.concurrency} at a time`),
 )
 
 const reader = createParquetReader({ fetch: countingFetch, loadFooter, saveFooter })
@@ -195,10 +207,15 @@ const ingest = createIngest({
 })
 
 /* A planet load with the trigram index live rewrites a GIN index for every
-   one of seventy-three million rows. It comes off for the duration and goes
-   back afterwards, and search is genuinely worse in between — which is why
-   this happens only for --planet and only after saying so. */
-const bulk = options.planet && !options.dryRun
+   one of seventy-three million rows, so this used to come off for any
+   --planet run. It is now asked for rather than assumed, because it was
+   measured and it is not worth what it costs: nine dense cells swept with
+   every index live loaded 971,789 places in 134 seconds — 7,250 a second,
+   which puts the whole planet at under three hours without touching them.
+   Dropping them buys a fraction of that and makes place search on a live
+   deployment a sequential scan of a growing table for the whole run, which
+   on a box people are using while travelling is the worse trade. */
+const bulk = options.dropIndexes && !options.dryRun
 if (bulk) {
   say('! dropping the name-search and category indexes for the duration of the planet load')
   await pauseIndexes(pool)
@@ -224,6 +241,37 @@ const rebuildOnSignal = signal => {
 }
 if (bulk) for (const signal of ['SIGTERM', 'SIGHUP']) rebuildOnSignal(signal)
 
+/* A sweep reads the release rather than the cells, so it is built here and
+   the two paths share only their stop signal and their summary. */
+let stopSweep = null
+async function runSweep() {
+  const { done: already } = options.resume ? await ingest.progressFor(cells) : { done: new Set() }
+  const wanted = cells.filter(cell => !already.has(cell))
+  const plan = sweepPlan(overture.index, { cells: wanted })
+  say(
+    `sweep: ${plan.groups.length} of ${plan.groups.length + plan.skipped} row groups hold ` +
+      `${plan.cells.toLocaleString('en-GB')} of those cells, ` +
+      `${plan.rows.toLocaleString('en-GB')} rows to read`,
+  )
+  const results = []
+  const swept = createSweep({
+    plan,
+    read: ingest.readSwept,
+    load: ingest.loadSwept,
+    log: line => say(`  ${line}`),
+    onCell: outcome => results.push(outcome),
+  })
+  stopSweep = () => swept.stop()
+  const totals = await swept.run()
+  if (totals.unfinished) {
+    say(`  ! ${totals.unfinished} cells were left unread; re-run with --resume`)
+  }
+  if (totals.dropped) {
+    say(`  ${totals.dropped.toLocaleString('en-GB')} rows fell outside the cells asked for`)
+  }
+  return { results, skipped: cells.length - wanted.length, interrupted: totals.interrupted }
+}
+
 let stopping = false
 process.on('SIGINT', () => {
   if (stopping) {
@@ -233,20 +281,23 @@ process.on('SIGINT', () => {
     return
   }
   stopping = true
-  say('\n! interrupted; finishing the cell in flight, then stopping. Re-run with --resume.')
-  ingest.stop()
+  say('\n! interrupted; finishing what is in flight, then stopping. Re-run with --resume.')
+  if (stopSweep) stopSweep()
+  else ingest.stop()
 })
 
 let done = 0
 let results, skipped, interrupted
 try {
-  ;({ results, skipped, interrupted } = await ingest.ingestCells(cells, {
-    resume: options.resume,
-    onCell: () => {
-      done += 1
-      if (done % 25 === 0) say(`  … ${done}/${cells.length - skipped} cells`)
-    },
-  }))
+  ;({ results, skipped, interrupted } = options.sweep
+    ? await runSweep()
+    : await ingest.ingestCells(cells, {
+        resume: options.resume,
+        onCell: () => {
+          done += 1
+          if (done % 25 === 0) say(`  … ${done}/${cells.length - skipped} cells`)
+        },
+      }))
 } finally {
   await rebuild().catch(error => say(`! the indexes could not be rebuilt: ${error.message}`))
 }

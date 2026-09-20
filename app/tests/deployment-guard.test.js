@@ -757,6 +757,60 @@ test('the object store refuses to run on a guessable password', {
   assert.match(weak.stderr, /must be set in .env/)
 })
 
+/* ---- the planet sweep -------------------------------------------------- */
+
+const deployScript = () => readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+
+test('a planet sweep is behind a profile, so a deploy cannot kill one mid-run', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  /* The whole reason it is a service of its own. A sweep is about three hours
+     and deploys go out several times an hour; `docker compose up -d` recreates
+     every service it can see, so a sweep the deploy could see would be killed
+     and restarted by every release and would never finish. A profiled service
+     is invisible to `up` unless the profile is asked for. */
+  const plain = renderCompose({})
+  assert.equal(plain.status, 0, plain.stderr || plain.error?.message)
+  assert.equal(JSON.parse(plain.stdout).services['places-sweep'], undefined)
+
+  const asked = renderCompose({ COMPOSE_PROFILES: 'sweep' })
+  assert.equal(asked.status, 0, asked.stderr || asked.error?.message)
+  const sweep = JSON.parse(asked.stdout).services['places-sweep']
+  assert.ok(sweep, 'the sweep service is there when its profile is')
+  /* The same image the tests ran against and the API is running, by commit —
+     a sweep built from anything else would be writing seventy-three million
+     rows with code nobody reviewed against this schema. */
+  assert.equal(sweep.image, JSON.parse(asked.stdout).services.api.image)
+  /* Finished is finished: a restart policy here would sweep the planet again
+     the moment it succeeded, for ever. */
+  assert.equal(sweep.restart, 'no')
+  assert.ok(
+    sweep.command.includes('--resume'),
+    'a restarted sweep must pick up rather than start the planet again',
+  )
+  assert.ok(
+    sweep.command.some(word => String(word).startsWith('--max-old-space-size')),
+    'the peak is about 1.5 million held records; the default heap dies two hours in',
+  )
+})
+
+test('the deploy starts a sweep without being able to fail over it', () => {
+  const script = deployScript()
+  const block = script.slice(script.indexOf('places_ask()'), script.indexOf('# Media onto'))
+  assert.ok(block.includes('places_ask()'), 'the deploy asks what is covered before it starts one')
+  /* github-deploy.sh runs under `set -Eeuo pipefail` past the point where the
+     rollback trap has come off, so an unguarded non-zero here is a release
+     that is live and answering being reported as a failure. The reading is
+     `|| true`; the start is the test of an `if`, which `set -e` does not
+     treat as an error either way. */
+  assert.match(block, /\|\| true\n\}/, 'the coverage reading cannot fail the deploy')
+  assert.match(block, /^if \[ -n "\$\(docker compose --profile sweep ps/m)
+  assert.match(block, /^elif docker compose --profile sweep up -d --no-build places-sweep/m)
+  assert.ok(block.includes('else'), 'and a start that fails says so rather than passing silently')
+  /* --no-build: the box pulls what the pipeline pushed and builds nothing. */
+  assert.ok(!/docker compose[^\n]*up[^\n]*--build/.test(block))
+})
+
 test('the day census only ever reads', () => {
   /* It runs against production on every deploy, so the one property that
      matters is that it cannot change anything. A census that quietly repaired
