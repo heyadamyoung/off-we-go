@@ -42,8 +42,8 @@
 import { cellBounds } from './cells.js'
 import { createIngest } from './ingest.js'
 import { createParquetReader } from './parquet.js'
-import { CONFIDENCE_FLOOR, VIEW_WEIGHT } from './rank.js'
-import { placeTile, readPlaceTile, writePlaceTile } from './store.js'
+import { CONFIDENCE_FLOOR, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
+import { assignLabelZoom, placeTile, readPlaceTile, writePlaceTile } from './store.js'
 import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
 
@@ -319,10 +319,63 @@ export function createPlaceWorker({
     return result.rows.map(row => row.cell)
   }
 
+  /* Places written before marks earned their zoom, put on the map.
+   *
+   * The column arrived with rows already in the table, and a row with no zoom
+   * is drawn from zoom 11 — visible, deliberately, because invisible would
+   * have been an outage. But visible-from-11 is every place at once, which is
+   * the carpet of dots the whole thing exists to end. Re-ingesting fixes it
+   * and takes hours; this takes one statement.
+   *
+   * Once, and then never again: the ingest gives every cell its zooms inside
+   * its own transaction, so the only rows that can be unplaced are the ones
+   * that predate the column. When there are none the query costs a look at an
+   * index and the pass does not run.
+   *
+   * Not awaited by the tick that starts it. It is minutes on a planet and the
+   * queue has better things to do. The promise is kept rather than dropped:
+   * `placing` is what stops a second tick starting a second pass, and it is
+   * what stop() waits on, so a shutdown does not pull the pool out from under
+   * a statement that is rewriting every row in the table. */
+  let placing = null
+  async function placeTheUnplaced() {
+    if (placing || stopped) return
+    const { rows } = await pool.query('select 1 from places where label_zoom is null limit 1')
+    if (!rows.length) return
+    const started = Date.now()
+    log('places: giving every place that has none the zoom it earns')
+    placing = assignLabelZoom(pool, null, {
+      weights: VIEW_WEIGHT,
+      perTile: LABEL_PER_TILE,
+      zooms: LABEL_ZOOMS,
+    })
+      .then(async placed => {
+        const seconds = Math.round((Date.now() - started) / 100) / 10
+        log(`places: ${placed} place(s) given a zoom in ${seconds}s`)
+        event('places zooms placed', {
+          'places.zooms.placed': placed,
+          'places.zooms.ms': Date.now() - started,
+        })
+        /* Every tile was encoded from the zooms these rows used to have. */
+        await pool.query('delete from place_tiles')
+        warmed.clear()
+      })
+      .catch(error => log(`places: the zoom pass did not finish — ${error.message}`))
+      .finally(() => {
+        placing = null
+      })
+  }
+
+  /** Resolves when nothing a tick set going is still going. */
+  async function settled() {
+    while (placing) await placing
+  }
+
   async function tick() {
     if (stopped) return
     const pipe = await pipeline()
     if (!pipe) return
+    await placeTheUnplaced()
     await recoverStuck()
     await markRefreshable(pipe.versions?.overture)
     const cells = await claim()
@@ -401,10 +454,13 @@ export function createPlaceWorker({
       timer = null
       ingest?.stop?.()
       await running
+      await settled()
     },
     /** Tests and the first boot: run one pass now rather than in a minute. */
     async once() {
       await safeTick()
     },
+    /** Wait for the work a tick started and did not wait for itself. */
+    settled,
   }
 }

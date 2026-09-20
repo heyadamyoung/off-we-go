@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { SAMPLE_PINS, samplePins } from '../src/sample-places-core'
 
@@ -70,5 +71,42 @@ test('zoomed out, the everyday places drop away and the landmarks stay', () => {
   for (const pin of headline) assert.equal(pin.big, true)
   for (const kind of ['cafe', 'bar', 'shopping']) {
     assert.ok(!headline.some(pin => pin.category === kind), `a ${kind} survived a zoom out`)
+  }
+})
+
+test('the demo thins the way the server does, and cannot drift from it', async () => {
+  /* The demo has no server to ask, so it carries its own copy of the rule —
+     which is a thing to be uneasy about and the reason this exists. It used
+     to carry a copy of a *table* of category zooms, and when that table was
+     deleted for being wrong the copy would have sat there being wrong on its
+     own. A copy of a rule can at least be held to the original's constants.
+
+     Read out of the source rather than imported, because rank.js is server
+     code and this suite is the client's. */
+  const server = await readFile(new URL('../server/src/places/rank.js', import.meta.url), 'utf8')
+  const demo = await readFile(new URL('../src/sample-places-core.ts', import.meta.url), 'utf8')
+
+  const zooms = /LABEL_ZOOMS = Object\.freeze\(\{ from: (\d+), to: (\d+), floor: (\d+) \}\)/.exec(
+    server,
+  )
+  assert.ok(zooms, 'the server still names the zooms that thin')
+  const perTile = /LABEL_PER_TILE = (\d+)/.exec(server)
+  assert.ok(perTile, 'and how many a square holds')
+
+  assert.match(
+    demo,
+    new RegExp(`SAMPLE_ZOOMS = \\{ from: ${zooms[1]}, to: ${zooms[2]}, floor: ${zooms[3]} \\}`),
+    'the demo thins at the zooms the server thins at',
+  )
+  assert.match(demo, new RegExp(`SAMPLE_PER_TILE = ${perTile[1]}`), 'and holds as many per square')
+  /* And the table that was deleted is not quietly still here. */
+  assert.ok(!/MARK_ZOOM/.test(demo), 'no copy of the zoom table the server no longer has')
+  assert.ok(!/MARK_ZOOM/.test(server), 'and the server does not have one either')
+
+  /* Twenty-two places in one city do not fill a square, so every one of them
+     earns the first zoom — arrived at by the rule rather than asserted by a
+     table, which is the whole point. */
+  for (const pin of SAMPLE_PINS) {
+    assert.equal(pin.minzoom, Number(zooms[1]), `${pin.name} earns the first zoom`)
   }
 })

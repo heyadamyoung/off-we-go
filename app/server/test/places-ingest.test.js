@@ -6,7 +6,12 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { cellBounds } from '../src/places/cells.js'
 import { CLOSED_CONFIDENCE, fsqConfidence, placeFromFsq, placesFromFsq } from '../src/places/fsq.js'
-import { cellsForRegion, clusterPlaces, createIngest } from '../src/places/ingest.js'
+import {
+  cellsForRegion,
+  clusterPlaces,
+  createIngest,
+  PLACE_PIPELINE,
+} from '../src/places/ingest.js'
 import { qualityReport } from '../src/places/quality.js'
 import { privateDatabase } from './private-database.js'
 
@@ -483,7 +488,15 @@ test('the cell stores a quality report and the status it earned', {
   assert.equal(coverage.status, 'ready')
   assert.equal(coverage.error, null)
   assert.equal(coverage.cursor, null, 'a finished cell has no cursor left over')
-  assert.deepEqual(coverage.versions, { overture: '2026-08-19.10', fsq: '2026-08-05' })
+  assert.deepEqual(
+    coverage.versions,
+    {
+      overture: '2026-08-19.10',
+      fsq: '2026-08-05',
+      pipeline: PLACE_PIPELINE,
+    },
+    'the releases it read, and the shape of the reading',
+  )
   assert.equal(coverage.place_count, coverage.quality.count)
   assert.equal(coverage.quality.byCategory.cafe, 2)
   assert.equal(typeof coverage.quality.meanConfidence, 'number')
@@ -497,6 +510,42 @@ test('the cell stores a quality report and the status it earned', {
   ])
   assert.equal(ocean.rows[0].status, 'empty')
   assert.equal(ocean.rows[0].place_count, 0)
+})
+
+test('a cell an older pipeline wrote is read again, however ready it says it is', {
+  skip: unreachable,
+}, async t => {
+  const pool = await freshDatabase(t)
+  const reader = readerFor()
+  const ingest = createIngest({
+    pool,
+    reader,
+    releases: releases(),
+    now: () => new Date(NOW),
+  })
+  await ingest.ingestCell('N52E004')
+
+  /* The shape a cell has when it was ingested before this version of the
+     reading existed: `ready`, the right releases, no pipeline stamp at all. */
+  await pool.query(`update place_coverage set versions = versions - 'pipeline' where cell = $1`, [
+    'N52E004',
+  ])
+  const stale = await ingest.progressFor(['N52E004'])
+  assert.equal(
+    stale.done.has('N52E004'),
+    false,
+    'ready by an older pipeline is not done — its rows are the wrong shape',
+  )
+
+  reader.reads.length = 0
+  const again = await ingest.ingestCells(['N52E004'], { resume: true })
+  assert.equal(again.skipped, 0)
+  assert.equal(again.results[0].status, 'ready')
+  assert.ok(reader.reads.length > 0, 'and it really was read again')
+
+  /* Re-read once, and then it is done for good. */
+  const now = await ingest.progressFor(['N52E004'])
+  assert.equal(now.done.has('N52E004'), true)
 })
 
 test('a run interrupted mid-cell resumes from its cursor and skips what is done', {

@@ -13,28 +13,81 @@ import type { AttractionPoi } from './shared/model/types'
  * Amsterdam, because that is where the sample trip goes. Real places at real
  * coordinates, and the categories are the ones the server would give them.
  */
-/** Mirrors places/rank.js MARK_ZOOM — see the note where it is used. */
-const SAMPLE_MARK_ZOOM: Record<string, number> = {
-  museum: 11.5,
-  historic: 12,
-  gallery: 12.5,
-  nature: 12,
-  beach: 12,
-  viewpoint: 13,
-  entertainment: 13.5,
-  religious: 13.5,
-  transit: 13.5,
-  market: 14,
-  sights: 14,
-  lodging: 14.5,
-  food: 15,
-  sport: 15,
-  cafe: 15.5,
-  bar: 15.5,
-  health: 16,
-  shopping: 16,
-  services: 16.5,
-  other: 17,
+/* How sight-like each kind is — the same ordering places/rank.js ranks by,
+   and the only part of the server's taxonomy the demo needs. There is no
+   table of zooms here because there is no table of zooms anywhere any more:
+   a mark earns its zoom from where it comes among its neighbours, and the
+   twenty-two below run through that same rule rather than through a copy of
+   a table that would drift the moment the real one changed. */
+const SAMPLE_WEIGHT: Record<string, number> = {
+  sights: 1,
+  viewpoint: 1,
+  museum: 0.95,
+  historic: 0.9,
+  gallery: 0.9,
+  nature: 0.85,
+  beach: 0.85,
+  entertainment: 0.7,
+  religious: 0.65,
+  market: 0.65,
+  food: 0.6,
+  cafe: 0.55,
+  bar: 0.5,
+  lodging: 0.35,
+  shopping: 0.35,
+  sport: 0.3,
+  transit: 0.3,
+  services: 0.15,
+  health: 0.15,
+  other: 0.1,
+}
+
+/* The zooms the server thins at, and the one it does not. Kept in step with
+   places/rank.js LABEL_ZOOMS and LABEL_PER_TILE by the test beside this file,
+   which reads both and fails when they part. */
+const SAMPLE_ZOOMS = { from: 11, to: 16, floor: 17 }
+const SAMPLE_PER_TILE = 24
+
+/** Which slippy square a point is in — the server's tileX and tileY. */
+const squareOf = (lng: number, lat: number, z: number) => {
+  const side = 2 ** z
+  const x = Math.floor(((lng + 180) / 360) * side)
+  const radians = (lat * Math.PI) / 180
+  const y = Math.floor(
+    ((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * side,
+  )
+  return `${z}/${x}/${y}`
+}
+
+/**
+ * The zoom each of these earns among the others, by the server's rule.
+ *
+ * Twenty-two places in one city will not fill a square, so in practice they
+ * all land on the first zoom — which is the right answer and is arrived at
+ * rather than asserted. The point of running the rule instead of copying a
+ * table is that the demo cannot quietly start behaving differently from the
+ * app it demonstrates.
+ */
+function zoomsFor(places: { lng: number; lat: number; category: string; confidence: number }[]) {
+  const worth = (place: { category: string; confidence: number }) =>
+    (SAMPLE_WEIGHT[place.category] ?? SAMPLE_WEIGHT.other) *
+    (0.4 + 0.6 * Math.min(1, Math.max(0, place.confidence)))
+  const order = places
+    .map((place, at) => ({ at, place, worth: worth(place) }))
+    .sort((left, right) => right.worth - left.worth || left.at - right.at)
+  const earned = new Map<number, number>()
+  for (let z = SAMPLE_ZOOMS.from; z <= SAMPLE_ZOOMS.to; z += 1) {
+    const taken = new Map<string, number>()
+    for (const { at, place } of order) {
+      if (earned.has(at)) continue
+      const square = squareOf(place.lng, place.lat, z)
+      const already = taken.get(square) ?? 0
+      if (already >= SAMPLE_PER_TILE) continue
+      taken.set(square, already + 1)
+      earned.set(at, z)
+    }
+  }
+  return places.map((_, at) => earned.get(at) ?? SAMPLE_ZOOMS.floor)
 }
 
 export const SAMPLE_PINS: AttractionPoi[] = [
@@ -74,18 +127,21 @@ export const SAMPLE_PINS: AttractionPoi[] = [
       /* The same rule the server applies, stated once here: the named kinds
          survive a zoom out, the catch-all and the everyday ones do not. */
       big: !['cafe', 'bar', 'shopping', 'services', 'other', 'sights'].includes(String(category)),
-      /* And the zoom it earns its dot at, mirroring places/rank.js MARK_ZOOM
-         for the demo — which has no server to ask, exactly as `big` above has
-         had none since the sample was written. A second copy of a table is a
-         thing to be uneasy about; this one is twenty-two canned landmarks
-         that exist so the map draws without a backend, and the alternative is
-         a demo that behaves differently from the app it demonstrates. */
-      minzoom: SAMPLE_MARK_ZOOM[String(category)] ?? 17,
+      /* Filled in below, by the same rule the server applies: a mark earns
+         its zoom from where it comes among its neighbours. */
+      minzoom: 0,
       /* Ranked by the confidence above, which for canned data is the order
          they deserve on screen. */
       rank: Math.round(Number(confidence) * 1000),
     }) satisfies AttractionPoi,
 )
+
+/* And the zooms, worked out over the whole set rather than per place, because
+   a place's zoom is a fact about its neighbours. Written back in place so the
+   exported array is the finished shape a caller expects. */
+for (const [at, zoom] of zoomsFor(SAMPLE_PINS).entries()) {
+  SAMPLE_PINS[at].minzoom = zoom
+}
 
 /** The demo's own attribution line, naming the same sources a real answer
     would. The sample data is a handful of landmarks anybody could list, but

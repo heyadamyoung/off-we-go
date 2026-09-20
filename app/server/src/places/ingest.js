@@ -72,6 +72,28 @@ import { MATCH_METRES, bestMatch, mergeFields } from './resolve.js'
     measured confidence; Foursquare's is derived (see fsq.js). */
 export const SOURCE_ORDER = Object.freeze(['overture', 'fsq', 'osm'])
 
+/** What this pipeline produces, as a number that changes when the answer
+ * does.
+ *
+ * `--resume` skips a cell that is already `ready`, which is right when the
+ * only thing that has changed is how far the run got, and wrong every time
+ * the ingest itself changes: the cells done before the change keep rows of
+ * the old shape for ever, and nothing anywhere compares them. A planet half
+ * ingested by one version and half by another is a database nobody can reason
+ * about, and it is invisible — the coverage rows all say `ready`.
+ *
+ * So the generation is written into `place_coverage.versions` beside the
+ * release versions, and a cell counts as done only when it was produced by
+ * the generation now running. Bump it when the rows this pipeline writes stop
+ * being the rows it used to write, and the next run re-ingests what it must,
+ * once, by itself.
+ *
+ *   1  the original per-cell ingest
+ *   2  a source row per upstream dataset rather than one per source, each
+ *      under its own dataset's licence, and a label_zoom on every place
+ */
+export const PLACE_PIPELINE = 2
+
 /** A cell whose new place count falls below this share of what it held is not
     loaded: the read is assumed broken rather than the world. */
 export const RETAIN_RATIO = 0.5
@@ -441,7 +463,11 @@ export function createIngest({
 }) {
   const sources = ['overture', 'fsq'].filter(source => releases?.[source]?.index)
   if (!sources.length) throw new Error('places: an ingest needs at least one release with an index')
-  const versions = Object.fromEntries(sources.map(source => [source, releases[source].version]))
+  const versions = {
+    ...Object.fromEntries(sources.map(source => [source, releases[source].version])),
+    /* Which ingest wrote these rows, not only which release they came from. */
+    pipeline: PLACE_PIPELINE,
+  }
   const controller = new AbortController()
   /* The cursor is written from inside `onGroup`, which the reader calls
      synchronously and cannot await. Keeping the promise means the failure
@@ -914,14 +940,22 @@ export function createIngest({
   async function progressFor(cells) {
     if (dryRun) return { done: new Set(), cursors: new Map() }
     const { rows } = await pool.query(
-      'select cell, status, cursor from place_coverage where cell = any($1::text[])',
+      'select cell, status, cursor, versions from place_coverage where cell = any($1::text[])',
       [cells],
     )
+    /* Done means done by this pipeline. A cell ingested by an older one holds
+       rows of a shape this version no longer writes, and skipping it is how a
+       planet ends up half one thing and half another with every coverage row
+       saying `ready`. It is re-read, once, and then it is done for good. */
+    const current = row => Number(row.versions?.pipeline ?? 1) === PLACE_PIPELINE
     return {
       done: new Set(
         rows
           .filter(
-            row => row.status === 'ready' || row.status === 'empty' || row.status === 'ingesting',
+            row =>
+              (row.status === 'ready' && current(row)) ||
+              (row.status === 'empty' && current(row)) ||
+              row.status === 'ingesting',
           )
           .map(row => row.cell),
       ),
