@@ -12,6 +12,7 @@
  * Types only from places-core, so this is not a runtime cycle.
  */
 
+import type { PlaceAbout, PlaceCredit } from './places-about'
 import type { Place, PlaceList } from './places-core'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -60,5 +61,63 @@ export function placeListFrom(payload: unknown): PlaceList {
  */
 export function placeFrom(payload: unknown): Place | null {
   const row = isRecord(payload) && 'place' in payload ? payload.place : payload
-  return placeListFrom({ places: [row] }).places[0] || null
+  const place = placeListFrom({ places: [row] }).places[0] || null
+  if (!place) return null
+  const about = aboutFrom(isRecord(payload) ? payload.about : null)
+  return about ? { ...place, about } : place
+}
+
+/** One credit, or null if the server did not send a usable one. */
+function creditFrom(value: unknown): PlaceCredit | null {
+  if (!isRecord(value)) return null
+  const license = typeof value.license === 'string' ? value.license : ''
+  const text = typeof value.text === 'string' ? value.text : ''
+  /* No licence, no credit, and — since the server only sends a picture it
+     has a licence for — no picture either. The client does not invent one. */
+  if (!license || !text) return null
+  return {
+    text,
+    license,
+    author: typeof value.author === 'string' ? value.author : null,
+    licenseUrl: typeof value.licenseUrl === 'string' ? value.licenseUrl : null,
+    source: typeof value.source === 'string' ? value.source : null,
+    sourceUrl: typeof value.sourceUrl === 'string' ? value.sourceUrl : null,
+  }
+}
+
+/**
+ * The picture and the paragraph, as the card will show them.
+ *
+ * A picture with no credit is dropped rather than shown bare. The server
+ * already refuses to store one it cannot credit, so this only fires if
+ * something went wrong between there and here — and the safe failure is a
+ * card with no photograph, not somebody's photograph with no name on it.
+ */
+export function aboutFrom(value: unknown): PlaceAbout | null {
+  if (!isRecord(value)) return null
+  const said = isRecord(value.description) ? value.description : null
+  const text = said && typeof said.text === 'string' ? said.text : ''
+  const images = Array.isArray(value.images) ? value.images : []
+  return {
+    description: text
+      ? {
+          text,
+          source: typeof said?.source === 'string' ? said.source : null,
+          sourceUrl: typeof said?.sourceUrl === 'string' ? said.sourceUrl : null,
+          attribution: creditFrom(said?.attribution),
+        }
+      : null,
+    images: images
+      .filter(isRecord)
+      .map(image => ({
+        url: typeof image.url === 'string' ? image.url : '',
+        thumbUrl: typeof image.thumbUrl === 'string' ? image.thumbUrl : null,
+        width: typeof image.width === 'number' ? image.width : null,
+        height: typeof image.height === 'number' ? image.height : null,
+        attribution: creditFrom(image.attribution),
+      }))
+      .filter(image => image.url && image.attribution),
+    status: typeof value.status === 'string' ? value.status : 'pending',
+    waiting: value.waiting !== false,
+  }
 }

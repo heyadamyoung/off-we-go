@@ -13,6 +13,9 @@ import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
 import { createFooterStore, createReleaseLoader, DEFAULT_INDEX_DIR } from './places/upstream.js'
 import { createPlaceWorker } from './places/worker.js'
+import { createEnrichWorker } from './places/enrich/worker.js'
+import { createWikimedia } from './places/enrich/wikimedia.js'
+import { fromOverpass, fromTable, fromTableThenOverpass } from './places/enrich/osm.js'
 import { productionLoggerOptions } from './logging.js'
 import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
 import { createMediaWorker } from './media-worker.js'
@@ -251,11 +254,46 @@ const placesWorker =
       })
     : null
 
+/* Pictures and descriptions for the places worth having them.
+ *
+ * Off unless PLACES_CONTACT is set, and that is not a nicety. Wikimedia's
+ * policy requires a User-Agent naming the application and a way to reach its
+ * operator, they enforce it, and a pipeline that asked millions of questions
+ * anonymously would deserve the block it got. createWikimedia refuses to
+ * start without one, so the switch is the contact address itself rather than
+ * a separate flag somebody could set while leaving the address blank.
+ *
+ * Overpass is only reached for a place somebody has opened that our own copy
+ * of the interesting OSM objects does not know about. The backfill never
+ * touches it: see places/enrich/osm.js. */
+const placesContact = process.env.PLACES_CONTACT || ''
+const enrichWorker = (() => {
+  if (!placesContact) return null
+  const userAgent = `OffWeGo/1.0 (${placesContact})`
+  const wikimedia = createWikimedia({ userAgent, log: placesSay })
+  return createEnrichWorker({
+    pool: repository.pool,
+    log: placesSay,
+    placesPerTick: Number(process.env.PLACES_ENRICH_PER_TICK) || undefined,
+    prominentZoom: Number(process.env.PLACES_ENRICH_ZOOM) || undefined,
+    sources: {
+      osmNear: fromTableThenOverpass(
+        fromTable(repository.pool),
+        process.env.PLACES_OVERPASS === 'off' ? null : fromOverpass({ userAgent }),
+      ),
+      entity: (id, options) => wikimedia.entity(id, options),
+      summary: (article, options) => wikimedia.summary(article, options),
+      files: (wanted, options) => wikimedia.files(wanted, options),
+    },
+  })
+})()
+
 const port = Number(process.env.PORT || 3000)
 coverageLog.current = app.log
 placesLog.current = app.log
 await app.listen({ host: '0.0.0.0', port })
 placesWorker?.start()
+enrichWorker?.start()
 
 /* The privacy policy promises GPS fixes are deleted after 30 days; this is
    what keeps the promise. Cheap enough to run often, checked on boot so a
@@ -340,6 +378,7 @@ const stop = async signal => {
      ingest leaves it resumable only if it is allowed to finish abandoning
      it. See places/worker.js. */
   await placesWorker?.stop().catch(() => {})
+  await enrichWorker?.stop().catch(() => {})
   await app.close().catch(() => {})
   await repository.close().catch(() => {})
   process.exit(0)

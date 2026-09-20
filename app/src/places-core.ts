@@ -1,3 +1,4 @@
+import type { PlaceAbout } from './places-about'
 /* Presenting what the places layer sends back.
 
    The server answers out of open data we ingest and own: a record, the sources
@@ -59,6 +60,8 @@ export interface Place {
   attribution?: PlaceNotice[] | null
   /** metres from the point asked about, on a nearby answer */
   metres?: number | null
+  /** what it looks like and what there is to say about it, when we know */
+  about?: PlaceAbout | null
 }
 
 /* One notice as the server sends it — licence, words to print, where to read
@@ -67,6 +70,8 @@ export interface Place {
 export type PlaceNotice =
   | string
   | { license?: string | null; notice?: string | null; url?: string | null }
+
+export type { PlaceAbout, PlaceCredit, PlacePicture } from './places-about'
 
 export interface PlaceCoverage {
   cell: string

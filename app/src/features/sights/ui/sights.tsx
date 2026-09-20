@@ -7,7 +7,8 @@ import {
   type SightSort,
 } from '../../../sights-list-core'
 import { articleSummary, attractionThumb } from '../../map'
-import { isAbortError, placeById, PlaceAttribution } from '../../places'
+import { isAbortError, placeById, PlaceAttribution, PlaceCredits } from '../../places'
+import { cardFrom } from '../../../place-card-core'
 import { addressLine, categoryWord, type Place } from '../../../places-core'
 import { findSights, type SightPlace } from '../api/find-sights'
 import { imageForPage, radiusForView } from '../api/nearby-places'
@@ -35,24 +36,19 @@ function AttractionCard({
   const [place, setPlace] = useState<Place | null>(null)
   const [adding, setAdding] = useState(false)
 
-  /* Which kind of pin this is.
-   *
-   * It used to be one kind: a Wikipedia page, whose numeric id was both the
-   * pin's identity and the way to look the article up. The map's pins come
-   * from the places layer now and their ids are ours, so asking Wikipedia
-   * about one fetched a page id that has nothing to do with the place — and
-   * the "Wikipedia" link under every card pointed at ?curid=<a uuid of ours>,
-   * which is a dead link on somebody else's site. */
+  /* Which kind of pin this is. It used to be one kind — a Wikipedia page,
+     whose numeric id was both identity and lookup. The map's pins come from
+     the places layer now and their ids are ours, so asking Wikipedia about
+     one fetched an unrelated page and the link under the card pointed at
+     ?curid=<a uuid of ours>: dead, on somebody else's site. */
   const fromPlaces = typeof poi.id === 'string' && !/^\d+$/.test(poi.id)
 
-  /* What the pin does not carry.
-   *
-   * A pin is a dot and a label: id, name, position, category — three hundred
-   * of them per view, so it cannot also carry an address, a telephone number
-   * and a provenance trail each. The record behind it has all of that, and
-   * this is the tap that goes and gets it. Aborted when the card closes or
-   * the next pin is tapped, because a slow answer for a card nobody is
-   * looking at should not overwrite the one they are. */
+  /* What the pin does not carry. A pin is a dot and a label — three hundred
+     of them per view — so the address, the telephone number, the provenance
+     and the picture live on the record behind it, and this is the tap that
+     goes and gets them. Aborted when the card closes or the next pin is
+     tapped: a slow answer for a card nobody is looking at must not overwrite
+     the one they are. */
   useEffect(() => {
     if (!fromPlaces) return
     const controller = new AbortController()
@@ -87,13 +83,18 @@ function AttractionCard({
     }
   }, [poi.id, poi.t, fromPlaces])
 
-  const picture = more?.image || attractionThumb(poi.f)
-  const note = poi.t || more?.note || ''
-  /* Open data carries no article, so there is no article to link to. What a
-     place does carry is its own website, when upstream knew one. */
-  const source = fromPlaces
-    ? place?.website || ''
-    : more?.source || `https://en.wikipedia.org/?curid=${poi.id}`
+  /* What the card shows, and in what order — place-card-core states the
+     precedence so it can be tested rather than inferred from a chain of
+     fallbacks inside a component. */
+  const { picture, note, source, credits } = cardFrom({
+    pinNote: poi.t,
+    pinPicture: attractionThumb(poi.f),
+    about: place?.about,
+    website: fromPlaces ? place?.website : null,
+    article: fromPlaces
+      ? null
+      : { ...more, source: more?.source || `https://en.wikipedia.org/?curid=${poi.id}` },
+  })
   /* What it is and where it is. `kind` is the category the pin already knew,
      so it is on screen before the record lands rather than appearing a beat
      later; the address can only come from the record. */
@@ -120,11 +121,9 @@ function AttractionCard({
       <div className="abody flex flex-col gap-1.5 overflow-y-auto p-4">
         <b className="text-base font-extrabold tracking-[-.01em]">{poi.n}</b>
         <span className="kind text-[11px] font-semibold text-accent">{kind}</span>
-        {/* Where it is. The first thing anybody wants from a pin they tapped,
-            and until now the only place it existed was the database. Absent
-            rather than a placeholder when upstream had no address: a blank
-            line reads as a card with nothing to say, and "Address unknown"
-            reads as a card that is broken. */}
+        {/* Where it is — the first thing anybody wants from a pin they
+            tapped. Absent rather than a placeholder when upstream had no
+            address: "Address unknown" reads as a card that is broken. */}
         {where && (
           <span className="awhere text-xs leading-snug text-muted">
             <Icon n="pin" s={11} /> {where}
@@ -136,6 +135,10 @@ function AttractionCard({
           </a>
         )}
         {note && <p className="m-0 line-clamp-4 text-xs leading-relaxed text-muted">{note}</p>}
+        {/* The notice, under the thing it is about. Not optional and not a
+            footnote elsewhere: a CC BY-SA photograph obliges us to name its
+            photographer wherever it is shown. */}
+        <PlaceCredits credits={credits} />
         <div className="aacts mt-1 flex gap-1.5">
           {canEdit && (
             <button
