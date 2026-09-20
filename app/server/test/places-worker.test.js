@@ -464,6 +464,55 @@ test('places written before the zoom column get their zoom', {
     assert.equal(stamped.rows[0].n, 2, 'both cells now record the rule they were placed under')
   })
 
+  /* The clear is by primary key now, which is the same tiles named rather
+     than tested — and "the same" is the whole risk, so it is asserted from
+     both sides: the squares over the cell go, and the square next door does
+     not. The old form projected every row in the table to find out. */
+  await t.test("placing a cell drops that cell's tiles and no others", async t => {
+    const pool = await freshDatabase(t)
+    await unplaced(pool, 'Rijksmuseum', 4.8852, 52.36)
+    /* Amsterdam at three zooms, and one square over Scotland that has
+       nothing to do with this cell. */
+    const over = [
+      { z: 11, x: 1051, y: 673 },
+      { z: 12, x: 2103, y: 1346 },
+      { z: 14, x: 8414, y: 5385 },
+    ]
+    const elsewhere = { z: 12, x: 2011, y: 1276 }
+    for (const tile of [...over, elsewhere]) {
+      await pool.query(
+        `insert into place_tiles (z, x, y, body, places, built_at)
+         values ($1, $2, $3, $4, 1, now())`,
+        [tile.z, tile.x, tile.y, Buffer.from('drawn before the pass')],
+      )
+    }
+
+    const { worker } = workerOver(pool)
+    await worker.once()
+    await worker.settled()
+
+    for (const tile of over) {
+      const { rows } = await pool.query(
+        'select body from place_tiles where z = $1 and x = $2 and y = $3',
+        [tile.z, tile.x, tile.y],
+      )
+      assert.notEqual(
+        rows[0]?.body?.toString(),
+        'drawn before the pass',
+        `the z${tile.z} square over the cell is gone`,
+      )
+    }
+    const kept = await pool.query(
+      'select body from place_tiles where z = $1 and x = $2 and y = $3',
+      [elsewhere.z, elsewhere.x, elsewhere.y],
+    )
+    assert.equal(
+      kept.rows[0]?.body?.toString(),
+      'drawn before the pass',
+      'and a square over ground this cell does not touch is left alone',
+    )
+  })
+
   await t.test('stopping waits for the pass rather than cutting it off', async t => {
     const pool = await freshDatabase(t)
     await unplaced(pool, 'Van Gogh Museum', 4.881, 52.3584)

@@ -187,7 +187,16 @@ fi
 # transient list (408, 429, the classic 5xx). Cloudflare answers 521 while
 # the web container's host port rebinds during the up, which is not on that
 # list — so a one-second flap failed the whole deploy and rolled it back.
-curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+#
+# Thirty tries rather than twelve: two and a half minutes. Deploy 364 came up
+# with every container healthy and then answered 502 for the sixty seconds
+# this allowed, because the first thing the api does after it starts
+# listening is give the planet's places their zooms and that had the one
+# database on this box pinned. The pass yields between cells now — see
+# places/worker.js — and this is the other half of the same lesson: a box
+# doing real work on the minute after a release is not a box that has failed,
+# and rolling a good release back is the more expensive mistake.
+curl --fail --silent --show-error --retry 30 --retry-delay 5 --retry-all-errors \
   "https://${deployment_domain}/api/health" >/dev/null
 bash -n "$APP_ROOT/deploy/github-deploy.sh"
 install -o root -g root -m 755 \

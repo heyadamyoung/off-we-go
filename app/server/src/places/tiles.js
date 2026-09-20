@@ -86,7 +86,19 @@ export function zoomForBounds(bounds, { from, floor }) {
   return Math.min(floor, Math.max(from, at))
 }
 
-export function tilesForBounds(bounds, z) {
+/**
+ * The block of the zoom-z grid a box covers, as two inclusive ranges.
+ *
+ * The corners rather than the tiles, because at zoom 20 a one-degree cell is
+ * about three thousand squares across and nine million of them altogether —
+ * a number worth expressing and never worth listing. `tilesForBounds` walks
+ * it when a caller really does want each one; a delete wants the range.
+ *
+ * @param {{west: number, south: number, east: number, north: number}} bounds
+ * @param {number} z
+ * @returns {{z: number, x0: number, x1: number, y0: number, y1: number}}
+ */
+export function tileRange(bounds, z) {
   const side = 2 ** z
   const clamp = value => Math.min(side - 1, Math.max(0, value))
   const left = clamp(tileX(bounds.west, z))
@@ -96,9 +108,20 @@ export function tilesForBounds(bounds, z) {
      classic way to build every tile except the ones somebody is looking at. */
   const top = clamp(tileY(bounds.north, z))
   const bottom = clamp(tileY(bounds.south, z))
+  return {
+    z,
+    x0: Math.min(left, right),
+    x1: Math.max(left, right),
+    y0: Math.min(top, bottom),
+    y1: Math.max(top, bottom),
+  }
+}
+
+export function tilesForBounds(bounds, z) {
+  const { x0, x1, y0, y1 } = tileRange(bounds, z)
   const tiles = []
-  for (let x = Math.min(left, right); x <= Math.max(left, right); x += 1) {
-    for (let y = Math.min(top, bottom); y <= Math.max(top, bottom); y += 1) {
+  for (let x = x0; x <= x1; x += 1) {
+    for (let y = y0; y <= y1; y += 1) {
       tiles.push({ z, x, y })
     }
   }

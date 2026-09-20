@@ -42,7 +42,13 @@
 
 import { cellBounds, cellsForBounds } from './cells.js'
 import { LABEL_ZOOMS } from './rank.js'
-import { tileBounds } from './tiles.js'
+import { tileBounds, tileRange } from './tiles.js'
+
+/* Every zoom a tile can be stored at, which is every zoom the tile route
+   will answer for — see tileQuery in routes.js. A tile at a zoom left out of
+   this list would survive a clear and show last month's city for ever, so it
+   is the route's range and not a guess at which zooms get used. */
+const KEPT_ZOOMS = Array.from({ length: 21 }, (_, z) => z)
 
 /* The select list, written once. `geom` is a geography; ST_X/ST_Y want a
    geometry, and the cast is free — it is the same stored point. */
@@ -1041,12 +1047,33 @@ export async function writePlaceTile(db, { z, x, y }, body, places = 0, since = 
  * @param {{west: number, south: number, east: number, north: number}} bounds
  * @returns {Promise<number>} how many were dropped
  */
-export async function clearPlaceTiles(db, bounds) {
+export async function clearPlaceTiles(db, bounds, { zooms = KEPT_ZOOMS } = {}) {
+  /* By the primary key, which is exactly what (z, x, y) is.
+   *
+   * It used to be `ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326) && box`,
+   * which is a projection and an overlap computed per row — no index can
+   * serve it, so every call read the whole tile table. One call per ingested
+   * cell was already the wrong shape; the zoom backfill calls it once per
+   * cell for eleven thousand cells, which would have been the table scanned
+   * eleven thousand times.
+   *
+   * The same tiles, named rather than tested: at each zoom the box covers one
+   * contiguous block of the grid, and its corners are arithmetic — see
+   * tiles.js tileRange, which tilesForBounds is now written in terms of, so
+   * the two cannot disagree about which squares a box covers. */
+  const ranges = zooms.map(z => tileRange(bounds, z))
   const result = await db.query(
     `delete from place_tiles t
-     using (select ST_MakeEnvelope($1, $2, $3, $4, 4326) as box) c
-     where ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326) && c.box`,
-    [bounds.west, bounds.south, bounds.east, bounds.north],
+     using unnest($1::int[], $2::int[], $3::int[], $4::int[], $5::int[])
+       as r(z, x0, x1, y0, y1)
+     where t.z = r.z and t.x between r.x0 and r.x1 and t.y between r.y0 and r.y1`,
+    [
+      ranges.map(range => range.z),
+      ranges.map(range => range.x0),
+      ranges.map(range => range.x1),
+      ranges.map(range => range.y0),
+      ranges.map(range => range.y1),
+    ],
   )
   return result.rowCount ?? 0
 }

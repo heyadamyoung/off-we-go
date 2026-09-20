@@ -68,6 +68,11 @@ import {
 import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
 
+/** The longest the zoom pass will stand aside for between two cells. */
+export const MOST_REST_MS = 2_000
+
+const pause = ms => (ms > 0 ? new Promise(resolve => setTimeout(resolve, ms).unref?.()) : null)
+
 /** How often the queue is looked at. */
 export const TICK_MS = 60_000
 /** How many cells one tick may ingest. */
@@ -473,9 +478,19 @@ export function createPlaceWorker({
       }
       for (const cell of batch) {
         if (stopped) break
+        const began = Date.now()
         try {
           placed += await placeOneCell(cell)
           cells += 1
+          /* Half the box, at most, and never for more than a couple of
+             seconds. This walks eleven thousand cells and the densest of
+             them is twenty seconds of window function; run flat out it pins
+             the one database this box has, and the site answers 502 while a
+             backfill nobody is waiting on gets through the planet an hour
+             sooner. Measured against the cell just done rather than a fixed
+             number, so a cell of four hundred places costs nothing and a
+             city yields properly. */
+          await pause(Math.min(MOST_REST_MS, Date.now() - began))
         } catch (error) {
           /* Said, and stepped over. One cell that will not place must not
              stand in front of the other eleven thousand, and a cell nobody
