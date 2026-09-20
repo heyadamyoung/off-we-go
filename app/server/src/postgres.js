@@ -14,6 +14,7 @@ import {
   coverageFor,
   markRequested,
   nearbyPlaces,
+  placeTile,
   placesInView,
   licensesFor,
   pendingCells,
@@ -3258,6 +3259,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async nearbyPlaces(query) {
       return nearbyPlaces(pool, query)
+    },
+    async placeTile(tile, options) {
+      return placeTile(pool, tile, options)
     },
     async placesInView(bounds, options) {
       return placesInView(pool, bounds, options)

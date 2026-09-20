@@ -500,3 +500,117 @@ export async function pendingCells(db, { statuses = ['pending', 'stale'], limit 
   const result = await db.query(QUEUE_SQL, [statuses, limit])
   return result.rows.map(coverageRow)
 }
+
+/* ---- a tile of places -------------------------------------------------- */
+
+/* Why a tile and not a viewport.
+ *
+ * The viewport query above answers "what is in this box", and a map asks it
+ * again every time the camera moves — a different box, a different top three
+ * hundred, and dots at the edges appearing and vanishing for no reason a
+ * person can see. Reported as janky, and it was: the instability had nothing
+ * to do with which places deserve to be drawn and everything to do with the
+ * question being asked afresh, with a different answer, sixty times a pan.
+ *
+ * A tile is the same question with a fixed frame. z/x/y names one square of
+ * the world at one zoom, its contents are decided once, and panning back and
+ * forth over it gets the identical answer — so the map can keep what it has
+ * instead of reloading it. That is what every map that does not flicker does,
+ * and it is why they do not flicker.
+ *
+ * Three things fall out of it for free:
+ *   the zoom is known    so the query can drop the places that would not be
+ *                        drawn at this zoom rather than sending three hundred
+ *                        and having the client hide most of them.
+ *   the answer is cacheable  one tile, one URL, one body, for everybody.
+ *   the budget is per tile   "the best forty in this square" is a sentence
+ *                        about a fixed area, so density is even instead of
+ *                        being whatever a viewport happened to contain.
+ */
+
+/** How many places one tile may carry.
+ *
+ * Per tile rather than per screen, and a screen is four to eight tiles, so
+ * this is a couple of hundred on screen at most — but spread evenly, because
+ * each square gets its own best rather than one corner of the city taking the
+ * whole budget. Ordered by rank, so a full tile is full of the best of it. */
+export const TILE_PLACES = 48
+
+/** The buffer, in tile units of 4096. A label sitting a few pixels outside a
+    tile still has to be drawn, or every tile boundary becomes a seam of
+    missing names. 64 is the common default and about 16 screen pixels. */
+const TILE_BUFFER = 64
+
+/**
+ * One vector tile of places, as bytes MapLibre can read directly.
+ *
+ * @param {{query: Function}} db
+ * @param {{z: number, x: number, y: number}} tile
+ * @param {{floor?: number, limit?: number, zooms: Record<string, number>,
+ *          weights: Record<string, number>}} options
+ *   `zooms` is the zoom each category earns its dot at and `weights` is how
+ *   they rank against each other — both from places/rank.js, composed into
+ *   SQL here for the same reason placesInView composes its weights: the
+ *   taxonomy lives in one file and this is where it is spent.
+ * @returns {Promise<Buffer>} the tile, empty when nothing is in it
+ */
+export async function placeTile(
+  db,
+  { z, x, y },
+  { floor = 0, limit = TILE_PLACES, zooms, weights } = {},
+) {
+  const zoomKinds = Object.entries(zooms || {})
+  const weightKinds = Object.entries(weights || {})
+  if (!zoomKinds.length || !weightKinds.length) {
+    throw new Error('places: a tile needs the category zooms and weights')
+  }
+  /* Checked rather than trusted, exactly as placesInView does: these two
+     statements are the only SQL in this file that is composed at all. */
+  for (const [category] of [...zoomKinds, ...weightKinds]) {
+    if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
+  }
+  const caseOf = (kinds, fallback) =>
+    `case p.category ${kinds
+      .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
+      .join(' ')} else ${fallback} end`
+  const kindZoom = caseOf(zoomKinds, 17)
+  const kindWeight = caseOf(weightKinds, 0.1)
+  /* The same two numbers the API sends on a pin, in SQL so they can be
+     filtered and ordered by rather than computed after the fact:
+       minzoom  the category's zoom, pushed later for a record we are less
+                sure of — CONFIDENCE_DELAY in rank.js, one whole level at the
+                floor and nothing at all at total confidence.
+       rank     the map's category weight demoted by confidence — the same
+                0.4 + 0.6c shape as confidenceFactor. */
+  const minZoom = `(${kindZoom} + (1 - least(1, greatest(0, p.confidence))))`
+  const rank = `((${kindWeight}) * (0.4 + 0.6 * least(1, greatest(0, p.confidence))))`
+  const sql = `
+    with bounds as (select ST_TileEnvelope($1, $2, $3) as box),
+    picked as (
+      -- The same short property names the GeoJSON path writes: n for the
+      -- label, k for the kind, so one set of paint expressions draws both and
+      -- neither has to know which source it came from. They are short because
+      -- they ride on every feature of every tile.
+      -- SQL comments rather than a JS block comment, because this whole
+      -- statement is a template literal and a backtick in it ends the string.
+      select p.id, p.name as n, p.category as k,
+             round(${minZoom}::numeric, 1)::double precision as minzoom,
+             round((${rank}) * 1000)::int as rank,
+             p.geom::geometry as geom
+      from places p, bounds b
+      where p.geom && ST_Transform(b.box, 4326)::geography
+        and p.confidence >= $4::real
+        and ${minZoom} <= $1::double precision
+      order by ${rank} desc, p.id
+      limit $5
+    )
+    select coalesce(ST_AsMVT(tile, 'places', 4096, 'geom'), ''::bytea) as tile
+    from (
+      select id::text as id, n, k, minzoom, rank,
+             ST_AsMVTGeom(ST_Transform(geom, 3857), b.box, 4096, ${TILE_BUFFER}, true) as geom
+      from picked, bounds b
+    ) as tile
+    where tile.geom is not null`
+  const result = await db.query(sql, [z, x, y, floor, limit])
+  return result.rows[0]?.tile ?? Buffer.alloc(0)
+}

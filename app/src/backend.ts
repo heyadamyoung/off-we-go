@@ -16,7 +16,14 @@ import {
   withOfflineFallback,
 } from './offline-trip-core'
 
-export { authClient, functionsUrl, hasBackend, isSample, tripPath } from './backend-base'
+export {
+  authClient,
+  functionsUrl,
+  hasBackend,
+  isSample,
+  placeTilesUrl,
+  tripPath,
+} from './backend-base'
 export * from './backend-assistant'
 export * from './backend-segments'
 export * from './backend-social'
