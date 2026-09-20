@@ -238,4 +238,20 @@ for image in api web; do
     | xargs -r -I{} docker image rm "$image_repo/$image:{}" >/dev/null 2>&1 || true
 done
 
+# What the box has left, in the deploy log.
+#
+# Nothing else reports this. The deploy key is restricted to this one
+# command — deliberately, and a capacity probe over SSH is rightly refused —
+# so the deploy is the only place on the machine that can say. It matters
+# now: the places layer holds tens of gigabytes of open data, and the
+# honest answer to "will the planet fit" has until now been a guess.
+echo
+echo "--- capacity ---"
+df -h / /var/lib/docker 2>/dev/null | awk 'NR==1 || !seen[$1]++'
+echo "memory: $(free -h 2>/dev/null | awk '/^Mem:/{print $2" total, "$7" available"}')"
+echo "cores: $(nproc 2>/dev/null)"
+du -sh /var/lib/docker/volumes/* 2>/dev/null | sort -h | tail -5 | sed 's/^/volume: /'
+echo "--- end capacity ---"
+echo
+
 echo "Off We Go deployed at $release_sha."
