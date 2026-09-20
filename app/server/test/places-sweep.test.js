@@ -184,6 +184,59 @@ test('stopping leaves the open cells unwritten and says how many', async () => {
   assert.equal(totals.unfinished, 2)
 })
 
+test('a read that fails once is asked again, and the sweep carries on', async () => {
+  const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9), box(2, 4, 5.1, 52.1, 5.9, 52.9))
+  const written = []
+  const waits = []
+  let asked = 0
+  const swept = createSweep({
+    plan: sweepPlan(index),
+    read: async (_part, group) => {
+      asked += 1
+      /* The second group's first attempt is a bad gateway, the way a public
+         bucket has one every few thousand range requests. */
+      if (group.s === 2 && asked === 2) throw new Error('503 Service Unavailable')
+      return [record(group.s === 0 ? 'N52E004' : 'N52E005', String(group.s))]
+    },
+    load: async (cell, held) => {
+      written.push(cell)
+      return { cell, status: 'ready', places: held.length }
+    },
+    wait: async ms => waits.push(ms),
+    backoffMs: 2000,
+  })
+  const totals = await swept.run()
+  assert.deepEqual(written, ['N52E004', 'N52E005'])
+  assert.equal(totals.retried, 1)
+  assert.equal(totals.groups, 2)
+  assert.equal(totals.unfinished, 0)
+  /* Backed off before asking again, rather than hammering a bucket that has
+     just said it is busy. */
+  assert.deepEqual(waits, [2000])
+})
+
+test('a read that keeps failing stops the sweep, after it has really tried', async () => {
+  const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9))
+  const waits = []
+  let asked = 0
+  const swept = createSweep({
+    plan: sweepPlan(index),
+    read: async () => {
+      asked += 1
+      throw new Error('403 Forbidden')
+    },
+    load: async () => assert.fail('nothing should have been written'),
+    wait: async ms => waits.push(ms),
+    backoffMs: 2000,
+    tries: 4,
+  })
+  await assert.rejects(swept.run(), /403 Forbidden/)
+  assert.equal(asked, 4)
+  /* Doubling, so four attempts spread over fourteen seconds rather than four
+     in the same millisecond. */
+  assert.deepEqual(waits, [2000, 4000, 8000])
+})
+
 test('a failing read stops the sweep rather than silently loading half a cell', async () => {
   const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9), box(2, 4, 4.1, 52.1, 4.9, 52.9))
   const plan = sweepPlan(index)
@@ -194,6 +247,7 @@ test('a failing read stops the sweep rather than silently loading half a cell', 
       return [record('N52E004', 'a')]
     },
     load: async () => assert.fail('nothing should have been written'),
+    tries: 1,
   })
   await assert.rejects(swept.run(), /503 from the bucket/)
 })

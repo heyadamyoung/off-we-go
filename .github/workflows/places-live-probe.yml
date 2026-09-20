@@ -19,6 +19,10 @@ on:
         description: 'Which deployment to ask'
         required: false
         default: 'offwego.to'
+      views:
+        description: 'Extra viewports, space separated: name:west,south,east,north'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -36,4 +40,6 @@ jobs:
 
       - name: Ask the live server what it has
         working-directory: app
+        env:
+          PLACES_VIEWS: ${{ inputs.views }}
         run: node server/scripts/probe-live-places.mjs "${{ inputs.host || 'offwego.to' }}"

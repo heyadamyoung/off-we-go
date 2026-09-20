@@ -810,10 +810,17 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      when it had not. `docker ps --filter label=` needs no profile to see it. */
   assert.match(block, /^if \[ -n "\$\(docker ps -q --filter status=running/m)
   assert.ok(block.includes('label=com.docker.compose.service=places-sweep'))
-  assert.match(block, /^elif docker compose --profile sweep up -d --no-build places-sweep/m)
-  assert.ok(block.includes('else'), 'and a start that fails says so rather than passing silently')
+  assert.match(block, /^ {2}if docker compose --profile sweep up -d --no-build places-sweep/m)
+  assert.ok(block.includes('could not be started'), 'a start that fails says so')
   /* --no-build: the box pulls what the pipeline pushed and builds nothing. */
   assert.ok(!/docker compose[^\n]*up[^\n]*--build/.test(block))
+  /* And why the last one stopped, which is the whole diagnostic. The first
+     live planet run exited somewhere in the Atlantic; the deploy key is
+     restricted to `deploy <sha>` and there is no shell on that box, so a run
+     that ends says so here or it has said so nowhere at all. */
+  assert.ok(block.includes('docker ps -aq --filter label=com.docker.compose.service=places-sweep'))
+  assert.ok(block.includes('{{.State.ExitCode}}'), 'the exit code of the last sweep')
+  assert.match(block, /docker logs --tail \d+ "\$stopped_sweep"/, 'and its last words')
 })
 
 test('the day census only ever reads', () => {

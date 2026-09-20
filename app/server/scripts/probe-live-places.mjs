@@ -9,21 +9,47 @@
  * Read-only and unauthenticated: /api/places/in-view needs no session by
  * design, because the map draws before anybody signs in.
  *
- *   node server/scripts/probe-live-places.mjs [host]
+ *   node server/scripts/probe-live-places.mjs [host] [name:w,s,e,n ...]
+ *
+ * Extra viewports are asked for as well as the standing ones, so "is Scotland
+ * covered yet" is one dispatch rather than a deploy. That matters more than it
+ * sounds: reading coverage off a deploy restarts the planet sweep, which is
+ * how the first run kept losing its place.
  */
 
 const host = process.argv[2] || process.env.PLACES_HOST || 'offwego.to'
 
-/* Viewports, not points: this is the query shape the map makes. One dense
-   European city, one prairie city, and the two ends of the trip that is
+/* Viewports, not points: this is the query shape the map makes. Two dense
+   European cities, one prairie city, and the two ends of the trip that is
    running right now — a layer that works in Amsterdam and nowhere else is
-   the failure this whole layer was built to end. */
-const VIEWS = [
+   the failure this whole layer was built to end. Edinburgh is here because
+   the map was panned to Scotland and found nothing, and a standing viewport
+   is the only kind that gets checked without somebody remembering to. */
+const STANDING = [
   { name: 'Amsterdam', west: 4.86, south: 52.35, east: 4.92, north: 52.39 },
+  { name: 'Edinburgh', west: -3.21, south: 55.94, east: -3.17, north: 55.96 },
   { name: 'Regina', west: -104.65, south: 50.42, east: -104.55, north: 50.47 },
   { name: 'Toronto', west: -79.4, south: 43.64, east: -79.36, north: 43.66 },
   { name: 'Dublin', west: -6.28, south: 53.33, east: -6.24, north: 53.36 },
 ]
+
+/** `Glasgow:-4.3,55.84,-4.2,55.88`, from the command line or PLACES_VIEWS. */
+function viewFrom(text) {
+  const at = String(text).lastIndexOf(':')
+  const name = at > 0 ? text.slice(0, at) : 'asked for'
+  const numbers = (at > 0 ? text.slice(at + 1) : text).split(',').map(Number)
+  if (numbers.length !== 4 || numbers.some(one => !Number.isFinite(one))) {
+    console.error(`Not a viewport: ${text} — wanted name:west,south,east,north`)
+    process.exit(64)
+  }
+  const [west, south, east, north] = numbers
+  return { name, west, south, east, north }
+}
+
+const asked = [...process.argv.slice(3), ...(process.env.PLACES_VIEWS || '').split(/\s+/)]
+  .filter(Boolean)
+  .map(viewFrom)
+const VIEWS = [...STANDING, ...asked]
 
 const pad = (text, width) => String(text).padEnd(width)
 
