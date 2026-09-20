@@ -68,6 +68,15 @@ services:
       WAYFARE_PUBLIC_URL: https://${WAYFARE_DOMAIN}
       WAYFARE_SESSION_SECRET: ${WAYFARE_SESSION_SECRET}
       WAYFARE_OAUTH_SECRET: ${WAYFARE_OAUTH_SECRET}
+      # Who to blame, and the switch for the enrichment pipeline.
+      #
+      # Wikimedia's policy requires a User-Agent naming the application and a
+      # way to reach its operator; they enforce it, and a pipeline asking a
+      # donation-funded service millions of questions anonymously would
+      # deserve the block it got. places/enrich/wikimedia.js refuses to start
+      # without one, so this being empty is what keeps the pipeline off — a
+      # switch nobody can set while leaving the address blank.
+      PLACES_CONTACT: ${PLACES_CONTACT:-}
       WAYFARE_OIDC_ISSUER: ${WAYFARE_OIDC_ISSUER:?set WAYFARE_OIDC_ISSUER in .env}
       WAYFARE_OIDC_CLIENT_ID: ${WAYFARE_OIDC_CLIENT_ID:?set WAYFARE_OIDC_CLIENT_ID in .env}
       WAYFARE_OIDC_CLIENT_SECRET: ${WAYFARE_OIDC_CLIENT_SECRET:?set WAYFARE_OIDC_CLIENT_SECRET in .env}

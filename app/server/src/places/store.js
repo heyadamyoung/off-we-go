@@ -11,12 +11,24 @@
  *      empty list. Not an error: an empty list. So `place_searchable($1)`
  *      appears on the query side of every name comparison below, and nowhere
  *      is a name compared without it.
- *   2. `order by geom <-> point` over the GiST index is a k-nearest-neighbour
- *      scan; `order by ST_Distance(...)` over the same rows is a sort of
- *      everything inside the radius. Measured on one cell of 168,523 places:
- *      1 km p50 1.5 ms / p95 2.6 ms, and 22 ms in a dense city centre. The
- *      `<->` is the reason, and `ST_Distance` appears only in the select list,
- *      where it costs nothing, never in the order by.
+ *   2. `order by geom <-> point` with a `limit` is a k-nearest-neighbour walk
+ *      that stops at the limit. Put `ST_DWithin` in the same `where` and it
+ *      stops being one: the planner has a radius to estimate from, picks a
+ *      bitmap scan over the confidence index instead, and measures the
+ *      distance to every place in the city. Measured on one cell of 302,979
+ *      places — 1 km 71 ms, 5 km 507 ms, 20 km 583 ms. The radius belongs
+ *      outside, where it filters a finished list of forty and cannot reach
+ *      the plan: 1.3 ms, 1.6 ms, 1.7 ms for the same three.
+ *   3. the zoom filter and the spatial index are one index and have to be
+ *      written the same way, literal for literal — `ZOOM_AT` below is that
+ *      string and every statement spends it verbatim. `coalesce(label_zoom,
+ *      $5::real)` does not match an index on `coalesce(label_zoom, 11::real)`,
+ *      and `<= $1::double precision` widens the column rather than narrowing
+ *      the constant; either one loses the index condition and the query reads
+ *      every place in the viewport to throw almost all of them away. That was
+ *      98 ms for a phone-sized box over central Paris and 155 ms for a z11
+ *      tile, against 2.1 ms and 1.5 ms once both halves are indexed. See
+ *      migration 051, which holds the same two sentences from the other side.
  *
  * What is deliberately not here: anything ingestion writes. Coverage rows are
  * read here and marked `pending` here, because a query that misses is how a
@@ -38,6 +50,25 @@ const PLACE_COLUMNS = `p.id, p.gers_id, p.name, p.alternate_names,
   ST_X(p.geom::geometry) as lng, ST_Y(p.geom::geometry) as lat,
   p.cell, p.category, p.category_raw, p.address, p.website, p.phone, p.hours,
   p.operating, p.confidence, p.label_zoom, p.first_seen, p.last_refreshed`
+
+/* What a map needs, which is much less. A pin is a dot, a label and the two
+   numbers that decide when it is drawn and which of two dots wins — see
+   `pin` in places/routes.js, which is the only reader. The wide list above
+   carries `alternate_names`, `address` and `hours`, none of which a pin
+   renders and all three of which are out-of-line values the heap has to be
+   followed to read. */
+const PIN_COLUMNS = `p.id, p.name,
+  ST_X(p.geom::geometry) as lng, ST_Y(p.geom::geometry) as lat,
+  p.category, p.confidence, p.label_zoom`
+
+/* The zoom a place is drawn from, as the index holds it.
+ *
+ * Null means the placing pass has not reached this row yet, and it is drawn
+ * from the first zoom rather than the last — see migration 046 on why the
+ * floor is exactly wrong. `11` is LABEL_ZOOMS.from written out, because an
+ * expression index is matched on its text: a parameter here, or the constant
+ * spelled any other way, silently costs every map query its index. */
+const ZOOM_AT = `coalesce(p.label_zoom, ${LABEL_ZOOMS.from}::real)`
 
 const COVERAGE_COLUMNS = `cell, west, south, east, north, status, versions,
   place_count, quality, requested_at, started_at, last_refresh, attempts, error`
@@ -78,6 +109,21 @@ export const placeRow = row =>
        so a caller can tell "not asked" from "zero metres away". */
     metres: numberOrNull(row.metres),
     similarity: numberOrNull(row.similarity),
+  }
+
+/** One pin, which is what `PIN_COLUMNS` selects: everything a dot on a map
+    is made of and nothing else. A separate shape from `placeRow` rather than
+    a thinner call of it, because a record with `address: null` on it cannot
+    be told from a place that has no address, and this one was never asked. */
+export const pinRow = row =>
+  row && {
+    id: row.id,
+    name: row.name,
+    lng: Number(row.lng),
+    lat: Number(row.lat),
+    category: row.category,
+    confidence: Number(row.confidence),
+    labelZoom: numberOrNull(row.label_zoom),
   }
 
 /** One row of `place_sources` — who said so, under which licence. */
@@ -283,20 +329,51 @@ export async function placeById(db, id) {
 
 /* ---- nearby ----------------------------------------------------------- */
 
-/* The measured shape, unchanged: ST_DWithin for the radius (index-accelerated
-   over the GiST index), the distance in the select list only, and `<->` for
-   the order so the scan stops at `limit` instead of sorting the neighbourhood.
-   The category filter is a parameter rather than two statements so the plan is
-   cached once. */
-const NEARBY_SQL = `
-  select ${PLACE_COLUMNS},
-    ST_Distance(p.geom, ST_MakePoint($1::double precision, $2::double precision)::geography) as metres
-  from places p
-  where ST_DWithin(p.geom, ST_MakePoint($1::double precision, $2::double precision)::geography, $3::double precision)
-    and p.confidence >= $4::real
-    and ($6::text is null or p.category = $6::text)
-  order by p.geom <-> ST_MakePoint($1::double precision, $2::double precision)::geography
-  limit $5`
+const HERE = `ST_MakePoint($1::double precision, $2::double precision)::geography`
+
+/* Nearest first, and the radius kept out of the plan.
+ *
+ * `order by geom <-> here limit n` is a walk outwards that stops when it has
+ * n. Adding `ST_DWithin(..., radius)` to the same `where` is what stopped it
+ * being one: the planner then has a radius to estimate selectivity from, it
+ * guesses the whole neighbourhood qualifies, and picks a bitmap scan over the
+ * confidence index that computes a geodetic distance for every place in the
+ * city before sorting them. Measured on one cell of 302,979 places, from the
+ * middle of Paris: 71 ms at 1 km, 507 ms at 5 km, 583 ms at 20 km — and the
+ * nearby route walks up to four widening rungs, so a sights list was two
+ * seconds of that. Spheroid against sphere made no difference; the radius
+ * being in the `where` was the whole of it.
+ *
+ * Outside, the radius is arithmetic on a finished list of at most `limit`
+ * rows and cannot reach the plan at all: 1.3 ms, 1.6 ms, 1.7 ms for the same
+ * three. Nothing is lost by moving it — the rows arrive in distance order, so
+ * everything past the first one outside the radius is outside it too.
+ *
+ * The outer `order by` is not the sort this was avoiding. `<->` on geography
+ * orders by the sphere and `ST_Distance` reports the spheroid, which differ
+ * by a fraction of a metre in a kilometre — enough to swap two places at the
+ * same distance, so the list would come back all but sorted, which is worse
+ * than either. Re-sorting at most `limit` rows by the number actually
+ * reported costs nothing and makes the two agree exactly. What remains is
+ * that a place within a fraction of a metre of the radius may fall either
+ * side of it; nothing about a list of sights can tell.
+ *
+ * Two statements rather than one with `($6 is null or category = $6)`. That
+ * `or` is unreadable to the planner — it cannot use either branch's
+ * selectivity, and the plan it settles on is wrong for both. */
+const nearbySelect = category => `
+  select * from (
+    select ${PLACE_COLUMNS}, ST_Distance(p.geom, ${HERE}) as metres
+    from places p
+    where p.confidence >= $4::real${category}
+    order by p.geom <-> ${HERE}
+    limit $5
+  ) near
+  where near.metres <= $3::double precision
+  order by near.metres`
+
+const NEARBY_SQL = nearbySelect('')
+const NEARBY_IN_SQL = nearbySelect('\n      and p.category = $6::text')
 
 /**
  * Everything within `radius` metres, nearest first, for rank.js to reorder.
@@ -307,9 +384,16 @@ export async function nearbyPlaces(
   db,
   { lat, lng, radius, category = null, floor = 0, limit = 20 } = {},
 ) {
-  const result = await db.query(NEARBY_SQL, [lng, lat, radius, floor, limit, category])
+  const result = category
+    ? await db.query(NEARBY_IN_SQL, [lng, lat, radius, floor, limit, category])
+    : await db.query(NEARBY_SQL, [lng, lat, radius, floor, limit])
   return result.rows.map(placeRow)
 }
+
+/* A number a real viewport never reaches. Not a cap on what is shown — the
+   zoom decides that — but a refusal to serve a client that asked for the
+   whole planet in one request. */
+export const PLANET_BACKSTOP = 5000
 
 /* Everything inside a map's viewport, for the pin layer.
  *
@@ -317,28 +401,29 @@ export async function nearbyPlaces(
  * and no centre worth measuring from. `ST_Intersects` against an envelope uses
  * the same GiST index the nearby query does.
  *
- * Ordered in the database rather than in JavaScript, and this is the one place
- * that is true. A city viewport holds tens of thousands of rows and the screen
- * wants a few hundred; fetching them all to sort them would be the whole point
- * of an index thrown away at the last step. So the weighting rank.js applies
- * per category is mirrored into a CASE here, multiplied by confidence, and the
- * limit does the rest. The two have to agree, and a test compares them value
- * by value so a change to one fails on the other.
+ * Which of two marks wins the same piece of screen is decided in the database,
+ * from the weighting rank.js applies per category mirrored into a CASE here
+ * and multiplied by confidence. The two have to agree, and a test compares
+ * them value by value so a change to one fails on the other. It is a sort of
+ * the few dozen rows the zoom allows, not of the viewport: the cut was made
+ * by `label_zoom` in the index, before any row was read.
  *
  * `floorWeight` is the zoomed-out view: above it only the things worth a pin
  * from orbit, below it everything.
  *
  * @param {{query: Function}} db
  * @param {{west,south,east,north}} bounds
- * @param {{limit?: number, floor?: number, floorWeight?: number, weights: Record<string, number>}} input
+ * @param {{limit?: number, floor?: number, floorWeight?: number, zoom: number,
+ *          weights: Record<string, number>}} input
  */
 export async function placesInView(
   db,
   bounds,
-  { limit = 500, floor = 0, floorWeight = 0, weights } = {},
+  { limit = PLANET_BACKSTOP, floor = 0, floorWeight = 0, weights, zoom } = {},
 ) {
   const kinds = Object.entries(weights || {})
   if (!kinds.length) throw new Error('places: a viewport query needs the category weights')
+  if (!Number.isFinite(zoom)) throw new Error('places: a viewport query needs the zoom it is at')
   /* Built from the weights the caller hands in, which come from rank.js. The
      keys are our own twenty category names, never user text — and they are
      checked against that list here rather than trusted, because a map query is
@@ -349,14 +434,36 @@ export async function placesInView(
   const weight = `case p.category ${kinds
     .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
     .join(' ')} else 0.1 end`
+  /* What belongs at this zoom, not the best N of everything here.
+   *
+   * This used to rank by weight and cut at a limit, which is what the tile
+   * query did before #189 and is the defect that removed: a cap decides by
+   * whichever places happen to be in the box, so panning gives a different
+   * arbitrary three hundred and a mark that was on screen vanishes when the
+   * camera moves an inch. label_zoom already answers how much of a place
+   * belongs on screen at a given scale; capping on top of it throws that
+   * answer away and reintroduces the flicker.
+   *
+   * So: the zoom the viewport is looking at, and every place that has earned
+   * it. The count is bounded by the zoom rather than by a number — a square
+   * holds about LABEL_PER_TILE marks, so a viewport a few squares wide holds
+   * a few times that, and a continent holds the most prominent tier.
+   *
+   * Both halves of that go to the index together, which is the only reason it
+   * is quick: `places_view_idx` is `gist (geom, coalesce(label_zoom, 11))`,
+   * so the box and the zoom are one index condition and the eighty thousand
+   * places a Paris viewport contains never leave the index. Fifty-six do.
+   * ZOOM_AT is spent verbatim and compared against `real` for that reason —
+   * see the agreements at the top of this file. */
   const sql = `
-    select ${PLACE_COLUMNS}, ${weight} as kind, null::double precision as metres
+    select ${PIN_COLUMNS}, ${weight} as kind
     from places p
     where p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography
+      and ${ZOOM_AT} <= $7::real
       and p.confidence >= $5::real
       and ${weight} >= $6::double precision
     order by (${weight}) * p.confidence desc, p.id
-    limit $7`
+    limit $8`
   const result = await db.query(sql, [
     bounds.west,
     bounds.south,
@@ -364,9 +471,17 @@ export async function placesInView(
     bounds.north,
     floor,
     floorWeight,
+    zoom,
+    /* Not a view cap: a backstop against a client asking for the planet.
+       A real viewport never reaches it, and reaching it is a bug report
+       rather than a silent truncation — see `capped` below. */
     limit,
   ])
-  return result.rows.map(placeRow)
+  const places = result.rows.map(pinRow)
+  /* Said rather than swallowed. If this ever fires, the zoom is not doing its
+     job and somebody should know which viewport did it. */
+  places.capped = result.rows.length >= limit
+  return places
 }
 
 /** The sources behind a page of places, in one round trip rather than N. */
@@ -595,7 +710,7 @@ export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
       -- SQL comments rather than a JS block comment, because this whole
       -- statement is a template literal and a backtick in it ends the string.
       select p.id, p.name as n, p.category as k,
-             coalesce(p.label_zoom, $5::real) as minzoom,
+             ${ZOOM_AT} as minzoom,
              round((${rank}) * 1000)::int as rank,
              p.geom::geometry as geom
       from places p, bounds b
@@ -613,7 +728,14 @@ export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
         -- until a pass that takes an hour had run. Visible until it is
         -- placed is never worse than what came before; invisible until it is
         -- placed is an outage. The worker fills these in cell by cell.
-        and coalesce(p.label_zoom, $5::real) <= $1::double precision
+        -- Against real, and the expression written exactly as the index
+        -- has it. A ::double precision cast was here and it was not a
+        -- detail: comparing a real column against a double widens the
+        -- column, the index condition is lost, and a z11 tile over Paris
+        -- went from 1.5 ms to 155 ms, reading eighty thousand rows to
+        -- encode two thousand. (No backticks in here: the whole statement
+        -- is a template literal and one of them would end the string.)
+        and ${ZOOM_AT} <= $1::real
     )
     select coalesce(ST_AsMVT(tile, 'places', 4096, 'geom'), ''::bytea) as tile
     from (
@@ -622,7 +744,7 @@ export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
       from picked, bounds b
     ) as tile
     where tile.geom is not null`
-  const result = await db.query(sql, [z, x, y, floor, LABEL_ZOOMS.from])
+  const result = await db.query(sql, [z, x, y, floor])
   return result.rows[0]?.tile ?? Buffer.alloc(0)
 }
 

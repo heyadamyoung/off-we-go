@@ -77,10 +77,33 @@ async function ask(view) {
       status: body.coverage?.status ?? null,
       attribution: body.attribution?.length ?? 0,
       sample: (body.places || []).slice(0, 3),
+      /* The zooms the pins carry, which is the only thing that answers "did
+         the zoom pass run" from outside the box.
+         Pin counts do not: the count answers how much is under the camera,
+         not which tier of it is drawn, which is exactly why two carpets of
+         dots reached a phone while the probe said everything was fine.
+         A pass that has not run leaves every row null, and a null is drawn
+         from the first zoom — so all-eleven means not yet, and a spread
+         across eleven to seventeen means it has. */
+      zooms: countZooms(body.places || []),
     }
   } catch (error) {
     return { ...view, ms: Date.now() - started, error: String(error?.message || error) }
   }
+}
+
+/** How many pins at each zoom, lowest first: `11:24 12:31 17:245`. */
+function countZooms(places) {
+  const seen = new Map()
+  for (const place of places) {
+    const at = Number.isFinite(place?.minzoom) ? place.minzoom : null
+    const key = at === null ? 'none' : String(at)
+    seen.set(key, (seen.get(key) ?? 0) + 1)
+  }
+  return [...seen.entries()]
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([zoom, count]) => `${zoom}:${count}`)
+    .join(' ')
 }
 
 const health = await fetch(`https://${host}/api/health`)
@@ -101,6 +124,7 @@ for (const view of VIEWS) {
       ` attribution=${pad(found.attribution, 3)} ${found.ms}ms` +
       (found.cell ? `  waiting on ${found.cell} (${found.status})` : ''),
   )
+  if (found.zooms) console.log(`             zooms ${found.zooms}`)
   for (const place of found.sample) console.log(`             · ${place.name} — ${place.category}`)
 }
 

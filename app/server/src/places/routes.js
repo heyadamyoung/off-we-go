@@ -50,6 +50,7 @@ import {
 } from './rank.js'
 import { nameSimilarity } from './resolve.js'
 import { isCategory } from './taxonomy.js'
+import { zoomForBounds } from './tiles.js'
 import { shownAs } from './enrich/enrich.js'
 import { enqueue, readEnrichment, WANTED_NOW } from './enrich/store.js'
 import { event, span, stamp } from '../tracing.js'
@@ -759,15 +760,29 @@ export function registerPlaceRoutes(
 
     return span('places in view', { 'places.view.limit': limit }, async () => {
       const started = Date.now()
+      /* The zoom the viewport is looking at, from its own width. What comes
+         back is what has earned that zoom — not the best N of everything in
+         the box, which is what a cap gives and is why panning used to change
+         which places were on screen. */
+      const zoom = zoomForBounds({ west, south, east, north }, LABEL_ZOOMS)
       const rows = await repository.placesInView(
         { west, south, east, north },
         {
           limit,
+          zoom,
           floor: CONFIDENCE_FLOOR,
           floorWeight: headline ? HEADLINE_WEIGHT : 0,
           weights: VIEW_WEIGHT,
         },
       )
+      stamp({ 'places.view.zoom': zoom, 'places.view.found': rows.length })
+      if (rows.capped) {
+        /* Never for a real viewport. Said loudly rather than silently cut. */
+        event('places view hit the planet backstop', {
+          'places.view.zoom': zoom,
+          'places.view.span': Math.abs(east - west),
+        })
+      }
       /* Coverage is asked about the middle of the view, because that is where
          somebody is looking. A box the size of a continent touches more cells
          than any one answer should queue — coverageCells caps that — and the
