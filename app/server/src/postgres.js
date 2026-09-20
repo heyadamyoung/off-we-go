@@ -10,6 +10,15 @@ import { clockOrNull } from './stop-time.js'
 import { rescheduled } from './segments.js'
 import { visitOf } from './stop-visits.js'
 import { flightOnLeg } from './flights/on-leg.js'
+import {
+  coverageFor,
+  markRequested,
+  nearbyPlaces,
+  pendingCells,
+  placeById,
+  searchPlaces,
+  sourcesFor,
+} from './places/store.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -3226,6 +3235,31 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         })
       }
       return { profile, trips: exported }
+    },
+    /* The places layer. Every statement lives in places/store.js, next to the
+       indexes it depends on agreeing with — see that file on why a name
+       comparison that folds differently returns an empty list rather than an
+       error. These are the doors the routes use; the ingest has its own. */
+    async searchPlaces(query) {
+      return searchPlaces(pool, query)
+    },
+    async placeById(id) {
+      return placeById(pool, id)
+    },
+    async placeSources(ids) {
+      return sourcesFor(pool, ids)
+    },
+    async nearbyPlaces(query) {
+      return nearbyPlaces(pool, query)
+    },
+    async placeCoverage(cells) {
+      return coverageFor(pool, cells)
+    },
+    async requestPlaceCells(cells, at) {
+      return markRequested(pool, cells, at)
+    },
+    async pendingPlaceCells(options) {
+      return pendingCells(pool, options)
     },
     async deleteAccount(user) {
       const client = await pool.connect()

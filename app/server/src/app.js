@@ -37,6 +37,7 @@ import { createFlightSources } from './flights/registry.js'
 import { registerFlightRoutes } from './flights/routes.js'
 import { registerPushRoutes } from './push/routes.js'
 import { registerCabinRoutes } from './cabins/index.js'
+import { registerPlaceRoutes } from './places/index.js'
 import {
   contentDisposition,
   isPlaylistPath,
@@ -3474,6 +3475,10 @@ export async function buildServer({
   /* The airlines' cabins, for the seat map: which rows are which class,
      where the doors are, which rows are over the wing. */
   registerCabinRoutes(app, { authenticated })
+  /* Search, one record, and sights nearby, from the open-data places layer.
+     It also decorates the app with `placeCoverage`, the queue a trip's stops
+     are noticed into — see places/coverage.js. */
+  registerPlaceRoutes(app, { repository, authenticated, clock })
   registerPushRoutes(app, {
     repository,
     authenticate: authenticated,

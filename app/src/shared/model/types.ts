@@ -57,6 +57,12 @@ export interface Stop {
   note?: string
   src?: string | null
   sourceUrl?: string | null
+  /* The places-layer record this stop was chosen from, when one was. Null is
+     the ordinary case and always will be: a stop is a place somebody is going,
+     and "Gran's house" is not in any open dataset. It exists so the ones that
+     do match a record can be kept in step with it — an address that changes, a
+     place that closes — without guessing from the name. */
+  placeId?: string | null
   seq?: number
   kw?: string
   lock?: number

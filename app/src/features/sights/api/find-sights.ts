@@ -1,3 +1,29 @@
+/* =========================================================================
+   SUPERSEDED — the places layer now answers "what is near here".
+
+   Replaced by `sightsNearby` in src/features/places/api/places.ts, which asks
+   GET /api/places/nearby with no category filter and lets the server's own
+   ranking put sights first. See docs/places-client-migration.md.
+
+   Still here, and still running the "Sights nearby" panel, because two things
+   below are better than what replaced them and are not reproducible from open
+   data we own:
+
+     - a description and an opening paragraph, written by people, for the card;
+     - readership, which is the only free stand-in for "worth going to" and is
+       what stops the list being forty canals with the Rijksmuseum missing.
+
+   What the places layer has instead: coverage everywhere rather than wherever
+   Wikipedia has been geotagged, an address, a category out of a fixed twenty,
+   a confidence to be honest about, and licence hygiene — every record naming
+   its source and carrying the notice that source asks for. It also costs the
+   traveller's phone nothing: one indexed query against our own database
+   rather than up to seven Wikipedia round trips per search.
+
+   Do not extend this file. New work goes to the places layer; this one is
+   kept until the panel can show a description without it.
+   ========================================================================= */
+
 import {
   ask,
   pause,

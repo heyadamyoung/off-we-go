@@ -97,6 +97,7 @@ export default function TripCards({
         <StopEditor
           draft={draft}
           photos={photos}
+          tripId={trip.id}
           startsOn={trip.startsOn}
           endsOn={trip.endsOn}
           onField={onDraftField}
