@@ -21,6 +21,7 @@ export {
   functionsUrl,
   hasBackend,
   isSample,
+  PLACE_TILES_EPOCH,
   placeTilesUrl,
   tripPath,
 } from './backend-base'

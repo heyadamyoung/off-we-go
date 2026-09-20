@@ -289,11 +289,31 @@ export function createPlaceWorker({
   /** Ready cells whose tiles may be missing — the ground somebody ingested
       before this release existed, or before the warming reached it. One at a
       time, oldest first, skipping what this process has already finished. */
+  /** Which cell to build tiles for next, when there is a tick to spare.
+   *
+   * Where somebody is actually going, first. Reported from the road: the pins
+   * do not show straight away — zoom in, wait, pan away and back and they are
+   * there — which is a first look paying for the build and every look after
+   * getting it free. Building every square of the planet ahead of time is not
+   * the answer to that (fifty-three thousand cells at about seventeen hundred
+   * squares each is ninety million tiles), but building the squares over the
+   * places on somebody's itinerary is a few dozen cells and it is exactly the
+   * ground they will be looking at.
+   *
+   * So a cell a trip has a stop in outranks one nobody has asked about, and
+   * the oldest-first walk is what happens once those are done. */
   async function coldCells() {
     const result = await pool.query(
-      `select cell from place_coverage
-       where status = 'ready' and place_count > 0 and not (cell = any($1::text[]))
-       order by last_refresh asc nulls first
+      `select c.cell from place_coverage c
+       where c.status = 'ready' and c.place_count > 0 and not (c.cell = any($1::text[]))
+       order by
+         exists (
+           select 1 from stops s
+           where s.lng is not null and s.lat is not null
+             and s.lng >= c.west and s.lng < c.east
+             and s.lat >= c.south and s.lat < c.north
+         ) desc,
+         c.last_refresh asc nulls first
        limit 1`,
       [[...warmed]],
     )
