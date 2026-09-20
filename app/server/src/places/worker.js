@@ -41,7 +41,6 @@
 
 import { createIngest } from './ingest.js'
 import { createParquetReader } from './parquet.js'
-import { pendingCells } from './store.js'
 import { event } from '../tracing.js'
 
 /** How often the queue is looked at. */
@@ -55,9 +54,47 @@ export const STUCK_AFTER_MS = 30 * 60_000
 /** How many ready cells a tick may mark stale when the release moves on. */
 export const REFRESH_PER_TICK = 8
 
+/* `started_at` is a heartbeat, not a start time: the ingest moves it every
+   couple of seconds while it reads (see ingest.js writeCursor). So an old one
+   means the process holding that cell is gone, not that the cell is slow —
+   which matters, because reclaiming a cell a live run is still inside makes
+   two processes insert the same gers_id and one of them dies on the unique
+   key. */
 const STUCK_SQL = `
   update place_coverage set status = 'pending'
   where status = 'ingesting' and started_at < $1
+  returning cell`
+
+/* The claim, and it is a claim rather than a read.
+ *
+ * `for update skip locked` over the rows this tick wants, and the status move
+ * in the same statement, so two drains — two boxes, or a box and somebody's
+ * terminal — cannot both take the same cell. A read followed by a separate
+ * write, with a whole cell read in between, is not a claim at all.
+ *
+ * Waiting work first, retries only with the room left. Failures are old by
+ * definition, and ordering by requested_at puts them in front of a traveller
+ * who asked a minute ago — a handful of permanently broken cells would fill
+ * every window for ever. */
+const CLAIM_SQL = `
+  with waiting as (
+    (select cell, 0 as queue, requested_at from place_coverage
+      where status in ('pending', 'stale')
+      order by requested_at asc nulls last, cell asc limit $1)
+    union all
+    (select cell, 1 as queue, requested_at from place_coverage
+      where status = 'failed' and attempts < $2
+      order by requested_at asc nulls last, cell asc limit $1)
+  ),
+  picked as (
+    select c.cell from place_coverage c
+    join waiting w on w.cell = c.cell
+    order by w.queue, w.requested_at asc nulls last, c.cell asc
+    limit $1
+    for update of c skip locked
+  )
+  update place_coverage set status = 'ingesting', started_at = now()
+  where cell in (select cell from picked)
   returning cell`
 
 /* `versions` is written by the ingest as {source: version}; a cell loaded
@@ -153,26 +190,11 @@ export function createPlaceWorker({
     return result.rowCount
   }
 
-  /**
-   * The cells this tick will do.
-   *
-   * Two reads rather than one. A single query over all three statuses sorts
-   * by `requested_at`, so cells that have failed their last attempt — which
-   * are old by definition — would fill the window ahead of a traveller who
-   * asked a minute ago. Waiting work first, retries only with the room left.
-   */
+  /** The cells this tick has taken, already moved to `ingesting`. */
   async function claim() {
-    const fresh = await pendingCells(pool, {
-      statuses: ['pending', 'stale'],
-      limit: cellsPerTick,
-    })
-    if (fresh.length >= cellsPerTick) return fresh
-    const retries = await pendingCells(pool, {
-      statuses: ['failed'],
-      limit: cellsPerTick * 4,
-    })
-    const room = cellsPerTick - fresh.length
-    return [...fresh, ...retries.filter(row => (row.attempts ?? 0) < maxAttempts).slice(0, room)]
+    if (cellsPerTick <= 0) return []
+    const result = await pool.query(CLAIM_SQL, [cellsPerTick, maxAttempts])
+    return result.rows.map(row => row.cell)
   }
 
   async function tick() {
@@ -184,7 +206,7 @@ export function createPlaceWorker({
     const cells = await claim()
     if (!cells.length) return
     const started = Date.now()
-    const { results } = await pipe.ingestCells(cells.map(row => row.cell))
+    const { results } = await pipe.ingestCells(cells)
     const loaded = results.reduce((total, result) => total + (result.places ?? 0), 0)
     const failed = results.filter(result => result.status === 'failed').length
     log(

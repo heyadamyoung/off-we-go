@@ -83,8 +83,18 @@ function workerOver(pool, options = {}) {
     makeReader: () => ({ readBox: async () => {} }),
     makeIngest: ({ releases }) => ({
       versions: { overture: releases.overture.version },
+      /* The claim has already moved these rows to `ingesting`; the real
+         ingest finishes by writing `ready` in its own transaction, so the
+         stand-in does the same or every later tick would find them stuck. */
       ingestCells: async cells => {
         handed.push(...cells)
+        for (const cell of cells) {
+          await pool.query(
+            "update place_coverage set status = 'ready', attempts = 0, last_refresh = now(), " +
+              'versions = $2::jsonb where cell = $1',
+            [cell, JSON.stringify({ overture: releases.overture.version })],
+          )
+        }
         return { results: cells.map(cell => ({ cell, status: 'ready', places: 1 })) }
       },
       stop: () => {},
@@ -156,6 +166,30 @@ test('the queue drainer', { skip: unreachable, concurrency: false }, async t => 
     await worker.once()
     assert.deepEqual(handed, ['N52E004'], 'the one still in flight must be left alone')
     assert.equal(await statusOf(pool, 'N52E005'), 'ingesting')
+  })
+
+  /* The claim is the thing that makes two drains safe, so it is stated: a
+     cell taken by one tick is not offered to the next. */
+  await t.test('a cell taken by one tick is not offered to the next', async t => {
+    const pool = await freshDatabase(t)
+    await coverage(pool, 'N52E004')
+    const first = createPlaceWorker({
+      pool,
+      loadIndex: async () => ({ source: 'overture', version: 'v', index: { parts: [] } }),
+      makeReader: () => ({}),
+      makeIngest: () => ({
+        versions: { overture: 'v' },
+        /* Takes the cell and never finishes with it, the way a process that
+           is about to be killed does. */
+        ingestCells: async () => ({ results: [] }),
+        stop: () => {},
+      }),
+    })
+    await first.once()
+    assert.equal(await statusOf(pool, 'N52E004'), 'ingesting')
+    const { worker, handed } = workerOver(pool)
+    await worker.once()
+    assert.deepEqual(handed, [], 'a second drain must not take a claimed cell')
   })
 
   await t.test('marks ready cells stale when the release moves on, a few at a time', async t => {

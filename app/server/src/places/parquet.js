@@ -37,8 +37,17 @@ export const FOOTERS_KEPT = 6
 
 /** A range request, with the status checked: object stores answer 206, and a
     200 means the range was ignored and we are about to parse a whole file. */
-async function range(fetchImpl, url, start, end) {
-  const response = await fetchImpl(url, { headers: { range: `bytes=${start}-${end - 1}` } })
+async function range(fetchImpl, url, start, end, signal) {
+  /* The signal goes to fetch, not only to the loop around it. A deadline that
+     only stops the *next* batch is accounting, not a cap: the four range
+     requests already in flight keep running, keep their sockets, and keep
+     buffering their bodies, so a stalled bucket grows outstanding reads
+     without bound until the heap gives out. Passed here, the abort actually
+     tears the request down. */
+  const response = await fetchImpl(url, {
+    headers: { range: `bytes=${start}-${end - 1}` },
+    ...(signal ? { signal } : {}),
+  })
   if (response.status !== 206 && response.status !== 200) {
     throw new Error(`${url} answered ${response.status} to a range request`)
   }
@@ -54,7 +63,13 @@ async function range(fetchImpl, url, start, end) {
  * bytes and the metadata parse costs no network at all, while the column
  * chunks it reads afterwards still stream from the bucket.
  */
-export function remoteFile({ url, size, footer = null, fetch: fetchImpl = globalThis.fetch }) {
+export function remoteFile({
+  url,
+  size,
+  footer = null,
+  fetch: fetchImpl = globalThis.fetch,
+  signal = null,
+}) {
   const footerStart = footer ? size - footer.byteLength : size
   return {
     byteLength: size,
@@ -67,18 +82,22 @@ export function remoteFile({ url, size, footer = null, fetch: fetchImpl = global
            later gets reused underneath it is a bug nobody finds twice. */
         return view.slice().buffer
       }
-      return range(fetchImpl, url, from, to)
+      return range(fetchImpl, url, from, to, signal)
     },
   }
 }
 
 /** The last `bytes` of an object: the Parquet footer, plus its length prefix. */
-export async function fetchFooter(url, size, { fetch: fetchImpl = globalThis.fetch } = {}) {
+export async function fetchFooter(
+  url,
+  size,
+  { fetch: fetchImpl = globalThis.fetch, signal = null } = {},
+) {
   /* The final eight bytes are a four-byte footer length and the magic "PAR1".
      Read them, then read exactly the footer rather than guessing a window. */
-  const tail = new DataView(await range(fetchImpl, url, size - 8, size))
+  const tail = new DataView(await range(fetchImpl, url, size - 8, size, signal))
   const length = tail.getUint32(0, true)
-  const whole = await range(fetchImpl, url, size - length - 8, size)
+  const whole = await range(fetchImpl, url, size - length - 8, size, signal)
   return new Uint8Array(whole)
 }
 
@@ -95,28 +114,34 @@ export function createParquetReader({
   loadFooter = null,
   saveFooter = null,
 } = {}) {
-  /** url → {metadata, file}, most recently used last. */
+  /** url → {metadata, footer}, most recently used last. The parsed metadata is
+      what costs a second to produce; the buffer in front of it is free, and is
+      rebuilt per read so each read's own abort signal rides on its fetches. A
+      shared file would bind whichever read created it, and a deadline that
+      cannot reach the socket is not a deadline. */
   const warm = new Map()
 
-  async function open(part) {
+  const fileFor = (part, footer, signal) =>
+    remoteFile({ url: part.url, size: part.size, footer, fetch: fetchImpl, signal })
+
+  async function open(part, signal = null) {
     const held = warm.get(part.url)
     if (held) {
       /* Touch, so the least recently used is the one evicted. */
       warm.delete(part.url)
       warm.set(part.url, held)
-      return held
+      return { metadata: held.metadata, file: fileFor(part, held.footer, signal) }
     }
     let footer = loadFooter ? await loadFooter(part.url) : null
     if (!footer) {
-      footer = await fetchFooter(part.url, part.size, { fetch: fetchImpl })
+      footer = await fetchFooter(part.url, part.size, { fetch: fetchImpl, signal })
       if (saveFooter) await saveFooter(part.url, footer)
     }
-    const file = remoteFile({ url: part.url, size: part.size, footer, fetch: fetchImpl })
+    const file = fileFor(part, footer, signal)
     const metadata = await parquetMetadataAsync(file)
-    const entry = { metadata, file }
-    warm.set(part.url, entry)
+    warm.set(part.url, { metadata, footer })
     while (warm.size > FOOTERS_KEPT) warm.delete(warm.keys().next().value)
-    return entry
+    return { metadata, file }
   }
 
   /**
@@ -135,7 +160,7 @@ export function createParquetReader({
       if (!overlaps(part, bounds)) continue
       const groups = part.groups.filter(group => overlaps(group, bounds))
       if (!groups.length) continue
-      const { metadata, file } = await open(part)
+      const { metadata, file } = await open(part, signal)
       for (let at = 0; at < groups.length; at += READ_AT_ONCE) {
         if (signal?.aborted) throw new Error('places: read aborted')
         const batch = groups.slice(at, at + READ_AT_ONCE)

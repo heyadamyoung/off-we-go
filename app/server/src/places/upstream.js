@@ -68,6 +68,7 @@ export function createReleaseLoader({
   const cache = store ?? createIndexStore({ directory })
   let pending = null
   let failedAt = 0
+  let loaded = null
 
   async function build() {
     try {
@@ -79,6 +80,7 @@ export function createReleaseLoader({
         { fetch: fetchImpl, store: cache, log },
       )
       failedAt = 0
+      loaded = release.version
       return { source, version: release.version, index }
     } catch (error) {
       failedAt = now()
@@ -89,7 +91,7 @@ export function createReleaseLoader({
     }
   }
 
-  return async function loadIndex() {
+  async function loadIndex() {
     if (pending) return pending
     if (failedAt && now() - failedAt < retryMs) return null
     pending = build().finally(() => {
@@ -97,6 +99,13 @@ export function createReleaseLoader({
     })
     return pending
   }
+
+  /* The version last loaded, for the staleness check on the serving path —
+     which needs to know what "current" is, and cannot ask a bucket on the way
+     to answering a query. Null until the first load, which the worker does
+     within a minute of boot. */
+  Object.defineProperty(loadIndex, 'current', { get: () => loaded })
+  return loadIndex
 }
 
 /**

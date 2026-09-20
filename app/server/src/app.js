@@ -167,6 +167,19 @@ export async function buildServer({
      only from its own database and says `degraded` with nothing added, which
      is what every test server does and what a box with no egress must do. */
   placesUpstream = null,
+  /* Source → its current release version, or a function returning that map.
+     A function because the release is discovered at runtime: without it the
+     map is empty, `isStale` is always false, and a cell filled from a release
+     six months gone stays `ready` for ever. */
+  placesReleases = null,
+  /* The footer cache the ingest script also writes, so a restart does not
+     re-download sixteen 1.6 MB footers the first time anybody falls through. */
+  placesFooters = null,
+  /* A reader from places/fallback.js, in place of the one built from
+     `placesUpstream`. Only a test hands one in — but it must be able to,
+     because the degraded path is the one that reaches the network, and it is
+     exactly the path where the bugs that got to production were hiding. */
+  placesFallback = null,
   /* Whether this deployment can convert film to something every device
      plays. Optional like every other integration: without it the app says so
      at /api/health rather than quietly storing videos half the trip cannot
@@ -3527,7 +3540,15 @@ export async function buildServer({
   /* Search, one record, and sights nearby, from the open-data places layer.
      It also decorates the app with `placeCoverage`, the queue a trip's stops
      are noticed into — see places/coverage.js. */
-  registerPlaceRoutes(app, { repository, authenticated, clock, upstream: placesUpstream })
+  registerPlaceRoutes(app, {
+    repository,
+    authenticated,
+    clock,
+    upstream: placesUpstream,
+    releases: placesReleases ?? {},
+    footers: placesFooters ?? {},
+    fallback: placesFallback,
+  })
   registerPushRoutes(app, {
     repository,
     authenticate: authenticated,

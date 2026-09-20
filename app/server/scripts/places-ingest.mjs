@@ -204,26 +204,51 @@ if (bulk) {
   await pauseIndexes(pool)
 }
 
+/* The rebuild is in a `finally`, and the signals are handled, because the one
+   thing worse than a slow planet load is a fast one that throws: without this,
+   a pool error, an OOM kill or a second Ctrl-C leaves production with its
+   search indexes dropped and nothing anywhere that would put them back. A
+   seventy-three-million-row sequential scan per keystroke is not a failure
+   mode anybody notices until somebody types. */
+const rebuild = async () => {
+  if (!bulk) return
+  say('! rebuilding the name-search and category indexes')
+  await resumeIndexes(pool)
+}
+const rebuildOnSignal = signal => {
+  process.once(signal, () => {
+    rebuild()
+      .catch(error => say(`! the indexes could not be rebuilt: ${error.message}`))
+      .finally(() => process.exit(130))
+  })
+}
+if (bulk) for (const signal of ['SIGTERM', 'SIGHUP']) rebuildOnSignal(signal)
+
 let stopping = false
 process.on('SIGINT', () => {
-  if (stopping) process.exit(130)
+  if (stopping) {
+    rebuild()
+      .catch(error => say(`! the indexes could not be rebuilt: ${error.message}`))
+      .finally(() => process.exit(130))
+    return
+  }
   stopping = true
   say('\n! interrupted; finishing the cell in flight, then stopping. Re-run with --resume.')
   ingest.stop()
 })
 
 let done = 0
-const { results, skipped, interrupted } = await ingest.ingestCells(cells, {
-  resume: options.resume,
-  onCell: () => {
-    done += 1
-    if (done % 25 === 0) say(`  … ${done}/${cells.length - skipped} cells`)
-  },
-})
-
-if (bulk) {
-  say('! rebuilding the name-search and category indexes')
-  await resumeIndexes(pool)
+let results, skipped, interrupted
+try {
+  ;({ results, skipped, interrupted } = await ingest.ingestCells(cells, {
+    resume: options.resume,
+    onCell: () => {
+      done += 1
+      if (done % 25 === 0) say(`  … ${done}/${cells.length - skipped} cells`)
+    },
+  }))
+} finally {
+  await rebuild().catch(error => say(`! the indexes could not be rebuilt: ${error.message}`))
 }
 
 const seconds = (Date.now() - started) / 1000

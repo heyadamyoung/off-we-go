@@ -162,15 +162,74 @@ Monthly, when Overture publishes.
    website, a phone, an address and hours. Thin data shows up here before a
    traveller finds it.
 
-Ingestion is resumable: progress is written to `place_coverage.cursor` as it
-goes, so a planet run that dies at hour six continues rather than restarts. It
-is idempotent: running the same cell twice leaves the same rows.
+Ingestion is resumable a cell at a time: a run that dies at hour six re-runs
+only the cells it had not finished, because a cell's whole load is one
+transaction and `--resume` skips the ones already `ready` or `empty`. The
+`place_coverage.cursor` is a note about where a cell had got to, for reading
+after the fact — it is not a restart point inside a cell. Ingestion is
+idempotent: running the same cell twice leaves the same rows.
 
 ```
 node server/scripts/places-ingest.mjs --cells N52E004,N51E004
 node server/scripts/places-ingest.mjs --bbox 4,52,5,53
 node server/scripts/places-ingest.mjs --planet --resume
 ```
+
+## The drain
+
+Nothing above happens on its own unless something reads the queue. On the box
+that serves queries, that is `places/worker.js`, started from the server's
+entrypoint beside the media worker and the travel watch.
+
+Once a minute it takes a few cells, ingests them, and sleeps. Specifically:
+
+- **A few cells a tick.** `PLACES_CELLS_PER_TICK`, four by default. A cell is
+  seconds of network and one transaction, and a queue of four hundred drained
+  flat out is the API server reading Parquet instead of answering people.
+- **A claim, not a read.** The cells are moved to `ingesting` in the same
+  statement that selects them, under `for update skip locked`, so two drains —
+  two boxes, or a box and somebody's terminal — cannot take the same cell.
+- **Five attempts.** A cell that fails for a reason that will not change keeps
+  its old `requested_at` and would otherwise sort to the front of the queue
+  for ever. After five it is left alone with its error on the row.
+- **Half an hour to reclaim.** `started_at` is a heartbeat: the ingest moves
+  it every couple of seconds while it reads. An `ingesting` row older than
+  that belonged to a process that is gone, and goes back in the queue.
+- **Eight cells a tick marked stale** when a new release appears, oldest
+  refresh first — so a publication is a slow tide rather than the whole map
+  going degraded at once while the queue catches up.
+
+Switches: `PLACES_UPSTREAM=off` turns off the third tier and the drain with it
+(there would be nothing to ingest from); `PLACES_WORKER=off` turns off only the
+drain, for the day this work lives somewhere that is not the web node;
+`PLACES_RELEASE` pins a release; `PLACES_INDEX_DIR` is where release indexes
+and Parquet footers are cached, shared with the ingest script so a planet run
+leaves the footers warm for the server.
+
+### When a cell is stuck
+
+```sql
+-- what the queue looks like
+select status, count(*) from place_coverage group by status;
+
+-- the ones that have given up, and why
+select cell, attempts, error, requested_at from place_coverage
+where status = 'failed' order by requested_at limit 20;
+
+-- put one back in the queue by hand
+update place_coverage set status = 'pending', attempts = 0, error = null
+where cell = 'N50W105';
+```
+
+A cell in `ingesting` with a recent `started_at` is being worked on; leave it.
+One with an old `started_at` is reclaimed automatically within half an hour.
+
+Two failures worth recognising by sight. `refusing to load it` means the read
+came back with less than half of what the cell already holds — a truncated
+read, not a town that emptied — and the cell was left exactly as it was; retry
+it, and if it repeats, the release or the network is the problem, not the data.
+`place_coverage.quality` disagreeing with `place_count` would mean the opposite
+and cannot now happen, because such a read is refused rather than half loaded.
 
 ## Operations
 

@@ -117,6 +117,30 @@ export const coverageRow = row => ({
    rank.js. It could be done here with `order by sim desc`, and then the rule
    that a prefix beats a shorter fuzzy match, and that nearness biases without
    deciding, would live in a string no test can reach. */
+/* Trigrams need three characters to exist, so below three the `%` operator
+ * can use no index and an OR of an indexable arm with an unindexable one is a
+ * sequential scan of the whole table. A two-letter typeahead must not be that.
+ *
+ * So a short query is a different statement: the prefix branch alone, walked
+ * in the index's own order and stopped at the limit, which is bounded work
+ * whatever the table holds. The answer is the first few names beginning with
+ * what was typed rather than the best few — which is the honest thing a
+ * two-letter query can be answered with, and the caller ranks them afterwards
+ * like any other candidates. Three characters in, the real search takes over. */
+const TRIGRAM_MINIMUM = 3
+
+const SEARCH_PREFIX_SQL = `
+  select ${PLACE_COLUMNS},
+    similarity(p.search_name, place_searchable($1)) as similarity,
+    case when $2::double precision is null then null
+         else ST_Distance(p.geom, ST_MakePoint($2::double precision, $3::double precision)::geography)
+    end as metres
+  from places p
+  where p.search_name like place_searchable($6) || '%' escape '\\'
+    and ($4::text[] is null or p.cell = any($4::text[]))
+  order by p.search_name
+  limit $5`
+
 const SEARCH_SQL = `
   select ${PLACE_COLUMNS},
     similarity(p.search_name, place_searchable($1)) as similarity,
@@ -125,9 +149,9 @@ const SEARCH_SQL = `
     end as metres
   from places p
   where (p.search_name % place_searchable($1)
-         or p.search_name like place_searchable($1) || '%')
+         or p.search_name like place_searchable($6) || '%' escape '\\')
     and ($4::text[] is null or p.cell = any($4::text[]))
-  order by similarity desc
+  order by similarity desc, p.confidence desc, p.id
   limit $5`
 
 /**
@@ -144,9 +168,26 @@ const SEARCH_SQL = `
  * @param {{query: Function}} db
  * @param {{q: string, near?: {lng: number, lat: number}|null, cells?: string[]|null, limit?: number}} input
  */
+/* What a person typed is a name, not a pattern.
+ *
+ * The prefix branch below is a LIKE, and `%` and `_` are wildcards inside one.
+ * Unescaped, `?q=%` becomes `search_name like '%%'` — every row in the table,
+ * with `similarity()` evaluated over each of them and a top-N sort on the
+ * result. Measured on 60,000 rows that is a parallel sequential scan; at the
+ * seventy-three million this layer is built for it is minutes of one of ten
+ * connections, from a single GET, twice over when a trip narrows the search.
+ * Ten of those and the whole API is out of connections.
+ *
+ * So the pattern is escaped and the fuzzy branch is not: `%` typed into a
+ * search box is a character somebody is looking for, and pg_trgm's operator
+ * treats it as one. */
+const likeLiteral = value => String(value).replace(/[\\%_]/g, '\\$&')
+
 export async function searchPlaces(db, { q, near = null, cells = null, limit = 10 } = {}) {
   const text = String(q ?? '').trim()
   if (!text) return []
+  const pattern = likeLiteral(text)
+  const statement = text.length < TRIGRAM_MINIMUM ? SEARCH_PREFIX_SQL : SEARCH_SQL
   const lng = near ? Number(near.lng) : null
   const lat = near ? Number(near.lat) : null
   const point = Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : [null, null]
@@ -157,7 +198,7 @@ export async function searchPlaces(db, { q, near = null, cells = null, limit = 1
 
   const found = new Map()
   for (const scope of passes) {
-    const result = await db.query(SEARCH_SQL, [text, point[0], point[1], scope, limit])
+    const result = await db.query(statement, [text, point[0], point[1], scope, limit, pattern])
     for (const row of result.rows) if (!found.has(row.id)) found.set(row.id, placeRow(row))
   }
   return [...found.values()]

@@ -66,8 +66,18 @@ export const MAX_ROWS = 20_000
 /* Module scope on purpose — see the file comment. The reader holds the parsed
    footers, the index holds the parts, and the counter is the process's. */
 let sharedIndex = null
+let sharedAt = 0
 let sharedReader = null
 let inFlight = 0
+
+/** How long a loaded release index is trusted.
+ *
+ * "Forever" was wrong, and quietly: upstream deletes its own releases after
+ * about sixty days, so a box up longer than that goes on reading a bucket
+ * prefix that no longer exists, every fallback returns `failed`, and only a
+ * restart fixes it. Half a day costs one rediscovery — a listing and sixteen
+ * cached footers — and means a box picks up a new release on its own. */
+export const INDEX_TTL_MS = 12 * 60 * 60_000
 
 /** Reads happening right now, for tests and for the metrics. */
 export const fallbackInFlight = () => inFlight
@@ -75,6 +85,7 @@ export const fallbackInFlight = () => inFlight
 /** Drop the caches. Tests only: production wants them to live forever. */
 export function resetFallbackCache() {
   sharedIndex = null
+  sharedAt = 0
   sharedReader = null
   inFlight = 0
 }
@@ -168,13 +179,22 @@ export function createPlaceFallback({
   concurrency = CONCURRENCY,
   coverage = null,
   maxRows = MAX_ROWS,
+  indexTtlMs = INDEX_TTL_MS,
 } = {}) {
   async function release() {
-    if (sharedIndex) return sharedIndex
+    if (sharedIndex && Date.now() - sharedAt < indexTtlMs) return sharedIndex
     if (!loadIndex) return null
     const loaded = await loadIndex()
-    if (!loaded?.index?.parts?.length) return null
+    if (!loaded?.index?.parts?.length) {
+      /* A rediscovery that failed keeps what we have rather than dropping the
+         tier, and resets the clock so the next query does not try again. An
+         index for a release that has gone is still better than nothing: its
+         parts may yet answer, and if they do not the read says so. */
+      if (sharedIndex) sharedAt = Date.now()
+      return sharedIndex
+    }
     sharedIndex = loaded
+    sharedAt = Date.now()
     return sharedIndex
   }
 
@@ -258,8 +278,9 @@ export function createPlaceFallback({
     let rows = 0
     let reason = null
     let found = []
+    let read = null
     try {
-      const read = reader()
+      read = reader()
         .readBox(loaded.index, bounds, COLUMNS, {
           signal: controller.signal,
           onGroup: count => {
@@ -284,7 +305,16 @@ export function createPlaceFallback({
     } finally {
       clearTimeout(timer)
       signal?.removeEventListener('abort', stop)
-      inFlight -= 1
+      /* The slot is held until the read settles, not until the race does.
+         After a deadline the abort tears the fetches down, but it tears them
+         down asynchronously, and freeing the slot on the race would admit the
+         next read while this one still holds four sockets and their buffered
+         bodies. `read` has its own catch, so it never rejects here. */
+      if (read)
+        void read.finally(() => {
+          inFlight -= 1
+        })
+      else inFlight -= 1
     }
 
     if (centre) found.sort((a, b) => (a.metres ?? 0) - (b.metres ?? 0))

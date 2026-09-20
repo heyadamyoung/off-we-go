@@ -7,6 +7,8 @@ import {
   ENOUGH,
   MAX_RADIUS_METRES,
   NEAR_BIAS_METRES,
+  SEARCH_KIND,
+  SEARCH_WEIGHT,
   WIDENING,
   confidenceFactor,
   distanceDecay,
@@ -218,37 +220,71 @@ test('the ladder stops rather than pretend to widen past the cap', () => {
 test('a prefix match outranks a merely similar longer name', () => {
   /* Trigram similarity alone puts "Café Rijk" above "Rijksmuseum" for the
      query "rijks", because the shorter name shares a greater share of its
-     trigrams. The bonus restores the order a person expects. */
-  const rijksmuseum = { name: 'Rijksmuseum', similarity: 0.35, confidence: 0.9, metres: null }
-  const cafeRijk = { name: 'Café Rijk', similarity: 0.5, confidence: 0.9, metres: null }
-  close(searchScore(rijksmuseum, 'rijks'), 0.744, 0.001)
-  close(searchScore(cafeRijk, 'rijks'), 0.594, 0.001)
+     trigrams. Being at the front of the name, and containing the whole of
+     what was typed, restore the order a person expects. Same category on both
+     so the comparison is about the name and nothing else. */
+  const rijksmuseum = {
+    name: 'Rijksmuseum',
+    category: 'museum',
+    similarity: 0.35,
+    confidence: 0.9,
+    metres: null,
+  }
+  const cafeRijk = {
+    name: 'Café Rijk',
+    category: 'museum',
+    similarity: 0.5,
+    confidence: 0.9,
+    metres: null,
+  }
+  assert.ok(searchScore(rijksmuseum, 'rijks') > searchScore(cafeRijk, 'rijks'))
   assert.deepEqual(
     rankSearch([cafeRijk, rijksmuseum], 'rijks').map(row => row.name),
     ['Rijksmuseum', 'Café Rijk'],
   )
-  /* Three tiers: the front of the name is worth 0.3, anywhere else in it 0.1,
-     nowhere nothing. */
-  const inside = { name: 'Grand Rijks Hotel', similarity: 0.35, confidence: 0.9, metres: null }
-  const nowhere = { name: 'Grand Hotel', similarity: 0.35, confidence: 0.9, metres: null }
-  close(searchScore(inside, 'rijks') - searchScore(nowhere, 'rijks'), 0.1, 1e-12)
-  close(searchScore(rijksmuseum, 'rijks') - searchScore(nowhere, 'rijks'), 0.3, 1e-12)
-  close(searchScore(rijksmuseum, '  RIJKS  '), searchScore(rijksmuseum, 'rijks'), 1e-12)
+  /* Three tiers: the front of the name, anywhere else in it, nowhere. */
+  const inside = {
+    name: 'Grand Rijks Hotel',
+    category: 'museum',
+    similarity: 0.35,
+    confidence: 0.9,
+    metres: null,
+  }
+  const nowhere = {
+    name: 'Grand Hotel',
+    category: 'museum',
+    similarity: 0.35,
+    confidence: 0.9,
+    metres: null,
+  }
+  const front = searchScore(rijksmuseum, 'rijks')
+  const middle = searchScore(inside, 'rijks')
+  const absent = searchScore(nowhere, 'rijks')
+  assert.ok(front > middle && middle > absent, `${front} > ${middle} > ${absent}`)
+  close(middle - absent, SEARCH_WEIGHT.contains + 0.4 * SEARCH_WEIGHT.position, 1e-12)
+  close(front - absent, SEARCH_WEIGHT.contains + SEARCH_WEIGHT.position, 1e-12)
+  close(searchScore(rijksmuseum, '  RIJKS  '), front, 1e-12)
 })
 
 test('a near place gets a bias, and likeness still decides', () => {
   assert.equal(NEAR_BIAS_METRES, 30_000)
-  const here = { name: 'Zoom', similarity: 0.5, confidence: 0.8, metres: 0 }
-  const unknown = { name: 'Zoom', similarity: 0.5, confidence: 0.8, metres: null }
-  const far = { name: 'Zoom', similarity: 0.5, confidence: 0.8, metres: 100_000 }
-  close(searchScore(here, 'zzz'), 0.738, 0.001)
-  close(searchScore(unknown, 'zzz'), 0.588, 0.001)
-  close(searchScore(far, 'zzz'), 0.593, 0.001)
+  const here = { name: 'Zoom', category: 'cafe', similarity: 0.5, confidence: 0.8, metres: 0 }
+  const unknown = { name: 'Zoom', category: 'cafe', similarity: 0.5, confidence: 0.8, metres: null }
+  const far = { name: 'Zoom', category: 'cafe', similarity: 0.5, confidence: 0.8, metres: 100_000 }
+  /* The whole bias is worth SEARCH_WEIGHT.near at zero metres, and nothing at
+     all when the distance is unknown. */
+  close(searchScore(here, 'zzz') - searchScore(unknown, 'zzz'), SEARCH_WEIGHT.near, 1e-12)
   assert.ok(searchScore(here, 'zzz') > searchScore(far, 'zzz'))
-  /* The whole bias is worth 0.15 at zero metres, which a fifth of a point of
-     similarity outweighs: geography biases, it does not decide. */
-  const better = { name: 'Zoom Cafe', similarity: 0.7, confidence: 0.8, metres: 100_000 }
-  close(searchScore(better, 'zzz'), 0.793, 0.001)
+  assert.ok(searchScore(far, 'zzz') > searchScore(unknown, 'zzz'))
+  /* Which half a point of similarity outweighs: geography biases, it does not
+     decide. */
+  const better = {
+    name: 'Zoom Cafe',
+    category: 'cafe',
+    similarity: 1,
+    confidence: 0.8,
+    metres: 100_000,
+  }
   assert.ok(searchScore(better, 'zzz') > searchScore(here, 'zzz'))
   assert.equal(searchScore(unknown, 'zzz'), searchScore({ ...unknown, metres: undefined }, 'zzz'))
 })
@@ -270,14 +306,110 @@ test('a search keeps the order it was given when the scores are equal', () => {
   assert.deepEqual(rankSearch(null, 'zz'), [])
   /* An empty query is a prefix of every name, which is what a typeahead with
      nothing typed should do: nothing is excluded. */
-  close(
-    searchScore({ name: 'Anything', similarity: 0, confidence: 0, metres: null }, ''),
-    0.34,
-    1e-12,
-  )
+  const blank = searchScore({ name: 'Anything', similarity: 0, confidence: 0, metres: null }, '')
+  assert.ok(blank > 0, 'an empty query excludes nothing')
   close(
     searchScore({ name: 'Anything', similarity: 0, confidence: 0, metres: null }, null),
-    0.34,
+    blank,
     1e-12,
   )
+})
+
+/* The case that sent this file back to the drawing board, measured on the
+   real Overture release for Amsterdam.
+ *
+ * Dice over trigrams divides by the length of both names, so for "heineken"
+ * a bar called "Heineken Bar" scores 0.82 and the Heineken Experience scores
+ * 0.60 — purely for having a longer name. The top five used to be four bars
+ * and an office, one of them eleven kilometres away, and the museum a
+ * traveller was obviously looking for was nowhere in the list. */
+test('a landmark beats a bar named after it', () => {
+  const heineken = [
+    {
+      id: 'bar-near',
+      name: 'Heineken Bar',
+      category: 'bar',
+      similarity: 0.82,
+      confidence: 0.64,
+      metres: 500,
+    },
+    {
+      id: 'bar-far',
+      name: 'Heineken Bar',
+      category: 'bar',
+      similarity: 0.82,
+      confidence: 0.99,
+      metres: 11_252,
+    },
+    {
+      id: 'museum',
+      name: 'Heineken Experience',
+      category: 'museum',
+      similarity: 0.6,
+      confidence: 1,
+      metres: 1_684,
+    },
+    {
+      id: 'office',
+      name: 'HEINEKEN International',
+      category: 'services',
+      similarity: 0.55,
+      confidence: 0.96,
+      metres: 1_689,
+    },
+  ]
+  assert.equal(rankSearch(heineken, 'heineken')[0].id, 'museum')
+})
+
+/* And the other half of the same defect: a station is not a sight, so the
+   nearby weighting rightly puts transit near the bottom — but a search is a
+   question about a name, and "Amsterdam Centraal" is exactly the kind of
+   name a traveller types. It used to lose to Bar Centraal. */
+test('a station wins its own name, though it would not win a list of sights', () => {
+  const centraal = [
+    {
+      id: 'bar',
+      name: 'Bar Centraal',
+      category: 'bar',
+      similarity: 0.78,
+      confidence: 1,
+      metres: 1_925,
+    },
+    {
+      id: 'station',
+      name: 'Amsterdam Centraal',
+      category: 'transit',
+      similarity: 0.62,
+      confidence: 0.99,
+      metres: 752,
+    },
+  ]
+  assert.equal(rankSearch(centraal, 'centraal')[0].id, 'station')
+  /* The nearby list is the other question, and there the bar still wins. */
+  assert.ok(CATEGORY_WEIGHT.bar > CATEGORY_WEIGHT.transit)
+  assert.ok(SEARCH_KIND.transit > CATEGORY_WEIGHT.transit)
+})
+
+/* Fuzzy matching is what the similarity term is for, and it must survive the
+   terms added around it: a misspelling still has to find the place. */
+test('a misspelling still finds the place', () => {
+  const rows = [
+    {
+      id: 'right',
+      name: 'Van Gogh Museum',
+      category: 'museum',
+      similarity: 0.72,
+      confidence: 0.98,
+      metres: 900,
+    },
+    {
+      id: 'cafe',
+      name: 'Van Gogh Cafe',
+      category: 'cafe',
+      similarity: 0.66,
+      confidence: 0.7,
+      metres: 400,
+    },
+  ]
+  assert.equal(rankSearch(rows, 'van gogh musuem')[0].id, 'right')
 })

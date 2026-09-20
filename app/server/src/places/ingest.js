@@ -206,10 +206,41 @@ export function rowsFromCluster(cluster, cell) {
    INSERT below via jsonb_array_elements_text. Malformed JSON then fails the
    statement loudly instead of quietly producing a different array. */
 
-const csv = value =>
-  value === null || value === undefined ? '' : `"${String(value).replaceAll('"', '""')}"`
+/* Two characters Postgres will not hold, whatever we do with quoting.
+ *
+ * U+0000 is not a legal byte in a UTF-8 text column at all, and JSON.stringify
+ * writes it as the escape `\u0000`, which jsonb refuses with "unsupported
+ * Unicode escape sequence". A lone surrogate — half of a pair, which does
+ * happen in open data that has been round-tripped through a bad encoder — is
+ * silently replaced in a text column and rejected outright in jsonb.
+ *
+ * Either one aborts the COPY, and a COPY is one cell: a single bad byte in a
+ * single name would lose the whole of Rome, permanently, since the failure is
+ * deterministic and every retry hits the same row. This is the same shape of
+ * bug as the array literal that lost a twenty-four-cell load, and the answer
+ * is the same: fix it at the one place every value passes through, not at the
+ * twenty places values are made.
+ *
+ * Stripped rather than refused, because the alternative to a name with a NUL
+ * in it is no name at all. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+const clean = value => String(value).replaceAll('\u0000', '').replace(LONE_SURROGATE, '\uFFFD')
 
-const json = value => (value === null || value === undefined ? '' : csv(JSON.stringify(value)))
+/** The same, through a structure, before it is stringified into jsonb. */
+const scrub = value => {
+  if (typeof value === 'string') return clean(value)
+  if (Array.isArray(value)) return value.map(scrub)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, held]) => [clean(key), scrub(held)]))
+  }
+  return value
+}
+
+const csv = value =>
+  value === null || value === undefined ? '' : `"${clean(value).replaceAll('"', '""')}"`
+
+const json = value =>
+  value === null || value === undefined ? '' : csv(JSON.stringify(scrub(value)))
 
 const placeLine = place =>
   [
@@ -365,7 +396,16 @@ export function createIngest({
   async function writeCursor(cell, cursor) {
     if (dryRun) return
     await pool
-      .query('update place_coverage set cursor = $2 where cell = $1', [cell, cursor])
+      .query(
+        /* `started_at` moves with the cursor, so it is a heartbeat and not
+           just a start time. The drain reclaims a cell whose `started_at` is
+           old — see places/worker.js — and without this a dense cell that
+           honestly takes longer than that would be reclaimed out from under a
+           run that was working perfectly well, and the two would then race to
+           insert the same gers_id. */
+        'update place_coverage set cursor = $2, started_at = now() where cell = $1',
+        [cell, cursor],
+      )
       .catch(error => log(`places: cursor for ${cell} not written: ${error.message}`))
   }
 
@@ -445,7 +485,10 @@ export function createIngest({
         `update place_coverage set status = 'failed', error = $2 where cell = $1`,
         [cell, String(error?.message || error).slice(0, 500)],
       )
-      .catch(() => {})
+      /* Said, not swallowed: a cell left `ingesting` with no error on it is a
+         cell only the thirty-minute reaper will ever move, and an operator
+         reading the log needs to know the note was not written. */
+      .catch(problem => log(`places: ${cell} could not be marked failed: ${problem.message}`))
   }
 
   /**
@@ -482,24 +525,40 @@ export function createIngest({
         cell,
       ])
       const before = held.rows[0].count
-      const sweep = before === 0 || rows.length >= before * RETAIN_RATIO
-      if (!sweep && rows.length === 0) {
+      /* The collapse guard, and it refuses rather than half-loads.
+       *
+       * A read that comes back with a fraction of what the cell held is a
+       * truncated read, not a cell that emptied: upstream does not delete
+       * ninety per cent of Amsterdam between releases. Sweeping on that would
+       * delete everything the read missed.
+       *
+       * The guard used to only skip the sweep, and only throw when the read
+       * returned literally nothing. So a read that returned three thousand of
+       * eleven thousand places carried on: it upserted its three thousand,
+       * left the other eight thousand stale beside them, and then wrote the
+       * coverage row `ready` at the current release with a place_count
+       * counted from the table rather than from the read. Stale for ever —
+       * `isStale` is false, the refresh sweep skips it, `--resume` skips it,
+       * and nothing anywhere compares the count to what was read. Silence is
+       * the one thing this must not do, so it throws, the transaction rolls
+       * back, and the cell is marked `failed` with this sentence on the row. */
+      if (before > 0 && rows.length < before * RETAIN_RATIO) {
         throw new Error(
-          `read returned no places for ${cell}, which holds ${before}; refusing to empty it`,
+          `read returned ${rows.length} place(s) for ${cell}, which holds ${before}; ` +
+            `that is below ${Math.round(RETAIN_RATIO * 100)}% and reads as a truncated read, ` +
+            `not a cell that emptied — refusing to load it`,
         )
       }
-
-      if (sweep) {
-        await client.query(
-          `insert into stage_orphans (id)
+      await client.query(
+        `insert into stage_orphans (id)
            select p.id from places p
            where p.cell = $1 and not exists (select 1 from stage_keys k where k.place_id = p.id)`,
-          [cell],
-        )
-        /* Where an orphan's upstream records now live, worked out before any
+        [cell],
+      )
+      /* Where an orphan's upstream records now live, worked out before any
            place_sources row is moved, because moving them is what would hide
            the answer. */
-        await client.query(`
+      await client.query(`
           update stage_orphans o set new_id = m.place_id from (
             select distinct on (ps.place_id) ps.place_id as old_id, k.place_id
             from place_sources ps
@@ -508,7 +567,6 @@ export function createIngest({
             where ps.place_id <> k.place_id
             order by ps.place_id, k.place_id
           ) m where m.old_id = o.id`)
-      }
 
       await client.query(UPSERT_PLACES)
       /* A source record that has moved to another place must not describe two.
@@ -530,7 +588,7 @@ export function createIngest({
         [sources],
       )
 
-      if (sweep) {
+      {
         const redirected = await client.query(`
           insert into place_redirects (old_id, new_id, reason, at)
           select o.id, o.new_id, case when o.new_id is null then 'gone' else 'merged' end, now()
@@ -560,16 +618,23 @@ export function createIngest({
         [cell],
       )
       loaded.inserted = counted.rows[0].count
-      loaded.swept = sweep
+      /* Always, now that a read which did not sweep is a read that threw. The
+         field stays so the report and its tests keep their shape. */
+      loaded.swept = true
       const bounds = cellBounds(cell)
       await client.query(
         `insert into place_coverage (
            cell, west, south, east, north, status, versions, place_count, quality,
            cursor, requested_at, started_at, last_refresh, attempts, error)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, null, now(), now(), now(), 1, null)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, null, now(), now(), now(), 0, null)
          on conflict (cell) do update set
            status = excluded.status, versions = excluded.versions,
            place_count = excluded.place_count, quality = excluded.quality,
+           /* Attempts go back to zero. The column counts consecutive failures
+              and is what the drain backs off on, so leaving it to climb across
+              a year of monthly refreshes put every cell past the cap: the
+              first time one then failed, the worker abandoned it for good. */
+           attempts = 0,
            cursor = null, last_refresh = now(), error = null`,
         [
           cell,
@@ -655,6 +720,12 @@ export function createIngest({
 
   /** The cells already finished, so `--resume` can skip them, and the cursor
       of anything left half-done, so a run can say where it is picking up. */
+  /* `ingesting` counts as done for a resume: another process — the in-process
+     drain, or an earlier run still going — is inside that cell's transaction,
+     and starting a second read of it ends with both trying to insert the same
+     gers_id and whichever commits second dying on the unique key. A row left
+     `ingesting` by a process that is gone is reclaimed by the reaper in
+     places/worker.js rather than by being raced. */
   async function progressFor(cells) {
     if (dryRun) return { done: new Set(), cursors: new Map() }
     const { rows } = await pool.query(
@@ -663,7 +734,11 @@ export function createIngest({
     )
     return {
       done: new Set(
-        rows.filter(row => row.status === 'ready' || row.status === 'empty').map(row => row.cell),
+        rows
+          .filter(
+            row => row.status === 'ready' || row.status === 'empty' || row.status === 'ingesting',
+          )
+          .map(row => row.cell),
       ),
       cursors: new Map(rows.filter(row => row.cursor).map(row => [row.cell, row.cursor])),
     }
@@ -787,14 +862,35 @@ export async function cellsForTrip(pool, tripId) {
 export async function pauseIndexes(pool) {
   await pool.query('drop index if exists places_search_name_idx')
   await pool.query('drop index if exists places_category_idx')
+  await pool.query('drop index if exists places_search_prefix_idx')
 }
 
 export async function resumeIndexes(pool) {
+  /* A CONCURRENTLY build that fails leaves the index behind marked INVALID,
+     and `if not exists` then happily skips it on every later run — so search
+     would stay on a sequential scan with an index sitting there saying it
+     exists. Any invalid one is dropped first. */
+  await pool.query(`
+    do $$
+    declare broken text;
+    begin
+      for broken in
+        select c.relname from pg_index i
+        join pg_class c on c.oid = i.indexrelid
+        where not i.indisvalid
+          and c.relname in ('places_search_name_idx', 'places_category_idx')
+      loop
+        execute format('drop index if exists %I', broken);
+      end loop;
+    end $$`)
   await pool.query(
     'create index concurrently if not exists places_search_name_idx on places using gin (search_name gin_trgm_ops)',
   )
   await pool.query(
     'create index concurrently if not exists places_category_idx on places (category, confidence desc)',
+  )
+  await pool.query(
+    'create index concurrently if not exists places_search_prefix_idx on places (search_name text_pattern_ops)',
   )
   await pool.query('analyze places')
 }

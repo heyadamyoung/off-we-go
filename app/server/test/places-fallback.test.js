@@ -329,9 +329,13 @@ test('the concurrency cap is on the process, and over it nothing queues', async 
     assert.deepEqual(refused.places, [], 'answered from whatever local rows exist, not queued')
   }
   assert.equal(opened, 2, 'the bucket saw two reads, not four')
-  /* A refusal is still a coverage gap, and is still recorded as one — the two
-     reads still in flight have not got as far as enqueuing theirs. */
-  assert.ok(repository.requested.length >= 2)
+  /* A refusal is still a coverage gap, and the cell is still asked for — once,
+     however many refusals name it. Four reads of one cell used to be four
+     upserts of one row; a client panning a map over an uningested country was
+     a write per request. */
+  const asked = repository.requested.flatMap(call => call.cells)
+  assert.ok(asked.includes(TOKYO.cell), `${asked.join(',')} does not name the refused cell`)
+  assert.equal(repository.requested.length, 1, 'one write, not one per refusal')
 
   release()
   assert.equal((await first).reason, null)

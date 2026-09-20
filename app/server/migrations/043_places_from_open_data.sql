@@ -74,6 +74,13 @@ create index if not exists places_geom_idx on places using gist (geom);
 /* Typeahead: trigram similarity over the folded name. GIN because the table is
    read far more than written, and a monthly bulk refresh can afford the build. */
 create index if not exists places_search_name_idx on places using gin (search_name gin_trgm_ops);
+/* And a prefix index beside it, because a trigram index needs three characters
+   to have a trigram at all. Without this a two-letter typeahead can use no
+   index on either branch of the search and falls to a sequential scan of the
+   whole table — which at seventy-three million rows is minutes, from a single
+   GET. text_pattern_ops is what makes `search_name like 'ri%'` an index range
+   scan; the column is already folded, so no function sits on the query side. */
+create index if not exists places_search_prefix_idx on places (search_name text_pattern_ops);
 /* Refresh and coverage both work a cell at a time. */
 create index if not exists places_cell_idx on places (cell);
 /* Category browsing, best first. */

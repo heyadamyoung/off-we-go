@@ -204,6 +204,8 @@ const app = await buildServer({
      the cache, so ten legs at Dublin are one request a minute, not ten. */
   flights: createFlightSources(),
   placesUpstream,
+  placesReleases: () => (placesUpstream?.current ? { overture: placesUpstream.current } : {}),
+  placesFooters: placesOn ? createFooterStore({ directory: placesDirectory }) : null,
 })
 
 /* The conversion worker. In-process today because this is one box; it claims

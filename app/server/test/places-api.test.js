@@ -150,7 +150,7 @@ async function seed(client) {
   return ids
 }
 
-async function world(t) {
+async function world(t, server = {}) {
   const admin = new pg.Client({ connectionString: databaseUrl })
   await admin.connect()
   await admin.query('drop schema public cascade; create schema public')
@@ -173,6 +173,7 @@ async function world(t) {
     mailer: { async send() {} },
     publicUrl: 'https://offwego.example.com',
     sessionSecret: 'test-secret-that-is-long-enough',
+    ...server,
   })
   t.after(() => app.close())
   const authorization = await authenticate(repository, 'owner@example.com')
@@ -398,6 +399,61 @@ test('every route is behind the same login as the rest of /api', { skip: reachab
     assert.equal(wrong.statusCode, 401, `${url} refuses a bad token`)
   }
   assert.equal((await get('/api/places/search?q=rijks')).statusCode, 200)
+})
+
+/* The bug that made the whole third tier dead on arrival, and that no test
+   caught because every test either stubbed `placeSources` or ran with the
+   fallback switched off.
+ *
+ * A degraded record's id is its upstream GERS id, not one of our uuids —
+ * deliberately, so a stop can hold it and go on resolving once the cell
+ * lands. The route then asked the database for those ids' sources, and
+ * `place_id = any($1::uuid[])` raised 22P02 from inside the driver. Every
+ * degraded answer was a 500: a traveller in a country nobody had ingested
+ * got an error rather than a thinner list. */
+test('a degraded record is served, not 500ed, though its id is not one of ours', {
+  skip: reachable,
+}, async t => {
+  const bucket = {
+    id: 'ov-degraded-1',
+    gersId: 'ov-degraded-1',
+    name: 'Somewhere Upstream Knows',
+    lng: 139.7454,
+    lat: 35.6586,
+    category: 'museum',
+    confidence: 0.9,
+    metres: 10,
+    sources: [{ source: 'overture', license: 'ODbL-1.0', upstreamId: 'osm:1', version: 'v' }],
+  }
+  /* The bucket is the only stub: what is being proved is what the route does
+     with a record whose id is not a uuid, not how Parquet is read. */
+  const { get } = await world(t, {
+    placesFallback: {
+      available: true,
+      async readBounds() {
+        return { places: [bucket], degraded: true, reason: null, cells: ['N35E139'] }
+      },
+      inFlight: () => 0,
+    },
+  })
+  const response = await get('/api/places/nearby?lat=35.6586&lng=139.7454&radius=500&limit=5')
+  assert.equal(response.statusCode, 200, response.body)
+  const body = response.json()
+  assert.equal(body.degraded, true)
+  const found = body.places.find(place => place.id === 'ov-degraded-1')
+  assert.ok(found, `the degraded record is missing from ${JSON.stringify(body.places)}`)
+  /* And it carries its own licence through, which is the whole reason the
+     record travels with its sources rather than being looked up. */
+  assert.deepEqual(
+    found.attribution.map(notice => notice.license),
+    ['ODbL-1.0'],
+  )
+  assert.equal(response.headers['cache-control'], 'no-store')
+
+  /* The same through search, which has its own call to the same helper. */
+  const named = await get('/api/places/search?q=Somewhere&near=139.7454,35.6586')
+  assert.equal(named.statusCode, 200, named.body)
+  assert.equal(named.json().degraded, true)
 })
 
 test('an uncovered cell is asked for, and the answer says it is thin', {

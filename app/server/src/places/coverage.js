@@ -153,6 +153,12 @@ export function createPlaceCoverage({
   let flushing = null
 
   const able = Boolean(repository?.placeCoverage && repository?.requestPlaceCells)
+  /* The current releases are discovered at runtime — see places/upstream.js —
+     so the caller may hand in a function rather than a map. Without this the
+     map was always `{}` and `isStale` always false: a cell loaded from a
+     six-month-old release stayed `ready` for ever and the monthly refresh
+     never fired from the serving path at all. */
+  const current = () => (typeof releases === 'function' ? releases() || {} : releases || {})
 
   const forget = now => {
     for (const [cell, at] of recent) if (now - at > rememberMs) recent.delete(cell)
@@ -164,7 +170,7 @@ export function createPlaceCoverage({
       The list of cells to ask for is local, deliberately: an earlier version
       accumulated into the same set `noteStops` fills, so a query could sweep
       up cells nobody had looked up yet and mark a `ready` cell `pending`. */
-  async function request(cells) {
+  async function request(cells, { dedupe = false } = {}) {
     const wanted = [...new Set(cells)].filter(Boolean)
     if (!able || !wanted.length) return { wanted, ready: [], missing: [], requested: [] }
     const coverage = await repository.placeCoverage(wanted)
@@ -173,9 +179,16 @@ export function createPlaceCoverage({
     const asking = []
     for (const cell of wanted) {
       const row = coverage.get(cell)
-      if (isReady(row, releases)) ready.push(cell)
+      const held = current()
+      if (isReady(row, held)) ready.push(cell)
       else missing.push(cell)
-      if (needsRequest(row, releases)) asking.push(cell)
+      /* On the read path, asked for at most once per `rememberMs`: without it
+         a client panning a map issues a coverage upsert on every request, and
+         a degraded request did two — one here and one from the fallback's own
+         enqueue. Not on the note path, where `noteStops` has already put the
+         cell in `recent` itself and skipping it would mean a trip's stops
+         were never asked for at all. */
+      if (needsRequest(row, held) && !(dedupe && recent.has(cell))) asking.push(cell)
     }
     const requested = asking.length ? await repository.requestPlaceCells(asking, clock()) : []
     const now = clock().getTime()
@@ -250,14 +263,17 @@ export function createPlaceCoverage({
      */
     async ensure(cells) {
       if (!able) return { wanted: [...new Set(cells || [])], ready: [], missing: [], requested: [] }
-      return request(cells)
+      return request(cells, { dedupe: true })
     },
 
     /** Mark these cells wanted without reading first — the fallback's path,
         where the query already knows the cell was not ready. */
     async requestNow(cells) {
-      const wanted = [...new Set(cells || [])].filter(Boolean)
+      const now = clock().getTime()
+      forget(now)
+      const wanted = [...new Set(cells || [])].filter(Boolean).filter(cell => !recent.has(cell))
       if (!able || !wanted.length) return []
+      for (const cell of wanted) recent.set(cell, now)
       return repository.requestPlaceCells(wanted, clock())
     },
 

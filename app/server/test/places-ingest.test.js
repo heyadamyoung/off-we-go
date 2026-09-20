@@ -542,7 +542,46 @@ test('a run interrupted mid-cell resumes from its cursor and skips what is done'
   )
   assert.equal(after.rows[0].status, 'ready')
   assert.equal(after.rows[0].cursor, null)
-  assert.equal(after.rows[0].attempts, 2)
+  /* Back to zero on success. The column counts *consecutive* failures — it is
+     what the drain backs off on — so a count that only ever climbed would put
+     every cell past the cap after a year of monthly refreshes, and the first
+     time one then failed it would be abandoned for good. */
+  assert.equal(after.rows[0].attempts, 0)
+})
+
+/* The half-read, which is the one the guard used to let through. A read that
+   comes back with a fraction of what the cell holds used only to skip the
+   sweep: it upserted its fraction, left the rest stale beside it, and wrote
+   the coverage row `ready` at the current release with a count taken from the
+   table rather than from the read. Stale for ever, and silent. */
+test('a cell that reads back as a fraction of itself is refused too', {
+  skip: unreachable,
+}, async t => {
+  const pool = await freshDatabase(t)
+  const full = createIngest({
+    pool,
+    reader: readerFor(),
+    releases: releases(),
+    now: () => new Date(NOW),
+  })
+  await full.ingestCell('N52E004')
+  const before = await count(pool, 'select count(*) as count from places')
+  assert.ok(before >= 4, `${before} places to halve`)
+
+  const partial = createIngest({
+    pool,
+    reader: readerFor({ overture: OVERTURE_ROWS.slice(0, 1), fsq: [] }),
+    releases: releases(),
+    now: () => new Date(NOW),
+  })
+  const outcome = await partial.ingestCell('N52E004')
+  assert.equal(outcome.status, 'failed')
+  assert.match(outcome.error, /truncated read/)
+  assert.equal(await count(pool, 'select count(*) as count from places'), before, 'nothing moved')
+  const row = await pool.query('select status, versions from place_coverage where cell = $1', [
+    'N52E004',
+  ])
+  assert.equal(row.rows[0].status, 'failed')
 })
 
 test('a place that goes upstream leaves a redirect, and the stop that named it still resolves', {
@@ -626,13 +665,13 @@ test('a cell that suddenly reads as empty is refused rather than emptied', {
   })
   const outcome = await refresh.ingestCell('N52E004')
   assert.equal(outcome.status, 'failed')
-  assert.match(outcome.error, /refusing to empty it/)
+  assert.match(outcome.error, /refusing to load it/)
   assert.equal(await count(pool, 'select count(*) as count from places'), before)
   const coverage = await pool.query('select status, error from place_coverage where cell = $1', [
     'N52E004',
   ])
   assert.equal(coverage.rows[0].status, 'failed')
-  assert.match(coverage.rows[0].error, /refusing to empty it/)
+  assert.match(coverage.rows[0].error, /refusing to load it/)
 })
 
 test('a dry run reads, merges and reports, and writes nothing at all', {

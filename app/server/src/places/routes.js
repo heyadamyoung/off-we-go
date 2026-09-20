@@ -137,6 +137,24 @@ function present(record) {
   return { ...place, sources, attribution: attributionFor(sources) }
 }
 
+/** How many cells one query may ask coverage about.
+ *
+ * Nine is the home cell and its ring, which is every cell a sane radius can
+ * reach. Past 89° of latitude the longitude span becomes the whole parallel —
+ * the cosine goes to nothing and a kilometre is 360 degrees wide — so
+ * `cellsWithin` correctly returns all 360 columns, and a single GET at the
+ * smallest radius would read and upsert 360 coverage rows. A hundred of those
+ * writes thirty-six thousand pending cells of polar ocean for the drain to
+ * work through. Above the cap the query is about the cell it is standing in
+ * and nothing else, which at that latitude is the only honest answer anyway.
+ */
+const MAX_COVERAGE_CELLS = 9
+
+const coverageCells = (lng, lat, radius, home) => {
+  const touched = cellsWithin(lng, lat, radius)
+  return touched.length > MAX_COVERAGE_CELLS ? [home] : touched
+}
+
 /* A box of `metres` around a point, for the Parquet reader. Latitude is
    111.32 km a degree everywhere; longitude is that times the cosine, and past
    89° the cosine goes to nothing, so the box becomes the whole parallel rather
@@ -198,6 +216,9 @@ const nearbyQuery = z.object({
   limit: limitOf(DEFAULT_NEARBY_LIMIT),
 })
 
+/** Our own primary key, as opposed to an upstream id. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const PLACE_ID = z
   .string()
   .trim()
@@ -215,7 +236,11 @@ const message = error => error.issues?.[0]?.message || 'That query is not valid'
  * @param {object} [options.coverage] a queue from coverage.js; one is made if absent
  * @param {object} [options.fallback] a reader from fallback.js; without a release
  *   index one is made that refuses, which is what an un-configured deployment wants
- * @param {Record<string, string>} [options.releases] source → current release
+ * @param {Record<string, string>|(() => Record<string, string>)} [options.releases]
+ *   source → current release, or a function returning it: the current release
+ *   is discovered at runtime, so it is not known when the routes are built
+ * @param {() => Promise<object|null>} [options.upstream] a loadIndex from upstream.js
+ * @param {{loadFooter?: Function, saveFooter?: Function}} [options.footers]
  * @param {() => Date} [options.clock]
  */
 export function registerPlaceRoutes(
@@ -227,6 +252,7 @@ export function registerPlaceRoutes(
     fallback = null,
     releases = {},
     upstream = null,
+    footers = {},
     clock,
   } = {},
 ) {
@@ -234,8 +260,15 @@ export function registerPlaceRoutes(
   /* `upstream` is how a deployment turns the third tier on: a loadIndex from
      places/upstream.js, or null for a box that may only answer from its own
      database. Null is the default deliberately — a test server must not be
-     able to reach the internet by accident. */
-  const bucket = fallback ?? createPlaceFallback({ coverage: cells, loadIndex: upstream })
+     able to reach the internet by accident.
+
+     `footers` is the disk cache the ingest script also uses. Without it every
+     restart re-downloads and re-parses sixteen 1.6 MB footers the first time
+     anybody falls through, which is the difference between a 1.7-second first
+     degraded query and a 300-millisecond one. */
+  const bucket =
+    fallback ??
+    createPlaceFallback({ coverage: cells, loadIndex: upstream, readerOptions: footers })
 
   /* The trip write path wants to tell the queue that a trip's stops moved, and
      app.js is only allowed one call to register all of this. Decorating is how
@@ -250,10 +283,23 @@ export function registerPlaceRoutes(
   const unavailable = reply =>
     reply.code(503).send({ error: 'The places layer is not available on this deployment' })
 
-  /** Sources for a page of records, in one round trip. */
+  /**
+   * Sources for a page of records, in one round trip.
+   *
+   * Only for the records that need one, and only for ids the database can
+   * accept. A degraded record's id is its upstream GERS id rather than one of
+   * our uuids — deliberately, see fallback.js — and it already carries the
+   * sources read out of the Parquet row. Handing that id to `place_id =
+   * any($1::uuid[])` is a 22P02 raised inside the driver, which is a 500 on
+   * every single degraded answer: the whole third tier dead, in the one code
+   * path no test covered.
+   */
   async function withSources(records) {
-    const ids = records.map(record => record.id).filter(Boolean)
-    const sources = repository.placeSources ? await repository.placeSources(ids) : new Map()
+    const ids = records
+      .filter(record => !record.sources && UUID.test(String(record.id ?? '')))
+      .map(record => record.id)
+    const sources =
+      ids.length && repository.placeSources ? await repository.placeSources(ids) : new Map()
     return records.map(record => ({
       ...record,
       sources: record.sources || sources.get(record.id) || [],
@@ -261,32 +307,67 @@ export function registerPlaceRoutes(
   }
 
   /**
-   * What coverage says about the cells a query touched, and — when they are
-   * not ready — the records the bucket can add. Returns the degraded shape the
-   * contract asks for, or null when everything was ready.
+   * What coverage says about where the query is standing.
+   *
+   * The answer that matters is about the home cell, not about every cell the
+   * radius happens to graze. A point near a corner touches four, and if one of
+   * them is a square of ocean that will never be ingested then treating "any
+   * missing" as degraded would mean every query from that street is degraded
+   * for ever: `no-store` on every response, a Parquet read on every request,
+   * and a coverage row rewritten each time. The neighbours are still asked
+   * for — that is what `ensure` does — they just do not decide the answer.
+   *
+   * Never throws. On `/api/places/nearby` this runs after the database has
+   * already produced a servable list, and a lock wait on `place_coverage`
+   * during an ingest must not turn that list into a 500. A coverage read that
+   * failed is reported as "we do not know", which is the truth.
    */
-  async function degradedFor({ lng, lat, radius, limit, want }) {
-    const touched = cellsWithin(lng, lat, radius)
-    const status = await cells.ensure(touched)
-    if (!status.missing.length) return null
+  async function coverageFor({ lng, lat, radius }) {
     const home = cellKey(lng, lat)
-    const row = status.coverage?.get(home)
-    /* A coverage miss is the metric that says tier two is not keeping up; it
-       is recorded whether or not a fallback is even configured. */
-    event('places coverage miss', {
-      'places.coverage.cell': home,
-      'places.coverage.status': row?.status ?? 'none',
-      'places.coverage.missing': status.missing.length,
-    })
-    const read = bucket.available
-      ? await bucket.readBounds(boxAround(lng, lat, radius), {
+    const touched = coverageCells(lng, lat, radius, home)
+    try {
+      const status = await cells.ensure(touched)
+      const row = status.coverage?.get(home)
+      const ready = status.ready.includes(home)
+      if (!ready) {
+        /* The metric that says tier two is not keeping up. */
+        event('places coverage miss', {
+          'places.coverage.cell': home,
+          'places.coverage.status': row?.status ?? 'none',
+          'places.coverage.missing': status.missing.length,
+        })
+      }
+      return { home, ready, missing: status.missing, status: row?.status ?? 'pending' }
+    } catch (error) {
+      event('places coverage unread', {
+        'places.coverage.cell': home,
+        error: String(error?.message || error).slice(0, 200),
+      })
+      /* Unknown, not missing: an answer already in hand is served as it is
+         rather than being called degraded on the strength of a failed read. */
+      return { home, ready: true, missing: [], status: 'unknown', unread: true }
+    }
+  }
+
+  /**
+   * The records the bucket can add for a cell that is not ready. Returns the
+   * degraded shape the contract asks for. Never throws, for the same reason.
+   */
+  async function fallbackFor({ lng, lat, radius, limit, want, coverage: found }) {
+    let read = { places: [], reason: 'unavailable' }
+    if (bucket.available) {
+      try {
+        read = await bucket.readBounds(boxAround(lng, lat, radius), {
           limit: want,
           centre: { lng, lat },
-          cells: status.missing,
+          cells: found.missing,
         })
-      : { places: [], reason: 'unavailable' }
+      } catch (error) {
+        read = { places: [], reason: String(error?.message || error).slice(0, 120) }
+      }
+    }
     return {
-      coverage: { cell: home, status: row?.status ?? 'pending' },
+      coverage: { cell: found.home, status: found.status },
       places: read.places,
       reason: read.reason,
       limit,
@@ -324,13 +405,21 @@ export function registerPlaceRoutes(
          not a thing this layer will do. */
       let degraded = null
       if (near) {
-        degraded = await degradedFor({
+        const found = await coverageFor({
           lng: near.lng,
           lat: near.lat,
           radius: SEARCH_FALLBACK_METRES,
-          limit,
-          want,
         })
+        if (!found.ready) {
+          degraded = await fallbackFor({
+            lng: near.lng,
+            lat: near.lat,
+            radius: SEARCH_FALLBACK_METRES,
+            limit,
+            want,
+            coverage: found,
+          })
+        }
         if (degraded?.places.length) {
           const known = new Set(ranked.map(place => place.gersId).filter(Boolean))
           const extra = degraded.places
@@ -377,6 +466,15 @@ export function registerPlaceRoutes(
         let attempt = 0
         let current = { ...base }
         let ranked = []
+
+        /* Coverage first, because the ladder is four database round trips and
+           an uningested cell holds nothing to find on any of its rungs. The
+           widening exists for a village with four places in it, not for a
+           country nobody has loaded, and walking all four rungs out to 25 km
+           before discovering there is no coverage was four KNN scans spent
+           learning what one indexed row already knew. */
+        const found = await coverageFor({ lng, lat, radius: base.radius })
+
         /* The ladder from rank.js, walked here rather than there because each
            rung is a database round trip. It stops the moment a rung finds
            enough, and `widen` stops it at 50 km whatever anybody asked for. */
@@ -390,19 +488,15 @@ export function registerPlaceRoutes(
             limit: want,
           })
           ranked = rankNearby(rows, { radius: current.radius, category, floor: current.floor })
-          const next = widen(ranked.length, attempt, base)
+          const next = found.ready ? widen(ranked.length, attempt, base) : null
           if (!next) break
           current = next
           attempt += 1
         }
 
-        const degraded = await degradedFor({
-          lng,
-          lat,
-          radius: current.radius,
-          limit,
-          want,
-        })
+        const degraded = found.ready
+          ? null
+          : await fallbackFor({ lng, lat, radius: current.radius, limit, want, coverage: found })
         if (degraded?.places.length) {
           const known = new Set(ranked.map(place => place.gersId).filter(Boolean))
           const extra = degraded.places.filter(place => !known.has(place.gersId))

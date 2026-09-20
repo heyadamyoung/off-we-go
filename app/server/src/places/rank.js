@@ -154,8 +154,48 @@ export function widen(found, attempt, base) {
    close. Geography biases, it does not decide. */
 export const NEAR_BIAS_METRES = 30_000
 
+/* What a search score is made of, and why each part is there.
+ *
+ * Trigram similarity alone is a length penalty dressed as a relevance score.
+ * Dice over trigrams divides by the size of both names, so for the query
+ * "heineken" a bar called "Heineken Bar" scores 0.82 and the Heineken
+ * Experience — the thing a traveller in Amsterdam is actually looking for —
+ * scores 0.60, purely for having a longer name. Measured on the real
+ * 2026-08-19.0 data for Amsterdam: the top five for "heineken" were four
+ * bars and an office, one of them eleven kilometres away, and the museum was
+ * nowhere. The same defect hid Amsterdam Centraal behind Bar Centraal.
+ *
+ * So `contains` asks the other question — how much of what was *typed* is in
+ * this name — which is one for both, and the length penalty stops deciding.
+ * And `kind` lets the category weigh in, gently: somebody typing a name
+ * usually means the landmark rather than the bar named after it. Similarity
+ * keeps the largest single share because it is what catches a misspelling,
+ * which is the whole reason for fuzzy matching at all.
+ *
+ * The weights are tuned against real queries and pinned by tests. */
+/* Two of the categories answer the two questions very differently.
+ *
+ * CATEGORY_WEIGHT is "how worth seeing is this", which is the right question
+ * for a list of what is near you, and there a railway station is not a sight.
+ * A search asks something else: what did somebody mean by this name. Stations,
+ * airports and hotels are precisely the things travellers type by name —
+ * "Amsterdam Centraal", "Gare du Nord", "Hotel Okura" — and at the nearby
+ * weight of 0.3 the station lost to a bar named after it. Everything else
+ * answers both questions the same way and is not repeated here. */
+export const SEARCH_KIND = Object.freeze({ transit: 0.8, lodging: 0.7 })
+const searchWeightOf = category => SEARCH_KIND[category] ?? weightOf(category)
+
+export const SEARCH_WEIGHT = Object.freeze({
+  similarity: 0.4,
+  contains: 0.35,
+  position: 0.15,
+  kind: 0.3,
+  near: 0.15,
+  confidence: 0.1,
+})
+
 /**
- * @param {{similarity: number, confidence: number, metres?: number|null, name: string}} row
+ * @param {{similarity: number, confidence: number, metres?: number|null, name: string, category?: string}} row
  * @param {string} query
  */
 export function searchScore(row, query) {
@@ -163,17 +203,23 @@ export function searchScore(row, query) {
     .trim()
     .toLowerCase()
   const name = String(row.name ?? '').toLowerCase()
-  /* A prefix match is what a typeahead is for, and trigram similarity alone
-     ranks "Café Rijk" above "Rijksmuseum" for the query "rijks" because the
-     shorter name shares a greater share of its trigrams. The bonus restores
-     the order a person expects without discarding fuzzy matching for the
-     misspellings it exists to catch. */
-  const prefix = name.startsWith(folded) ? 0.3 : name.includes(folded) ? 0.1 : 0
+  /* At the front of the name, or merely somewhere in it. "Van Gogh Museum"
+     and "Museum Van Gogh" are both answers to "van gogh"; the first is the
+     better one. */
+  const position = name.startsWith(folded) ? 1 : name.includes(folded) ? 0.4 : 0
+  const contains = folded && name.includes(folded) ? 1 : 0
   const near =
     Number.isFinite(row.metres) && row.metres !== null
-      ? 0.15 * Math.exp(-row.metres / NEAR_BIAS_METRES)
+      ? Math.exp(-row.metres / NEAR_BIAS_METRES)
       : 0
-  return (row.similarity ?? 0) + prefix + near + 0.1 * confidenceFactor(row.confidence)
+  return (
+    SEARCH_WEIGHT.similarity * (row.similarity ?? 0) +
+    SEARCH_WEIGHT.contains * contains +
+    SEARCH_WEIGHT.position * position +
+    SEARCH_WEIGHT.kind * searchWeightOf(row.category) +
+    SEARCH_WEIGHT.near * near +
+    SEARCH_WEIGHT.confidence * confidenceFactor(row.confidence)
+  )
 }
 
 export function rankSearch(rows, query) {
