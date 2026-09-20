@@ -214,6 +214,35 @@ Interrupting is supported: the group in flight finishes, cells still open are
 abandoned unwritten, and `--resume` reads only the groups that still owe
 somebody rows.
 
+#### When a read fails
+
+The rule the whole thing protects is that **a failed read must never become a
+loaded cell** — a cell built from a short read has quietly lost part of a city
+and the collapse guard cannot see the difference. Everything else is about
+making sure that rule does not also cost the planet.
+
+There is no attempt count. A row group is asked for again with the delay
+doubling from 1s to a ceiling of 60s, for up to ten minutes, so a link that is
+down for a minute and a half costs a minute and a half. Two things end that,
+and neither ends the run:
+
+| | what happens | why |
+| --- | --- | --- |
+| The release moved | the run stops, exits non-zero | Overture deletes a release at about sixty days; every later read 404s, so asking again is a hot loop. The restart discovers the new release and carries on — self-healing, not a failure. |
+| The group will not decode | set aside; its cells stay **unwritten**, the walk carries on | a decode that throws the same way every time is not waiting on anything. The other 4,095 groups have nothing to do with it. |
+
+Nothing is abandoned by either path. Cells left unwritten keep whatever
+coverage they had, so `--resume` reads exactly the groups that still owe
+somebody rows.
+
+The exit code is the contract with the supervisor: **non-zero means there is
+more to do and it is worth doing again**, zero means the planet is loaded —
+or that a run made no progress at all, which is a thing to look at rather than
+to retry. The compose service runs `restart: on-failure`, so a crash, an
+out-of-memory kill, a reboot and a deleted release all come back by
+themselves, and a finished sweep stays finished. That restart is the retry of
+last resort and the only one a bug in `sweep.js` cannot defeat.
+
 ## The drain
 
 Nothing above happens on its own unless something reads the queue. On the box

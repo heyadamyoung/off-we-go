@@ -18,6 +18,7 @@ import {
   placeTile,
   placesInView,
   readPlaceTile,
+  tileGround,
   writePlaceTile,
   licensesFor,
   pendingCells,
@@ -3269,8 +3270,11 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async readPlaceTile(tile) {
       return readPlaceTile(pool, tile)
     },
-    async writePlaceTile(tile, body, places) {
-      return writePlaceTile(pool, tile, body, places)
+    async placeTileGround(tile) {
+      return tileGround(pool, tile)
+    },
+    async writePlaceTile(tile, body, places, since) {
+      return writePlaceTile(pool, tile, body, places, since)
     },
     async clearPlaceTiles(bounds) {
       return clearPlaceTiles(pool, bounds)

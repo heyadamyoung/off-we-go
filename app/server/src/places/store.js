@@ -28,7 +28,8 @@
  * column lists, which are constants in this file.
  */
 
-import { cellBounds } from './cells.js'
+import { cellBounds, cellsForBounds } from './cells.js'
+import { tileBounds } from './tiles.js'
 
 /* The select list, written once. `geom` is a geography; ST_X/ST_Y want a
    geometry, and the cast is free — it is the same stored point. */
@@ -646,13 +647,79 @@ export async function readPlaceTile(db, { z, x, y }) {
  * @param {Buffer} body
  * @param {number} places how many went into it
  */
-export async function writePlaceTile(db, { z, x, y }, body, places = 0) {
-  await db.query(
-    `insert into place_tiles (z, x, y, body, places)
-     values ($1, $2, $3, $4, $5)
-     on conflict (z, x, y) do nothing`,
-    [z, x, y, body, places],
+/**
+ * What is underneath a tile: how many of the cells it sits on have been
+ * ingested, how many are still owed, and when the newest of them last moved.
+ *
+ * A tile is only worth keeping if the ground under it is finished. This is
+ * the question that says whether it is, and it exists because not asking it
+ * cost a traveller a map: they panned over Scotland before Scotland was
+ * ingested, every square they looked at was built empty, and every one of
+ * those empties was then cached — in this table, and for an hour in their
+ * browser, and for a day after that as stale-while-revalidate. The ground
+ * filled in half an hour. The map did not.
+ *
+ * @param {{z: number, x: number, y: number}} tile
+ * @returns {{covered: number, unready: number, refreshed: Date|null}}
+ */
+export async function tileGround(db, { z, x, y }) {
+  const box = tileBounds(z, x, y)
+  const { rows } = await db.query(
+    `select count(*)::int as covered,
+            count(*) filter (where c.status not in ('ready', 'empty'))::int as unready,
+            max(c.last_refresh) as refreshed
+     from place_coverage c
+     where ST_MakeEnvelope(c.west, c.south, c.east, c.north, 4326)
+        && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+    [box.west, box.south, box.east, box.north],
   )
+  const found = rows[0] || {}
+  return {
+    covered: Number(found.covered) || 0,
+    unready: Number(found.unready) || 0,
+    refreshed: found.refreshed || null,
+    /* How many cells there are to be covered, so the caller can tell "all of
+       them are ready" from "the one with a row is ready and the other three
+       have never been asked for". */
+    cells: cellsForBounds(box).length,
+  }
+}
+
+/**
+ * Keep a built tile, unless the ground moved while it was being built.
+ *
+ * Two things here that were not here before, and both were bugs rather than
+ * omissions.
+ *
+ * `do update` rather than `do nothing`: a tile that is wrong could not be
+ * replaced, only deleted, so one bad build was permanent.
+ *
+ * And `since` closes the race that made bad builds in the first place. The
+ * route reads the places, encodes them, and writes the bytes back without
+ * holding a transaction across the two — so an ingest could commit in
+ * between, run clearPlaceTiles, and then have this insert land *after* the
+ * delete, caching a tile of rows from before the ingest for ever. The caller
+ * passes the moment it started reading; a cell under this tile that has been
+ * refreshed since then means the bytes describe a past, and the right thing
+ * to do with them is nothing. The next request builds it again.
+ *
+ * @param {Date|string|null} [since]  when the caller started reading
+ */
+export async function writePlaceTile(db, { z, x, y }, body, places = 0, since = null) {
+  const box = tileBounds(z, x, y)
+  const result = await db.query(
+    `insert into place_tiles (z, x, y, body, places, built_at)
+     select $1, $2, $3, $4, $5, now()
+     where $6::timestamptz is null or not exists (
+       select 1 from place_coverage c
+       where c.last_refresh > $6::timestamptz
+         and ST_MakeEnvelope(c.west, c.south, c.east, c.north, 4326)
+          && ST_MakeEnvelope($7, $8, $9, $10, 4326))
+     on conflict (z, x, y) do update set
+       body = excluded.body, places = excluded.places, built_at = excluded.built_at`,
+    [z, x, y, body, places, since, box.west, box.south, box.east, box.north],
+  )
+  return (result.rowCount ?? 0) > 0
 }
 
 /**

@@ -185,14 +185,22 @@ services:
   places-sweep:
     image: ${IMAGE_REPO:-ghcr.io/heyadamyoung/off-we-go}/api:${IMAGE_TAG:-latest}
     profiles: ["sweep"]
-    restart: "no"
-    # Peak is about 1.5 million records held across the cells still open, so
-    # the default heap is not enough and the failure would be an OOM two
-    # hours in. The indexes stay up: search on a box people are using is
-    # worth more than the fraction of the run dropping them would save.
+    # The retry of last resort, and the only one a bug in the sweep itself
+    # cannot defeat. The script exits non-zero when there is more to do and it
+    # is worth doing again, zero when the planet is loaded or when a run made
+    # no progress at all — so this restarts a crash, an out-of-memory kill, a
+    # reboot and a release deleted mid-run, and does not restart a finished
+    # sweep or spin on one that is getting nowhere. --resume means each
+    # restart pays only for the cells still owing.
+    restart: on-failure
+    # Peak is about 1.5 million records held across the cells still open. Eight
+    # gigabytes on a box with fifty-seven free is not a cost worth counting,
+    # and the alternative is an out-of-memory kill two hours in. The indexes
+    # stay up: search on a box people are using is worth more than the fraction
+    # of the run dropping them would save.
     command:
       - node
-      - --max-old-space-size=4096
+      - --max-old-space-size=8192
       - server/scripts/places-ingest.mjs
       - --planet
       - --sweep

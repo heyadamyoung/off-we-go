@@ -117,6 +117,9 @@ const DEGRADED_CACHE = 'no-store'
    there is nothing of anybody's trip in it, and the whole point of a tiled
    map is that the second look at a square is free. */
 const TILE_CACHE = 'public, max-age=3600, stale-while-revalidate=86400'
+/** A square whose ground is still being ingested: right for now and wrong in
+    ten minutes, so nothing between here and the screen may keep it. */
+const TILE_UNSETTLED = 'no-store'
 
 /* The notices a client must render, by licence. ODbL is the one with teeth:
    OpenStreetMap's licence requires the attribution to be shown wherever the
@@ -683,7 +686,24 @@ export function registerPlaceRoutes(
        * only thing standing between "built once" and "wrong for ever". */
       let body = repository.readPlaceTile ? await repository.readPlaceTile({ z, x, y }) : null
       const kept = body !== null
+      /* Whether this square is worth keeping, which is a question about the
+         ground and not about the bytes.
+         *
+         * Reported from the road: pins at one zoom, nothing a zoom in, and it
+         * never healed. This is why. A square over ground nobody had ingested
+         * yet built empty — correctly, there was nothing there — and then that
+         * emptiness was cached: here, and for an hour in the browser, and for
+         * a day after that as stale-while-revalidate. Half an hour later the
+         * ground was full of places and the map was still showing the hole.
+         * A tile is only the truth for as long as its ground is finished, so
+         * an unfinished square is answered and then forgotten. */
+      const ground = kept ? null : await repository.placeTileGround?.({ z, x, y })
+      const settled = !ground || (ground.covered >= ground.cells && ground.unready === 0)
       if (!kept) {
+        /* Before the read, not after: a cell ingested while this was being
+           built makes these bytes a description of a past, and writePlaceTile
+           compares the two and declines. */
+        const from = new Date()
         body = await repository.placeTile(
           { z, x, y },
           /* How many a tile may carry is the store's to decide — it is a fact
@@ -693,9 +713,11 @@ export function registerPlaceRoutes(
         /* Kept without waiting on it and without letting it fail the answer:
            the tile in hand is already correct, and a cache that cannot be
            written is a slow map rather than a broken one. */
-        repository
-          .writePlaceTile?.({ z, x, y }, body)
-          .catch(error => event('places tile unkept', { error: String(error?.message || error) }))
+        if (settled) {
+          repository
+            .writePlaceTile?.({ z, x, y }, body, 0, from)
+            .catch(error => event('places tile unkept', { error: String(error?.message || error) }))
+        }
       }
       stamp({
         'places.query.kind': 'tile',
@@ -706,8 +728,12 @@ export function registerPlaceRoutes(
       /* A tile is the same bytes for everybody for as long as the data behind
          it holds, which is a release — so it is cached hard and at the edge.
          This is the other half of why a tiled map does not flicker: the
-         second look at a square costs nothing at all. */
-      reply.header('cache-control', TILE_CACHE)
+         second look at a square costs nothing at all.
+         *
+         * Unless the ground under it is still being ingested, in which case
+         * these bytes are true for minutes and an hour of browser cache is
+         * how a filled-in city keeps looking empty. Answered, not kept. */
+      reply.header('cache-control', settled ? TILE_CACHE : TILE_UNSETTLED)
       reply.header('content-type', 'application/vnd.mapbox-vector-tile')
       /* An empty tile is a real answer — that square has nothing in it — and
          204 is how a vector source is told so without it treating the square
