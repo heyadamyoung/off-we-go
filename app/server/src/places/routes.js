@@ -40,11 +40,10 @@ import { createPlaceFallback } from './fallback.js'
 import { OSM_LICENSE, OVERTURE_LICENSE } from './overture.js'
 import {
   CONFIDENCE_FLOOR,
-  MARK_ZOOM,
+  LABEL_ZOOMS,
   MAX_RADIUS_METRES,
   VIEW_WEIGHT,
   markRank,
-  markZoom,
   rankNearby,
   rankSearch,
   widen,
@@ -199,13 +198,17 @@ const pin = record => ({
      different way. */
   big: VIEW_WEIGHT[record.category] >= HEADLINE_WEIGHT,
   /* The zoom this one earns its dot at, and which place wins when two want
-     the same piece of screen. Both from places/rank.js, for the same reason
-     `big` is: the weighting lives there, and a client deciding it for itself
-     is a second copy of the taxonomy drifting away from the first.
+     the same piece of screen.
+     The zoom is read, not worked out. It was computed once, from where this
+     place comes among its neighbours (places/store.js assignLabelZoom), and
+     recomputing it here from the category would be the old table back again —
+     the one that made a city a cluster of dots and an island bare. A record
+     from before that pass has none yet, and the floor zoom is the honest
+     answer for it: drawn when you are standing on it, rather than never.
      `big` stays beside them because a client from before this release still
      reads it, and a map that draws nothing is worse than one that draws the
      old way for an afternoon. */
-  minzoom: markZoom(record),
+  minzoom: Number.isFinite(record.labelZoom) ? record.labelZoom : LABEL_ZOOMS.from,
   rank: markRank(record),
 })
 
@@ -708,7 +711,7 @@ export function registerPlaceRoutes(
           { z, x, y },
           /* How many a tile may carry is the store's to decide — it is a fact
              about the shape of a tile, not about this route. */
-          { floor: CONFIDENCE_FLOOR, zooms: MARK_ZOOM, weights: VIEW_WEIGHT },
+          { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT },
         )
         /* Kept without waiting on it and without letting it fail the answer:
            the tile in hand is already correct, and a cache that cannot be

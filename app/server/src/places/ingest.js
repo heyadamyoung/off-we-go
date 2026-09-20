@@ -55,8 +55,16 @@ import { Readable } from 'node:stream'
 import { from as copyFrom } from 'pg-copy-streams'
 import { cellBounds, cellKey, cellsForBounds, cellsForPoints, isCellKey } from './cells.js'
 import { COLUMNS as FSQ_COLUMNS, placesFromFsq } from './fsq.js'
-import { COLUMNS as OVERTURE_COLUMNS, placesFromOverture } from './overture.js'
+import {
+  OSM_DATASETS,
+  OSM_LICENSE,
+  OVERTURE_LICENSE,
+  COLUMNS as OVERTURE_COLUMNS,
+  placesFromOverture,
+} from './overture.js'
 import { qualityReport } from './quality.js'
+import { LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
+import { assignLabelZoom } from './store.js'
 import { MATCH_METRES, bestMatch, mergeFields } from './resolve.js'
 
 /** Which source wins a field when both have one, before confidence is
@@ -174,19 +182,73 @@ export function rowsFromCluster(cluster, cell) {
     confidence: Math.max(...cluster.records.map(record => Number(record.confidence) || 0)),
     cell,
   }
-  const sources = cluster.records.map(record => ({
-    key: cluster.key,
-    source: record.source,
-    /* Both licences where both apply: a record Overture took from
-       OpenStreetMap obliges us under ODbL *and* under CDLA, and dropping
-       either from the trail is how an attribution notice goes missing. */
-    license: (record.licenses || []).join(', ') || 'unknown',
-    upstreamId: record.upstreamId,
-    version: record.version,
-    confidence: Number(record.confidence) || 0,
-    fields: credit[record.source] || [],
-  }))
+  /* One row per dataset that named this place, not one per source.
+   *
+   * Overture is itself a merge: a place it publishes carries a list of the
+   * datasets that named it — meta, Foursquare, Microsoft, OpenStreetMap,
+   * AllThePlaces — each with its own record id. We computed that list
+   * (overture.js upstreamIds) and then wrote one row holding only the GERS
+   * uuid, which threw away two things worth keeping. The licence trail, which
+   * is an obligation rather than a nicety: it is the OSM-derived records that
+   * oblige us under ODbL, and rolling every licence into one comma-joined
+   * string on one row says which licences apply without saying to what. And
+   * the one honest measure of prominence in open data that carries no
+   * ratings: how many independent datasets bothered to name a place. Every
+   * row in the database had exactly one source, measured, so that signal read
+   * as a constant.
+   *
+   * A record with no dataset list — Foursquare's own release, a source that
+   * does not publish one — keeps its single row, which is the same shape. */
+  const sources = cluster.records.flatMap(record => {
+    const licenses = record.licenses || []
+    /* Only Overture expands, because only Overture is itself a merge. Every
+       other source namespaces its ids with its own name — `fsq:...` — which
+       is the same single record said twice, and rewriting a stored
+       upstream_id is how a re-ingest stops recognising what it already has. */
+    const held =
+      record.source === 'overture' && record.upstreamIds?.length
+        ? record.upstreamIds
+        : [record.upstreamId]
+    const common = {
+      key: cluster.key,
+      source: record.source,
+      version: record.version,
+      confidence: Number(record.confidence) || 0,
+      fields: credit[record.source] || [],
+    }
+    return held.map(upstreamId => ({
+      ...common,
+      upstreamId,
+      /* The licence this dataset's contribution carries, rather than every
+         licence the place carries. An OSM-derived row is the one that obliges
+         us under ODbL, and now it is the row that says so. */
+      license: licenseFor(record.source, upstreamId, licenses),
+    }))
+  })
   return { place, sources }
+}
+
+/** Which licence one upstream record is under.
+ *
+ * Only Overture's records are decided by their dataset, and getting that
+ * wrong is how a licence notice becomes a lie. Overture is a merge and names
+ * the dataset each of its records came from, so `openstreetmap:n123` obliges
+ * us under ODbL and everything else it publishes is CDLA Permissive. Every
+ * other source prefixes its ids with its own name — `fsq:...` — and that
+ * prefix says nothing about a licence; Foursquare's open release is Apache,
+ * whatever its ids look like. So for anybody but Overture the record's own
+ * licences stand, exactly as they did before.
+ *
+ * @param {string} source      which of our sources this record came from
+ * @param {string} upstreamId  `dataset:record`
+ * @param {string[]} licenses  what the record itself said
+ */
+export function licenseFor(source, upstreamId, licenses = []) {
+  const held = (licenses || []).join(', ') || 'unknown'
+  if (source !== 'overture') return held
+  const id = String(upstreamId ?? '')
+  if (!id.includes(':')) return held
+  return OSM_DATASETS.test(id.split(':')[0]) ? OSM_LICENSE : OVERTURE_LICENSE
 }
 
 /* ---- COPY encoding ----------------------------------------------------
@@ -501,7 +563,7 @@ export function createIngest({
    */
   async function loadCell(cell, rows, report) {
     const client = await pool.connect()
-    const loaded = { inserted: 0, redirected: 0, swept: false, tilesSwept: 0 }
+    const loaded = { inserted: 0, redirected: 0, swept: false, tilesSwept: 0, marked: 0 }
     try {
       await client.query('begin')
       await client.query(STAGE)
@@ -622,6 +684,24 @@ export function createIngest({
          field stays so the report and its tests keep their shape. */
       loaded.swept = true
       const bounds = cellBounds(cell)
+      /* Which of these places earn a mark, and from how far away.
+       *
+       * Inside the transaction and before the tiles are dropped, because the
+       * two belong together: a cell whose places are committed without their
+       * zooms is a cell of rows no tile will draw, and a tile rebuilt from a
+       * cell whose zooms are half-written would be built from a moment that
+       * never existed.
+       *
+       * Ranked within this cell, which is a little generous at the seams — a
+       * square straddling two cells is ranked against the half we hold. The
+       * planet pass (places-ingest.mjs --rezoom) does the same arithmetic
+       * over the whole world and is the authority; this is what keeps a cell
+       * from being invisible in the meantime. */
+      loaded.marked = await assignLabelZoom(client, bounds, {
+        weights: VIEW_WEIGHT,
+        perTile: LABEL_PER_TILE,
+        zooms: LABEL_ZOOMS,
+      })
       /* The tiles over this ground are now describing a city that has
        * changed, so they go — inside the same transaction as the places they
        * were built from, because a tile surviving a rollback would be a tile

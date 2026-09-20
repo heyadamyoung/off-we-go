@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CATEGORY_WEIGHT,
-  CONFIDENCE_DELAY,
   CONFIDENCE_FLOOR,
   DECAY_FRACTION,
   ENOUGH,
+  LABEL_PER_TILE,
+  LABEL_ZOOMS,
   MAX_RADIUS_METRES,
   NEAR_BIAS_METRES,
   SEARCH_KIND,
@@ -15,7 +16,6 @@ import {
   confidenceFactor,
   distanceDecay,
   markRank,
-  markZoom,
   nearbyScore,
   rankNearby,
   rankSearch,
@@ -456,40 +456,38 @@ test('every category has a map weight, and the map weights are a table not a gue
  * view of a whole city. These are the tiers that replaced that bit, and they
  * are asserted rather than eyeballed because they are the numbers somebody
  * will want to argue with. */
-test('a cathedral is visible from across the city and a launderette is not', () => {
-  const sure = confidence => ({ confidence })
-  // Across a city: what a stranger came to see.
-  assert.ok(markZoom({ category: 'museum', ...sure(1) }) < 12)
-  assert.ok(markZoom({ category: 'nature', ...sure(1) }) < 13)
-  // Only once you are in the neighbourhood.
-  assert.ok(markZoom({ category: 'cafe', ...sure(1) }) > 15)
-  assert.ok(markZoom({ category: 'bar', ...sure(1) }) > 15)
-  // Only once you are in the street.
-  assert.ok(markZoom({ category: 'services', ...sure(1) }) > 16)
-  assert.ok(markZoom({ category: 'other', ...sure(1) }) >= 17)
+test('the zooms a mark can earn are the ones a person zooms through', () => {
+  /* There is no table of category zooms any more, and the absence is the
+     point. It read well — museum 11.5, café 15.5 — and it produced both of
+     the complaints it was meant to answer, because the same rule ran in a
+     city of a hundred and sixty-eight thousand places and on an island of
+     thirteen hundred. A mark earns its zoom from where it comes among its
+     neighbours now: places/store.js assignLabelZoom, using the weights below
+     as the order and nothing at all as the tier.
 
-  // Every named kind arrives before every everyday one, with no overlap.
-  const seen = markZoom({ category: 'historic', ...sure(1) })
-  const errand = markZoom({ category: 'shopping', ...sure(1) })
-  assert.ok(seen < errand, `${seen} should be lower than ${errand}`)
+     What is left to assert here is the shape of the ladder. 11 is a whole
+     city and 16 a few streets; 17 is the pavement, where everything not
+     already placed lands, because a square three hundred metres across is
+     not a place anybody wants a selection. */
+  assert.equal(LABEL_ZOOMS.from, 11)
+  assert.ok(LABEL_ZOOMS.to < LABEL_ZOOMS.floor, 'the floor is below the thinning zooms')
+  assert.ok(LABEL_ZOOMS.floor - LABEL_ZOOMS.to === 1, 'and immediately below them')
+  /* A screen is four to six squares, so this is about a hundred marks in
+     view. A number far from that is a map that reads as noise or as empty. */
+  assert.ok(LABEL_PER_TILE >= 12 && LABEL_PER_TILE <= 40, 'a screen holds about a hundred')
 })
 
-test('a place we are unsure of waits until you are closer', () => {
-  const certain = markZoom({ category: 'museum', confidence: 1 })
-  const doubtful = markZoom({ category: 'museum', confidence: 0.3 })
-  assert.ok(doubtful > certain, 'the doubtful museum draws later')
-  assert.ok(
-    doubtful - certain <= CONFIDENCE_DELAY + 0.05,
-    'but never by more than a whole zoom level — it is a demotion, not a veto',
-  )
-  // A category nobody weighted is not therefore invisible.
-  assert.equal(
-    markZoom({ category: 'nonsense', confidence: 1 }),
-    markZoom({ category: 'other', confidence: 1 }),
-  )
-  // And a record with nothing on it at all still gets a number.
-  assert.ok(Number.isFinite(markZoom({})))
-  assert.ok(Number.isFinite(markZoom(null)))
+test('what a mark is worth still says a museum beats a launderette', () => {
+  /* The category decides the order marks are chosen in, which is the half of
+     the old table that was a fact about the category rather than a guess
+     about the density. */
+  const worth = category => VIEW_WEIGHT[category]
+  assert.ok(worth('museum') > worth('cafe'))
+  assert.ok(worth('historic') > worth('shopping'))
+  assert.ok(worth('sights') > worth('services'))
+  assert.ok(worth('nature') > worth('other'))
+  /* And a kind nobody weighted is unknown rather than worthless. */
+  assert.equal(VIEW_WEIGHT.nonsense ?? VIEW_WEIGHT.other, VIEW_WEIGHT.other)
 })
 
 test('the cathedral wins the piece of screen the cafe wanted', () => {

@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { cellsForBounds } from '../src/places/cells.js'
+
+/** The test database, when there is one. The grid arithmetic above needs
+    none; the statement that has to agree with it does. */
+async function database() {
+  const url =
+    process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
+  const pg = (await import('pg')).default
+  const client = new pg.Client({ connectionString: url })
+  try {
+    await client.connect()
+    await client.end()
+    return { databaseUrl: url, skip: false }
+  } catch {
+    return { databaseUrl: url, skip: true }
+  }
+}
 import {
   EAGER_ZOOMS,
   tileBounds,
@@ -106,4 +122,42 @@ test('the whole world is one tile at zoom zero', () => {
   assert.equal(Math.round(world.east), 180)
   assert.ok(world.north > 85 && world.north < 85.1)
   assert.ok(world.south < -85 && world.south > -85.1)
+})
+
+/* ---- a mark earns its zoom from its neighbours ------------------------- */
+
+test('the SQL tile arithmetic agrees with the JavaScript', async () => {
+  /* assignLabelZoom works out which square a place is in inside SQL, and
+     tiles.js works it out in JavaScript for everything else. Two copies of
+     the same arithmetic is fine as long as they are the same arithmetic: a
+     sign error on one side silently ranks places against the wrong
+     neighbours, which looks like nothing at all until a city is bare and a
+     field is crowded. */
+  const { databaseUrl, skip } = await database()
+  if (skip) return
+  const pg = (await import('pg')).default
+  const pool = new pg.Pool({ connectionString: databaseUrl })
+  try {
+    for (const [lng, lat] of [
+      [4.89, 52.37],
+      [-3.19, 55.95],
+      [-104.6, 50.45],
+      [151.2, -33.87],
+      [-179.9, 65],
+      [179.9, -65],
+    ]) {
+      for (const z of [11, 14, 17]) {
+        const { rows } = await pool.query(
+          `select floor((($1::float8 + 180) / 360) * power(2, $3::int)) as x,
+                  floor((1 - ln(tan(radians($2::float8)) + 1 / cos(radians($2::float8))) / pi())
+                        / 2 * power(2, $3::int)) as y`,
+          [lng, lat, z],
+        )
+        assert.equal(Number(rows[0].x), tileX(lng, z), `x at ${lng},${lat} z${z}`)
+        assert.equal(Number(rows[0].y), tileY(lat, z), `y at ${lng},${lat} z${z}`)
+      }
+    }
+  } finally {
+    await pool.end()
+  }
 })

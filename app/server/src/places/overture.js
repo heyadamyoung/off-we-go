@@ -38,7 +38,10 @@ export const COLUMNS = Object.freeze([
    Permissive. Which applies is decided per record from `sources`. */
 export const OVERTURE_LICENSE = 'CDLA-Permissive-2.0'
 export const OSM_LICENSE = 'ODbL-1.0'
-const OSM_DATASETS = /openstreetmap|osm/i
+/** Which of Overture's datasets are OpenStreetMap, and therefore ODbL.
+    Exported because the ingest decides a licence per upstream record now,
+    rather than joining every licence a place carries onto one row. */
+export const OSM_DATASETS = /openstreetmap|osm/i
 
 const text = value => {
   const trimmed = typeof value === 'string' ? value.trim() : ''

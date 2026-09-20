@@ -268,71 +268,61 @@ export function rankSearch(rows, query) {
  * street. Nothing is removed — a place with a late zoom is not a place we are
  * hiding, it is a place you have not zoomed to yet.
  *
- * The tiers below are the category's answer. They are spaced to the way a
- * person zooms: 11 is a whole city, 13 a district, 15 a few streets, 17 the
- * pavement you are standing on. Deliberately not derived from CATEGORY_WEIGHT
- * by arithmetic, because the weight answers "how worth seeing is this" and
- * this answers "from how far away is this worth drawing", and they come apart:
- * a railway station is not a sight and is visible from a long way off; a
- * viewpoint is a sight and is pointless until you are near it.
- */
-export const MARK_ZOOM = Object.freeze({
-  /* Across a city. What a stranger would say they came to see. */
-  museum: 11.5,
-  historic: 12,
-  gallery: 12.5,
-  nature: 12,
-  beach: 12,
-  /* Across a district. Big enough to plan an afternoon around. */
-  viewpoint: 13,
-  entertainment: 13.5,
-  religious: 13.5,
-  transit: 13.5,
-  market: 14,
-  /* The catch-all sits here rather than with the museums. `sights` is
-     whatever was attraction-shaped and unnameable — in Amsterdam it is mostly
-     canal bridges, measured — and a bridge is honestly a sight without being
-     what somebody zooming to a city wants a dot for. */
-  sights: 14,
-  /* A few streets. Things you choose once you are in the neighbourhood. */
-  lodging: 14.5,
-  food: 15,
-  sport: 15,
-  cafe: 15.5,
-  bar: 15.5,
-  health: 16,
-  shopping: 16,
-  /* The pavement. Real, and nobody plans around them. */
-  services: 16.5,
-  other: 17,
-})
-
-/** The zoom a whole category starts drawing at. */
-export const markZoomOf = category => MARK_ZOOM[category] ?? MARK_ZOOM.other
-
-/* How much later a place we are unsure of has to wait.
+ * How a place earns its zoom here is not a table. It is where it comes in
+ * its own neighbourhood.
  *
- * Confidence already decides whether a record is shown at all (CONFIDENCE_FLOOR)
- * and how it sorts. On a map it can do something better than either: a
- * half-certain museum is still probably a museum, so it draws — just not from
- * across the city, where a wrong dot is most of what you can see. A full zoom
- * level at the floor, nothing at all at total confidence. */
-export const CONFIDENCE_DELAY = 1
-
-/**
- * The zoom at which one place earns its dot.
+ * The first version of this was a table: museum 11.5, café 15.5, and so on
+ * down. It reads well and it is wrong, and wrong in a way that produced both
+ * of the complaints it was meant to answer. The same rule ran in central
+ * Amsterdam and on the Isle of Skye. Amsterdam has a hundred and sixty-eight
+ * thousand places in its square, so everything qualified and a per-tile cap
+ * threw away whatever did not fit, arbitrarily — a cluster of dots. Skye has
+ * thirteen hundred, two thirds of them places to stay and errands, which the
+ * table does not let on screen until zoom 14.5 and 16.5 — an empty island.
+ * One rule, two opposite failures, because the rule never looked at how much
+ * was around.
  *
- * @param {{category?: string, confidence?: number}} place
- * @returns {number} a map zoom, one decimal place
+ * So a place's zoom is computed, once, from its rank among its neighbours.
+ * For each zoom from LABEL_ZOOMS.from upward, the places in each square of
+ * that zoom are put in order of how much they are worth looking at, and the
+ * best LABEL_PER_TILE of them that have not already earned a zoom earn this
+ * one. A square holds the same number of marks at every zoom; there are four
+ * times as many squares each level down, so the map fills in at a steady
+ * rate however dense the ground is. Amsterdam thins itself. Skye shows what
+ * it has from across the island, because on Skye a guest house is what there
+ * is to see.
+ *
+ * This is what a real tiler does — tippecanoe calls it dropping the densest
+ * as needed — and doing it in SQL at ingest rather than in a tiler is what
+ * lets it be one number on the row, which is the part that matters: a tile
+ * is then `label_zoom <= z` with no cap, so a mark that has appeared can
+ * never disappear as you zoom further in. Monotonic by construction rather
+ * than by luck. See places/store.js assignLabelZoom.
+ *
+ * What the category still decides is the ordering — CATEGORY_WEIGHT, below,
+ * times confidence. A museum beats a café for a place in the square. It no
+ * longer decides from how far away anything is drawn, because that was never
+ * a fact about the category; it was a guess about the density.
  */
-export function markZoom(place) {
-  const base = markZoomOf(place?.category)
-  const sure = Math.min(1, Math.max(0, Number(place?.confidence ?? 0)))
-  /* Rounded, because this rides on every pin of every viewport and two
-     records of the same kind and similar confidence should share a tier
-     rather than differ in the third decimal. */
-  return Math.round((base + CONFIDENCE_DELAY * (1 - sure)) * 10) / 10
-}
+
+/** Zooms that thin themselves, and the one that does not.
+ *
+ * 11 is a whole city and 16 a few streets. 17 is the pavement, where every
+ * place left over lands: a square there is three hundred metres across, and
+ * somebody zoomed that far in is asking for everything rather than for a
+ * selection of it. Marks below 11 are not drawn at all, so nothing is
+ * computed for them. */
+export const LABEL_ZOOMS = Object.freeze({ from: 11, to: 16, floor: 17 })
+
+/** Marks per square, at every zoom that thins.
+ *
+ * A screen is four to six squares, so this is roughly a hundred marks in
+ * view — near what a phone can carry before it reads as noise, and close to
+ * what the maps people compare us to show. It is a density, not a budget:
+ * the count is per square and squares quadruple each level, so zooming in
+ * reveals more of the same ground rather than the same number spread thinner.
+ */
+export const LABEL_PER_TILE = 24
 
 /**
  * Which place wins when two want the same piece of screen.
