@@ -325,6 +325,79 @@ export const LABEL_ZOOMS = Object.freeze({ from: 11, to: 16, floor: 17 })
 export const LABEL_PER_TILE = 24
 
 /**
+ * The furthest away a kind of place may ever be drawn from.
+ *
+ * Density alone is not enough, and the case that proved it is small enough to
+ * hold in your head. The demo map has twenty-two places in Amsterdam and a
+ * budget of twenty-four a square, so every one of them fit at zoom 11 and the
+ * algorithm was right: there was room. It put a café called Winkel 43 on the
+ * map from across the city, beside the Rijksmuseum, because nothing was
+ * competing with it.
+ *
+ * That is wrong, and it is wrong for a reason density cannot see. A café is
+ * not a city-scale landmark. It does not become one by being the only café in
+ * an empty county, and on the Isle of Skye — 1,329 places, two thirds of them
+ * guest houses and errands — pure density would have promoted a bed and
+ * breakfast to the zoom you use to look at a whole island.
+ *
+ * So the two rules do different jobs, and neither does the other's:
+ *
+ *   the category   says how prominent a kind of place may ever be. A ceiling,
+ *                  not a position. It is the answer to "could you reasonably
+ *                  see this from here", which is a fact about the kind.
+ *   the density    picks which of the places allowed at this zoom actually
+ *                  get the slots, by what they are worth. That is the answer
+ *                  to "of the things that could be here, which few".
+ *
+ * This is not the table that #189 deleted coming back. That table set the
+ * zoom exactly — café 15.5, always — so Skye showed nothing until you were
+ * standing on it. This only stops a kind rising above its station; a café on
+ * Skye still earns 14 where it used to be refused until 15.5, and Skye's
+ * landscape and historic places still earn 11 because there is room and they
+ * are the kind of thing you look at an island for.
+ */
+export const EARLIEST_ZOOM = Object.freeze({
+  /* Things you plan a day around and can see from across a city. */
+  sights: 11,
+  viewpoint: 11,
+  museum: 11,
+  historic: 11,
+  gallery: 11,
+  nature: 11,
+  beach: 11,
+  /* A destination is a destination. Oude Kerk is the oldest building in
+     Amsterdam and Albert Cuyp is the reason people go to De Pijp; a station
+     is what a traveller navigates a city by. Which of them actually get the
+     slots at zoom 11 is the density's business, not this table's. */
+  entertainment: 11,
+  religious: 11,
+  market: 11,
+  transit: 11,
+  /* Somewhere you go on purpose, rarely a skyline. */
+  sport: 12,
+  lodging: 13,
+  /* Places you choose once you are in the neighbourhood. Nobody picks a
+     café from twenty kilometres away. */
+  food: 14,
+  cafe: 14,
+  bar: 14,
+  shopping: 14,
+  /* An errand. You are looking for one when you are already outside it. */
+  services: 16,
+  health: 16,
+  other: 16,
+})
+
+/* Bumped whenever anything above changes how a zoom is decided — the
+   ceilings, the weights, the per-tile budget, the range. The worker keeps a
+   copy of the last version it ran and redoes the whole pass when they
+   differ, because a stored number gives no hint of the rule that made it. */
+export const ZOOM_POLICY = 2
+
+/** The lowest zoom this kind of place may ever earn. */
+export const earliestFor = category => EARLIEST_ZOOM[category] ?? EARLIEST_ZOOM.other
+
+/**
  * Which place wins when two want the same piece of screen.
  *
  * A collision has to be settled by something, and "whichever the database

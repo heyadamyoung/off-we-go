@@ -103,10 +103,53 @@ test('the demo thins the way the server does, and cannot drift from it', async (
   assert.ok(!/MARK_ZOOM/.test(demo), 'no copy of the zoom table the server no longer has')
   assert.ok(!/MARK_ZOOM/.test(server), 'and the server does not have one either')
 
-  /* Twenty-two places in one city do not fill a square, so every one of them
-     earns the first zoom — arrived at by the rule rather than asserted by a
-     table, which is the whole point. */
-  for (const pin of SAMPLE_PINS) {
-    assert.equal(pin.minzoom, Number(zooms[1]), `${pin.name} earns the first zoom`)
+  /* The ceilings, category by category. Not a spot check: the whole table,
+     because the failure this guards against is one category quietly drifting
+     and a café reappearing on the map from across a city — which is exactly
+     what happened, and the browser suite caught it only because somebody had
+     written a test about that one café. */
+  const ceilings = source => {
+    const block = /EARLIEST_ZOOM[^{]*\{([^}]*)\}/.exec(source)
+    assert.ok(block, 'the ceilings are where the guard expects them')
+    return Object.fromEntries(
+      [...block[1].matchAll(/^\s*(\w+):\s*(\d+),/gm)].map(([, kind, zoom]) => [kind, zoom]),
+    )
   }
+  const onTheServer = ceilings(server)
+  const inTheDemo = ceilings(demo)
+  assert.ok(Object.keys(onTheServer).length >= 15, 'every category has a ceiling')
+  assert.deepEqual(inTheDemo, onTheServer, 'the demo caps each kind exactly as the server does')
+
+  /* And the rule the ceilings exist to enforce, stated once so that loosening
+     the whole table is a deliberate act rather than a slip. */
+  for (const kind of ['cafe', 'bar', 'food']) {
+    assert.ok(
+      Number(onTheServer[kind]) >= 14,
+      `a ${kind} is never visible from across a city (${onTheServer[kind]})`,
+    )
+  }
+  for (const kind of ['museum', 'sights', 'historic']) {
+    assert.equal(Number(onTheServer[kind]), 11, `a ${kind} is visible across a city`)
+  }
+
+  /* Twenty-two places in one city do not fill a square, so the density never
+     has to choose and every pin lands exactly on its own ceiling. That makes
+     the demo a clean reading of the ceilings — arrived at by running the rule
+     rather than asserted by a table, which is the whole point. */
+  for (const pin of SAMPLE_PINS) {
+    const ceiling = Number(onTheServer[pin.category] ?? onTheServer.other)
+    assert.equal(
+      pin.minzoom,
+      Math.max(Number(zooms[1]), ceiling),
+      `${pin.name} (${pin.category}) earns its ceiling, nothing sooner`,
+    )
+  }
+
+  /* And the one the browser suite caught: a café beside the Rijksmuseum from
+     across Amsterdam, because twenty-two places left room for it. */
+  const cafe = SAMPLE_PINS.find(pin => pin.name === 'Winkel 43')
+  const museum = SAMPLE_PINS.find(pin => pin.name === 'Rijksmuseum')
+  assert.ok(cafe && museum, 'the two the rule is about are both in the sample')
+  assert.equal(museum.minzoom, 11, 'the museum is visible across the city')
+  assert.ok(cafe.minzoom >= 14, `the café waits for its street (${cafe.minzoom})`)
 })

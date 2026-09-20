@@ -64,7 +64,7 @@ import {
 } from './overture.js'
 import { qualityReport } from './quality.js'
 import { retryAfterMs } from './retry.js'
-import { LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
+import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
 import { assignLabelZoom } from './store.js'
 import { MATCH_METRES, bestMatch, mergeFields } from './resolve.js'
 
@@ -752,6 +752,7 @@ export function createIngest({
         weights: VIEW_WEIGHT,
         perTile: LABEL_PER_TILE,
         zooms: LABEL_ZOOMS,
+        earliest: EARLIEST_ZOOM,
       })
       /* The tiles over this ground are now describing a city that has
        * changed, so they go — inside the same transaction as the places they

@@ -48,6 +48,34 @@ const SAMPLE_WEIGHT: Record<string, number> = {
 const SAMPLE_ZOOMS = { from: 11, to: 16, floor: 17 }
 const SAMPLE_PER_TILE = 24
 
+/* The furthest away each kind may ever be drawn from — places/rank.js
+   EARLIEST_ZOOM, kept in step by the test beside this file. Density alone put
+   a café on the map from across Amsterdam here, because twenty-two places do
+   not fill a square and the algorithm was right that there was room. Room is
+   not the only question. */
+const SAMPLE_EARLIEST: Record<string, number> = {
+  sights: 11,
+  viewpoint: 11,
+  museum: 11,
+  historic: 11,
+  gallery: 11,
+  nature: 11,
+  beach: 11,
+  entertainment: 11,
+  religious: 11,
+  market: 11,
+  transit: 11,
+  sport: 12,
+  lodging: 13,
+  food: 14,
+  cafe: 14,
+  bar: 14,
+  shopping: 14,
+  services: 16,
+  health: 16,
+  other: 16,
+}
+
 /** Which slippy square a point is in — the server's tileX and tileY. */
 const squareOf = (lng: number, lat: number, z: number) => {
   const side = 2 ** z
@@ -62,11 +90,16 @@ const squareOf = (lng: number, lat: number, z: number) => {
 /**
  * The zoom each of these earns among the others, by the server's rule.
  *
- * Twenty-two places in one city will not fill a square, so in practice they
- * all land on the first zoom — which is the right answer and is arrived at
- * rather than asserted. The point of running the rule instead of copying a
- * table is that the demo cannot quietly start behaving differently from the
- * app it demonstrates.
+ * Two rules doing different jobs. The category says how prominent a kind of
+ * place may ever be; the density picks which of the places allowed at a zoom
+ * take its slots. Neither does the other's work, and this file is where that
+ * was learned: twenty-two places do not fill a square, so density alone put
+ * Winkel 43 — a café — on the map beside the Rijksmuseum from across the
+ * city. The algorithm was right that there was room. Room is not the only
+ * question, and a café does not become a landmark by being unopposed.
+ *
+ * Run rather than copied, so the demo cannot quietly start behaving
+ * differently from the app it demonstrates.
  */
 function zoomsFor(places: { lng: number; lat: number; category: string; confidence: number }[]) {
   const worth = (place: { category: string; confidence: number }) =>
@@ -80,6 +113,7 @@ function zoomsFor(places: { lng: number; lat: number; category: string; confiden
     const taken = new Map<string, number>()
     for (const { at, place } of order) {
       if (earned.has(at)) continue
+      if (z < (SAMPLE_EARLIEST[place.category] ?? SAMPLE_EARLIEST.other)) continue
       const square = squareOf(place.lng, place.lat, z)
       const already = taken.get(square) ?? 0
       if (already >= SAMPLE_PER_TILE) continue
