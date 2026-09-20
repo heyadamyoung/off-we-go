@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CATEGORY_WEIGHT,
+  CONFIDENCE_DELAY,
   CONFIDENCE_FLOOR,
   DECAY_FRACTION,
   ENOUGH,
@@ -13,6 +14,8 @@ import {
   WIDENING,
   confidenceFactor,
   distanceDecay,
+  markRank,
+  markZoom,
   nearbyScore,
   rankNearby,
   rankSearch,
@@ -443,4 +446,65 @@ test('every category has a map weight, and the map weights are a table not a gue
      leads with the catch-all, because there distance decides and a sight
      underfoot is a sight. */
   assert.ok(CATEGORY_WEIGHT.sights > CATEGORY_WEIGHT.museum)
+})
+
+/* What shows at which zoom.
+ *
+ * Reported from the road, looking at a city: "ours is just a cluster fuck of
+ * dots". It was. The layer had one bit per place — `big` — and above zoom 11
+ * everything drew, so three hundred identical grey dots landed at once on a
+ * view of a whole city. These are the tiers that replaced that bit, and they
+ * are asserted rather than eyeballed because they are the numbers somebody
+ * will want to argue with. */
+test('a cathedral is visible from across the city and a launderette is not', () => {
+  const sure = confidence => ({ confidence })
+  // Across a city: what a stranger came to see.
+  assert.ok(markZoom({ category: 'museum', ...sure(1) }) < 12)
+  assert.ok(markZoom({ category: 'nature', ...sure(1) }) < 13)
+  // Only once you are in the neighbourhood.
+  assert.ok(markZoom({ category: 'cafe', ...sure(1) }) > 15)
+  assert.ok(markZoom({ category: 'bar', ...sure(1) }) > 15)
+  // Only once you are in the street.
+  assert.ok(markZoom({ category: 'services', ...sure(1) }) > 16)
+  assert.ok(markZoom({ category: 'other', ...sure(1) }) >= 17)
+
+  // Every named kind arrives before every everyday one, with no overlap.
+  const seen = markZoom({ category: 'historic', ...sure(1) })
+  const errand = markZoom({ category: 'shopping', ...sure(1) })
+  assert.ok(seen < errand, `${seen} should be lower than ${errand}`)
+})
+
+test('a place we are unsure of waits until you are closer', () => {
+  const certain = markZoom({ category: 'museum', confidence: 1 })
+  const doubtful = markZoom({ category: 'museum', confidence: 0.3 })
+  assert.ok(doubtful > certain, 'the doubtful museum draws later')
+  assert.ok(
+    doubtful - certain <= CONFIDENCE_DELAY + 0.05,
+    'but never by more than a whole zoom level — it is a demotion, not a veto',
+  )
+  // A category nobody weighted is not therefore invisible.
+  assert.equal(
+    markZoom({ category: 'nonsense', confidence: 1 }),
+    markZoom({ category: 'other', confidence: 1 }),
+  )
+  // And a record with nothing on it at all still gets a number.
+  assert.ok(Number.isFinite(markZoom({})))
+  assert.ok(Number.isFinite(markZoom(null)))
+})
+
+test('the cathedral wins the piece of screen the cafe wanted', () => {
+  const cathedral = markRank({ category: 'religious', confidence: 0.9 })
+  const cafe = markRank({ category: 'cafe', confidence: 0.9 })
+  const launderette = markRank({ category: 'services', confidence: 0.9 })
+  assert.ok(cathedral > cafe, `${cathedral} should beat ${cafe}`)
+  assert.ok(cafe > launderette, `${cafe} should beat ${launderette}`)
+
+  // Confidence demotes within a kind, so two museums are not a coin toss.
+  assert.ok(
+    markRank({ category: 'museum', confidence: 0.95 }) >
+      markRank({ category: 'museum', confidence: 0.4 }),
+  )
+  // Integers, because this travels as a GeoJSON property and is sorted on.
+  assert.equal(cathedral, Math.round(cathedral))
+  assert.ok(Number.isFinite(markRank({})))
 })

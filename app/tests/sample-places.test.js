@@ -19,11 +19,19 @@ test('a sample pin is shaped exactly like one from the server', () => {
       'id',
       'lat',
       'lng',
+      'minzoom',
       'name',
+      'rank',
     ])
     assert.ok(pin.id && typeof pin.id === 'string', pin.name)
     assert.ok(pin.confidence > 0 && pin.confidence <= 1, `${pin.name} ${pin.confidence}`)
     assert.ok(Number.isFinite(pin.lng) && Number.isFinite(pin.lat), pin.name)
+    /* The zoom it earns its dot at, and the rank that settles a collision.
+       Both come from the server for a real pin; the demo has no server, so
+       these are the canned equivalents and they have to be real numbers in
+       the range the map layer reads — see the note in sample-places-core. */
+    assert.ok(pin.minzoom >= 11 && pin.minzoom <= 18, `${pin.name} ${pin.minzoom}`)
+    assert.ok(Number.isInteger(pin.rank) && pin.rank > 0, `${pin.name} ${pin.rank}`)
   }
   /* Ids are what the map keys its features on, so two the same would drop a
      pin and nobody would know which. */

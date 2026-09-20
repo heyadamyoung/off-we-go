@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import { loadPlacePins } from '../../places'
+import { MIN_ZOOM_KEY, RANK_KEY } from '../../../place-marks-core'
 import { trackError } from '../../../shared/lib/telemetry'
 import type { AttractionPoi, MapView } from '../../../shared/model/types'
 
@@ -49,6 +50,12 @@ const featureFor = (poi: AttractionPoi): Feature<Point> => ({
     k: poi.category,
     f: '',
     big: poi.big,
+    /* The zoom this place earns its dot at, and which place wins when two
+       want the same piece of screen. Both decided by the server, which holds
+       the weighting — see places/rank.js. Passed through rather than computed
+       here, so there is one taxonomy and not two. */
+    [MIN_ZOOM_KEY]: poi.minzoom,
+    [RANK_KEY]: poi.rank,
   },
 })
 

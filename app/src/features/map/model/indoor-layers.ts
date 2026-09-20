@@ -9,7 +9,7 @@ import type { FeatureCollection } from 'geojson'
 import { ACCENT } from './map-style'
 import { nearestTap } from './tap-target'
 import { EMPTY_FC } from './use-attractions'
-import { whenStyleReady } from './use-map-layers'
+import { whenStyleReady } from './style-ready'
 
 /** A gate somebody tapped: where it is, what it is called, which levels it is on. */
 export interface IndoorGate {
