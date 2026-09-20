@@ -140,7 +140,7 @@ rollback() {
   # to .env too, so the box and its file agree until the next release.
   printf 'IMAGE_TAG=rollback\n' > "$ROLLBACK_ROOT/env-rollback"
   bash ./deploy/merge-env.sh "$ROLLBACK_ROOT/env-rollback" "$APP_ROOT/.env" || true
-  IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate --wait --wait-timeout 180 || true
+  IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate --wait --wait-timeout 900 || true
   exit "$exit_code"
 }
 trap rollback ERR
@@ -154,6 +154,16 @@ docker compose config --quiet
 # The release sha reaches the web build so browser telemetry can be sliced
 # by deploy.
 export RELEASE_SHA="$release_sha"
+# Fifteen minutes, which is the api healthcheck's start period and not a
+# number picked for comfort. The two have to agree: compose stops waiting at
+# --wait-timeout, the container is only called unhealthy after start_period,
+# and while the timeout was the shorter of the two a boot inside its own
+# allowance was rolled back as a failure. That is exactly what happened to
+# deploy 363 — a migration building one GiST index over ten million places
+# ran past three minutes, compose gave up, and a release that would have come
+# up perfectly well was restored away. A genuinely broken release is still
+# caught: the healthcheck probes every ten seconds once the start period is
+# over, so this is patience with a boot, not with a failure.
 if [[ -n "$registry_token" ]]; then
   # The images the pipeline built and tested, pulled rather than rebuilt here:
   # building on this box was a minute and a half of every deploy, three on a
@@ -163,9 +173,9 @@ if [[ -n "$registry_token" ]]; then
   registry_token=""
   docker compose pull --quiet api web
   docker logout ghcr.io >/dev/null 2>&1 || true
-  docker compose up -d --no-build --wait --wait-timeout 180
+  docker compose up -d --no-build --wait --wait-timeout 900
 else
-  docker compose up -d --build --wait --wait-timeout 180
+  docker compose up -d --build --wait --wait-timeout 900
 fi
 bash ./deploy/configure-logto.sh
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"

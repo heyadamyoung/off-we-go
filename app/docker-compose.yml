@@ -176,7 +176,13 @@ services:
       # dead and rolled back. Failures inside the start period do not count
       # against the retries, so this buys time without making a genuinely
       # broken release take any longer to be spotted.
-      start_period: 300s
+      # Long, because a boot can carry a migration and a migration can carry
+      # real work — the index over ten million places is minutes on this box.
+      # It must not be shorter than the deploy's --wait-timeout, or compose
+      # calls a release failed while its own healthcheck still calls it
+      # starting. Probing stays every ten seconds, so a broken release is
+      # still caught in under a minute once the boot is over.
+      start_period: 900s
 
   # The planet, once, in the background.
   #

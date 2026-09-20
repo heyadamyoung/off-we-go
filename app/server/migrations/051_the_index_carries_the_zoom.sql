@@ -48,10 +48,14 @@ create extension if not exists btree_gist;
    index over every place we hold and the sort is the whole of the cost. */
 set local maintenance_work_mem = '256MB';
 
+/* The old one first, then the new one. Nothing reads either while this runs
+   — the api has not started listening — and building the replacement with
+   its predecessor still on disk is a second copy of the same tree to hold
+   and no benefit at all. */
+drop index if exists places_geom_idx;
+
 create index if not exists places_view_idx
   on places using gist (geom, (coalesce(label_zoom, 11::real)));
-
-drop index if exists places_geom_idx;
 
 /* Every tile again. The ones already built are correct — this migration
    changes how they are found, not what is in them — so they stay. */
