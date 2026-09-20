@@ -175,6 +175,45 @@ node server/scripts/places-ingest.mjs --bbox 4,52,5,53
 node server/scripts/places-ingest.mjs --planet --resume
 ```
 
+### The sweep
+
+Asking cell by cell is the wrong question for anything bigger than a country.
+A row group is the smallest thing Parquet can read, neighbouring cells share
+groups, and so the same bytes are fetched over and over: measured against
+2026-08-19.0, Amsterdam's square touches 14 row groups and reads about 37 MB,
+Toronto's touches 22 and reads 61 MB, and **asking all 53,333 candidate cells
+in turn reads about 190 GB to fetch a release that is 10.5 GB**.
+
+`--sweep` turns the question round. It walks the 4,096 row groups in file
+order, reads each one exactly once, and posts its rows into the cells they
+fall in; a cell is written the moment the last group overlapping it has been
+read, which the index knows before a byte is fetched. Each cell then goes
+through the ordinary load — same transaction, same collapse guard, same
+redirects, same tile sweep — so it is the same ingest reading in a better
+order, not a second implementation. `server/src/places/sweep.js`.
+
+```
+node server/scripts/places-ingest.mjs --planet --sweep --resume    # pnpm places:sweep
+node server/scripts/places-ingest.mjs --bbox 3,50,8,54 --sweep
+```
+
+Proved rather than asserted: the same nine cells loaded both ways give
+**971,789 places either way, row for row, with identical coverage and quality
+rows** (`server/test/places-sweep.test.js` runs the comparison on every CI
+run against a real PostGIS). The sweep took 134 s and 123 MB; cell by cell
+took 217 s and 193 MB, and the gap widens with the number of cells because
+the re-read factor does.
+
+Two properties worth knowing. It is single-source: two sources have to be
+clustered together inside a cell, so `loadSwept` refuses outright rather than
+loading one of them and deleting what the other said. And a cell no row group
+touches — open sea — is written `empty` rather than skipped, because a cell
+with no coverage row is one the map reports as still loading for ever.
+
+Interrupting is supported: the group in flight finishes, cells still open are
+abandoned unwritten, and `--resume` reads only the groups that still owe
+somebody rows.
+
 ## The drain
 
 Nothing above happens on its own unless something reads the queue. On the box
@@ -233,13 +272,21 @@ and cannot now happen, because such a read is refused rather than half loaded.
 
 ## Operations
 
-**Disk.** Measured, not estimated: 168,523 places in one dense cell occupy
-115 MB including indexes, of which 64 MB is heap — about 715 bytes per row all
-in. Seventy-three million rows is therefore **roughly 50 GB**, and the box
-wants headroom above that for index builds, WAL and refresh churn: **120 GB**
-is a comfortable allowance for the planet, 20 GB for a continent.
+**Disk.** Measured over 2,185,041 real rows rather than extrapolated from one
+cell: `places` and its four indexes come to 761 bytes a row, `place_sources`
+to another 402, so **1,191 bytes per place all in**. Seventy-three million
+rows is therefore **about 88 GB**, and the box wants headroom above that for
+index builds, WAL and refresh churn: **130 GB** is a comfortable allowance for
+the planet, 20 GB for a continent. The production box has 544 GB free.
 
-Build indexes after a bulk load, never during.
+Leave the indexes up. Dropping the trigram indexes for a bulk load used to be
+the advice here and `--planet` did it automatically; it is now `--drop-indexes`
+and asked for, because it was measured and it is not worth what it costs. Nine
+dense cells swept with every index live loaded 971,789 places in 134 seconds —
+7,250 a second, which puts the whole planet under three hours. Dropping them
+buys a fraction of that and makes place search a sequential scan of a growing
+table for the whole run, which on a deployment people are using while
+travelling is the worse trade.
 
 **Backup and restore.** The places tables are derived data: they can be rebuilt
 from open sources in hours, and they are the largest thing we run. So they are
@@ -278,6 +325,18 @@ All against Overture release 2026-08-19.0, from this development machine.
 | COPY into PostGIS | 2.5 s |
 | Build four indexes | 2.7 s |
 | **Total** | **14.8 s for 168,523 places** |
+
+### The sweep, nine dense cells (Randstad and the Ruhr)
+
+| | Sweep | Cell by cell |
+| --- | --- | --- |
+| Places loaded | 971,789 | 971,789 |
+| Wall clock | 134 s | 217 s |
+| Off the network | 123 MB | 193 MB |
+| Row groups read | each once | once per overlapping cell |
+
+Projected from that rate, with indexes live: **the planet in under three
+hours and 10.5 GB**, against 190 GB and days the other way.
 
 ### Serving (tier 1), 168,523 places
 

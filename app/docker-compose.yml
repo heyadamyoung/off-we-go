@@ -160,6 +160,56 @@ services:
       timeout: 5s
       retries: 12
 
+  # The planet, once, in the background.
+  #
+  # The queue in the API drains four one-degree cells a minute, which is the
+  # right rate for the cells a trip touches and about nine days for the
+  # 53,333 the release has data in. This is the other job: read the sixteen
+  # Parquet parts once each, post every row into the cell it falls in, and
+  # write those cells through the same ingest (see places/sweep.js). Measured
+  # at 7,250 places a second on a sixteen-core box, which is the whole planet
+  # in under three hours and about 88 GB of table and index.
+  #
+  # Its own service rather than `docker compose exec` in the API, for one
+  # reason: a deploy recreates the API container and would kill a run three
+  # hours long every twenty minutes. A profiled service is not touched by
+  # `compose up`, so it outlives releases. `restart: no` because a finished
+  # sweep is finished; the deploy starts it again if there is more to do, and
+  # --resume means that costs only the cells still owing.
+  #
+  #     docker compose --profile sweep up -d places-sweep      start it
+  #     docker compose logs -f places-sweep                    watch it
+  #     docker compose stop places-sweep                       stop it; the
+  #         cell in flight is abandoned rather than half-written, and the
+  #         next run picks up from the coverage rows
+  places-sweep:
+    image: ${IMAGE_REPO:-ghcr.io/heyadamyoung/off-we-go}/api:${IMAGE_TAG:-latest}
+    profiles: ["sweep"]
+    restart: "no"
+    # Peak is about 1.5 million records held across the cells still open, so
+    # the default heap is not enough and the failure would be an OOM two
+    # hours in. The indexes stay up: search on a box people are using is
+    # worth more than the fraction of the run dropping them would save.
+    command:
+      - node
+      - --max-old-space-size=4096
+      - server/scripts/places-ingest.mjs
+      - --planet
+      - --sweep
+      - --resume
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://wayfare:${POSTGRES_PASSWORD}@db:5432/wayfare
+      # The same footer and index cache the API keeps, so a sweep starting
+      # after a release does not re-parse sixteen 1.6 MB footers.
+      PLACES_INDEX_DIR: /data/places
+      PLACES_RELEASE: ${PLACES_RELEASE:-}
+    volumes:
+      - places_data:/data/places
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Object storage on this box, speaking S3.
   #
   # Not because one volume was full, but because one volume is the thing that

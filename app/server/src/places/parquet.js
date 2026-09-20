@@ -185,7 +185,35 @@ export function createParquetReader({
     return found
   }
 
-  return { open, readBox, warmed: () => warm.size }
+  /**
+   * One row group, whole, with no box applied.
+   *
+   * `readBox` is the right shape for a question about a place on the map: it
+   * is handed a box and reads whichever groups could answer it. A sweep asks
+   * the opposite question — it has the group and wants every row in it,
+   * wherever those rows turn out to be — and going through `readBox` to ask
+   * it would mean handing in the group's own bounding box and re-reading
+   * every other group that happens to overlap it. That is the difference
+   * between reading the release once and reading it eighteen times.
+   *
+   * @param {{url: string, size: number}} part
+   * @param {{s: number, e: number}} group  row range, from the index
+   * @param {string[]} columns
+   * @param {{signal?: AbortSignal}} [options]
+   */
+  async function readGroup(part, group, columns, { signal } = {}) {
+    const { metadata, file } = await open(part, signal)
+    return parquetReadObjects({
+      file,
+      metadata,
+      compressors,
+      columns,
+      rowStart: group.s,
+      rowEnd: group.e,
+    })
+  }
+
+  return { open, readBox, readGroup, warmed: () => warm.size }
 }
 
 /** Whether a thing with a bbox could hold anything in the box. */
