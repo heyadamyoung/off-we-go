@@ -261,8 +261,11 @@ test('the deploy pulls with a token it destroys, builds without one, and keeps t
   assert.match(script, /docker login ghcr\.io -u "\$registry_user" --password-stdin/)
   assert.match(script, /docker compose pull --quiet api web/)
   assert.match(script, /docker logout ghcr\.io/)
-  assert.match(script, /docker compose up -d --no-build --wait --wait-timeout 180/)
-  assert.match(script, /docker compose up -d --build --wait --wait-timeout 180/)
+  /* No number asserted here on purpose — how long the deploy waits has to
+     agree with the api's healthcheck, and that agreement is checked where
+     the healthcheck can actually be read. Here only that it waits at all. */
+  assert.match(script, /docker compose up -d --no-build --wait --wait-timeout \d+/)
+  assert.match(script, /docker compose up -d --build --wait --wait-timeout \d+/)
   assert.match(script, /docker tag "\$running" "\$image_repo\/\$image:rollback"/)
   assert.match(script, /IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate/)
   // Nothing about the token is ever echoed or left in a variable afterwards.
@@ -818,6 +821,26 @@ test('the api is given time to boot before a probe can roll a release back', {
      serving errors for the length of the start period a second time. */
   assert.ok(seconds(health.interval) <= 30, 'still probed often once it is up')
   assert.ok(Number(health.retries) <= 12, 'and still given a bounded number of chances')
+
+  /* The deploy is at least as patient as the healthcheck.
+   *
+   * Two numbers that have to agree and neither of which mentions the other.
+   * `compose up --wait` stops waiting at --wait-timeout; the container is
+   * only called unhealthy once start_period is over. While the timeout was
+   * the shorter of the two, a boot still inside its own allowance was read
+   * as a failure and restored away — deploy 363, where one migration built
+   * a GiST index over ten million places, passed three minutes, and took a
+   * release with it that would have come up fine. */
+  const deployScript = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const waits = [...deployScript.matchAll(/--wait-timeout (\d+)/g)].map(found => Number(found[1]))
+  assert.ok(waits.length >= 2, 'the deploy waits for the stack to come up')
+  for (const wait of waits) {
+    assert.ok(
+      wait >= seconds(health.start_period),
+      `the deploy gives up after ${wait}s on a boot the healthcheck allows ` +
+        `${health.start_period} for`,
+    )
+  }
 })
 
 test('the object store has no healthcheck that can fail a deploy', {
