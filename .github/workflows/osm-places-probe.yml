@@ -1,0 +1,54 @@
+name: OSM places probe
+
+# What OpenStreetMap actually holds for the places layer, from a runner with
+# open internet. Not "which tags exist" — the wiki says that — but how many
+# real features in a real city carry each of them, which is the only number
+# that decides whether a description and a photograph can come from here.
+#
+# The development sandbox cannot reach Overpass, Wikidata or Wikimedia at all,
+# so this is where that question gets answered from the data rather than from
+# memory of it. Same reason and same shape as the flight source probe.
+on:
+  workflow_dispatch:
+    inputs:
+      box:
+        description: 'west,south,east,north'
+        required: false
+        default: '4.86,52.35,4.92,52.39'
+      name:
+        description: 'What to call it in the output'
+        required: false
+        default: 'Amsterdam'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    strategy:
+      fail-fast: false
+      # Two cities on purpose: one dense and heavily mapped, one on the
+      # prairies. A tag that only exists in Amsterdam is not a tag this app
+      # can build a feature on.
+      matrix:
+        place:
+          - { name: 'Amsterdam centre', box: '4.86,52.35,4.92,52.39' }
+          - { name: 'Regina centre', box: '-104.65,50.42,-104.58,50.47' }
+          - { name: 'Toronto centre', box: '-79.40,43.63,-79.36,43.67' }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: Ask Overpass what it holds
+        run: >
+          node server/scripts/probe-osm-places.mjs
+          --box '${{ matrix.place.box }}'
+          --name '${{ matrix.place.name }}'
