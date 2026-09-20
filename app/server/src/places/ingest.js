@@ -501,7 +501,7 @@ export function createIngest({
    */
   async function loadCell(cell, rows, report) {
     const client = await pool.connect()
-    const loaded = { inserted: 0, redirected: 0, swept: false }
+    const loaded = { inserted: 0, redirected: 0, swept: false, tilesSwept: 0 }
     try {
       await client.query('begin')
       await client.query(STAGE)
@@ -622,6 +622,34 @@ export function createIngest({
          field stays so the report and its tests keep their shape. */
       loaded.swept = true
       const bounds = cellBounds(cell)
+      /* The tiles over this ground are now describing a city that has
+       * changed, so they go — inside the same transaction as the places they
+       * were built from, because a tile surviving a rollback would be a tile
+       * of rows that were never committed.
+       *
+       * This is the whole of what keeps "a tile is built once" from becoming
+       * "a tile is wrong for ever". They rebuild on the next request for
+       * each, which for the squares anybody is actually looking at is the
+       * next time they look.
+       *
+       * Counted rather than assumed: a sweep that quietly matches nothing is
+       * indistinguishable from a sweep that worked, right up until somebody
+       * asks why the map still shows last month. */
+      const sweptTiles = await client
+        .query(
+          `delete from place_tiles t
+           using (select ST_MakeEnvelope($1, $2, $3, $4, 4326) as box) c
+           where ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326) && c.box`,
+          [bounds.west, bounds.south, bounds.east, bounds.north],
+        )
+        .catch(problem => {
+          /* Before migration 044 there is no such table, and an ingest that
+             refuses to load a city because it cannot drop a cache it does not
+             have is worse than a stale tile. */
+          log(`places: ${cell} tiles not swept — ${problem.message}`)
+          return { rowCount: 0 }
+        })
+      loaded.tilesSwept = sweptTiles.rowCount ?? 0
       await client.query(
         `insert into place_coverage (
            cell, west, south, east, north, status, versions, place_count, quality,

@@ -14,8 +14,11 @@ import {
   coverageFor,
   markRequested,
   nearbyPlaces,
+  clearPlaceTiles,
   placeTile,
   placesInView,
+  readPlaceTile,
+  writePlaceTile,
   licensesFor,
   pendingCells,
   placeById,
@@ -3262,6 +3265,15 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async placeTile(tile, options) {
       return placeTile(pool, tile, options)
+    },
+    async readPlaceTile(tile) {
+      return readPlaceTile(pool, tile)
+    },
+    async writePlaceTile(tile, body, places) {
+      return writePlaceTile(pool, tile, body, places)
+    },
+    async clearPlaceTiles(bounds) {
+      return clearPlaceTiles(pool, bounds)
     },
     async placesInView(bounds, options) {
       return placesInView(pool, bounds, options)

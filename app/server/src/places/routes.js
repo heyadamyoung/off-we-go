@@ -667,16 +667,41 @@ export function registerPlaceRoutes(
 
     return span('places tile', { 'places.tile.z': z }, async () => {
       const started = Date.now()
-      const body = await repository.placeTile(
-        { z, x, y },
-        /* How many a tile may carry is the store's to decide — it is a fact
-           about the shape of a tile, not about this route. */
-        { floor: CONFIDENCE_FLOOR, zooms: MARK_ZOOM, weights: VIEW_WEIGHT },
-      )
+      /* Built once, then looked up.
+       *
+       * Reported as slow when panning across a lot of ground, and it was:
+       * every square was a bounding-box scan, a CASE per row, a sort and a
+       * protobuf encode — tens of thousands of rows touched to produce at
+       * most forty-eight places — and a fast pan asks for dozens of squares
+       * at once, all queueing on the one database this box has.
+       *
+       * So the first request for a square builds it and keeps the bytes, and
+       * every request after, from anybody, is a primary key lookup. The
+       * places worker builds them ahead of being asked as it ingests, so in
+       * the normal case nobody pays even the first one. Dropped when the
+       * ground under them is re-ingested — see clearPlaceTiles, which is the
+       * only thing standing between "built once" and "wrong for ever". */
+      let body = repository.readPlaceTile ? await repository.readPlaceTile({ z, x, y }) : null
+      const kept = body !== null
+      if (!kept) {
+        body = await repository.placeTile(
+          { z, x, y },
+          /* How many a tile may carry is the store's to decide — it is a fact
+             about the shape of a tile, not about this route. */
+          { floor: CONFIDENCE_FLOOR, zooms: MARK_ZOOM, weights: VIEW_WEIGHT },
+        )
+        /* Kept without waiting on it and without letting it fail the answer:
+           the tile in hand is already correct, and a cache that cannot be
+           written is a slow map rather than a broken one. */
+        repository
+          .writePlaceTile?.({ z, x, y }, body)
+          .catch(error => event('places tile unkept', { error: String(error?.message || error) }))
+      }
       stamp({
         'places.query.kind': 'tile',
         'places.query.ms': Date.now() - started,
         'places.tile.bytes': body.length,
+        'places.tile.built': !kept,
       })
       /* A tile is the same bytes for everybody for as long as the data behind
          it holds, which is a release — so it is cached hard and at the edge.

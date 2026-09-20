@@ -614,3 +614,65 @@ export async function placeTile(
   const result = await db.query(sql, [z, x, y, floor, limit])
   return result.rows[0]?.tile ?? Buffer.alloc(0)
 }
+
+/* ---- tiles, built once ------------------------------------------------- */
+
+/**
+ * A tile already built, or null when this square has never been asked for.
+ *
+ * @param {{query: Function}} db
+ * @param {{z: number, x: number, y: number}} tile
+ * @returns {Promise<Buffer|null>}
+ */
+export async function readPlaceTile(db, { z, x, y }) {
+  const result = await db.query('select body from place_tiles where z = $1 and x = $2 and y = $3', [
+    z,
+    x,
+    y,
+  ])
+  return result.rows[0]?.body ?? null
+}
+
+/**
+ * Keep a built tile, so nobody builds it again.
+ *
+ * `on conflict do nothing` rather than an update: two requests for the same
+ * cold square race, both build it, and both are correct — the loser's bytes
+ * are the winner's bytes. Taking the first and dropping the second is right
+ * and needs no lock.
+ *
+ * @param {{query: Function}} db
+ * @param {{z: number, x: number, y: number}} tile
+ * @param {Buffer} body
+ * @param {number} places how many went into it
+ */
+export async function writePlaceTile(db, { z, x, y }, body, places = 0) {
+  await db.query(
+    `insert into place_tiles (z, x, y, body, places)
+     values ($1, $2, $3, $4, $5)
+     on conflict (z, x, y) do nothing`,
+    [z, x, y, body, places],
+  )
+}
+
+/**
+ * Throw away the tiles over a piece of ground, because the places under them
+ * have changed.
+ *
+ * Called when a cell is ingested or refreshed. A tile nobody drops is a tile
+ * that shows last month's city for ever, and this is the only thing standing
+ * between "built once" and "wrong for ever".
+ *
+ * @param {{query: Function}} db
+ * @param {{west: number, south: number, east: number, north: number}} bounds
+ * @returns {Promise<number>} how many were dropped
+ */
+export async function clearPlaceTiles(db, bounds) {
+  const result = await db.query(
+    `delete from place_tiles t
+     using (select ST_MakeEnvelope($1, $2, $3, $4, 4326) as box) c
+     where ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326) && c.box`,
+    [bounds.west, bounds.south, bounds.east, bounds.north],
+  )
+  return result.rowCount ?? 0
+}
