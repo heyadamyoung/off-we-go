@@ -39,8 +39,12 @@
  *                         refreshed on screen.
  */
 
+import { cellBounds } from './cells.js'
 import { createIngest } from './ingest.js'
 import { createParquetReader } from './parquet.js'
+import { MARK_ZOOM, VIEW_WEIGHT, CONFIDENCE_FLOOR } from './rank.js'
+import { placeTile, readPlaceTile, writePlaceTile } from './store.js'
+import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
 
 /** How often the queue is looked at. */
@@ -53,6 +57,13 @@ export const MAX_ATTEMPTS = 5
 export const STUCK_AFTER_MS = 30 * 60_000
 /** How many ready cells a tick may mark stale when the release moves on. */
 export const REFRESH_PER_TICK = 8
+/** How long a tick may spend building tiles ahead of being asked for them.
+ *
+ * A budget rather than a count, because a tile of open sea and a tile of
+ * central Amsterdam are two very different pieces of work and a count of
+ * either tells you nothing about the minute. Well under the tick, so the
+ * building never becomes the thing that stops the queue draining. */
+export const TILE_BUDGET_MS = 20_000
 
 /* `started_at` is a heartbeat, not a start time: the ingest moves it every
    couple of seconds while it reads (see ingest.js writeCursor). So an old one
@@ -134,6 +145,7 @@ export function createPlaceWorker({
   maxAttempts = MAX_ATTEMPTS,
   stuckAfterMs = STUCK_AFTER_MS,
   refreshPerTick = REFRESH_PER_TICK,
+  tileBudgetMs = TILE_BUDGET_MS,
   makeIngest = createIngest,
   makeReader = createParquetReader,
   now = () => new Date(),
@@ -145,6 +157,8 @@ export function createPlaceWorker({
   /* Said once rather than every minute: a box with no egress would otherwise
      write a line a minute for the life of the process. */
   let saidNoRelease = false
+  /* Cells whose tiles are all built. See warmTiles. */
+  const warmed = new Set()
 
   /** The ingest, built from whatever releases can be discovered. Kept: the
       index is half a megabyte of numbers and the reader's warm footers are
@@ -197,6 +211,90 @@ export function createPlaceWorker({
     return result.rows.map(row => row.cell)
   }
 
+  /* Tiles built before anybody asks.
+   *
+   * The read-through cache in the route makes the second look at a square
+   * free; this is what makes the first one free too. Reported as "slow as
+   * fuck when scrolling across large parts of the map", which is exactly the
+   * case where every square is somebody's first: a fast pan at zoom twelve
+   * crosses dozens of squares nobody has ever asked for, and each one was a
+   * scan, a sort and an encode before it was bytes.
+   *
+   * Only the zooms a pan actually uses — see EAGER_ZOOMS. Deeper than
+   * fourteen a screen is a handful of squares and there are sixteen times as
+   * many per level, so building them all would be hundreds of thousands of
+   * tiles to save a few lookups nobody would feel.
+   *
+   * Bounded by a clock rather than a count, skipping what already exists, and
+   * it never throws: a tile that could not be built is a slow square later,
+   * not a drain that stops.
+   */
+  async function warmTiles(cells = []) {
+    const wanted = cells.length ? cells : await coldCells()
+    if (!wanted.length) return 0
+    const deadline = now().getTime() + tileBudgetMs
+    let built = 0
+    for (const cell of wanted) {
+      /* Finished cells are remembered, or the idle pass picks the same oldest
+         cell for ever: four and a half thousand lookups a minute to discover
+         that every one of them already exists, and the cell after it never
+         reached at all. Held in memory rather than written down because it is
+         a fact about this process's work queue, not about the data — a
+         restart re-checks, which is a couple of seconds once. */
+      if (!cells.length && warmed.has(cell)) continue
+      let bounds
+      try {
+        bounds = cellBounds(cell)
+      } catch {
+        continue
+      }
+      for (const tile of tilesToBuild(bounds)) {
+        if (now().getTime() >= deadline) {
+          log(`places: tile warming stopped on the clock after ${built}`)
+          event('places tiles warmed', { 'places.tiles.built': built, 'places.tiles.done': false })
+          return built
+        }
+        try {
+          if (await readPlaceTile(pool, tile)) continue
+          const body = await placeTile(pool, tile, {
+            floor: CONFIDENCE_FLOOR,
+            zooms: MARK_ZOOM,
+            weights: VIEW_WEIGHT,
+          })
+          await writePlaceTile(pool, tile, body)
+          built += 1
+        } catch (error) {
+          log(`places: tile ${tile.z}/${tile.x}/${tile.y} not built — ${error.message}`)
+          /* One unbuildable tile is one slow square; a table that is not there
+             at all is every tile, and carrying on would be a minute of the
+             same error per tick. */
+          if (/place_tiles/.test(String(error?.message))) return built
+        }
+      }
+      /* Every tile of this cell exists. It never needs walking again. */
+      warmed.add(cell)
+    }
+    if (built) {
+      log(`places: ${built} tile(s) built ahead of being asked for`)
+      event('places tiles warmed', { 'places.tiles.built': built, 'places.tiles.done': true })
+    }
+    return built
+  }
+
+  /** Ready cells whose tiles may be missing — the ground somebody ingested
+      before this release existed, or before the warming reached it. One at a
+      time, oldest first, skipping what this process has already finished. */
+  async function coldCells() {
+    const result = await pool.query(
+      `select cell from place_coverage
+       where status = 'ready' and place_count > 0 and not (cell = any($1::text[]))
+       order by last_refresh asc nulls first
+       limit 1`,
+      [[...warmed]],
+    )
+    return result.rows.map(row => row.cell)
+  }
+
   async function tick() {
     if (stopped) return
     const pipe = await pipeline()
@@ -204,7 +302,12 @@ export function createPlaceWorker({
     await recoverStuck()
     await markRefreshable(pipe.versions?.overture)
     const cells = await claim()
-    if (!cells.length) return
+    if (!cells.length) {
+      /* Nothing to ingest is the best time to build tiles: the box is idle
+         and a traveller panning tomorrow is the one who benefits. */
+      await warmTiles()
+      return
+    }
     const started = Date.now()
     const { results } = await pipe.ingestCells(cells)
     const loaded = results.reduce((total, result) => total + (result.places ?? 0), 0)
@@ -218,6 +321,14 @@ export function createPlaceWorker({
       'places.queue.failed': failed,
       'places.queue.ms': Date.now() - started,
     })
+    /* And the tiles over what was just loaded, before anybody asks for them.
+       The cells that were ingested first, because those are the ones whose
+       tiles were swept a moment ago and are therefore missing right now. */
+    /* A cell that was just ingested had its tiles swept inside that same
+       transaction, so whatever this process believed about it is wrong. */
+    const reloaded = results.filter(result => result.status !== 'failed').map(r => r.cell)
+    for (const cell of reloaded) warmed.delete(cell)
+    await warmTiles(reloaded)
   }
 
   /* A tick never throws. It runs on a timer with nobody to catch it, and an
