@@ -61,6 +61,31 @@ export function tileBounds(z, x, y) {
   return { west: lng(x), east: lng(x + 1), south: lat(y + 1), north: lat(y) }
 }
 
+/**
+ * The zoom a viewport is looking at, from its own width.
+ *
+ * A slippy tile at zoom z spans 360/2^z degrees of longitude, so a viewport
+ * spanning `span` degrees is about `log2(360/span)` — the zoom at which it is
+ * one tile wide. A phone shows one or two tiles across, which is close
+ * enough: this decides which tier of marks belongs on screen, and being a
+ * level out shows the next tier rather than the wrong thing.
+ *
+ * Clamped, and both ends matter. Below the first thinning zoom no place has
+ * earned anything, so an unclamped continent view would filter to nothing and
+ * the map would be empty exactly where somebody is trying to see the shape of
+ * a country; clamped, they get the most prominent tier. Above the floor there
+ * is nothing left to thin.
+ *
+ * @param {{west: number, south: number, east: number, north: number}} bounds
+ * @param {{from: number, floor: number}} zooms
+ */
+export function zoomForBounds(bounds, { from, floor }) {
+  const span = Math.abs(Number(bounds?.east) - Number(bounds?.west))
+  if (!Number.isFinite(span) || span <= 0) return floor
+  const at = Math.round(Math.log2(360 / span))
+  return Math.min(floor, Math.max(from, at))
+}
+
 export function tilesForBounds(bounds, z) {
   const side = 2 ** z
   const clamp = value => Math.min(side - 1, Math.max(0, value))

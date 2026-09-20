@@ -351,6 +351,7 @@ jobs:
           # ride the same pipeline. Empty values are skipped by merge-env.sh,
           # which leaves the compose defaults (luna, xhigh) in charge.
           WAYFARE_AI_MODEL: ${{ vars.WAYFARE_AI_MODEL }}
+          PLACES_CONTACT: ${{ vars.PLACES_CONTACT }}
           WAYFARE_AI_REASONING: ${{ vars.WAYFARE_AI_REASONING }}
           # Which images this release is: the ones the images job pushed.
           IMAGE_REPO: ghcr.io/${{ github.repository }}
@@ -364,6 +365,7 @@ jobs:
             echo "CODEX_AUTH_JSON_B64=$CODEX_AUTH_JSON_B64"
             echo "GRAFANA_LOKI_TOKEN=$GRAFANA_LOKI_TOKEN"
             echo "WAYFARE_AI_MODEL=$WAYFARE_AI_MODEL"
+            echo "PLACES_CONTACT=$PLACES_CONTACT"
             echo "WAYFARE_AI_REASONING=$WAYFARE_AI_REASONING"
             echo "IMAGE_REPO=${IMAGE_REPO,,}"
             echo "IMAGE_TAG=$GITHUB_SHA"

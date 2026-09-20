@@ -712,6 +712,40 @@ const runEntrypoint = (script, { mc, seconds = 1 }) => {
   })
 }
 
+/* The enrichment pipeline reaches the box, or it is merged and dark.
+ *
+ * It was merged and dark: every module written and tested, the worker never
+ * constructed on the box because PLACES_CONTACT appeared nowhere in compose
+ * or the workflow. Nothing failed — it simply never ran, which is the worst
+ * shape a thing can be in, and a suite that only tested the modules could
+ * not tell.
+ *
+ * The contact address is the switch on purpose. Wikimedia require a
+ * User-Agent naming the operator and enforce it, so the address being set is
+ * the same fact as the pipeline being allowed to run; there is no separate
+ * flag somebody could turn on while leaving it blank. */
+test('the enrichment pipeline can actually be switched on', () => {
+  const compose = readFileSync(path.join(appRoot, 'docker-compose.yml'), 'utf8')
+  const workflow = readFileSync(
+    path.join(appRoot, '..', '.github/workflows/deploy-vps.yml'),
+    'utf8',
+  )
+
+  /* On the api, which is what runs the worker — not on the sweep, which
+     runs the ingest script and has no use for it. */
+  const api = compose.slice(compose.indexOf('\n  api:'), compose.indexOf('\n  places-sweep:'))
+  assert.match(api, /PLACES_CONTACT:/, 'the api is given a contact address')
+
+  /* And it reaches the box: named in the workflow's environment and written
+     into the release file the box reads. */
+  assert.match(workflow, /PLACES_CONTACT: \$\{\{ vars\.PLACES_CONTACT \}\}/)
+  assert.match(workflow, /echo "PLACES_CONTACT=\$PLACES_CONTACT"/)
+
+  /* Empty is allowed and means off. A compose file that refused to render
+     without it would stop every deploy on a box that has not set one. */
+  assert.match(api, /PLACES_CONTACT: \$\{PLACES_CONTACT:-\}/, 'unset is off, not a failure')
+})
+
 /* Push to live is four minutes, and the deploy's own backup is what put it
    at twenty-three.
  *
