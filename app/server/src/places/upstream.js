@@ -123,8 +123,19 @@ export function createReleaseLoader({
  *
  * @param {{directory?: string}} [options]
  */
-export function createFooterStore({ directory = DEFAULT_INDEX_DIR } = {}) {
+export function createFooterStore({ directory = DEFAULT_INDEX_DIR, log = () => {} } = {}) {
   const path = url => join(directory, `footer-${Buffer.from(url).toString('base64url')}.bin`)
+  /* Said once, not every footer of every read. A directory that cannot be
+     written to is one fact about the box, not four hundred about the data. */
+  let saidUnwritable = false
+  const cannotKeep = error => {
+    if (saidUnwritable) return
+    saidUnwritable = true
+    log(
+      `places: footers cannot be kept in ${directory}, so every read pays for its own — ` +
+        String(error?.message || error),
+    )
+  }
   return {
     async loadFooter(url) {
       try {
@@ -134,9 +145,17 @@ export function createFooterStore({ directory = DEFAULT_INDEX_DIR } = {}) {
         return null
       }
     },
+    /* Swallowed, because a footer we failed to keep is a slower next read and
+       nothing worse — but said, because a cache that has been silently dead
+       since the first deploy is how a box ends up doing sixteen downloads per
+       degraded query and nobody knows why it is slow. */
     async saveFooter(url, footer) {
-      await mkdir(directory, { recursive: true }).catch(() => {})
-      await writeFile(path(url), footer).catch(() => {})
+      try {
+        await mkdir(directory, { recursive: true })
+        await writeFile(path(url), footer)
+      } catch (error) {
+        cannotKeep(error)
+      }
     },
   }
 }

@@ -155,6 +155,9 @@ export interface PlacePins {
   attribution: { license: string; notice: string; url: string | null }[]
   /** the ground under this view has not been ingested yet; it is filling in */
   degraded: boolean
+  /** the server could not answer just now and will be able to shortly — hold
+      whatever is on screen rather than acting on this */
+  retry?: boolean
 }
 
 export async function loadPlacePins(
@@ -183,10 +186,17 @@ export async function loadPlacePins(
   try {
     return await authClient.request<PlacePins>(`/places/in-view?${query}`, { signal })
   } catch (error) {
-    /* A server from before this route existed, or one with no places half at
-       all, says so rather than erroring the map. */
     const status = (error as ApiError).status
-    if (status === 404 || status === 503) return null
+    /* A server from before this route existed, or one with no places half at
+       all, says so rather than erroring the map. The caller stops asking. */
+    if (status === 404) return null
+    /* 503 used to be read the same way, and that was wrong in a way nobody
+       would ever have guessed from the map: the api answers 503 while it is
+       restarting, which it does on every release, so a phone that happened to
+       pan during a four-minute deploy concluded this deployment had no places
+       layer and drew no pins again until the page was reloaded. It is "not
+       this second", not "not here". */
+    if (status === 503) return { places: [], attribution: [], degraded: true, retry: true }
     throw error
   }
 }

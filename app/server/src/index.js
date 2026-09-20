@@ -205,7 +205,9 @@ const app = await buildServer({
   flights: createFlightSources(),
   placesUpstream,
   placesReleases: () => (placesUpstream?.current ? { overture: placesUpstream.current } : {}),
-  placesFooters: placesOn ? createFooterStore({ directory: placesDirectory }) : null,
+  placesFooters: placesOn
+    ? createFooterStore({ directory: placesDirectory, log: placesSay })
+    : null,
 })
 
 /* The conversion worker. In-process today because this is one box; it claims
@@ -243,7 +245,7 @@ const placesWorker =
         pool: repository.pool,
         loadIndex: placesUpstream,
         loadSecondIndex: placesRelease('fsq'),
-        footers: createFooterStore({ directory: placesDirectory }),
+        footers: createFooterStore({ directory: placesDirectory, log: placesSay }),
         log: placesSay,
         cellsPerTick: Number(process.env.PLACES_CELLS_PER_TICK) || undefined,
       })

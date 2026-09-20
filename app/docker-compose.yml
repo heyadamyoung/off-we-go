@@ -138,6 +138,12 @@ services:
       # A named volume rather than a bind mount: Codex rewrites its own login
       # as tokens rotate, and the image pre-creates this path owned by node.
       - codex_data:/data/codex
+      # The places layer's parsed Parquet footers and release indexes. Kept
+      # across deploys because a cold box otherwise pays sixteen downloads —
+      # about 25MB — before it can drain a single cell or answer a degraded
+      # query. Named volume, same reason as codex: the image pre-creates the
+      # path owned by node, and a bind mount would arrive owned by root.
+      - places_data:/data/places
       # Shared with the routing engine: the api writes the wanted-extracts
       # list here; the engine's supervisor builds from it.
       - valhalla_tiles:/valhalla-tiles
@@ -320,6 +326,7 @@ volumes:
   minio_data:
   logto_postgres_data:
   codex_data:
+  places_data:
   caddy_data:
   caddy_config:
   alloy_data:

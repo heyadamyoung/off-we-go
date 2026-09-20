@@ -1,0 +1,37 @@
+name: Places live probe
+
+# Whether the places layer is actually answering in production, asked from
+# somewhere that can reach it.
+#
+# The development sandbox has no route to the deployment, so "the map draws
+# pins now" was a deduction from the code rather than an observation. That
+# cost us: the layer shipped, the coverage queue was never drained because a
+# cache directory could not be written, and the only evidence anybody had was
+# a traveller reporting that the map said "still loading places here" and
+# never stopped.
+#
+# Read-only and unauthenticated — /api/places/in-view needs no session by
+# design, because the map draws before anybody signs in.
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'Which deployment to ask'
+        required: false
+        default: 'offwego.to'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Ask the live server what it has
+        working-directory: app
+        run: node server/scripts/probe-live-places.mjs "${{ inputs.host || 'offwego.to' }}"
