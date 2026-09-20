@@ -8,7 +8,9 @@ import {
   LABEL_PER_TILE,
   LABEL_ZOOMS,
   VIEW_WEIGHT,
+  ZOOM_POLICY,
 } from '../src/places/rank.js'
+import { cellBounds, cellKey } from '../src/places/cells.js'
 import { assignLabelZoom, markRequested, placeTile } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
 
@@ -116,10 +118,32 @@ function workerOver(pool, options = {}) {
 }
 
 /** A place with no zoom, of the kind that predates the column. */
+/* The coverage row that comes with the places.
+ *
+ * Not test furniture: the ingest writes the places and this row in the same
+ * transaction, so a cell of places without one is a state the system cannot
+ * reach, and it is the row that records which rule the cell was placed under.
+ * The backfill queue reads it — see store.js cellsAwaitingZoom — so a test
+ * that leaves it out is testing a database nobody has. */
+async function ground(pool, cell, places) {
+  const box = cellBounds(cell)
+  await pool.query(
+    `insert into place_coverage (cell, west, south, east, north, status, place_count)
+     values ($1, $2, $3, $4, $5, 'ready', $6)
+     on conflict (cell) do update set
+       place_count = place_coverage.place_count + excluded.place_count,
+       status = 'ready', zoom_policy = null`,
+    [cell, box.west, box.south, box.east, box.north, places],
+  )
+}
+
 async function unplaced(pool, name, lng, lat, category = 'museum', confidence = 0.8) {
+  /* The cell the point actually falls in, not a constant: two places in two
+     countries are two cells, and the backfill queue is a queue of cells. */
+  const cell = cellKey(lng, lat)
   await pool.query(
     `insert into places (gers_id, name, geom, category, category_raw, confidence, cell)
-     values ($1, $2, ST_SetSRID(ST_MakePoint($3,$4),4326)::geography, $5, $5, $6, 'N52E004')`,
+     values ($1, $2, ST_SetSRID(ST_MakePoint($3,$4),4326)::geography, $5, $5, $6, $7)`,
     [
       `overture:${name.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`,
       name,
@@ -127,8 +151,10 @@ async function unplaced(pool, name, lng, lat, category = 'museum', confidence = 
       lat,
       category,
       confidence,
+      cell,
     ],
   )
+  await ground(pool, cell, 1)
 }
 
 /* A city's worth of places, and what a square of it is allowed to hold.
@@ -172,6 +198,7 @@ test('a city does not arrive all at once', {
        values ${values.join(',')}`,
       args,
     )
+    await ground(pool, 'N50W105', count)
   }
 
   /* How many marks a square carries, by the tile query's own predicate.
@@ -356,8 +383,15 @@ test('places written before the zoom column get their zoom', {
     assert.equal(rows[0].unplaced, 0, 'every place has the zoom it earns')
     assert.ok(rows[0].distinct_zooms > 1, 'and they did not all earn the same one')
 
-    const tiles = await pool.query('select count(*)::int as left from place_tiles')
-    assert.equal(tiles.rows[0].left, 0, 'the tiles built from the old zooms are gone')
+    /* That square, specifically. Not "no tiles at all": the worker warms
+       cold squares when it has nothing to ingest, and a square it builds
+       after the pass is a square built from the zooms as they now are. What
+       must not survive is the one drawn before. */
+    const tiles = await pool.query(
+      'select body from place_tiles where z = 12 and x = 2096 and y = 1343',
+    )
+    const kept = tiles.rows[0]?.body?.toString() ?? ''
+    assert.notEqual(kept, 'a tile drawn from zooms that were wrong', 'the old tile is gone')
   })
 
   await t.test('a second tick does not run the pass again', async t => {
@@ -368,16 +402,66 @@ test('places written before the zoom column get their zoom', {
     await worker.settled()
 
     /* A tile built after the pass survives, which is how we know the pass
-       did not run a second time and throw it away. */
+       did not run a second time and throw it away. Upserted rather than
+       inserted: the worker warms cold squares when it has nothing to ingest,
+       so this square may well already be built, and the question here is
+       whose bytes are in it afterwards. */
     await pool.query(
       `insert into place_tiles (z, x, y, body, places, built_at)
-       values (12, 2096, 1343, $1, 1, now())`,
+       values (12, 2096, 1343, $1, 1, now())
+       on conflict (z, x, y) do update set body = excluded.body, built_at = now()`,
       [Buffer.from('built from the zooms as they now are')],
     )
     await worker.once()
     await worker.settled()
-    const tiles = await pool.query('select count(*)::int as left from place_tiles')
-    assert.equal(tiles.rows[0].left, 1, 'nothing to place, so nothing thrown away')
+    const tiles = await pool.query(
+      'select body from place_tiles where z = 12 and x = 2096 and y = 1343',
+    )
+    assert.equal(
+      tiles.rows[0]?.body?.toString(),
+      'built from the zooms as they now are',
+      'nothing to place, so nothing thrown away',
+    )
+  })
+
+  /* The property the whole rewrite is for.
+   *
+   * The pass used to be one statement over every place in the world, so an
+   * api restart — which is every deploy — threw all of it away and began
+   * again. Four releases in an evening meant four runs from zero and a phone
+   * still under a carpet of dots. Work that is done stays done, and the
+   * record of it is the cell's own row. */
+  await t.test('a cell already placed is not placed again', async t => {
+    const pool = await freshDatabase(t)
+    await unplaced(pool, 'Rijksmuseum', 4.8852, 52.36)
+    await unplaced(pool, 'Scottish Parliament', -3.1751, 55.9521)
+    /* Amsterdam, done under the current rule by a run that stopped before it
+       reached Edinburgh. The zoom is a number the pass cannot produce — the
+       thinning zooms start at LABEL_ZOOMS.from — so if it is still there
+       afterwards, nothing touched these rows. */
+    await pool.query("update places set label_zoom = 5 where cell = 'N52E004'")
+    await pool.query('update place_coverage set zoom_policy = $1 where cell = $2', [
+      ZOOM_POLICY,
+      'N52E004',
+    ])
+
+    const { worker } = workerOver(pool)
+    await worker.once()
+    await worker.settled()
+
+    const done = await pool.query(
+      `select cell, min(label_zoom)::int as zoom, count(*) filter (where label_zoom is null)::int
+         as unplaced from places group by cell order by cell`,
+    )
+    const byCell = new Map(done.rows.map(row => [row.cell, row]))
+    assert.equal(byCell.get('N52E004').zoom, 5, 'the cell that was done was left alone')
+    assert.equal(byCell.get('N55W004').unplaced, 0, 'and the one that was not is placed now')
+
+    const stamped = await pool.query(
+      'select count(*)::int as n from place_coverage where zoom_policy = $1',
+      [ZOOM_POLICY],
+    )
+    assert.equal(stamped.rows[0].n, 2, 'both cells now record the rule they were placed under')
   })
 
   await t.test('stopping waits for the pass rather than cutting it off', async t => {

@@ -527,6 +527,79 @@ export async function licensesFor(db, ids) {
     .sort()
 }
 
+/* ---- the zoom pass, a cell at a time ------------------------------------ */
+
+/* Which cells still hold places placed under some other rule.
+ *
+ * The pass used to be one statement over every place in the world, and the
+ * reason it is a queue now is that the statement never finished: a restart —
+ * which is every deploy — threw the whole thing away and began again. A cell
+ * is the unit of work because a cell is already the unit of ingest, so what
+ * the backfill does to a cell is exactly what loading that cell would have
+ * done to it, rather than a second and grander rule that only ever runs on a
+ * box nobody redeploys.
+ *
+ * `ingesting` is the only status left out, and for a reason rather than for
+ * tidiness: that cell is inside somebody else's transaction, which will place
+ * it and stamp it on the way through. Every other status is fair game —
+ * filtering on `ready` would leave a cell that failed halfway with rows on
+ * the map and no zoom on them, which is exactly the state this exists for.
+ *
+ * Coverage is the queue because coverage is the only row that records which
+ * rule a cell was placed under. Every place has one: the ingest writes the
+ * places and the coverage row in the same transaction, which is asserted
+ * next door in places-ingest.test.js.
+ */
+const CELLS_AWAITING_ZOOM_SQL = `
+  select cell, west, south, east, north, place_count
+  from place_coverage
+  where coalesce(zoom_policy, -1) <> $1::smallint
+    and status <> 'ingesting'
+  order by priority asc, place_count desc, cell asc
+  limit $2`
+
+/**
+ * @param {{query: Function}} db
+ * @param {{policy: number, limit?: number}} input
+ * @returns {Promise<{cell: string, west: number, south: number, east: number,
+ *                    north: number, places: number}[]>}
+ */
+export async function cellsAwaitingZoom(db, { policy, limit = 25 }) {
+  const { rows } = await db.query(CELLS_AWAITING_ZOOM_SQL, [policy, limit])
+  return rows.map(row => ({
+    cell: row.cell,
+    west: Number(row.west),
+    south: Number(row.south),
+    east: Number(row.east),
+    north: Number(row.north),
+    places: Number(row.place_count),
+  }))
+}
+
+/** This cell's places are placed under this rule. Written in the same
+    transaction as the placing, so a crash leaves the cell looking undone. */
+export async function markZoomed(db, cells, policy) {
+  const wanted = [...new Set(cells || [])].filter(Boolean)
+  if (!wanted.length) return 0
+  const result = await db.query(
+    'update place_coverage set zoom_policy = $2::smallint where cell = any($1::text[])',
+    [wanted, policy],
+  )
+  return result.rowCount ?? 0
+}
+
+/* A cell with nothing in it is placed the moment it is empty: there is no row
+   to give a zoom to. One statement for all of them, because forty thousand
+   cells of ocean are not forty thousand units of work. */
+export async function markEmptyCellsZoomed(db, policy) {
+  const result = await db.query(
+    `update place_coverage set zoom_policy = $1::smallint
+      where coalesce(zoom_policy, -1) <> $1::smallint and place_count = 0`,
+    [policy],
+  )
+  return result.rowCount ?? 0
+}
+
 /* ---- coverage --------------------------------------------------------- */
 
 const COVERAGE_FOR_SQL = `

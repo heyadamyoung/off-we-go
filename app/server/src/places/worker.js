@@ -55,7 +55,16 @@ import {
   VIEW_WEIGHT,
   ZOOM_POLICY,
 } from './rank.js'
-import { assignLabelZoom, placeTile, readPlaceTile, writePlaceTile } from './store.js'
+import {
+  assignLabelZoom,
+  cellsAwaitingZoom,
+  clearPlaceTiles,
+  markEmptyCellsZoomed,
+  markZoomed,
+  placeTile,
+  readPlaceTile,
+  writePlaceTile,
+} from './store.js'
 import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
 
@@ -340,84 +349,156 @@ export function createPlaceWorker({
     return result.rows.map(row => row.cell)
   }
 
-  /* Places written before marks earned their zoom, put on the map.
+  /* Places written under some other rule than the one this code holds, put
+   * back on the map — a cell at a time, and this is the whole of it.
    *
-   * The column arrived with rows already in the table, and a row with no zoom
-   * is drawn from zoom 11 — visible, deliberately, because invisible would
-   * have been an outage. But visible-from-11 is every place at once, which is
-   * the carpet of dots the whole thing exists to end. Re-ingesting fixes it
-   * and takes hours; this takes one statement.
+   * A row with no zoom is drawn from zoom 11: visible, deliberately, because
+   * invisible would have been an outage. But visible-from-11 is every place
+   * at once, which is the carpet of dots the whole layer exists to end.
    *
-   * Once, and then never again: the ingest gives every cell its zooms inside
-   * its own transaction, so the only rows that can be unplaced are the ones
-   * that predate the column. When there are none the query costs a look at an
-   * index and the pass does not run.
+   * It was one statement over every place in the world, and it never once
+   * finished. Measured: eighteen seconds for the single densest degree on
+   * Earth, and the planet is ten million rows — six zooms of window function
+   * over sixty-two million rows and two full-table updates. An api restart
+   * threw all of it away, and an api restarts on every deploy. Four releases
+   * in an evening meant four runs from zero and a phone still showing a
+   * carpet. Nothing that outlives the gap between two deploys may be written
+   * as one statement that cannot be resumed.
    *
-   * Not awaited by the tick that starts it. It is minutes on a planet and the
-   * queue has better things to do. The promise is kept rather than dropped:
-   * `placing` is what stops a second tick starting a second pass, and it is
-   * what stop() waits on, so a shutdown does not pull the pool out from under
-   * a statement that is rewriting every row in the table. */
-  /** The rule these zooms were computed under, written down beside them. */
+   * So: a queue of cells, one transaction each, committed before the next one
+   * starts. A restart costs the cell in flight. The rule is not a new one —
+   * the ingest has always placed a freshly loaded cell against that cell's
+   * own bounds, and this makes the backfill do exactly what the ingest does
+   * instead of a second, grander thing that only works where nobody deploys.
+   *
+   * Not awaited by the tick that starts it: on a planet it is hours. The
+   * promise is kept rather than dropped — `placing` is what stops a second
+   * tick starting a second pass, and what stop() waits on, so a shutdown
+   * finishes the cell in hand rather than tearing the pool out from under
+   * it. */
+  /** The rule every cell is now at, written down once the queue is empty.
+      Not the per-cell record — that is place_coverage.zoom_policy — but the
+      cheap answer to "is this finished", so a settled box asks one small
+      question a tick instead of walking the queue. */
   async function recordZoomPolicy() {
     await pool.query('delete from place_zoom_policy')
     await pool.query('insert into place_zoom_policy (version) values ($1)', [ZOOM_POLICY])
   }
 
+  /* Cells this run could not place, so one bad cell cannot block the planet.
+     In memory only: a restart tries them again, which is the right default
+     for something that is far more likely to be a lock than a defect. */
+  const skipped = new Set()
+
+  /** One cell: its places placed, its tiles dropped, its row stamped — or
+      none of it. The transaction is the whole point. A pass that commits per
+      cell survives the restart that a pass of one statement cannot. */
+  async function placeOneCell(cell) {
+    const client = await pool.connect()
+    try {
+      await client.query('begin')
+      /* The sweep is inserting into this table the whole time. Waiting a few
+         seconds for it is right; waiting behind it for ever is not, and an
+         ACCESS EXCLUSIVE request that queues blocks every reader behind it
+         (see migration 051 and postgres.js applyMigration for the same rule
+         from the other side). A cell that times out is simply tried again. */
+      await client.query("set local lock_timeout = '10s'")
+      const marked = await assignLabelZoom(client, cell, {
+        weights: VIEW_WEIGHT,
+        perTile: LABEL_PER_TILE,
+        zooms: LABEL_ZOOMS,
+        earliest: EARLIEST_ZOOM,
+      })
+      /* Every tile over this ground was encoded from the zooms these rows
+         used to have. Inside the same transaction as the placing, so a tile
+         never survives a rollback of the rows it was built from. */
+      if (marked) await clearPlaceTiles(client, cell)
+      await markZoomed(client, [cell.cell], ZOOM_POLICY)
+      await client.query('commit')
+      return marked
+    } catch (error) {
+      await client.query('rollback').catch(() => {})
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   let placing = null
   async function placeTheUnplaced() {
     if (placing || stopped) return
-    /* Two reasons to run: a row with no zoom at all, or zooms computed under
-       a policy that is no longer the one the code holds. The second is the
-       general case and the first is the special one — a stored number gives
-       no hint of the rule that produced it, so the rule's version is kept
-       beside it. */
-    const policy = await pool.query(
-      'select version from place_zoom_policy order by applied_at desc limit 1',
-    )
-    const stale = Number(policy.rows[0]?.version ?? 0) !== ZOOM_POLICY
-    /* A stale policy means every row needs placing again, whatever it holds;
-       a current one means only the rows holding nothing do. One question
-       either way, and it stops at the first row it finds. */
-    const { rows } = await pool.query(
-      stale
-        ? 'select 1 from places limit 1'
-        : 'select 1 from places where label_zoom is null limit 1',
-    )
-    if (!rows.length) {
-      /* Nothing to place. On an empty table — a fresh box, a test — the
-         policy is still brought up to date, or every tick for ever would ask
-         the same question and answer it the same way. */
-      if (stale) await recordZoomPolicy()
+    /* Cells of ocean first, in one statement: there is no row in them to give
+       a zoom to, and forty thousand of them are not forty thousand units of
+       work. */
+    await markEmptyCellsZoomed(pool, ZOOM_POLICY)
+    const waiting = await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 1 })
+    if (!waiting.length) {
+      /* Nothing left. The planet-wide row is the cheap answer to "is this
+         finished", written once rather than on every tick. */
+      const policy = await pool.query(
+        'select version from place_zoom_policy order by applied_at desc limit 1',
+      )
+      if (Number(policy.rows[0]?.version ?? 0) !== ZOOM_POLICY) await recordZoomPolicy()
       return
     }
-    const started = Date.now()
-    log('places: giving every place that has none the zoom it earns')
-    placing = assignLabelZoom(pool, null, {
-      weights: VIEW_WEIGHT,
-      perTile: LABEL_PER_TILE,
-      zooms: LABEL_ZOOMS,
-      earliest: EARLIEST_ZOOM,
-    })
-      .then(async placed => {
-        const seconds = Math.round((Date.now() - started) / 100) / 10
-        log(`places: ${placed} place(s) given a zoom in ${seconds}s`)
-        event('places zooms placed', {
-          'places.zooms.placed': placed,
-          'places.zooms.ms': Date.now() - started,
-        })
-        /* Every tile was encoded from the zooms these rows used to have. */
-        await pool.query('delete from place_tiles')
-        /* And the policy these were computed under, so the next boot does
-           not do it all again. Written after the pass, not before: a crash
-           halfway through must leave the work looking undone. */
-        await recordZoomPolicy()
-        warmed.clear()
-      })
-      .catch(error => log(`places: the zoom pass did not finish — ${error.message}`))
+    placing = placeEveryCell()
+      .catch(error => log(`places: the zoom pass stopped — ${error.message}`))
       .finally(() => {
         placing = null
       })
+  }
+
+  /* Until it is done, or until the box is asked to stop.
+   *
+   * Not awaited by the tick that starts it: on a planet it is hours, and the
+   * ingest queue has better things to do meanwhile. What it is not any more
+   * is all-or-nothing — each cell is committed on its own, so a deploy in the
+   * middle costs the cell in flight and the next boot carries on from the
+   * next one. That is the whole of this change: four releases in an evening
+   * used to mean four runs from zero and a map still covered in dots. */
+  async function placeEveryCell() {
+    const started = Date.now()
+    let placed = 0
+    let cells = 0
+    let said = false
+    for (;;) {
+      if (stopped) break
+      const batch = (await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 25 })).filter(
+        cell => !skipped.has(cell.cell),
+      )
+      if (!batch.length) break
+      if (!said) {
+        log('places: giving every place the zoom it earns, a cell at a time')
+        said = true
+      }
+      for (const cell of batch) {
+        if (stopped) break
+        try {
+          placed += await placeOneCell(cell)
+          cells += 1
+        } catch (error) {
+          /* Said, and stepped over. One cell that will not place must not
+             stand in front of the other eleven thousand, and a cell nobody
+             can place is a sentence in the log every restart rather than a
+             silent hole in the map. */
+          skipped.add(cell.cell)
+          log(`places: ${cell.cell} could not be placed — ${error.message}`)
+        }
+      }
+      if (cells && cells % 500 === 0) {
+        log(`places: ${cells} cell(s) placed, ${placed} place(s) so far`)
+      }
+    }
+    if (!cells) return
+    const seconds = Math.round((Date.now() - started) / 100) / 10
+    log(`places: ${placed} place(s) in ${cells} cell(s) given a zoom in ${seconds}s`)
+    event('places zooms placed', {
+      'places.zooms.placed': placed,
+      'places.zooms.cells': cells,
+      'places.zooms.skipped': skipped.size,
+      'places.zooms.ms': Date.now() - started,
+    })
+    warmed.clear()
   }
 
   /** Resolves when nothing a tick set going is still going. */
@@ -448,8 +529,11 @@ export function createPlaceWorker({
     const cells = await claim()
     if (!cells.length) {
       /* Nothing to ingest is the best time to build tiles: the box is idle
-         and a traveller panning tomorrow is the one who benefits. */
-      await warmTiles()
+         and a traveller panning tomorrow is the one who benefits.
+         Not while the zoom pass is still walking the planet, though: a tile
+         built from rows that are about to be placed is a tile of the wrong
+         answer, kept, and the pass would only throw it away again. */
+      if (!placing) await warmTiles()
       return
     }
     const started = Date.now()

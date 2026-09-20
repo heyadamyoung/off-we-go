@@ -64,7 +64,7 @@ import {
 } from './overture.js'
 import { qualityReport } from './quality.js'
 import { retryAfterMs } from './retry.js'
-import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
+import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT, ZOOM_POLICY } from './rank.js'
 import { assignLabelZoom } from './store.js'
 import { MATCH_METRES, bestMatch, mergeFields } from './resolve.js'
 
@@ -785,10 +785,17 @@ export function createIngest({
       await client.query(
         `insert into place_coverage (
            cell, west, south, east, north, status, versions, place_count, quality,
-           cursor, requested_at, started_at, last_refresh, attempts, error)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, null, now(), now(), now(), 0, null)
+           cursor, requested_at, started_at, last_refresh, attempts, error, zoom_policy)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, null, now(), now(), now(), 0,
+                 null, $10::smallint)
          on conflict (cell) do update set
            status = excluded.status, versions = excluded.versions,
+           /* This cell's places were just given their zooms, two statements
+              up and inside this same transaction, so the rule they were given
+              under is known here and nowhere else. Without it the backfill
+              would queue every cell the sweep loads and place it a second
+              time for nothing. */
+           zoom_policy = excluded.zoom_policy,
            place_count = excluded.place_count, quality = excluded.quality,
            /* Attempts go back to zero. The column counts consecutive failures
               and is what the drain backs off on, so leaving it to climb across
@@ -809,6 +816,7 @@ export function createIngest({
           JSON.stringify(versions),
           loaded.inserted,
           JSON.stringify(report),
+          ZOOM_POLICY,
         ],
       )
       await client.query('commit')
