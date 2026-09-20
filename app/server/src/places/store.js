@@ -305,6 +305,64 @@ export async function nearbyPlaces(
   return result.rows.map(placeRow)
 }
 
+/* Everything inside a map's viewport, for the pin layer.
+ *
+ * A box, not a radius, because that is the question a map asks: it has corners
+ * and no centre worth measuring from. `ST_Intersects` against an envelope uses
+ * the same GiST index the nearby query does.
+ *
+ * Ordered in the database rather than in JavaScript, and this is the one place
+ * that is true. A city viewport holds tens of thousands of rows and the screen
+ * wants a few hundred; fetching them all to sort them would be the whole point
+ * of an index thrown away at the last step. So the weighting rank.js applies
+ * per category is mirrored into a CASE here, multiplied by confidence, and the
+ * limit does the rest. The two have to agree, and a test compares them value
+ * by value so a change to one fails on the other.
+ *
+ * `floorWeight` is the zoomed-out view: above it only the things worth a pin
+ * from orbit, below it everything.
+ *
+ * @param {{query: Function}} db
+ * @param {{west,south,east,north}} bounds
+ * @param {{limit?: number, floor?: number, floorWeight?: number, weights: Record<string, number>}} input
+ */
+export async function placesInView(
+  db,
+  bounds,
+  { limit = 500, floor = 0, floorWeight = 0, weights } = {},
+) {
+  const kinds = Object.entries(weights || {})
+  if (!kinds.length) throw new Error('places: a viewport query needs the category weights')
+  /* Built from the weights the caller hands in, which come from rank.js. The
+     keys are our own twenty category names, never user text — and they are
+     checked against that list here rather than trusted, because a map query is
+     the one statement in this file that composes any SQL at all. */
+  for (const [category] of kinds) {
+    if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
+  }
+  const weight = `case p.category ${kinds
+    .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
+    .join(' ')} else 0.1 end`
+  const sql = `
+    select ${PLACE_COLUMNS}, ${weight} as kind, null::double precision as metres
+    from places p
+    where p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography
+      and p.confidence >= $5::real
+      and ${weight} >= $6::double precision
+    order by (${weight}) * p.confidence desc, p.id
+    limit $7`
+  const result = await db.query(sql, [
+    bounds.west,
+    bounds.south,
+    bounds.east,
+    bounds.north,
+    floor,
+    floorWeight,
+    limit,
+  ])
+  return result.rows.map(placeRow)
+}
+
 /** The sources behind a page of places, in one round trip rather than N. */
 const SOURCES_FOR_SQL = `
   select place_id, source, license, upstream_id, version, confidence, fields, recorded_at
@@ -322,6 +380,30 @@ export async function sourcesFor(db, ids) {
   const result = await db.query(SOURCES_FOR_SQL, [wanted])
   for (const row of result.rows) out.get(row.place_id)?.push(sourceRow(row))
   return out
+}
+
+/* Which licences a page of places is under, without the rows behind them.
+ *
+ * A map draws one attribution line for the whole layer, which is how OSM data
+ * is attributed on every map that carries it — and it is what the licence
+ * actually asks for. Three hundred pins each carrying their own provenance is
+ * a join of three hundred rows to render one sentence: measured, it was most
+ * of a 119 ms viewport query. The distinct list costs an index-only scan.
+ *
+ * Per-record provenance is still there, on `/api/places/:id`, which is where
+ * somebody asking about one place gets it.
+ */
+const LICENSES_FOR_SQL = `
+  select distinct license from place_sources where place_id = any($1::uuid[])`
+
+export async function licensesFor(db, ids) {
+  const wanted = [...new Set(ids || [])]
+  if (!wanted.length) return []
+  const result = await db.query(LICENSES_FOR_SQL, [wanted])
+  return result.rows
+    .map(row => row.license)
+    .filter(Boolean)
+    .sort()
 }
 
 /* ---- coverage --------------------------------------------------------- */

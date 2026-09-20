@@ -1,17 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Feature, FeatureCollection, Point } from 'geojson'
-import { hasBackend, loadAttractions } from '../../../backend'
+import { loadPlacePins } from '../../places'
 import { trackError } from '../../../shared/lib/telemetry'
-import { attractionsInCell, cellsCovering, isHeadline } from '../api/attractions'
 import type { AttractionPoi, MapView } from '../../../shared/model/types'
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
-/* Which attraction cells the screen is touching, and everything ever fetched.
-
-   Cells are asked for one at a time and abandoned the moment the view moves
-   again, so a long pan does not queue up a hundred requests for country you
-   have already left. Anything fetched stays: the layer only ever grows. */
+/* The pins on the map, from the places layer.
+ *
+ * This used to be two things fighting. A seeded `attractions` table, walked
+ * out of Wikipedia's geosearch one region at a time, which in practice meant
+ * the Netherlands and Scotland and nowhere else. And, for everywhere else, a
+ * live walk of Wikipedia from this device: a hundred and fifty ten-kilometre
+ * circles, two at a time, paused while a finger was down, with a "filling"
+ * counter on screen because it took a minute of somebody's data allowance to
+ * cover a city — and every visitor paid for it again, for only the ground they
+ * personally wandered over. A traveller in Canada got rate-limited rather than
+ * pins.
+ *
+ * Now it is one query per view against our own database, which covers
+ * anywhere, is the same for everyone who opens the app, and costs the phone a
+ * single round trip. Nothing to fill, nothing to pause, nothing to keep.
+ */
 const boxFor = (view: MapView) => {
   const scale = 360 / (256 * 2 ** view.zoom)
   const lngSpan = window.innerWidth * scale
@@ -24,141 +34,95 @@ const boxFor = (view: MapView) => {
   }
 }
 
+/* The short keys are what the map layer's paint expressions already read, so
+   they stay: `n` is the label, `k` the kind that picks the colour, `big`
+   whether it survives a zoom out. `d` was a Wikipedia one-liner and `f` a
+   photograph file, and open data has neither — they are empty rather than
+   invented, and the card fills them in from `/api/places/:id` on a tap. */
 const featureFor = (poi: AttractionPoi): Feature<Point> => ({
   type: 'Feature',
-  geometry: { type: 'Point', coordinates: [poi.x, poi.y] },
+  geometry: { type: 'Point', coordinates: [poi.lng, poi.lat] },
   properties: {
     id: poi.id,
-    n: poi.n,
-    d: poi.d,
-    k: poi.k,
-    f: poi.f || '',
-    big: isHeadline(poi.k),
+    n: poi.name,
+    d: '',
+    k: poi.category,
+    f: '',
+    big: poi.big,
   },
 })
 
-/* Where the attractions come from.
+/* Zoomed out, only what deserves a dot from orbit. Which of the twenty
+   categories those are is the server's decision, not this file's — it holds
+   the data and the weighting. This is only the zoom at which to ask for it,
+   and it is the zoom the old layer used for the same purpose. */
+const HEADLINE_BELOW_ZOOM = 10.5
+/* Below this the view is a continent and every pin would be a dot on an ocean. */
+const MIN_ZOOM = 5
+/* A pan settles before it asks: a drag across a city is one query, not forty. */
+const SETTLE_MS = 260
 
-   Seeded, they are one indexed bounding-box query: everything on screen, in a
-   single round trip, the same for everyone who opens the app. Nobody's phone
-   pays to rediscover Edinburgh Castle.
-
-   Unseeded — no database configured, or the table still empty — the map falls
-   back to asking Wikipedia directly, ten kilometres at a time, and keeps what
-   it finds in that browser. It works, but every visitor pays for it again, and
-   only for the ground they personally wandered over. That fallback is what
-   this was before there was anywhere to put the answers. */
 function useAttractions(view: MapView, enabled: boolean) {
-  const seen = useRef(new Map<number, AttractionPoi>())
   const [data, setData] = useState<FeatureCollection>(EMPTY_FC)
-  const [filling, setFilling] = useState(0)
-  /* Two ways this can go wrong, and they want different answers. A database
-     that errors is out for the session. A database that simply holds nothing
-     for the region you have panned to is fine — it has not been filled that
-     far — so the live walk covers that view, and the next region that is in
-     the table still comes back in one query. */
-  const [dbUp, setDbUp] = useState(hasBackend)
-  const [dbBlankHere, setDbBlankHere] = useState(false)
-  const dirty = useRef(false)
+  const [attribution, setAttribution] = useState<
+    { license: string; notice: string; url: string | null }[]
+  >([])
+  /* The ground under this view has not been ingested yet. The server has
+     queued it; saying so beats an empty map that looks broken. */
+  const [filling, setFilling] = useState(false)
+  /* Not `hasBackend`: the demo has no server and still draws pins, from its
+     own canned Amsterdam. This turns false only when a server answers that it
+     has no places layer at all. */
+  const [available, setAvailable] = useState(true)
+  const held = useRef<FeatureCollection>(EMPTY_FC)
 
-  const handOn = useRef(false)
   useEffect(() => {
-    const down = () => {
-      handOn.current = true
-    }
-    const up = () => {
-      handOn.current = false
-    }
-    window.addEventListener('pointerdown', down, { passive: true })
-    window.addEventListener('pointerup', up, { passive: true })
-    window.addEventListener('pointercancel', up, { passive: true })
-    return () => {
-      window.removeEventListener('pointerdown', down)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-    }
-  }, [])
-
-  /* ---- seeded: one query per view ------------------------------------- */
-  useEffect(() => {
-    if (!enabled || !dbUp || view.zoom < 5) return
-    let alive = true
+    if (!enabled || !available || view.zoom < MIN_ZOOM) return
+    const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const rows = await loadAttractions(boxFor(view), { headlineOnly: view.zoom < 10.5 })
-        if (!alive || !rows) return
-        setDbBlankHere(rows.length === 0)
-        if (rows.length) setData({ type: 'FeatureCollection', features: rows.map(featureFor) })
-      } catch (caught) {
-        // Falling back to direct Wikipedia is good UX and a fleet-wide event:
-        // "why are we rate-limited tonight" starts with knowing we migrated.
-        if (alive) {
-          trackError('attractions db', caught)
-          setDbUp(false) // fall back rather than show nothing
+        const found = await loadPlacePins(
+          boxFor(view),
+          { headline: view.zoom < HEADLINE_BELOW_ZOOM },
+          controller.signal,
+        )
+        if (controller.signal.aborted) return
+        if (!found) {
+          /* No places layer on this deployment. Said once, and the map simply
+             draws no pins rather than pretending to fill. */
+          setAvailable(false)
+          return
         }
-      }
-    }, 260)
-    return () => {
-      alive = false
-      clearTimeout(timer)
-    }
-  }, [view, enabled, dbUp])
-
-  /* ---- unseeded: walk Wikipedia in ten-kilometre cells ----------------- */
-  useEffect(() => {
-    if (!enabled || (dbUp && !dbBlankHere)) return
-    const publish = setInterval(() => {
-      if (!dirty.current) return
-      dirty.current = false
-      setData({
-        type: 'FeatureCollection',
-        features: [...seen.current.values()].map(featureFor),
-      })
-    }, 700)
-    return () => clearInterval(publish)
-  }, [enabled, dbUp, dbBlankHere])
-
-  useEffect(() => {
-    if (!enabled || (dbUp && !dbBlankHere) || view.zoom < 7.4) {
-      setFilling(0)
-      return
-    }
-    let alive = true
-
-    const timer = setTimeout(async () => {
-      const cells = cellsCovering(boxFor(view), { limit: 150, centre: view.center })
-      let left = cells.length
-      setFilling(left)
-      // Two at a time: enough to blanket a country in a minute, few enough that
-      // Wikipedia does not start refusing us. Cells already in the browser come
-      // back without a request at all, so this is instant the second time.
-      for (let i = 0; i < cells.length; i += 2) {
-        if (!alive) return
-        while (handOn.current && alive) await new Promise(r => setTimeout(r, 140))
-        if (!alive) return
-        const batch = cells.slice(i, i + 2)
-        const got = await Promise.all(batch.map(c => attractionsInCell(c).catch(() => null)))
-        if (!alive) return
-        left -= batch.length
-        setFilling(left)
-        for (const poi of got.flatMap(list => list ?? [])) {
-          if (!seen.current.has(poi.id)) {
-            seen.current.set(poi.id, poi)
-            dirty.current = true
+        setFilling(found.degraded)
+        setAttribution(found.attribution || [])
+        /* The previous view's pins stay on screen while a cell is still
+           filling, so panning into an uningested country does not blank the
+           map between one answer and the next. */
+        if (found.places.length || !found.degraded) {
+          held.current = {
+            type: 'FeatureCollection',
+            features: found.places.map(featureFor),
           }
+          setData(held.current)
         }
+      } catch (caught) {
+        if (controller.signal.aborted) return
+        trackError('place pins', caught)
       }
-      setFilling(0)
-    }, 320)
-
+    }, SETTLE_MS)
     return () => {
-      alive = false
+      controller.abort()
       clearTimeout(timer)
     }
-  }, [view, enabled, dbUp, dbBlankHere])
+  }, [view, enabled, available])
 
   const shown = enabled ? data : EMPTY_FC
-  return { data: shown, filling: enabled ? filling : 0, count: shown.features.length }
+  return {
+    data: shown,
+    filling: enabled && filling,
+    attribution: enabled ? attribution : [],
+    count: shown.features.length,
+  }
 }
 
 export { EMPTY_FC }

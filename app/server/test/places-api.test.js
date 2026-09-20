@@ -456,6 +456,77 @@ test('a degraded record is served, not 500ed, though its id is not one of ours',
   assert.equal(named.json().degraded, true)
 })
 
+/* The map's pin layer.
+ *
+ * What it replaced held the Netherlands and Scotland — the only two regions
+ * the Wikipedia seeder was ever pointed at — and everywhere else the map asked
+ * Wikipedia live from the phone. This answers anywhere from one indexed query,
+ * and the ordering is the point: a viewport has no centre to measure from, so
+ * the category weighting is the whole ranking and it has to put the museum
+ * above the launderette. */
+test('a viewport draws the best of what is in it, not the first rows found', {
+  skip: reachable,
+}, async t => {
+  const { app } = await world(t)
+  const box = 'west=4.87&south=52.35&east=4.89&north=52.37'
+  const view = async query => {
+    const reply = await app.inject({ method: 'GET', url: `/api/places/in-view?${query}` })
+    assert.equal(reply.statusCode, 200, reply.body)
+    return reply.json()
+  }
+
+  const all = await view(box)
+  const names = all.places.map(place => place.name)
+  assert.ok(names.includes('Van Gogh Museum'), names.join(', '))
+  /* Below the confidence floor, so never drawn — the same floor every other
+     query uses. */
+  assert.ok(!names.includes('Rijksmuseum (dup)'), 'a 0.12-confidence duplicate is a pin')
+  /* The museums and the gallery come before the laundry, whatever order the
+     table happens to hold them in. */
+  const museum = names.indexOf('Van Gogh Museum')
+  const laundry = names.indexOf('Wasserette De Zeep')
+  if (laundry >= 0) assert.ok(museum < laundry, `${names.join(' < ')}`)
+
+  /* Zoomed out: only what is worth a dot from orbit. */
+  const headline = await view(`${box}&headline=true`)
+  assert.ok(headline.places.length > 0)
+  assert.ok(headline.places.length < all.places.length, 'headline drew everything')
+  for (const place of headline.places) assert.equal(place.big, true)
+  assert.ok(
+    !headline.places.some(place => place.category === 'services'),
+    'a launderette survived a zoom out',
+  )
+
+  /* One attribution for the layer, which is how a map carries it, rather than
+     a provenance trail per pin. */
+  assert.ok(Array.isArray(all.attribution))
+  for (const notice of all.attribution) assert.ok(notice.notice, JSON.stringify(notice))
+
+  /* A pin is a dot and a label. The rest of a place is one tap away, and
+     sending it for three hundred pins is bytes nobody renders. */
+  assert.deepEqual(Object.keys(all.places[0]).sort(), [
+    'big',
+    'category',
+    'confidence',
+    'id',
+    'lat',
+    'lng',
+    'name',
+  ])
+
+  /* Public, like the layer it replaces: a map's pins are built from nobody's
+     trip and carry nothing private. */
+  const anonymous = await app.inject({ method: 'GET', url: `/api/places/in-view?${box}` })
+  assert.equal(anonymous.statusCode, 200)
+
+  /* And a box that is not a box is refused rather than guessed at. */
+  const upsideDown = await app.inject({
+    method: 'GET',
+    url: '/api/places/in-view?west=4&south=53&east=5&north=52',
+  })
+  assert.equal(upsideDown.statusCode, 400)
+})
+
 test('an uncovered cell is asked for, and the answer says it is thin', {
   skip: reachable,
 }, async t => {

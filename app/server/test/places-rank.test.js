@@ -9,12 +9,14 @@ import {
   NEAR_BIAS_METRES,
   SEARCH_KIND,
   SEARCH_WEIGHT,
+  VIEW_WEIGHT,
   WIDENING,
   confidenceFactor,
   distanceDecay,
   nearbyScore,
   rankNearby,
   rankSearch,
+  viewWeightOf,
   searchScore,
   weightOf,
   widen,
@@ -412,4 +414,33 @@ test('a misspelling still finds the place', () => {
     },
   ]
   assert.equal(rankSearch(rows, 'van gogh musuem')[0].id, 'right')
+})
+
+/* The map's ordering is done in the database — a city viewport holds tens of
+   thousands of rows and the screen wants a few hundred, so sorting them here
+   would throw the index away at the last step. That means the weights exist
+   twice: as this table, and as a CASE that store.js builds from it. This is
+   the test that says they are the same table, so a change to one cannot
+   quietly leave the other behind. */
+test('every category has a map weight, and the map weights are a table not a guess', () => {
+  for (const category of Object.keys(CATEGORY_WEIGHT)) {
+    assert.equal(
+      VIEW_WEIGHT[category],
+      viewWeightOf(category),
+      `${category} weighs differently on a map than viewWeightOf says`,
+    )
+    assert.ok(Number.isFinite(VIEW_WEIGHT[category]), category)
+  }
+  assert.deepEqual(Object.keys(VIEW_WEIGHT).sort(), Object.keys(CATEGORY_WEIGHT).sort())
+  /* The catch-all sits under the named kinds. Measured on the real Amsterdam
+     data: at the nearby weighting the best eight places in the city centre
+     were two arts venues and six canal bridges, all honestly filed as
+     `sights`, and every museum in Amsterdam lost to them. */
+  assert.ok(VIEW_WEIGHT.sights < VIEW_WEIGHT.museum)
+  assert.ok(VIEW_WEIGHT.sights < VIEW_WEIGHT.gallery)
+  assert.ok(VIEW_WEIGHT.sights < VIEW_WEIGHT.historic)
+  /* And it is only the map that thinks so: a list of what is near you still
+     leads with the catch-all, because there distance decides and a sight
+     underfoot is a sight. */
+  assert.ok(CATEGORY_WEIGHT.sights > CATEGORY_WEIGHT.museum)
 })

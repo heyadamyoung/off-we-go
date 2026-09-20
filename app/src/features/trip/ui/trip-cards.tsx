@@ -143,11 +143,15 @@ export default function TripCards({
         />
       )}
 
-      {showAttractions && attrFilling > 0 && (
+      {/* The ground under this view has not been loaded yet. The server has
+          queued it and it fills in on its own, so this says what is happening
+          rather than leaving a map that looks broken. Whatever pins the
+          previous view had stay on screen underneath it. */}
+      {showAttractions && attrFilling && (
         <div
           className="glass absolute left-1/2 top-[calc(var(--trip-top)+68px)] z-[6] -translate-x-1/2 rounded-full px-3.5 py-2
                         text-xs text-muted">
-          Finding attractions… {attrCount}
+          Still loading places here{attrCount ? ` · ${attrCount} so far` : ''}
         </div>
       )}
 

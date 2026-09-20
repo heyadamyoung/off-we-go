@@ -1,6 +1,29 @@
 import { ask, type WikiQueryResponse } from '../../../shared/api/wikipedia-client'
 import { NOT_A_PHOTO, tidy } from '../../../shared/lib/place-format'
-import type { AttractionPoi, Coordinates } from '../../../shared/model/types'
+import type { Coordinates } from '../../../shared/model/types'
+
+/* A pin as Wikipedia's geosearch describes one.
+ *
+ * SUPERSEDED for the map, which now draws from the places layer — see
+ * use-attractions.ts. What is left here walks Wikipedia a cell at a time and
+ * is used by one caller: scripts/seed-attractions.mjs, which fills the
+ * `attractions` table for the two regions it was ever pointed at. Both that
+ * table and this walk go in the release after next; they are kept for one so
+ * a rollback has something to roll back to.
+ *
+ * It had its own shape and now says so, rather than borrowing AttractionPoi:
+ * that name means a pin from the places layer, which has our own id, one of
+ * the twenty categories and a confidence, and has neither a page id nor a
+ * photograph file. */
+export interface WikiPin {
+  id: number
+  n: string
+  d: string
+  k: string
+  f: string | null
+  x: number
+  y: number
+}
 
 const CELL_DEG = 0.12 // ~13 km of latitude, so 10 km circles overlap
 const lngStepAt = (lat: number) => CELL_DEG / Math.max(0.2, Math.cos((lat * Math.PI) / 180))
@@ -117,16 +140,16 @@ try {
   // No storage (node, private browsing): nothing stale to sweep either.
 }
 
-function readCell(key: string): AttractionPoi[] | null {
+function readCell(key: string): WikiPin[] | null {
   try {
     const raw = localStorage.getItem(STORE_PREFIX + key)
-    return raw ? (JSON.parse(raw) as AttractionPoi[]) : null
+    return raw ? (JSON.parse(raw) as WikiPin[]) : null
   } catch {
     return null
   }
 }
 
-function writeCell(key: string, items: AttractionPoi[]) {
+function writeCell(key: string, items: WikiPin[]) {
   try {
     localStorage.setItem(STORE_PREFIX + key, JSON.stringify(items))
     const seen = (
@@ -151,7 +174,7 @@ function writeCell(key: string, items: AttractionPoi[]) {
   }
 }
 
-const liveCells = new Map<string, AttractionPoi[]>()
+const liveCells = new Map<string, WikiPin[]>()
 
 export async function attractionsInCell(cell: AttractionCell, signal?: AbortSignal) {
   if (liveCells.has(cell.key)) return liveCells.get(cell.key)!
@@ -177,7 +200,7 @@ export async function attractionsInCell(cell: AttractionCell, signal?: AbortSign
     signal,
   )
 
-  const items: AttractionPoi[] = Object.values(json.query?.pages || {})
+  const items: WikiPin[] = Object.values(json.query?.pages || {})
     .filter(p => p.coordinates?.length)
     .map(p => ({
       id: p.pageid,

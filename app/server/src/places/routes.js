@@ -38,7 +38,14 @@ import { cellKey, cellsForPoints, cellsWithin } from './cells.js'
 import { createPlaceCoverage } from './coverage.js'
 import { createPlaceFallback } from './fallback.js'
 import { OSM_LICENSE, OVERTURE_LICENSE } from './overture.js'
-import { CONFIDENCE_FLOOR, MAX_RADIUS_METRES, rankNearby, rankSearch, widen } from './rank.js'
+import {
+  CONFIDENCE_FLOOR,
+  MAX_RADIUS_METRES,
+  VIEW_WEIGHT,
+  rankNearby,
+  rankSearch,
+  widen,
+} from './rank.js'
 import { nameSimilarity } from './resolve.js'
 import { isCategory } from './taxonomy.js'
 import { event, span, stamp } from '../tracing.js'
@@ -46,6 +53,15 @@ import { event, span, stamp } from '../tracing.js'
 /** The most any one response will carry. A typeahead shows ten and a nearby
     list twenty; fifty is generous for a map that wants to draw the lot. */
 export const MAX_LIMIT = 50
+/** Pins on a map, which is a different question: a map draws hundreds of dots
+    happily and clusters what it cannot. Measured at 500 over an Amsterdam
+    viewport of 168,523 places: 33 ms. */
+export const MAX_PINS = 1_000
+const DEFAULT_PINS = 300
+/** A viewport whose best pins are all below this weight is a viewport with
+    nothing worth a dot from orbit — see VIEW_KIND in rank.js on why the
+    catch-all category sits under the named ones. */
+const HEADLINE_WEIGHT = 0.65
 const DEFAULT_SEARCH_LIMIT = 10
 const DEFAULT_NEARBY_LIMIT = 20
 /** A nearby query with no radius. A kilometre is a quarter of an hour's walk,
@@ -155,6 +171,24 @@ const coverageCells = (lng, lat, radius, home) => {
   return touched.length > MAX_COVERAGE_CELLS ? [home] : touched
 }
 
+/** A pin, which is less than a place: a map draws a dot and a label, and
+    sending an address, a phone number and a provenance trail for each of
+    three hundred of them is bytes nobody renders. Tapping one asks
+    /api/places/:id for the rest. */
+const pin = record => ({
+  id: record.id,
+  name: record.name,
+  lng: record.lng,
+  lat: record.lat,
+  category: record.category,
+  confidence: record.confidence,
+  /* Whether it deserves a dot when the map is zoomed out. Decided here
+     because the weighting that decides it lives here; the client should not
+     be carrying a second copy of the taxonomy to answer the same question a
+     different way. */
+  big: VIEW_WEIGHT[record.category] >= HEADLINE_WEIGHT,
+})
+
 /* A box of `metres` around a point, for the Parquet reader. Latitude is
    111.32 km a degree everywhere; longitude is that times the cosine, and past
    89° the cosine goes to nothing, so the box becomes the whole parallel rather
@@ -218,6 +252,32 @@ const nearbyQuery = z.object({
 
 /** Our own primary key, as opposed to an upstream id. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/* A map's viewport. Degrees rather than a radius, because that is what a map
+   has, and bounded to the planet so a bad number cannot ask for an envelope
+   the size of the solar system. The pin limit is generous — a map draws
+   hundreds of dots happily and clusters the rest — and the floor is the same
+   suppression floor every other query uses. */
+const viewQuery = z
+  .object({
+    west: z.coerce.number().min(-180).max(180),
+    east: z.coerce.number().min(-180).max(180),
+    south: z.coerce.number().min(-90).max(90),
+    north: z.coerce.number().min(-90).max(90),
+    limit: z.coerce
+      .number()
+      .int()
+      .transform(value => Math.min(MAX_PINS, Math.max(1, value)))
+      .default(DEFAULT_PINS),
+    /* Zoomed out, only the things worth a dot from orbit. The client sends
+       this rather than a zoom level, because what counts as "worth it" is a
+       decision about data and belongs on this side. */
+    headline: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform(value => value === 'true'),
+  })
+  .refine(box => box.north > box.south, 'north must be above south')
 
 const PLACE_ID = z
   .string()
@@ -532,6 +592,72 @@ export function registerPlaceRoutes(
         }
       },
     )
+  })
+
+  /* Every pin on a map's screen.
+   *
+   * The layer this replaces held the Netherlands and Scotland, seeded by
+   * walking Wikipedia's geosearch a region at a time, and everywhere else the
+   * map asked Wikipedia live from the phone in ten-kilometre circles at two
+   * requests a second. A traveller in Canada got rate-limited instead of pins.
+   * This answers anywhere, in one indexed query, from data we hold.
+   *
+   * Unauthenticated, like the attractions route it replaces and like the
+   * airport indoor route beside it: a map's pins are not built from anybody's
+   * trip and carry nothing private. Bounded by MAX_PINS and by the envelope
+   * itself, so being public costs one index scan.
+   */
+  app.get('/api/places/in-view', async (request, reply) => {
+    if (!servable) return unavailable(reply)
+    const parsed = viewQuery.safeParse(request.query || {})
+    if (!parsed.success) return reply.code(400).send({ error: message(parsed.error) })
+    const { west, south, east, north, limit, headline } = parsed.data
+
+    return span('places in view', { 'places.view.limit': limit }, async () => {
+      const started = Date.now()
+      const rows = await repository.placesInView(
+        { west, south, east, north },
+        {
+          limit,
+          floor: CONFIDENCE_FLOOR,
+          floorWeight: headline ? HEADLINE_WEIGHT : 0,
+          weights: VIEW_WEIGHT,
+        },
+      )
+      /* Coverage is asked about the middle of the view, because that is where
+         somebody is looking. A box the size of a continent touches more cells
+         than any one answer should queue — coverageCells caps that — and the
+         cells around the middle are the ones a pan will want next. */
+      const found = await coverageFor({
+        lng: (west + east) / 2,
+        lat: (south + north) / 2,
+        radius: DEFAULT_RADIUS_METRES,
+      })
+      /* One attribution for the layer rather than one per pin — see
+         licensesFor in store.js. A pin needs a name, a kind and a position;
+         provenance for one place is what /api/places/:id is for. */
+      const licenses = repository.placeLicenses
+        ? await repository.placeLicenses(rows.map(place => place.id))
+        : []
+      const page = rows
+      stamp({
+        'places.query.kind': 'view',
+        'places.query.ms': Date.now() - started,
+        'places.result.count': page.length,
+        'places.degraded': !found.ready,
+      })
+      /* Pins do not fall back to the bucket. A degraded viewport would be a
+         Parquet read per pan, which is the one thing the cap exists to
+         prevent; the cell is queued and the map fills in as it lands. Said
+         rather than hidden, so the client can show that it is still filling. */
+      reply.header('cache-control', found.ready ? NEARBY_CACHE : DEGRADED_CACHE)
+      return {
+        places: page.map(pin),
+        attribution: attributionFor(licenses.map(license => ({ license }))),
+        degraded: !found.ready,
+        ...(found.ready ? {} : { coverage: { cell: found.home, status: found.status } }),
+      }
+    })
   })
 
   app.get('/api/places/:id', async (request, reply) => {
