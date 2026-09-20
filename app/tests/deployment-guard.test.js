@@ -266,6 +266,25 @@ test('the deploy pulls with a token it destroys, builds without one, and keeps t
      the healthcheck can actually be read. Here only that it waits at all. */
   assert.match(script, /docker compose up -d --no-build --wait --wait-timeout \d+/)
   assert.match(script, /docker compose up -d --build --wait --wait-timeout \d+/)
+
+  /* The schema before anything is recreated, in a container of its own.
+   *
+   * A migration that does real work — 051 builds a GiST index over ten
+   * million places — kept the api from listening for minutes, so `web` sat
+   * on `depends_on: api: service_healthy` until Compose gave up at its own
+   * 180-second limit, which is not the --wait-timeout above and cannot be
+   * raised from here. Deploys 363 and 365 both died exactly there with
+   * nothing wrong with them. Asserted as an order, because the order is the
+   * whole of it: the previous release serves while the schema moves. */
+  const migrateAt = script.indexOf('migrate_with_new_image\n')
+  const upAt = script.indexOf('docker compose up -d --no-build --wait')
+  assert.ok(migrateAt > 0, 'the deploy migrates in a container of its own')
+  assert.ok(upAt > migrateAt, 'and does it before it recreates anything')
+  assert.match(script, /docker compose run --rm -T api node server\/scripts\/migrate\.mjs/)
+  assert.ok(
+    existsSync(path.join(appRoot, 'server', 'scripts', 'migrate.mjs')),
+    'and the script it runs is in the image',
+  )
   assert.match(script, /docker tag "\$running" "\$image_repo\/\$image:rollback"/)
   assert.match(script, /IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate/)
   // Nothing about the token is ever echoed or left in a variable afterwards.

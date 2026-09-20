@@ -154,6 +154,30 @@ docker compose config --quiet
 # The release sha reaches the web build so browser telemetry can be sliced
 # by deploy.
 export RELEASE_SHA="$release_sha"
+# The schema first, in a container of its own, before anything is recreated.
+#
+# It used to happen inside the api's boot, and that is fine right up until a
+# migration does real work. Migration 051 builds one GiST index over ten
+# million places — minutes on this box — and during those minutes the api is
+# not listening, so its healthcheck does not pass, so `web` waits on
+# `depends_on: api: service_healthy` until Compose gives up. That limit is
+# Compose's own and is not the --wait-timeout below: deploys 363 and 365 both
+# died exactly 180 seconds after the api container started, and neither had
+# anything wrong with it.
+#
+# A container's boot is measured against timeouts that belong to containers. A
+# migration is not a boot — it is something the release does once — and this
+# script can wait on it for as long as it takes. The previous release keeps
+# serving throughout, which is what makes this better than patience: the site
+# is up for the whole of it.
+#
+# Not `|| true`. A schema that will not migrate is the one thing that must
+# stop a release, and the ERR trap restores the previous one.
+migrate_with_new_image() {
+  echo "Bringing the schema up to date before anything is recreated."
+  docker compose run --rm -T api node server/scripts/migrate.mjs
+}
+
 # Fifteen minutes, which is the api healthcheck's start period and not a
 # number picked for comfort. The two have to agree: compose stops waiting at
 # --wait-timeout, the container is only called unhealthy after start_period,
@@ -173,8 +197,11 @@ if [[ -n "$registry_token" ]]; then
   registry_token=""
   docker compose pull --quiet api web
   docker logout ghcr.io >/dev/null 2>&1 || true
+  migrate_with_new_image
   docker compose up -d --no-build --wait --wait-timeout 900
 else
+  docker compose build --quiet api
+  migrate_with_new_image
   docker compose up -d --build --wait --wait-timeout 900
 fi
 bash ./deploy/configure-logto.sh
