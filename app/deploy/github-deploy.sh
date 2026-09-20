@@ -230,10 +230,26 @@ echo "places: $(places_ask 'select count(*) from places') places in $(places_ask
 if [ -n "$(docker ps -q --filter status=running \
   --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
   echo "places: a sweep is already running; left alone"
-elif docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
-  echo "places: sweep started — docker compose logs -f places-sweep"
 else
-  echo "places: the sweep could not be started"
+  # Why the last one stopped, before starting another.
+  #
+  # The first live planet run exited somewhere in the Atlantic and left an
+  # exited container nobody could ask, because the deploy key is restricted to
+  # `deploy <sha>` and there is no shell on this box. A run that ends has to
+  # say so here or it has said so nowhere. Read-only, and `|| true` throughout.
+  stopped_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
+    2>/dev/null | head -n 1 || true)"
+  if [ -n "$stopped_sweep" ]; then
+    echo "places: the last sweep exited $(docker inspect \
+      -f '{{.State.ExitCode}} after {{.State.StartedAt}} to {{.State.FinishedAt}}' \
+      "$stopped_sweep" 2>/dev/null || echo '?') — its last lines:"
+    docker logs --tail 15 "$stopped_sweep" 2>&1 | sed 's/^/places:   /' || true
+  fi
+  if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
+    echo "places: sweep started — docker compose logs -f places-sweep"
+  else
+    echo "places: the sweep could not be started"
+  fi
 fi
 
 # Media onto the object store, once, with the release already live and

@@ -54,6 +54,23 @@ export const LOAD_AHEAD = 4
 /** How often the run says where it is, in row groups. */
 export const SAY_EVERY = 25
 
+/** Attempts at one row group before the run gives up on it.
+ *
+ * Learned the expensive way. A read that fails stops the sweep, deliberately:
+ * a cell loaded from a partial read is a cell that has quietly lost a third
+ * of a city, and the collapse guard cannot see the difference. But "stops the
+ * sweep" was written as "one 503 from a public bucket ends a three-hour run",
+ * and that is what happened — the first live planet run died somewhere in the
+ * Atlantic and the box sat there with an exited container and nothing to say
+ * about it. Four thousand range requests against a bucket that owes us
+ * nothing will meet a bad one; the answer is to ask again, not to treat the
+ * first blip as the truth about the release. A group that fails four times in
+ * a row with the delays below is a real failure and still stops the run. */
+export const READ_TRIES = 4
+
+/** First backoff, doubled each attempt: 2s, 4s, 8s. */
+export const READ_BACKOFF_MS = 2000
+
 /** The square a record belongs to.
  *
  * Records arrive already normalised — the caller composes the reader and its
@@ -124,6 +141,8 @@ export function sweepPlan(index, { cells = null } = {}) {
  * @param {(cell: string, rows: object[]) => Promise<object>} options.load
  * @param {number} [options.ahead]      row groups in flight
  * @param {number} [options.loadAhead]  squares being written at once
+ * @param {number} [options.tries]      attempts at one row group
+ * @param {(ms: number) => Promise<void>} [options.wait]  injectable, for tests
  * @param {(line: string, detail?: object) => void} [options.log]
  * @param {(outcome: object) => void} [options.onCell]
  * @param {() => number} [options.clock]
@@ -134,6 +153,9 @@ export function createSweep({
   load,
   ahead = READ_AHEAD,
   loadAhead = LOAD_AHEAD,
+  tries = READ_TRIES,
+  backoffMs = READ_BACKOFF_MS,
+  wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
   log = () => {},
   onCell = () => {},
   clock = () => Date.now(),
@@ -148,6 +170,32 @@ export function createSweep({
     places: 0,
     empty: 0,
     failed: 0,
+    retried: 0,
+  }
+
+  /** One row group, asked for again when the bucket is having a moment.
+   *
+   * The retry is here rather than in the reader because this is the caller
+   * that cannot simply return a worse answer: a short read hands a cell rows
+   * it does not have. Every other caller of readGroup is a query somebody is
+   * waiting on, where failing fast is right. */
+  async function readGroup(part, group) {
+    let last = null
+    for (let attempt = 1; attempt <= Math.max(1, tries); attempt += 1) {
+      try {
+        return await read(part, group)
+      } catch (error) {
+        last = error
+        if (attempt >= Math.max(1, tries) || stopped) break
+        totals.retried += 1
+        log(
+          `sweep: rows ${group.s}-${group.e} of ${part.url} failed ` +
+            `(${String(error?.message || error)}); attempt ${attempt + 1} of ${tries}`,
+        )
+        await wait(backoffMs * 2 ** (attempt - 1))
+      }
+    }
+    throw last
   }
 
   async function run() {
@@ -175,7 +223,7 @@ export function createSweep({
         pending.set(
           at,
           Promise.resolve()
-            .then(() => read(part, group))
+            .then(() => readGroup(part, group))
             .then(
               rows => ({ rows }),
               error => ({ error }),
