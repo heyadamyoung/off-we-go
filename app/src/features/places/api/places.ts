@@ -1,5 +1,6 @@
 import { authClient, hasBackend, isSample } from '../../../backend'
-import { EMPTY_PLACE_LIST, placeListFrom, type Place, type PlaceList } from '../../../places-core'
+import { EMPTY_PLACE_LIST, type Place, type PlaceList } from '../../../places-core'
+import { placeFrom, placeListFrom } from '../../../places-wire'
 import { SAMPLE_ATTRIBUTION, samplePins, samplePlace } from '../../../sample-places-core'
 import { validLngLat } from '../../../shared/lib/geo'
 import type { ApiError, AttractionPoi, Coordinates, Id } from '../../../shared/model/types'
@@ -94,7 +95,7 @@ export async function placeById(id: string, signal?: AbortSignal): Promise<Place
     const payload = await authClient.request<unknown>(`/places/${encodeURIComponent(id)}`, {
       signal,
     })
-    return placeListFrom({ places: [payload] }).places[0] || null
+    return placeFrom(payload)
   } catch (error) {
     if ((error as ApiError)?.status === 404) return null
     throw error
