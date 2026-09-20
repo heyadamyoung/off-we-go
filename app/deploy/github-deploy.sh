@@ -247,10 +247,14 @@ done
 # honest answer to "will the planet fit" has until now been a guess.
 echo
 echo "--- capacity ---"
-df -h / /var/lib/docker 2>/dev/null | awk 'NR==1 || !seen[$1]++'
-echo "memory: $(free -h 2>/dev/null | awk '/^Mem:/{print $2" total, "$7" available"}')"
-echo "cores: $(nproc 2>/dev/null)"
-du -sh /var/lib/docker/volumes/* 2>/dev/null | sort -h | tail -5 | sed 's/^/volume: /'
+# Every line below ends in `|| true`. The script runs under `set -Eeuo
+# pipefail`, so a df against a path that is not a mount, or a du over a
+# directory root cannot read, would fail the pipeline and fail a deploy that
+# had already succeeded — a release rolled back to report a disk reading.
+df -h / /var/lib/docker 2>/dev/null | awk 'NR==1 || !seen[$1]++' || true
+free -h 2>/dev/null | awk '/^Mem:/{print "memory: "$2" total, "$7" available"}' || true
+echo "cores: $(nproc 2>/dev/null || echo unknown)"
+du -sh /var/lib/docker/volumes/* 2>/dev/null | sort -h | tail -5 | sed 's/^/volume: /' || true
 echo "--- end capacity ---"
 echo
 
