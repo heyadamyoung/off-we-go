@@ -185,6 +185,10 @@ test('the scene joins home to the trip and only claims a live position while it 
       ],
     }),
     profile,
+    /* A day inside the trip, stated rather than borrowed from the clock: the
+       default trip here ended on the 19th of September 2026, and on the 20th
+       this test began failing on commits that never touched it. */
+    '2026-09-10',
   )
   assert.equal(live.home.name, 'Regina')
   assert.equal(live.places.length, 3, 'home, then both stops')
@@ -197,6 +201,7 @@ test('the scene joins home to the trip and only claims a live position while it 
       places: [{ name: 'Amsterdam', lng: 4.9, lat: 52.37, status: 'done' }],
     }),
     profile,
+    '2026-09-10',
   )
   assert.equal(finished.live, null)
   assert.equal(finished.places.length, 3, 'home, the stop, and home again')

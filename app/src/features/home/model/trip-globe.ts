@@ -100,16 +100,26 @@ export function homePlace(profile?: MyProfile | null): GlobePlace | null {
 
 /* The globe shows one trip's arc at a time — every trip at once is a ball of
    string. Home joins the ends so the journey starts and finishes somewhere. */
-export function globeScene(trip: TripSummary | null, profile?: MyProfile | null) {
+/* `today` is a parameter, not a reading of the clock, for the reason every
+   date-dependent function eventually learns: this one asked the wall clock
+   twice per call, so a test written against a trip in the future passed until
+   the day that trip ended and then failed for everyone, on a commit that had
+   nothing to do with it. A scene is a function of a trip and a day; the day
+   defaults to today and is never assumed. */
+export function globeScene(
+  trip: TripSummary | null,
+  profile?: MyProfile | null,
+  today = todayISO(),
+) {
   const home = homePlace(profile)
   const places = trip ? tripPlaces(trip) : []
   if (!places.length) return { places: home ? [home] : [], home, live: null }
+  const state = tripProgress(trip!, today).state
   const leaving = home ? [{ ...home, done: places[0].done, label: false }] : []
-  const returning =
-    home && tripProgress(trip!).state === 'past' ? [{ ...home, done: true, label: false }] : []
+  const returning = home && state === 'past' ? [{ ...home, done: true, label: false }] : []
   return {
     places: [...leaving, ...places, ...returning],
     home,
-    live: tripProgress(trip!).state === 'live' ? livePlace(places) : null,
+    live: state === 'live' ? livePlace(places) : null,
   }
 }
