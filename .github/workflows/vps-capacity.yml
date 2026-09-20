@@ -1,0 +1,59 @@
+name: VPS capacity
+
+# What the production box actually has, asked of the box itself.
+#
+# Nothing in this repository records the VPS's disk, memory or cores, so every
+# sizing decision has been a guess — most immediately whether the places
+# layer's fifty gigabytes of open data fit beside everything else. This asks.
+#
+# Strictly read-only: df, lsblk, free, nproc, and docker's own accounting. It
+# starts nothing, stops nothing, writes nothing, and runs only when somebody
+# presses the button.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capacity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure deployment SSH key
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Ask the box what it has
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
+            root@"$VPS_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===== filesystems ====="
+          df -h
+          echo
+          echo "===== block devices ====="
+          lsblk -o NAME,SIZE,TYPE,MOUNTPOINT 2>/dev/null || echo "lsblk unavailable"
+          echo
+          echo "===== memory ====="
+          free -h
+          echo
+          echo "===== cpu ====="
+          echo "cores: $(nproc)"
+          grep -m1 'model name' /proc/cpuinfo 2>/dev/null || true
+          echo
+          echo "===== docker accounting ====="
+          docker system df 2>/dev/null || echo "docker system df unavailable"
+          echo
+          echo "===== largest docker volumes ====="
+          du -sh /var/lib/docker/volumes/* 2>/dev/null | sort -h | tail -15 || true
+          REMOTE
