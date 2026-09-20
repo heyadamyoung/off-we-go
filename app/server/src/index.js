@@ -11,7 +11,8 @@ import { startPushTick } from './push/tick.js'
 import { writeFile } from 'node:fs/promises'
 import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
-import { createReleaseLoader, DEFAULT_INDEX_DIR } from './places/upstream.js'
+import { createFooterStore, createReleaseLoader, DEFAULT_INDEX_DIR } from './places/upstream.js'
+import { createPlaceWorker } from './places/worker.js'
 import { productionLoggerOptions } from './logging.js'
 import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
 import { createMediaWorker } from './media-worker.js'
@@ -102,14 +103,17 @@ const coverage = process.env.VALHALLA_URL
    published one is discovered, which is what has to happen anyway: upstream
    deletes its own releases after about sixty days. */
 const placesLog = { current: console }
-const placesUpstream =
-  process.env.PLACES_UPSTREAM === 'off'
-    ? null
-    : createReleaseLoader({
-        pinned: process.env.PLACES_RELEASE || null,
-        directory: process.env.PLACES_INDEX_DIR || DEFAULT_INDEX_DIR,
-        log: message => placesLog.current.info?.(message),
-      })
+const placesDirectory = process.env.PLACES_INDEX_DIR || DEFAULT_INDEX_DIR
+const placesSay = message => placesLog.current.info?.(message)
+const placesRelease = source =>
+  createReleaseLoader({
+    source,
+    pinned: source === 'overture' ? process.env.PLACES_RELEASE || null : null,
+    directory: placesDirectory,
+    log: placesSay,
+  })
+const placesOn = process.env.PLACES_UPSTREAM !== 'off'
+const placesUpstream = placesOn ? placesRelease('overture') : null
 
 /* Where media lives. A volume on this box until S3_BUCKET says otherwise —
    and nothing above this line knows which, because both stores answer the
@@ -221,10 +225,33 @@ const workers = Array.from({ length: workerCount }, () =>
 )
 for (const worker of workers) worker.start()
 
+/* And the places worker, which drains what a trip's stops and a degraded
+   query put in the coverage queue. Nothing else reads that queue on this box,
+   so without it every places query stays degraded for ever and asks again for
+   a cell nobody will ever fetch. A few cells a minute: the API server must
+   not spend its afternoon reading Parquet instead of answering people. See
+   places/worker.js for the four rules it keeps.
+
+   Off when the upstream tier is off — there is nothing to ingest from — and
+   PLACES_WORKER=off turns it off on its own, for the day this work lives
+   somewhere that is not the web node. */
+const placesWorker =
+  placesOn && process.env.PLACES_WORKER !== 'off'
+    ? createPlaceWorker({
+        pool: repository.pool,
+        loadIndex: placesUpstream,
+        loadSecondIndex: placesRelease('fsq'),
+        footers: createFooterStore({ directory: placesDirectory }),
+        log: placesSay,
+        cellsPerTick: Number(process.env.PLACES_CELLS_PER_TICK) || undefined,
+      })
+    : null
+
 const port = Number(process.env.PORT || 3000)
 coverageLog.current = app.log
 placesLog.current = app.log
 await app.listen({ host: '0.0.0.0', port })
+placesWorker?.start()
 
 /* The privacy policy promises GPS fixes are deleted after 30 days; this is
    what keeps the promise. Cheap enough to run often, checked on boot so a
@@ -305,6 +332,10 @@ const stop = async signal => {
   travelWatch?.stop()
   flightWatch.stop()
   pushTick.stop()
+  /* Awaited, unlike the rest: the cell in flight is a transaction, and the
+     ingest leaves it resumable only if it is allowed to finish abandoning
+     it. See places/worker.js. */
+  await placesWorker?.stop().catch(() => {})
   await app.close().catch(() => {})
   await repository.close().catch(() => {})
   process.exit(0)

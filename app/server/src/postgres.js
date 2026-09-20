@@ -3308,6 +3308,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async close() {
       await pool.end()
     },
+    /* The connection pool itself, for the one consumer that cannot go through
+       a repository method: the places ingest runs COPY into temp tables and
+       swaps them in, all inside one transaction on one connection, and a
+       method per statement would either break that transaction apart or turn
+       this file into a second copy of places/ingest.js. Nothing else should
+       reach for this. */
+    pool,
   }
   return repository
 }
