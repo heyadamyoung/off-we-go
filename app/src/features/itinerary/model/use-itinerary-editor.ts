@@ -274,6 +274,11 @@ export default function useItineraryEditor({
           lat: draft.lat,
           src: draft.src || null,
           sourceUrl: draft.sourceUrl || undefined,
+          /* Sent every time, null included: dropping the match is as much a
+             change as making one, and a field only sent when set can never be
+             cleared. A server that does not know this column yet ignores it,
+             which is why free-text stops were never waiting on it. */
+          placeId: draft.placeId ?? null,
         })
         setStops(list => list.map(s => (s.id === draft.id ? { ...s, ...saved } : s)))
         setPhotos(list => applyRefilings(list, saved?.refiled))

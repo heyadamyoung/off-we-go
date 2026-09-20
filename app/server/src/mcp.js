@@ -294,6 +294,11 @@ function buildMcpServer({
   mailbox = null,
   assistant = false,
   routing = null,
+  /* A stop written by a tool is a stop like any other, so the places layer
+     hears about the ground around it the same way the HTTP routes tell it.
+     See places/coverage.js for what a notice costs: nothing that can throw,
+     and one debounced write a burst. */
+  noticePlaces = () => {},
 }) {
   const mailTools = !!(assistant && mailbox)
   const server = new McpServer(
@@ -633,6 +638,7 @@ function buildMcpServer({
         seq: null,
         ...input,
       })
+      noticePlaces(stop)
       return stop
         ? result(stop)
         : toolFailure('The trip was not found or is not editable by this user.')
@@ -665,6 +671,7 @@ function buildMcpServer({
     },
     write('stops', async ({ tripId, stopId, ...changes }) => {
       const stop = await repository.updateStop(user, tripId, stopId, changes)
+      noticePlaces(stop)
       return stop
         ? result(stop)
         : toolFailure('The stop was not found or is not editable by this user.')
@@ -1577,6 +1584,11 @@ export async function registerMcpRoutes(
         mailbox: mailboxReader,
         routing,
         assistant: authInfo.clientId === 'wayfare-assistant',
+        noticePlaces: stop => {
+          if (stop && Number.isFinite(stop.lng) && Number.isFinite(stop.lat)) {
+            app.placeCoverage?.noteStops({ stops: [{ lng: stop.lng, lat: stop.lat }] })
+          }
+        },
         sendInvite: async invitation => {
           const email = invitation.email
           const now = clock().getTime()

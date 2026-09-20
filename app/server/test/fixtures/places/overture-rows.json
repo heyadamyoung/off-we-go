@@ -1,0 +1,174 @@
+[
+  {
+    "id": "ov-cafe-zoom",
+    "names": {
+      "primary": "Café Zoom"
+    },
+    "categories": {
+      "primary": "cafe",
+      "alternate": [
+        "coffee_shop"
+      ]
+    },
+    "basic_category": "cafe",
+    "confidence": 0.61,
+    "websites": [],
+    "phones": [],
+    "addresses": [
+      {
+        "freeform": "Prinsengracht 1",
+        "locality": "Amsterdam",
+        "postcode": "1015 AA",
+        "region": null,
+        "country": "NL"
+      }
+    ],
+    "sources": [
+      {
+        "property": "",
+        "dataset": "meta",
+        "license": "CDLA-Permissive-2.0",
+        "record_id": "111",
+        "update_time": "2026-08-10T00:00:00.000Z",
+        "confidence": 0.61,
+        "provider": "meta",
+        "resource": "meta",
+        "version": "2026-08-10"
+      }
+    ],
+    "operating_status": null,
+    "bbox": {
+      "xmin": 4.89,
+      "xmax": 4.89,
+      "ymin": 52.37,
+      "ymax": 52.37
+    }
+  },
+  {
+    "id": "ov-museum",
+    "names": {
+      "primary": "Museum of the Nine Streets",
+      "common": {
+        "nl": "Museum van de Negen Straatjes"
+      }
+    },
+    "categories": {
+      "primary": "museum"
+    },
+    "basic_category": "museum",
+    "confidence": 0.8,
+    "websites": [
+      "https://museum.example"
+    ],
+    "phones": [
+      "+31201234567"
+    ],
+    "addresses": [
+      {
+        "freeform": "Reestraat 4",
+        "locality": "Amsterdam",
+        "postcode": "1016 DN",
+        "region": null,
+        "country": "NL"
+      }
+    ],
+    "sources": [
+      {
+        "property": "",
+        "dataset": "OpenStreetMap",
+        "license": "CDLA-Permissive-2.0",
+        "record_id": "way/2251",
+        "update_time": "2026-08-10T00:00:00.000Z",
+        "confidence": 0.61,
+        "provider": "OpenStreetMap",
+        "resource": "OpenStreetMap",
+        "version": "2026-08-10"
+      }
+    ],
+    "operating_status": "open",
+    "bbox": {
+      "xmin": 4.885,
+      "xmax": 4.885,
+      "ymin": 52.369,
+      "ymax": 52.369
+    }
+  },
+  {
+    "id": "ov-awkward",
+    "names": {
+      "primary": "Biblioteca \"Gen.C.A. Michele Mola\" della Scuola",
+      "common": {
+        "it": "Sala \\ Lettura, {chiusa}",
+        "en": "Reading Room\nUpstairs"
+      },
+      "rules": [
+        {
+          "variant": "official",
+          "value": "Biblioteca, {la} \"Mola\""
+        }
+      ]
+    },
+    "categories": {
+      "primary": "library"
+    },
+    "basic_category": "library",
+    "confidence": 0.44,
+    "websites": [],
+    "phones": [],
+    "addresses": [],
+    "sources": [
+      {
+        "property": "",
+        "dataset": "meta",
+        "license": "CDLA-Permissive-2.0",
+        "record_id": "222",
+        "update_time": "2026-08-10T00:00:00.000Z",
+        "confidence": 0.61,
+        "provider": "meta",
+        "resource": "meta",
+        "version": "2026-08-10"
+      }
+    ],
+    "operating_status": null,
+    "bbox": {
+      "xmin": 4.87,
+      "xmax": 4.87,
+      "ymin": 52.36,
+      "ymax": 52.36
+    }
+  },
+  {
+    "id": "ov-on-the-edge",
+    "names": {
+      "primary": "Edge Café"
+    },
+    "categories": {
+      "primary": "cafe"
+    },
+    "basic_category": "cafe",
+    "confidence": 0.55,
+    "websites": [],
+    "phones": [],
+    "addresses": [],
+    "sources": [
+      {
+        "property": "",
+        "dataset": "meta",
+        "license": "CDLA-Permissive-2.0",
+        "record_id": "333",
+        "update_time": "2026-08-10T00:00:00.000Z",
+        "confidence": 0.61,
+        "provider": "meta",
+        "resource": "meta",
+        "version": "2026-08-10"
+      }
+    ],
+    "operating_status": null,
+    "bbox": {
+      "xmin": 5.0,
+      "xmax": 5.0,
+      "ymin": 52.5,
+      "ymax": 52.5
+    }
+  }
+]

@@ -10,6 +10,15 @@ import { clockOrNull } from './stop-time.js'
 import { rescheduled } from './segments.js'
 import { visitOf } from './stop-visits.js'
 import { flightOnLeg } from './flights/on-leg.js'
+import {
+  coverageFor,
+  markRequested,
+  nearbyPlaces,
+  pendingCells,
+  placeById,
+  searchPlaces,
+  sourcesFor,
+} from './places/store.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
@@ -131,6 +140,9 @@ const stopRow = value =>
     note: value.note,
     src: value.image_url,
     sourceUrl: value.source_url,
+    /* The places-layer record this stop was chosen from, when one was. Null
+       for anything typed by hand, which is most stops and always will be. */
+    placeId: value.place_id ?? null,
     seq: value.seq,
   }
 
@@ -1516,9 +1528,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
            created, which put it ahead of everything — and since the sequence
            number is invisible there was nothing on the screen to explain it. */
         `insert into stops
-        (trip_id,name,kind,icon,day,starts_at,ends_at,time_note,lng,lat,status,note,image_url,source_url,seq)
+        (trip_id,name,kind,icon,day,starts_at,ends_at,time_note,lng,lat,status,note,image_url,source_url,seq,place_id)
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-          coalesce($15, (select coalesce(max(seq), -1) + 1 from stops where trip_id=$1)))
+          coalesce($15, (select coalesce(max(seq), -1) + 1 from stops where trip_id=$1)),$16)
         returning *`,
         [
           tripId,
@@ -1536,6 +1548,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.src,
           input.sourceUrl,
           Number.isInteger(input.seq) ? input.seq : null,
+          input.placeId ?? null,
         ],
       )
       return stopRow(result.rows[0]) || null
@@ -1556,6 +1569,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         note: 'note',
         src: 'image_url',
         sourceUrl: 'source_url',
+        placeId: 'place_id',
         seq: 'seq',
       }
       const entries = Object.entries(changes).filter(([key]) => allowed[key])
@@ -3227,6 +3241,31 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       }
       return { profile, trips: exported }
     },
+    /* The places layer. Every statement lives in places/store.js, next to the
+       indexes it depends on agreeing with — see that file on why a name
+       comparison that folds differently returns an empty list rather than an
+       error. These are the doors the routes use; the ingest has its own. */
+    async searchPlaces(query) {
+      return searchPlaces(pool, query)
+    },
+    async placeById(id) {
+      return placeById(pool, id)
+    },
+    async placeSources(ids) {
+      return sourcesFor(pool, ids)
+    },
+    async nearbyPlaces(query) {
+      return nearbyPlaces(pool, query)
+    },
+    async placeCoverage(cells) {
+      return coverageFor(pool, cells)
+    },
+    async requestPlaceCells(cells, at) {
+      return markRequested(pool, cells, at)
+    },
+    async pendingPlaceCells(options) {
+      return pendingCells(pool, options)
+    },
     async deleteAccount(user) {
       const client = await pool.connect()
       try {
@@ -3269,6 +3308,13 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async close() {
       await pool.end()
     },
+    /* The connection pool itself, for the one consumer that cannot go through
+       a repository method: the places ingest runs COPY into temp tables and
+       swaps them in, all inside one transaction on one connection, and a
+       method per statement would either break that transaction apart or turn
+       this file into a second copy of places/ingest.js. Nothing else should
+       reach for this. */
+    pool,
   }
   return repository
 }

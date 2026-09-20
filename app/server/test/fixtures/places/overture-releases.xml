@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>overturemaps-us-west-2</Name><Prefix>release/</Prefix><KeyCount>3</KeyCount><MaxKeys>1000</MaxKeys><Delimiter>/</Delimiter><IsTruncated>false</IsTruncated><CommonPrefixes><Prefix>release/2026-07-22.0/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>release/2026-08-19.0/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>release/2026-08-19.10/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>release/notes/</Prefix></CommonPrefixes></ListBucketResult>

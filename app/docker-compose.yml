@@ -2,7 +2,12 @@ name: wayfare
 
 services:
   db:
-    image: postgres:17-alpine
+    # PostGIS, for the places layer: a k-nearest-neighbour index over tens of
+    # millions of points is the one thing plain PostgreSQL cannot do, and it is
+    # what keeps "sights nearby" under a tenth of a second. Same PostgreSQL 17
+    # on the same Alpine base, so the volume carries over untouched; migration
+    # 043 creates the extension. See docs/places-layer.md.
+    image: postgis/postgis:17-3.5-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: wayfare

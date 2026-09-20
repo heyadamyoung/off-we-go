@@ -4,8 +4,10 @@ import { dayIsoOf } from '../../../trip-days-core'
 import { chosenPicture } from '../../../stop-picture-core'
 import { formatRange } from '../../../shared/lib/trip-dates'
 import Icon from '../../../shared/ui/icon'
+import { PlaceSearch } from '../../places'
+import { categoryWord, type Place } from '../../../places-core'
 import StopPicturePicker from './stop-picture-picker'
-import type { StopDraft, TripPhoto } from '../../../shared/model/types'
+import type { Id, StopDraft, TripPhoto } from '../../../shared/model/types'
 
 const STOP_ICONS = ['pin', 'plane', 'bed', 'boat', 'museum', 'food', 'walk', 'camera']
 const STOP_STATES = [
@@ -18,6 +20,7 @@ const STOP_STATES = [
 function StopEditor({
   draft,
   photos,
+  tripId,
   startsOn,
   endsOn,
   onField,
@@ -31,6 +34,8 @@ function StopEditor({
   draft: StopDraft
   /** the trip's own pictures, any of which may stand for this stop */
   photos: TripPhoto[]
+  /** whose trip this is, so the place search prefers its own geography */
+  tripId?: Id
   /** the trip's declared range; the calendar is fenced to it */
   startsOn?: string | null
   endsOn?: string | null
@@ -64,6 +69,20 @@ function StopEditor({
        or moving to another trip, would take its day's meaning with it. */
     onField('day', iso)
     setDayError('')
+  }
+  /* A chosen place brings the two things typing cannot: where it actually is,
+     and the id the server keeps beside the stop. Nothing else is overwritten —
+     a kind already typed is the traveller's own word for it, and the name is
+     whatever is in the box. Unpicked, only the id goes. */
+  const takePlace = (place: Place | null) => {
+    if (!place) {
+      onField('placeId', null)
+      return
+    }
+    onField('placeId', place.id)
+    onField('lng', place.lng)
+    onField('lat', place.lat)
+    if (!(draft.kind || '').trim()) onField('kind', categoryWord(place.category))
   }
   const takePicture = (src: string) => {
     const picked = chosenPicture(src)
@@ -117,15 +136,20 @@ function StopEditor({
       )}
 
       <div className="eb">
-        <label className="f">
-          <span>Name</span>
-          <input
-            value={draft.name || ''}
-            autoFocus
-            placeholder="Rijksmuseum"
-            onChange={e => onField('name', e.target.value)}
-          />
-        </label>
+        {/* The name, and the places layer offering to be exact about it. The
+            box is still the name: type anything and it is the stop's name, so
+            "Gran's house" is a stop like any other. Choosing one of the
+            offered places additionally pins it to a record we hold — its
+            coordinates, and the id that keeps the two together. */}
+        <PlaceSearch
+          value={draft.name || ''}
+          onText={text => onField('name', text)}
+          onPick={takePlace}
+          pickedId={draft.placeId}
+          near={[draft.lng, draft.lat]}
+          tripId={tripId}
+          autoFocus
+        />
 
         <div className="frow">
           <label className="f">
