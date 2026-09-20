@@ -650,11 +650,17 @@ const TILE_Y = (lat, z) => `floor(
  *          zooms?: {from: number, to: number, floor: number}}} options
  * @returns {Promise<number>} rows given a zoom
  */
-export async function assignLabelZoom(db, bounds, { weights, perTile, zooms }) {
+export async function assignLabelZoom(db, bounds, { weights, perTile, zooms, earliest }) {
   const kinds = Object.entries(weights || {})
   if (!kinds.length) throw new Error('places: a zoom pass needs the category weights')
   for (const [category] of kinds) {
     if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
+  }
+  const ceilings = Object.entries(earliest || {})
+  if (!ceilings.length) throw new Error('places: a zoom pass needs the category ceilings')
+  for (const [category, zoom] of ceilings) {
+    if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
+    if (!Number.isInteger(zoom)) throw new Error(`places: not a zoom: ${category}=${zoom}`)
   }
   /* Composed, and checked above, exactly as placeTile composes the same
      table: these are the only two statements in this file that are not
@@ -662,6 +668,14 @@ export async function assignLabelZoom(db, bounds, { weights, perTile, zooms }) {
   const weight = `(case p.category ${kinds
     .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
     .join(' ')} else 0.100 end) * (0.4 + 0.6 * least(1, greatest(0, p.confidence)))`
+  /* The ceiling: how prominent this kind of place may ever be. Composed the
+     same way and checked the same way as the weights above. Density decides
+     which of the places allowed at a zoom take its slots; this decides which
+     are allowed there at all, because a café does not become a landmark by
+     being the only one in an empty county. */
+  const earliestAt = `(case p.category ${ceilings
+    .map(([category, zoom]) => `when '${category}' then ${Number(zoom)}`)
+    .join(' ')} else ${Number(earliest.other ?? zooms.floor)} end)`
   const lng = 'ST_X(p.geom::geometry)'
   const lat = 'ST_Y(p.geom::geometry)'
   /* No bounds means everywhere, and everywhere is not an envelope.
@@ -685,7 +699,7 @@ export async function assignLabelZoom(db, bounds, { weights, perTile, zooms }) {
                  order by ${weight} desc, p.id
                ) as place
         from places p, generate_series(${at(5)}::int, ${at(6)}::int) as z
-        where ${within}
+        where ${within} and z >= ${earliestAt}
       ) ranked
       where place <= ${at(7)}::int
       group by id

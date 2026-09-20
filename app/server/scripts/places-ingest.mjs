@@ -59,7 +59,7 @@ import {
 } from '../src/places/ingest.js'
 import { createParquetReader } from '../src/places/parquet.js'
 import { createIndexStore, discoverRelease, releaseIndex } from '../src/places/release.js'
-import { LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
+import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
 import { assignLabelZoom } from '../src/places/store.js'
 import { createSweep, sweepPlan } from '../src/places/sweep.js'
 
@@ -171,6 +171,7 @@ if (options.rezoom) {
     weights: VIEW_WEIGHT,
     perTile: LABEL_PER_TILE,
     zooms: LABEL_ZOOMS,
+    earliest: EARLIEST_ZOOM,
   })
   const { rows } = await pool.query(
     'select label_zoom, count(*)::int as places from places group by label_zoom order by label_zoom',

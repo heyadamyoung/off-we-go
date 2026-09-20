@@ -47,7 +47,14 @@
 import { cellBounds } from './cells.js'
 import { createIngest } from './ingest.js'
 import { createParquetReader } from './parquet.js'
-import { CONFIDENCE_FLOOR, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
+import {
+  CONFIDENCE_FLOOR,
+  EARLIEST_ZOOM,
+  LABEL_PER_TILE,
+  LABEL_ZOOMS,
+  VIEW_WEIGHT,
+  ZOOM_POLICY,
+} from './rank.js'
 import { assignLabelZoom, placeTile, readPlaceTile, writePlaceTile } from './store.js'
 import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
@@ -344,14 +351,24 @@ export function createPlaceWorker({
   let placing = null
   async function placeTheUnplaced() {
     if (placing || stopped) return
-    const { rows } = await pool.query('select 1 from places where label_zoom is null limit 1')
-    if (!rows.length) return
+    /* Two reasons to run: a row with no zoom at all, or zooms computed under
+       a policy that is no longer the one the code holds. The second is the
+       general case and the first is the special one — a stored number gives
+       no hint of the rule that produced it, so the rule's version is kept
+       beside it. */
+    const [unplaced, policy] = await Promise.all([
+      pool.query('select 1 from places where label_zoom is null limit 1'),
+      pool.query('select version from place_zoom_policy order by applied_at desc limit 1'),
+    ])
+    const current = Number(policy.rows[0]?.version ?? 0) === ZOOM_POLICY
+    if (!unplaced.rows.length && current) return
     const started = Date.now()
     log('places: giving every place that has none the zoom it earns')
     placing = assignLabelZoom(pool, null, {
       weights: VIEW_WEIGHT,
       perTile: LABEL_PER_TILE,
       zooms: LABEL_ZOOMS,
+      earliest: EARLIEST_ZOOM,
     })
       .then(async placed => {
         const seconds = Math.round((Date.now() - started) / 100) / 10
@@ -362,6 +379,11 @@ export function createPlaceWorker({
         })
         /* Every tile was encoded from the zooms these rows used to have. */
         await pool.query('delete from place_tiles')
+        /* And the policy these were computed under, so the next boot does
+           not do it all again. Written after the pass, not before: a crash
+           halfway through must leave the work looking undone. */
+        await pool.query('delete from place_zoom_policy')
+        await pool.query('insert into place_zoom_policy (version) values ($1)', [ZOOM_POLICY])
         warmed.clear()
       })
       .catch(error => log(`places: the zoom pass did not finish — ${error.message}`))
