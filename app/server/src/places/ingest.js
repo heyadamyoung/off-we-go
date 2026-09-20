@@ -193,16 +193,21 @@ export function rowsFromCluster(cluster, cell) {
    CSV rather than the text format because the escaping rules are shorter and
    an unquoted empty field is exactly NULL, which is what an absent website
    is. Every value is quoted, so an empty string stays an empty string and a
-   name containing a comma, a quote or a newline survives. */
+   name containing a comma, a quote or a newline survives.
 
-const csv = value => (value === null || value === undefined ? '' : `"${String(value).replaceAll('"', '""')}"`)
+   The array columns do not travel as array literals. A Postgres array literal
+   inside a COPY stream needs two levels of escaping — the array parser's
+   (backslash and quote inside each element) and then the copy format's on top
+   — and getting either level wrong is invisible until real data arrives: a
+   Roman library named `Biblioteca "Gen. C.A. Michele Mola" della Scuola` took
+   down a twenty-four cell load at arrayfuncs.c:669, a thousand rows into a
+   COPY. So `alternate_names` and `fields` cross as JSON, which needs only the
+   ordinary text escaping that `csv` already does, and become text[] in the
+   INSERT below via jsonb_array_elements_text. Malformed JSON then fails the
+   statement loudly instead of quietly producing a different array. */
 
-/** A text[] literal. Backslashes and quotes are escaped for the array parser
-    first, then the whole literal is CSV-quoted by `csv`. */
-const textArray = values =>
-  `{${(values || [])
-    .map(value => `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`)
-    .join(',')}}`
+const csv = value =>
+  value === null || value === undefined ? '' : `"${String(value).replaceAll('"', '""')}"`
 
 const json = value => (value === null || value === undefined ? '' : csv(JSON.stringify(value)))
 
@@ -211,7 +216,7 @@ const placeLine = place =>
     csv(place.key),
     csv(place.gersId),
     csv(place.name),
-    csv(textArray(place.alternateNames)),
+    json(place.alternateNames || []),
     csv(place.lng),
     csv(place.lat),
     csv(place.category),
@@ -233,7 +238,7 @@ const sourceLine = source =>
     csv(source.upstreamId),
     csv(source.version),
     csv(source.confidence),
-    csv(textArray(source.fields)),
+    json(source.fields || []),
   ].join(',') + '\n'
 
 async function copyInto(client, sql, lines) {
@@ -244,7 +249,7 @@ async function copyInto(client, sql, lines) {
 const STAGE = `
   create temp table stage_places (
     key text primary key, gers_id text, name text not null,
-    alternate_names text[] not null, lng double precision not null,
+    alternate_names jsonb not null, lng double precision not null,
     lat double precision not null, category text not null, category_raw text,
     address jsonb, website text, phone text, hours jsonb,
     confidence real not null, operating text, cell text not null
@@ -252,7 +257,7 @@ const STAGE = `
   create temp table stage_sources (
     key text not null, source text not null, license text not null,
     upstream_id text not null, version text not null, confidence real,
-    fields text[] not null
+    fields jsonb not null
   ) on commit drop;
   create temp table stage_keys (
     key text primary key, gers_id text, place_id uuid, by_gers boolean not null default false
@@ -296,7 +301,8 @@ const UPSERT_PLACES = `
     id, gers_id, name, alternate_names, geom, category, category_raw,
     address, website, phone, hours, confidence, operating, cell,
     first_seen, last_refreshed)
-  select k.place_id, sp.gers_id, sp.name, sp.alternate_names,
+  select k.place_id, sp.gers_id, sp.name,
+         coalesce(array(select jsonb_array_elements_text(sp.alternate_names)), '{}'),
          st_setsrid(st_makepoint(sp.lng, sp.lat), 4326)::geography,
          sp.category, sp.category_raw, sp.address, sp.website, sp.phone, sp.hours,
          sp.confidence, sp.operating, sp.cell, now(), now()
@@ -312,8 +318,8 @@ const UPSERT_PLACES = `
 const UPSERT_SOURCES = `
   insert into place_sources (
     place_id, source, license, upstream_id, version, confidence, fields, recorded_at)
-  select k.place_id, ss.source, ss.license, ss.upstream_id, ss.version,
-         ss.confidence, ss.fields, now()
+  select k.place_id, ss.source, ss.license, ss.upstream_id, ss.version, ss.confidence,
+         coalesce(array(select jsonb_array_elements_text(ss.fields)), '{}'), now()
   from stage_sources ss join stage_keys k on k.key = ss.key
   on conflict (place_id, source, upstream_id) do update set
     license = excluded.license, version = excluded.version,
@@ -344,6 +350,11 @@ export function createIngest({
   if (!sources.length) throw new Error('places: an ingest needs at least one release with an index')
   const versions = Object.fromEntries(sources.map(source => [source, releases[source].version]))
   const controller = new AbortController()
+  /* The cursor is written from inside `onGroup`, which the reader calls
+     synchronously and cannot await. Keeping the promise means the failure
+     path can wait for the last write to land before it records the failure —
+     otherwise "where it died" is a race with dying. */
+  let cursorWrite = Promise.resolve()
 
   const columnsFor = source => (source === 'overture' ? OVERTURE_COLUMNS : FSQ_COLUMNS)
   const normalise = (source, rows, release) =>
@@ -371,7 +382,7 @@ export function createIngest({
         const at = Date.now()
         if (at - wroteAt < CURSOR_EVERY_MS) return
         wroteAt = at
-        void writeCursor(cell, {
+        cursorWrite = writeCursor(cell, {
           phase: 'read',
           source,
           groups,
@@ -429,7 +440,9 @@ export function createIngest({
     if (dryRun) return
     await pool
       .query(
-        `update place_coverage set status = 'failed', error = $2, cursor = cursor where cell = $1`,
+        /* The cursor is deliberately left as it is: it is the note about where
+           this attempt got to, and it is what `--resume` reports. */
+        `update place_coverage set status = 'failed', error = $2 where cell = $1`,
         [cell, String(error?.message || error).slice(0, 500)],
       )
       .catch(() => {})
@@ -445,7 +458,7 @@ export function createIngest({
    */
   async function loadCell(cell, rows, report) {
     const client = await pool.connect()
-    let loaded = { inserted: 0, redirected: 0, swept: false }
+    const loaded = { inserted: 0, redirected: 0, swept: false }
     try {
       await client.query('begin')
       await client.query(STAGE)
@@ -596,7 +609,9 @@ export function createIngest({
         read[source] = await readSource(source, cell, bounds)
       }
       const base = read.overture?.places || []
-      const others = sources.filter(source => source !== 'overture').flatMap(source => read[source].places)
+      const others = sources
+        .filter(source => source !== 'overture')
+        .flatMap(source => read[source].places)
       const clusters = clusterPlaces(base, others)
       const { rows, dropped } = dedupe(clusters.map(cluster => rowsFromCluster(cluster, cell)))
       const report = qualityReport(rows.map(row => row.place))
@@ -625,9 +640,16 @@ export function createIngest({
       )
       return outcome
     } catch (error) {
+      await cursorWrite.catch(() => {})
       await markFailed(cell, error)
       log(`${cell} failed: ${error.message}`)
-      return { cell, status: 'failed', places: 0, error: String(error.message || error), ms: Date.now() - started }
+      return {
+        cell,
+        status: 'failed',
+        places: 0,
+        error: String(error.message || error),
+        ms: Date.now() - started,
+      }
     }
   }
 
@@ -640,7 +662,9 @@ export function createIngest({
       [cells],
     )
     return {
-      done: new Set(rows.filter(row => row.status === 'ready' || row.status === 'empty').map(row => row.cell)),
+      done: new Set(
+        rows.filter(row => row.status === 'ready' || row.status === 'empty').map(row => row.cell),
+      ),
       cursors: new Map(rows.filter(row => row.cursor).map(row => [row.cell, row.cursor])),
     }
   }
@@ -690,10 +714,22 @@ export function createIngest({
  * Which cells a run covers, from whichever way the caller asked.
  *
  * The planet is not a special path: it is every cell a release's row groups
- * could put a place in, which is the honest definition of "every land cell"
- * when the only thing we know about land is where the data is. Cells are
- * returned west to east so consecutive work hits the same parts and row
- * groups and the reader's warm footers earn their keep.
+ * could put a place in, which is as close to "every land cell" as we can get
+ * without shipping a coastline. Cells are returned west to east so
+ * consecutive work hits the same parts and row groups and the reader's warm
+ * footers earn their keep.
+ *
+ * Measured, and stated rather than implied: the 2026-08-19.0 release yields
+ * 53,333 candidate cells out of the grid's 64,800, against perhaps 25,000
+ * that hold any land. It is an upper bound and a loose one, because a row
+ * group holds twenty thousand rows sorted by longitude, so its bounding box
+ * is a narrow strip of longitude spanning nearly every latitude, and the
+ * union of four thousand such strips is everything but the poles. The cells
+ * it wrongly includes cost a read each and record themselves `empty`, and
+ * `--resume` means they are only paid for once. A planet run that wanted to
+ * be quick would sweep the row groups and bucket rows by cell rather than
+ * asking cell by cell; that is a different program, and this one is the one
+ * that can be stopped, resumed and reasoned about a cell at a time.
  *
  * @param {object} region
  * @param {string[]} [region.cells]

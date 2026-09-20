@@ -29,10 +29,12 @@ import {
    candidates arrived in; and that merging fields takes the filled value, the
    confident position and every name anybody knew. */
 
-const close = (actual, expected, within) =>
+const close = (actual, expected, within, message) =>
   assert.ok(
     Math.abs(actual - expected) <= within,
-    `${actual} is not within ${within} of ${expected}`,
+    message
+      ? `${message}: ${actual} is not within ${within} of ${expected}`
+      : `${actual} is not within ${within} of ${expected}`,
   )
 
 /* A metre of latitude, near enough, for building a pair a known distance
@@ -214,7 +216,10 @@ test('nothing near enough is null, not a poor match', () => {
   const subject = at('Café Zoom', 0, 0, 'cafe', { upstreamId: 's' })
   assert.equal(bestMatch(subject, []), null)
   assert.equal(bestMatch(subject, null), null)
-  assert.equal(bestMatch(subject, [at('Somewhere Else', 0, 0.01, 'bar', { upstreamId: 'z' })]), null)
+  assert.equal(
+    bestMatch(subject, [at('Somewhere Else', 0, 0.01, 'bar', { upstreamId: 'z' })]),
+    null,
+  )
   const found = bestMatch(subject, [at('Café Zoom', 0, 0.0002, 'cafe', { upstreamId: 'm' })])
   assert.equal(found.match.upstreamId, 'm')
   assert.ok(found.scored.score >= ACCEPT)
@@ -319,7 +324,15 @@ test('an equal confidence is broken by the order the caller gave', () => {
 test('an empty string, an empty array and a null are all empty', () => {
   const { merged } = mergeFields([
     { source: 'overture', confidence: 0.9, name: '', category: null, website: '', lat: null },
-    { source: 'fsq', confidence: 0.1, name: 'Real Name', category: 'cafe', website: 'x', lat: 5, lng: 6 },
+    {
+      source: 'fsq',
+      confidence: 0.1,
+      name: 'Real Name',
+      category: 'cafe',
+      website: 'x',
+      lat: 5,
+      lng: 6,
+    },
   ])
   assert.equal(merged.name, 'Real Name')
   assert.equal(merged.category, 'cafe')

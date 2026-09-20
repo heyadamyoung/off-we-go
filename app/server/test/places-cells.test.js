@@ -23,10 +23,12 @@ import {
    inverses; and that a box or a radius names every cell it touches and no
    more. */
 
-const close = (actual, expected, within) =>
+const close = (actual, expected, within, message) =>
   assert.ok(
     Math.abs(actual - expected) <= within,
-    `${actual} is not within ${within} of ${expected}`,
+    message
+      ? `${message}: ${actual} is not within ${within} of ${expected}`
+      : `${actual} is not within ${within} of ${expected}`,
   )
 
 /* The module's own formula for how far a degree of longitude goes here. */
@@ -142,9 +144,7 @@ test('only a key this module could have produced is a key', () => {
 })
 
 test('a box names every cell it touches, south to north and west to east', () => {
-  assert.deepEqual(cellsForBounds({ west: 4.1, south: 52.1, east: 4.9, north: 52.9 }), [
-    'N52E004',
-  ])
+  assert.deepEqual(cellsForBounds({ west: 4.1, south: 52.1, east: 4.9, north: 52.9 }), ['N52E004'])
   assert.deepEqual(cellsForBounds({ west: 4.5, south: 52.5, east: 6.5, north: 53.5 }), [
     'N52E004',
     'N52E005',
@@ -189,12 +189,7 @@ test('a set of points becomes its cells, deduplicated and sorted', () => {
 
 test('a small radius is a small number of cells', () => {
   assert.deepEqual(cellsWithin(4.9, 52.37, 500), ['N52E004'])
-  assert.deepEqual(cellsWithin(4.995, 52.995, 2000), [
-    'N52E004',
-    'N52E005',
-    'N53E004',
-    'N53E005',
-  ])
+  assert.deepEqual(cellsWithin(4.995, 52.995, 2000), ['N52E004', 'N52E005', 'N53E004', 'N53E005'])
   assert.deepEqual(cellsWithin(0, 0, 1000), ['S01W001', 'S01E000', 'N00W001', 'N00E000'])
 })
 
@@ -226,46 +221,33 @@ test('a radius near the pole neither explodes nor divides by almost nothing', ()
     [-120, 90],
   ]) {
     const within = cellsWithin(lng, lat, 1000)
-    assert.ok(within.length > 0 && within.length < 400, `${within.length} cells at ${lat}`)
+    assert.ok(within.length > 0 && within.length <= 720, `${within.length} cells at ${lat}`)
     for (const key of within) assert.equal(isCellKey(key), true, key)
   }
-  assert.deepEqual(cellsWithin(0, 89.9, 1000), ['N89W180'])
+  /* One row of the grid, all the way round, and no more: at 89.9° a kilometre
+     north and south stays inside the 89th row. */
+  const row = cellsWithin(0, 89.9, 1000)
+  assert.equal(row.length, 360)
+  assert.equal(new Set(row.map(key => key.slice(0, 3))).size, 1)
 })
 
-test(
-  'a radius near the pole covers the row it claims to',
-  {
-    skip:
-      'bug: cellsWithin takes the whole row past 89° by setting the longitude span to 180, ' +
-      'but wrapLongitude(lng - 180) and wrapLongitude(lng + 180) are the same meridian, so ' +
-      'cellsForBounds walks one column and stops. cellsWithin(0, 89.9, 1000) returns ' +
-      "['N89W180'] — which is neither the query point's own cell (N89E000) nor the cell " +
-      'of a point 900 m due east (N89E005). A nearby search at that latitude reads the ' +
-      'wrong side of the world.',
-  },
-  () => {
-    const within = cellsWithin(0, 89.9, 1000)
-    assert.ok(within.includes(cellKey(0, 89.9)), 'the point is not in its own radius')
-    assert.ok(within.includes(cellKey(dueEast(0, 89.9, 900), 89.9)), 'nothing to the east')
-    assert.ok(within.includes(cellKey(0, dueNorth(89.9, 900))), 'nothing to the north')
-  },
-)
+test('a radius near the pole covers the row it claims to', () => {
+  const within = cellsWithin(0, 89.9, 1000)
+  assert.ok(within.includes(cellKey(0, 89.9)), 'the point is not in its own radius')
+  assert.ok(within.includes(cellKey(dueEast(0, 89.9, 900), 89.9)), 'nothing to the east')
+  assert.ok(within.includes(cellKey(0, dueNorth(89.9, 900))), 'nothing to the north')
+})
 
-test(
-  'a box spanning every meridian names every column',
-  {
-    skip:
-      'bug: same root cause. cellsForBounds({west: -180, east: 180}) collapses, because ' +
-      'wrapLongitude(180) is -180 and the column walk stops as soon as it meets the east ' +
-      'edge. A whole-world viewport asks for three cells instead of the world: ' +
-      "cellsForBounds({west: -180, south: -1, east: 180, north: 1}) is ['S01W180', " +
-      "'N00W180', 'N01W180'].",
-  },
-  () => {
-    const world = cellsForBounds({ west: -180, south: -1, east: 180, north: 1 })
-    assert.equal(world.length, 360 * 3)
-  },
-)
+test('a box spanning every meridian names every column', () => {
+  const world = cellsForBounds({ west: -180, south: -1, east: 180, north: 1 })
+  assert.equal(world.length, 360 * 3)
+  /* How wide the box is is read before either edge is wrapped, so a viewport
+     given as 0..360 or as -200..200 is the same world, and a box of no width
+     is still one column. */
+  assert.equal(cellsForBounds({ west: 0, south: 0, east: 360, north: 0 }).length, 360)
+  assert.equal(cellsForBounds({ west: -200, south: 0, east: 200, north: 0 }).length, 360)
+  assert.deepEqual(cellsForBounds({ west: 4.9, south: 52.3, east: 4.9, north: 52.3 }), ['N52E004'])
+})
 
 test('the cells a trip wants that nobody has covered', () => {
   assert.deepEqual(missingCells(['N52E004', 'N52E005'], ['N52E004']), ['N52E005'])

@@ -154,7 +154,10 @@ function dateOf(value) {
 function categoryParts(labels) {
   const path = text(listOf(labels)[0])
   if (!path) return { basic: null, leaf: null, raw: null }
-  const segments = path.split('>').map(segment => segment.trim()).filter(Boolean)
+  const segments = path
+    .split('>')
+    .map(segment => segment.trim())
+    .filter(Boolean)
   const slug = segment =>
     segment
       .toLowerCase()

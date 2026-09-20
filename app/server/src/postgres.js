@@ -140,6 +140,9 @@ const stopRow = value =>
     note: value.note,
     src: value.image_url,
     sourceUrl: value.source_url,
+    /* The places-layer record this stop was chosen from, when one was. Null
+       for anything typed by hand, which is most stops and always will be. */
+    placeId: value.place_id ?? null,
     seq: value.seq,
   }
 
@@ -1525,9 +1528,9 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
            created, which put it ahead of everything — and since the sequence
            number is invisible there was nothing on the screen to explain it. */
         `insert into stops
-        (trip_id,name,kind,icon,day,starts_at,ends_at,time_note,lng,lat,status,note,image_url,source_url,seq)
+        (trip_id,name,kind,icon,day,starts_at,ends_at,time_note,lng,lat,status,note,image_url,source_url,seq,place_id)
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-          coalesce($15, (select coalesce(max(seq), -1) + 1 from stops where trip_id=$1)))
+          coalesce($15, (select coalesce(max(seq), -1) + 1 from stops where trip_id=$1)),$16)
         returning *`,
         [
           tripId,
@@ -1545,6 +1548,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
           input.src,
           input.sourceUrl,
           Number.isInteger(input.seq) ? input.seq : null,
+          input.placeId ?? null,
         ],
       )
       return stopRow(result.rows[0]) || null
@@ -1565,6 +1569,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
         note: 'note',
         src: 'image_url',
         sourceUrl: 'source_url',
+        placeId: 'place_id',
         seq: 'seq',
       }
       const entries = Object.entries(changes).filter(([key]) => allowed[key])

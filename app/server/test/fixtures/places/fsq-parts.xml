@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>fsq-os-places-us-east-1</Name><Prefix>release/dt=2026-08-05/places/parquet/</Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>true</IsTruncated><NextContinuationToken>page-two</NextContinuationToken><Contents><Key>release/dt=2026-08-05/places/parquet/places-00000.snappy.parquet</Key><LastModified>2026-08-05T02:11:09.000Z</LastModified><Size>1174405120</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>

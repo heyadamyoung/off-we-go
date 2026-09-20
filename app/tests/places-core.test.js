@@ -80,6 +80,37 @@ test('notices the server sent are rendered, and deduplicated against our own', (
   assert.deepEqual(credits.notices, ['© OpenStreetMap contributors', 'Photographs by the council'])
 })
 
+test("the server's own notices arrive as objects, and are rendered from them", () => {
+  /* What /api/places/* actually sends: {license, notice, url} per licence,
+     already deduplicated per record. The screen still has to deduplicate
+     across records, and has to read the words out of the object rather than
+     stringify it — which is how "[object Object]" ends up under a search. */
+  const credits = creditsFor([
+    place({
+      id: 'a',
+      sources: [osm, overture],
+      attribution: [
+        { license: 'ODbL-1.0', notice: '© OpenStreetMap contributors', url: 'https://osm.org/c' },
+        { license: 'CDLA-Permissive-2.0', notice: '© Overture Maps Foundation', url: null },
+      ],
+    }),
+    place({
+      id: 'b',
+      sources: [overture],
+      attribution: [{ license: 'CDLA-Permissive-2.0', notice: '© Overture Maps Foundation' }],
+    }),
+  ])
+  assert.deepEqual(credits.notices, ['© OpenStreetMap contributors', '© Overture Maps Foundation'])
+  assert.equal(credits.line, '© OpenStreetMap contributors · © Overture Maps Foundation')
+})
+
+test('a notice with no words in it is not a notice', () => {
+  const credits = creditsFor([
+    place({ attribution: [{ license: 'Weird-1.0', notice: null }, {}, ''] }),
+  ])
+  assert.deepEqual(credits.notices, [])
+})
+
 test('nothing on screen means nothing to say', () => {
   assert.deepEqual(creditsFor([]), { notices: [], sources: [], line: '' })
 })

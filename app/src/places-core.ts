@@ -18,9 +18,8 @@
    plainly that it is roughly located, which is what somebody needs in order to
    look at the map before walking there.
 
-   And a degraded answer has words. A cell nobody has ingested yet comes back
-   marked `degraded`, and the honest thing to put on the screen is that we are
-   still gathering places here. Without a sentence for that state it draws as a
+   And a degraded answer has words: a cell nobody has ingested yet comes back
+   marked `degraded`, and without a sentence for that state it draws as a
    spinner that never ends, which reads as the search being broken.
 
    Pure on purpose — no React, no fetch — so every rule above is a unit test
@@ -52,14 +51,22 @@ export interface Place {
   address?: PlaceAddress | string | null
   website?: string | null
   phone?: string | null
-  hours?: string | null
+  /** opening hours as the upstream release wrote them — jsonb, unrendered */
+  hours?: unknown
   confidence?: number | null
   sources?: PlaceSource[] | null
   /** notices the server says must be rendered for this record */
-  attribution?: string[] | null
+  attribution?: PlaceNotice[] | null
   /** metres from the point asked about, on a nearby answer */
   metres?: number | null
 }
+
+/* One notice as the server sends it — licence, words to print, where to read
+   the licence — or as a bare string from anything simpler. Both, here, rather
+   than in every caller. */
+export type PlaceNotice =
+  | string
+  | { license?: string | null; notice?: string | null; url?: string | null }
 
 export interface PlaceCoverage {
   cell: string
@@ -75,11 +82,10 @@ export interface PlaceList {
 
 export const EMPTY_PLACE_LIST: PlaceList = { places: [], degraded: false, coverage: null }
 
-/* The twenty, in the order a screen shows them. This mirrors CATEGORIES in
+/* The twenty, in the order a screen shows them. Mirrors CATEGORIES in
    server/src/places/taxonomy.js, which the client cannot import across the
-   tier boundary; the order is the display order and the server's is the
-   filing order, and they are the same list so that a category the server
-   invents tomorrow lands in "other" here rather than vanishing. */
+   tier boundary — the same list, so a category the server invents tomorrow
+   lands in "other" here rather than vanishing. */
 export const PLACE_CATEGORIES = [
   'sights',
   'viewpoint',
@@ -174,11 +180,10 @@ export const categoryWord = (category: string) => PLACE_WORDS[categoryOf({ categ
 /* ---- confidence ------------------------------------------------------- */
 
 /* Two thresholds, and the reason they are not one. Above FIRM several sources
-   agreed on where this is and what it is called, and saying anything about it
-   would be noise. Between the two it is one source's word, which is ordinary
-   and not worth a caveat either. Below ROUGH the coordinates are a guess good
-   enough to walk towards and not good enough to stand on, and that is the case
-   the traveller has to be told about before they set off. */
+   agreed on where this is and what it is called; between the two it is one
+   source's word, which is ordinary. Neither is worth a caveat. Below ROUGH the
+   coordinates are a guess good enough to walk towards and not good enough to
+   stand on — the one case somebody has to be told about before they set off. */
 export const CONFIDENCE_FIRM = 0.75
 export const CONFIDENCE_ROUGH = 0.5
 
@@ -274,10 +279,14 @@ export function creditsFor(places: readonly Place[]): PlaceCredits {
       seenLicence.add(licence)
       addNotice(licenceNotice(source.license))
     }
-    /* Whatever the server said to render, verbatim. It knows about sources
-       this build has never been told of, and the Set above means saying the
-       same thing twice costs nothing. */
-    for (const notice of place.attribution || []) addNotice(notice)
+    /* Whatever the server said to render, verbatim, and it has the last word:
+       it knows about sources and licence terms this build has never been told
+       of. Overture is the live example — nothing in CDLA-Permissive demands a
+       notice, and the server asks for one anyway, so one is printed. The Set
+       above means saying the same thing twice costs nothing. */
+    for (const notice of place.attribution || []) {
+      addNotice(typeof notice === 'string' ? notice : notice?.notice)
+    }
   }
 
   return { notices, sources, line: notices.join(' · ') }
@@ -355,11 +364,9 @@ export function placeSubtitle(place: Place): string {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
-/** A list answer, read defensively.
-
-    The typeahead runs on every keystroke, and a payload that is a bare array,
-    or that calls its rows something else, must come back as an empty list
-    rather than as an exception thrown inside a React render. */
+/** A list answer, read defensively: the typeahead runs on every keystroke, and
+    a payload that is a bare array, or that calls its rows something else, must
+    come back empty rather than as an exception inside a React render. */
 export function placeListFrom(payload: unknown): PlaceList {
   const rows = Array.isArray(payload)
     ? payload

@@ -1,0 +1,59 @@
+[
+  {
+    "fsq_place_id": "fsq-cafe-zoom",
+    "name": "Cafe Zoom",
+    "latitude": 52.37001,
+    "longitude": 4.89002,
+    "address": "Prinsengracht 1",
+    "locality": "Amsterdam",
+    "region": "Noord-Holland",
+    "postcode": "1015 AA",
+    "country": "NL",
+    "tel": "+31206392589",
+    "website": "https://cafezoom.example",
+    "fsq_category_labels": [
+      "Dining and Drinking > Cafe, Coffee, and Tea House"
+    ],
+    "date_created": "2019-04-02",
+    "date_refreshed": "2026-08-01",
+    "date_closed": null
+  },
+  {
+    "fsq_place_id": "fsq-zoom-coffee",
+    "name": "Zoom Coffee",
+    "latitude": 52.3727,
+    "longitude": 4.89,
+    "address": "Herengracht 90",
+    "locality": "Amsterdam",
+    "region": "Noord-Holland",
+    "postcode": "1015 BS",
+    "country": "NL",
+    "tel": null,
+    "website": null,
+    "fsq_category_labels": [
+      "Dining and Drinking > Cafe, Coffee, and Tea House"
+    ],
+    "date_created": "2021-01-05",
+    "date_refreshed": "2026-07-15",
+    "date_closed": null
+  },
+  {
+    "fsq_place_id": "fsq-old-bar",
+    "name": "Old Bar",
+    "latitude": 52.365,
+    "longitude": 4.88,
+    "address": "Spuistraat 3",
+    "locality": "Amsterdam",
+    "region": null,
+    "postcode": null,
+    "country": "NL",
+    "tel": null,
+    "website": null,
+    "fsq_category_labels": [
+      "Dining and Drinking > Bar"
+    ],
+    "date_created": "2016-03-03",
+    "date_refreshed": "2024-11-02",
+    "date_closed": "2025-02-01"
+  }
+]

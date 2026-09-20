@@ -161,6 +161,12 @@ export async function buildServer({
   /* The airports' boards. Built here from the network unless a test hands
      in its own, so the routes and the watch read the same cached boards. */
   flights = null,
+  /* The places layer's third tier: a `loadIndex` from places/upstream.js that
+     lets a degraded query read the publisher's own Parquet over HTTP while a
+     cell waits to be ingested. Null — the default — means this box answers
+     only from its own database and says `degraded` with nothing added, which
+     is what every test server does and what a box with no egress must do. */
+  placesUpstream = null,
   /* Whether this deployment can convert film to something every device
      plays. Optional like every other integration: without it the app says so
      at /api/health rather than quietly storing videos half the trip cannot
@@ -3050,6 +3056,35 @@ export async function buildServer({
     return { fields }
   }
 
+  /* The places-layer record a stop was chosen from.
+   *
+   * Shape first — a uuid or nothing — and then existence, because the column
+   * is a foreign key and an unknown id would otherwise surface as a 500 from
+   * inside the driver rather than as a sentence saying which field is wrong.
+   * The lookup only runs when a place was actually picked, which is the
+   * picker's path and not the ordinary one.
+   *
+   * Returns the id, null, or undefined for "that is not a place id". */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  async function placeIdOrNull(value) {
+    if (value === null || value === undefined || value === '') return null
+    const id = String(value)
+    if (!UUID.test(id)) return undefined
+    if (!repository.placeById) return undefined
+    return (await repository.placeById(id)) ? id : undefined
+  }
+
+  /* Somewhere on the map was written down, so the places layer should know
+     about the ground around it. Synchronous, cannot throw, and the queue
+     itself debounces — see places/coverage.js. Read off the app each time
+     rather than captured, because the places routes decorate it later in
+     this same function. */
+  const noticePlaces = stop => {
+    if (stop && Number.isFinite(stop.lng) && Number.isFinite(stop.lat)) {
+      app.placeCoverage?.noteStops({ stops: [{ lng: stop.lng, lat: stop.lat }] })
+    }
+  }
+
   app.post('/api/trips/:tripId/stops', async (request, reply) => {
     const user = await authenticated(request, reply)
     if (!user) return
@@ -3072,6 +3107,10 @@ export async function buildServer({
        stop ends up finishing at half past two in the morning. */
     const times = stopTimes(body, { creating: true })
     if (times.error) return reply.code(400).send({ error: times.error })
+    const placeId = await placeIdOrNull(body.placeId)
+    if (placeId === undefined) {
+      return reply.code(400).send({ error: 'That is not a place we hold' })
+    }
     const stop = await repository.createStop(user, request.params.tripId, {
       name,
       kind: body.kind || null,
@@ -3090,8 +3129,10 @@ export async function buildServer({
          morning. The repository puts an unnumbered stop at the end, which is
          what adding one means. */
       seq: Number.isInteger(body.seq) ? body.seq : null,
+      placeId,
     })
     if (!stop) return reply.code(403).send({ error: 'You cannot edit this trip' })
+    noticePlaces(stop)
     /* A stop is usually added after the photographs it belongs to — that is
        how a trip gets written up — so this is the common case, not the edge. */
     return reply.code(201).send({ ...stop, ...(await refiling(user, request.params.tripId)) })
@@ -3125,6 +3166,13 @@ export async function buildServer({
     if (fields.seq !== undefined && !Number.isInteger(fields.seq)) {
       return reply.code(400).send({ error: 'A stop order must be a whole number' })
     }
+    if (fields.placeId !== undefined) {
+      const placeId = await placeIdOrNull(fields.placeId)
+      if (placeId === undefined) {
+        return reply.code(400).send({ error: 'That is not a place we hold' })
+      }
+      fields.placeId = placeId
+    }
     const times = stopTimes(fields)
     if (times.error) return reply.code(400).send({ error: times.error })
     Object.assign(fields, times.fields)
@@ -3137,6 +3185,7 @@ export async function buildServer({
     if (!stop) return reply.code(404).send({ error: 'Stop not found' })
     // Moved somewhere else: what was near it may not be, and what was not may be.
     if (fields.lng === undefined && fields.lat === undefined) return stop
+    noticePlaces(stop)
     return { ...stop, ...(await refiling(user, request.params.tripId)) }
   })
 
@@ -3478,7 +3527,7 @@ export async function buildServer({
   /* Search, one record, and sights nearby, from the open-data places layer.
      It also decorates the app with `placeCoverage`, the queue a trip's stops
      are noticed into — see places/coverage.js. */
-  registerPlaceRoutes(app, { repository, authenticated, clock })
+  registerPlaceRoutes(app, { repository, authenticated, clock, upstream: placesUpstream })
   registerPushRoutes(app, {
     repository,
     authenticate: authenticated,

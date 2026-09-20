@@ -114,12 +114,20 @@ export function sourcesForPlace(place) {
   return rows
 }
 
-/** A place from the bucket, wearing a served record's clothes. It has no id
-    in our database, because it is not in our database; `id` is null and
-    `gersId` is what a client should remember it by until the cell lands. */
+/* A place from the bucket, wearing a served record's clothes.
+ *
+ * `id` is the GERS id rather than null, and that is not a shortcut. The client
+ * keys its list on `id` and drops anything without one, so a null would make
+ * every degraded record vanish on the way to the screen — the whole tier
+ * silently doing nothing, which is the failure mode this codebase has been
+ * bitten by before. The GERS id is the right value for it: migration 043 calls
+ * it "the canonical join key across releases", `GET /api/places/:id` resolves
+ * it (see store.js), and it goes on resolving — to the ingested row this time
+ * — once the cell lands. `gersId` carries it as well, so nothing is hidden
+ * about which kind of id this is. */
 function degradedRecord(place, centre) {
   return {
-    id: null,
+    id: place.gersId ?? place.upstreamId ?? null,
     gersId: place.gersId,
     name: place.name,
     alternateNames: place.alternateNames,

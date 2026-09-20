@@ -11,6 +11,7 @@ import { startPushTick } from './push/tick.js'
 import { writeFile } from 'node:fs/promises'
 import { createCodexRunner, prepareCodexHome } from './codex.js'
 import { createCoverage } from './coverage.js'
+import { createReleaseLoader, DEFAULT_INDEX_DIR } from './places/upstream.js'
 import { productionLoggerOptions } from './logging.js'
 import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
 import { createMediaWorker } from './media-worker.js'
@@ -89,6 +90,26 @@ const coverage = process.env.VALHALLA_URL
       },
     })
   : null
+
+/* The places layer's third tier. A cell nobody has ingested yet is answered
+   from the publisher's own Parquet over HTTP, marked degraded, and queued —
+   see places/upstream.js. On unless PLACES_UPSTREAM=off, because a box that
+   quietly answers "nothing near you" for a country it has not loaded is the
+   silent degradation this tier exists to prevent; off is for a box with no
+   egress, where the reads would only ever time out.
+
+   PLACES_RELEASE pins a release version. Unset — the normal case — the newest
+   published one is discovered, which is what has to happen anyway: upstream
+   deletes its own releases after about sixty days. */
+const placesLog = { current: console }
+const placesUpstream =
+  process.env.PLACES_UPSTREAM === 'off'
+    ? null
+    : createReleaseLoader({
+        pinned: process.env.PLACES_RELEASE || null,
+        directory: process.env.PLACES_INDEX_DIR || DEFAULT_INDEX_DIR,
+        log: message => placesLog.current.info?.(message),
+      })
 
 /* Where media lives. A volume on this box until S3_BUCKET says otherwise —
    and nothing above this line knows which, because both stores answer the
@@ -178,6 +199,7 @@ const app = await buildServer({
   /* The airports' boards, read from here — the routes and the watch share
      the cache, so ten legs at Dublin are one request a minute, not ten. */
   flights: createFlightSources(),
+  placesUpstream,
 })
 
 /* The conversion worker. In-process today because this is one box; it claims
@@ -201,6 +223,7 @@ for (const worker of workers) worker.start()
 
 const port = Number(process.env.PORT || 3000)
 coverageLog.current = app.log
+placesLog.current = app.log
 await app.listen({ host: '0.0.0.0', port })
 
 /* The privacy policy promises GPS fixes are deleted after 30 days; this is

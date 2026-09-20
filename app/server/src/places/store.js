@@ -166,6 +166,10 @@ export async function searchPlaces(db, { q, near = null, cells = null, limit = 1
 /* ---- one place -------------------------------------------------------- */
 
 const BY_ID_SQL = `select ${PLACE_COLUMNS} from places p where p.id = $1`
+const BY_GERS_SQL = `select ${PLACE_COLUMNS} from places p where p.gers_id = $1`
+/** Our own primary key. Anything else that reaches `placeById` is treated as a
+    GERS id — see below on why both open the same door. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SOURCES_SQL = `
   select place_id, source, license, upstream_id, version, confidence, fields, recorded_at
   from place_sources where place_id = $1 order by source, upstream_id`
@@ -181,11 +185,27 @@ const REDIRECT_SQL = 'select old_id, new_id, reason, at from place_redirects whe
  * still open; and `{gone: true}` for a place that genuinely closed, which is
  * a thing to tell a traveller and not the same as "no such id".
  *
+ * A GERS id opens the same door as our uuid. 043 calls it "the canonical join
+ * key across releases", and it is the only id a degraded answer can carry —
+ * a record read straight out of Parquet has no row here to have a uuid. One
+ * endpoint that takes both means a stop filed from a degraded list opens by
+ * the same id after its cell is ingested, instead of the client having to
+ * notice which kind of answer it was looking at.
+ *
  * @param {{query: Function}} db
  * @param {string} id
  * @returns {Promise<null|{gone: true, id: string, reason: string, at: string|null}|object>}
  */
 export async function placeById(db, id) {
+  if (!UUID.test(String(id ?? ''))) {
+    /* Redirects are keyed by our uuid, so there is no chain to follow here:
+       upstream's own merges arrive as a changed row, not as a redirect. */
+    const result = await db.query(BY_GERS_SQL, [id])
+    if (!result.rows[0]) return null
+    const place = placeRow(result.rows[0])
+    const sources = await db.query(SOURCES_SQL, [place.id])
+    return { ...place, sources: sources.rows.map(sourceRow), redirectedFrom: null }
+  }
   let current = id
   const seen = new Set()
   for (let hop = 0; hop < REDIRECT_HOPS; hop += 1) {

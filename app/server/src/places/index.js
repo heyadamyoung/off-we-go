@@ -20,6 +20,7 @@ export {
   needsRequest,
   LOOKAHEAD_METRES,
 } from './coverage.js'
+export { createReleaseLoader, DEFAULT_INDEX_DIR } from './upstream.js'
 export {
   createPlaceFallback,
   fallbackInFlight,

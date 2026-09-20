@@ -25,6 +25,8 @@
 /** Latitudes beyond this have no places and break the grid's arithmetic. */
 const MAX_LATITUDE = 90
 const MIN_LATITUDE = -90
+/** Columns in the grid: one per degree of longitude. */
+const COLUMNS = 360
 
 const pad = (value, width) => String(Math.abs(value)).padStart(width, '0')
 
@@ -82,6 +84,13 @@ export function cellBounds(key) {
  * and comes back at the other side rather than sweeping the long way round
  * and returning three hundred and sixty degrees of ocean.
  *
+ * How wide the box is comes from the edges as given, before either is
+ * wrapped. Wrapping first throws that away: -180 and 180 are the same
+ * meridian, so a box spanning the whole planet and a box of zero width
+ * arrive as the same pair of numbers, and a walk that stops when it meets
+ * the east edge stops immediately. That returned one column for the world,
+ * which is what a zoomed-out map asks for.
+ *
  * @param {{west: number, south: number, east: number, north: number}} bounds
  * @returns {string[]}
  */
@@ -89,19 +98,27 @@ export function cellsForBounds(bounds) {
   const south = Math.floor(clampLatitude(bounds.south))
   const north = Math.min(Math.floor(clampLatitude(bounds.north)), MAX_LATITUDE - 1)
   const west = Math.floor(wrapLongitude(bounds.west))
-  const east = Math.floor(wrapLongitude(bounds.east))
-  const columns = []
-  /* Wrapping when the east edge is numerically west of the west edge. */
-  for (let x = west; ; x += 1) {
-    columns.push(wrapLongitude(x))
-    if (wrapLongitude(x) === east) break
-    if (columns.length > 360) break
-  }
+  const columns = columnCount(bounds)
   const keys = []
   for (let y = south; y <= north; y += 1) {
-    for (const x of columns) keys.push(cellKey(x, y))
+    for (let step = 0; step < columns; step += 1) keys.push(cellKey(west + step, y))
   }
   return [...new Set(keys)]
+}
+
+/** How many one-degree columns a box covers: 1 for a point, 360 for the
+    planet, and the short way round for a box that crosses the antimeridian. */
+function columnCount(bounds) {
+  const rawWest = Number(bounds.west)
+  const rawEast = Number(bounds.east)
+  if (!Number.isFinite(rawWest) || !Number.isFinite(rawEast)) return 1
+  /* Given as a span of a full turn or more — a whole-world viewport, or a
+     radius so large the caller widened it to everything — the answer is every
+     column, whatever the two edges wrap to. */
+  if (Math.abs(rawEast - rawWest) >= 360) return COLUMNS
+  const west = Math.floor(wrapLongitude(rawWest))
+  const east = Math.floor(wrapLongitude(rawEast))
+  return ((((east - west) % COLUMNS) + COLUMNS) % COLUMNS) + 1
 }
 
 /** The cells a set of points falls in, deduplicated and ordered. */
@@ -129,9 +146,12 @@ export function cellsWithin(lng, lat, metres) {
      nothing. */
   const cosine = Math.cos((latitude * Math.PI) / 180)
   const east = Math.abs(cosine) < 0.02 ? 180 : north / cosine
+  /* The edges go unwrapped, so cellsForBounds can see how wide the box is.
+     Near the poles this span is the whole 360 degrees, and wrapping it first
+     would have handed over two identical numbers. */
   return cellsForBounds({
-    west: wrapLongitude(lng - east),
-    east: wrapLongitude(lng + east),
+    west: Number(lng) - east,
+    east: Number(lng) + east,
     south: latitude - north,
     north: latitude + north,
   })

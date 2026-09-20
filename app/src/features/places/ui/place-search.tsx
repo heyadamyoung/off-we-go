@@ -76,6 +76,11 @@ export default function PlaceSearch({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState('')
   const [results, setResults] = useState<PlaceList>(EMPTY_PLACE_LIST)
+  /* Whether an answer has come back for what is in the box. Without it an
+     empty answer closed the list, so the one thing somebody typing their
+     gran's address most needs to be told — that nothing matched and their own
+     words are fine — was the one thing that never appeared. */
+  const [answered, setAnswered] = useState(false)
   const [active, setActive] = useState(-1)
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -89,6 +94,7 @@ export default function PlaceSearch({
     const wanted = typed.trim()
     if (!open || wanted.length < MIN_QUERY) {
       setResults(EMPTY_PLACE_LIST)
+      setAnswered(false)
       setBusy(false)
       return
     }
@@ -106,6 +112,7 @@ export default function PlaceSearch({
           setActive(-1)
           setFailed('')
           setBusy(false)
+          setAnswered(true)
         })
         .catch(error => {
           /* A request we cancelled ourselves is not a failure, and saying so
@@ -114,6 +121,7 @@ export default function PlaceSearch({
           setResults(EMPTY_PLACE_LIST)
           setFailed(appErrorMessage(error, 'search-places'))
           setBusy(false)
+          setAnswered(true)
         })
     }, DEBOUNCE_MS)
     return () => {
@@ -154,6 +162,7 @@ export default function PlaceSearch({
     setTyped(text)
     setOpen(true)
     setFailed('')
+    setAnswered(false)
     /* The words have moved on from the record they were chosen from, so the
        stop stops claiming to be that record. Renaming "Café Luxembourg" to
        "lunch with Jo" must not leave the old place id riding along. */
@@ -190,7 +199,7 @@ export default function PlaceSearch({
     }
   }
 
-  const showPanel = open && (busy || !!found.length || !!note || !!failed)
+  const showPanel = open && (busy || answered)
 
   return (
     <div className="f placesearch">

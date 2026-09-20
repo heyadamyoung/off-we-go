@@ -29,10 +29,12 @@ import {
    are asserted here with their scores, because a change to DECAY_FRACTION
    moves all three at once. */
 
-const close = (actual, expected, within) =>
+const close = (actual, expected, within, message) =>
   assert.ok(
     Math.abs(actual - expected) <= within,
-    `${actual} is not within ${within} of ${expected}`,
+    message
+      ? `${message}: ${actual} is not within ${within} of ${expected}`
+      : `${actual} is not within ${within} of ${expected}`,
   )
 
 const place = (category, metres, confidence = 0.9, rest = {}) => ({
@@ -114,8 +116,14 @@ test('asking for a category switches the kind factor off', () => {
 })
 
 test('a thousand metres is the radius assumed when none was given', () => {
-  assert.equal(nearbyScore(place('museum', 800), {}), nearbyScore(place('museum', 800), { radius: 1000 }))
-  assert.equal(nearbyScore(place('museum', 800)), nearbyScore(place('museum', 800), { radius: 1000 }))
+  assert.equal(
+    nearbyScore(place('museum', 800), {}),
+    nearbyScore(place('museum', 800), { radius: 1000 }),
+  )
+  assert.equal(
+    nearbyScore(place('museum', 800)),
+    nearbyScore(place('museum', 800), { radius: 1000 }),
+  )
 })
 
 test('anything below the floor is not shown at all', () => {
@@ -159,7 +167,9 @@ test('an equal score keeps the order the database gave', () => {
     'stable, not sorted again by something else',
   )
   /* The place comes back whole, with its score added. */
-  const [top] = rankNearby([place('museum', 10, 0.9, { id: 'm', name: 'Museum' })], { radius: 1000 })
+  const [top] = rankNearby([place('museum', 10, 0.9, { id: 'm', name: 'Museum' })], {
+    radius: 1000,
+  })
   assert.equal(top.name, 'Museum')
   assert.equal(top.category, 'museum')
   assert.equal(typeof top.score, 'number')
@@ -260,7 +270,11 @@ test('a search keeps the order it was given when the scores are equal', () => {
   assert.deepEqual(rankSearch(null, 'zz'), [])
   /* An empty query is a prefix of every name, which is what a typeahead with
      nothing typed should do: nothing is excluded. */
-  close(searchScore({ name: 'Anything', similarity: 0, confidence: 0, metres: null }, ''), 0.34, 1e-12)
+  close(
+    searchScore({ name: 'Anything', similarity: 0, confidence: 0, metres: null }, ''),
+    0.34,
+    1e-12,
+  )
   close(
     searchScore({ name: 'Anything', similarity: 0, confidence: 0, metres: null }, null),
     0.34,

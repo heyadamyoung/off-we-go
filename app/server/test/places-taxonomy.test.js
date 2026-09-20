@@ -73,7 +73,10 @@ test('the coarse value decides the ordinary cases', () => {
 test('a coarse value that names a sector defers to the leaf', () => {
   assert.equal(categoryFor({ basic: 'shopping', leaf: 'pizza_restaurant' }), 'food')
   assert.equal(categoryFor({ basic: 'food_and_drink', leaf: 'tea_house' }), 'cafe')
-  assert.equal(categoryFor({ basic: 'travel_and_transportation', leaf: 'train_station' }), 'transit')
+  assert.equal(
+    categoryFor({ basic: 'travel_and_transportation', leaf: 'train_station' }),
+    'transit',
+  )
   assert.equal(categoryFor({ basic: 'sports_and_recreation', leaf: 'golf_course' }), 'sport')
   assert.equal(categoryFor({ basic: 'specialty_store', leaf: 'cheese_shop' }), 'shopping')
   /* And when the leaf knows nothing either, the sector is still better than
@@ -144,7 +147,10 @@ test('the fifteen cases the mapping is built around', () => {
 test('the specific-and-built leaf rules are read before the open-air one', () => {
   /* The generic outdoors rule sees the word "park" in all three of these. It
      must be asked last, or a theme park becomes a meadow. */
-  assert.equal(categoryFor({ basic: 'arts_and_entertainment', leaf: 'theme_park' }), 'entertainment')
+  assert.equal(
+    categoryFor({ basic: 'arts_and_entertainment', leaf: 'theme_park' }),
+    'entertainment',
+  )
   assert.equal(categoryFor({ basic: null, leaf: 'theme_park' }), 'entertainment')
   assert.equal(categoryFor({ basic: null, leaf: 'skate_park' }), 'sport')
   assert.equal(categoryFor({ basic: null, leaf: 'national_park' }), 'nature')

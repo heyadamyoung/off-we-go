@@ -66,7 +66,7 @@ const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
 /** XML text as text. S3 escapes `&` in keys and nothing else we meet, but a
     key that arrives half-decoded is a 404 that looks like an expiry. */
 const decode = value =>
-  String(value ?? '').replace(/&(amp|lt|gt|quot|apos|#\d+);/g, (whole, name) =>
+  String(value ?? '').replace(/&(amp|lt|gt|quot|apos|#\d+);/g, (_whole, name) =>
     name.startsWith('#') ? String.fromCodePoint(Number(name.slice(1))) : ENTITIES[name],
   )
 
@@ -103,7 +103,12 @@ export function parseListing(xml) {
   const objects = []
   for (const block of blocks(text, 'Contents')) {
     const key = tag(block, 'Key')
-    const size = Number(tag(block, 'Size'))
+    /* `Number(null)` is 0, not NaN, so an absent <Size> has to be tested for
+       before it is converted — otherwise a part with no size becomes a part
+       of length zero, which is a different wrong answer from the one in the
+       header comment and just as hard to see. */
+    const declared = tag(block, 'Size')
+    const size = declared === null ? Number.NaN : Number(declared)
     if (!key || !Number.isFinite(size)) continue
     objects.push({ key, size, lastModified: tag(block, 'LastModified') })
   }
