@@ -7,6 +7,8 @@ import {
   type SightSort,
 } from '../../../sights-list-core'
 import { articleSummary, attractionThumb } from '../../map'
+import { isAbortError, placeById, PlaceAttribution } from '../../places'
+import { addressLine, categoryWord, type Place } from '../../../places-core'
 import { findSights, type SightPlace } from '../api/find-sights'
 import { imageForPage, radiusForView } from '../api/nearby-places'
 import Icon from '../../../shared/ui/icon'
@@ -30,12 +32,46 @@ function AttractionCard({
   onClose: () => void
 }) {
   const [more, setMore] = useState<ArticleSummary | null>(null)
+  const [place, setPlace] = useState<Place | null>(null)
   const [adding, setAdding] = useState(false)
 
-  /* A seeded pin already carries its paragraph, so the card is complete the
-     moment it opens. Only a pin the seeder never reached goes and asks. */
+  /* Which kind of pin this is.
+   *
+   * It used to be one kind: a Wikipedia page, whose numeric id was both the
+   * pin's identity and the way to look the article up. The map's pins come
+   * from the places layer now and their ids are ours, so asking Wikipedia
+   * about one fetched a page id that has nothing to do with the place — and
+   * the "Wikipedia" link under every card pointed at ?curid=<a uuid of ours>,
+   * which is a dead link on somebody else's site. */
+  const fromPlaces = typeof poi.id === 'string' && !/^\d+$/.test(poi.id)
+
+  /* What the pin does not carry.
+   *
+   * A pin is a dot and a label: id, name, position, category — three hundred
+   * of them per view, so it cannot also carry an address, a telephone number
+   * and a provenance trail each. The record behind it has all of that, and
+   * this is the tap that goes and gets it. Aborted when the card closes or
+   * the next pin is tapped, because a slow answer for a card nobody is
+   * looking at should not overwrite the one they are. */
   useEffect(() => {
-    if (poi.t) {
+    if (!fromPlaces) return
+    const controller = new AbortController()
+    setPlace(null)
+    placeById(String(poi.id), controller.signal)
+      .then(found => {
+        if (!controller.signal.aborted) setPlace(found)
+      })
+      .catch(error => {
+        /* A record we cannot read leaves the card as the pin drew it: a name
+           and a category, which is still a card and still true. */
+        if (!isAbortError(error)) setPlace(null)
+      })
+    return () => controller.abort()
+  }, [poi.id, fromPlaces])
+
+  /* The legacy Wikipedia pin, for as long as one can still be drawn. */
+  useEffect(() => {
+    if (fromPlaces || poi.t) {
       setMore(null)
       return
     }
@@ -49,12 +85,20 @@ function AttractionCard({
     return () => {
       alive = false
     }
-  }, [poi.id, poi.t])
+  }, [poi.id, poi.t, fromPlaces])
 
   const picture = more?.image || attractionThumb(poi.f)
   const note = poi.t || more?.note || ''
-  // A page id resolves to its article on its own, so the link costs no request.
-  const source = more?.source || `https://en.wikipedia.org/?curid=${poi.id}`
+  /* Open data carries no article, so there is no article to link to. What a
+     place does carry is its own website, when upstream knew one. */
+  const source = fromPlaces
+    ? place?.website || ''
+    : more?.source || `https://en.wikipedia.org/?curid=${poi.id}`
+  /* What it is and where it is. `kind` is the category the pin already knew,
+     so it is on screen before the record lands rather than appearing a beat
+     later; the address can only come from the record. */
+  const kind = fromPlaces ? categoryWord(place?.category || poi.k || 'other') : poi.d
+  const where = place ? addressLine(place.address) : ''
 
   return (
     <div
@@ -75,8 +119,23 @@ function AttractionCard({
       )}
       <div className="abody flex flex-col gap-1.5 overflow-y-auto p-4">
         <b className="text-base font-extrabold tracking-[-.01em]">{poi.n}</b>
-        <span className="kind text-[11px] font-semibold text-accent">{poi.d}</span>
-        <p className="m-0 line-clamp-4 text-xs leading-relaxed text-muted">{note}</p>
+        <span className="kind text-[11px] font-semibold text-accent">{kind}</span>
+        {/* Where it is. The first thing anybody wants from a pin they tapped,
+            and until now the only place it existed was the database. Absent
+            rather than a placeholder when upstream had no address: a blank
+            line reads as a card with nothing to say, and "Address unknown"
+            reads as a card that is broken. */}
+        {where && (
+          <span className="awhere text-xs leading-snug text-muted">
+            <Icon n="pin" s={11} /> {where}
+          </span>
+        )}
+        {place?.phone && (
+          <a className="aphone text-xs text-muted hover:text-fg" href={`tel:${place.phone}`}>
+            {place.phone}
+          </a>
+        )}
+        {note && <p className="m-0 line-clamp-4 text-xs leading-relaxed text-muted">{note}</p>}
         <div className="aacts mt-1 flex gap-1.5">
           {canEdit && (
             <button
@@ -84,16 +143,25 @@ function AttractionCard({
               disabled={inTrip || adding}
               onClick={async () => {
                 setAdding(true)
-                await onAdd({ ...poi, image: picture, source, note })
+                await onAdd({ ...poi, d: kind, image: picture, source, note })
                 setAdding(false)
               }}>
               {inTrip ? 'In your trip' : adding ? 'Adding…' : 'Add to trip'}
             </button>
           )}
-          <a className="mini" href={source} target="_blank" rel="noopener noreferrer">
-            Wikipedia
-          </a>
+          {/* One outward link, and only when there is one to give: a place's
+              own website for a place, the article for a legacy pin. A button
+              labelled Wikipedia that opened ?curid=<one of our uuids> was a
+              dead link on somebody else's site, on every card. */}
+          {source && (
+            <a className="mini" href={source} target="_blank" rel="noopener noreferrer">
+              {fromPlaces ? 'Website' : 'Wikipedia'}
+            </a>
+          )}
         </div>
+        {/* Who said so. The licence line is not decoration — see
+            PlaceAttribution — and a card is a place shown on a screen. */}
+        {place && <PlaceAttribution places={[place]} className="mt-1" />}
       </div>
     </div>
   )

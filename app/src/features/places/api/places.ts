@@ -1,6 +1,6 @@
 import { authClient, hasBackend, isSample } from '../../../backend'
 import { EMPTY_PLACE_LIST, placeListFrom, type Place, type PlaceList } from '../../../places-core'
-import { SAMPLE_ATTRIBUTION, samplePins } from '../../../sample-places-core'
+import { SAMPLE_ATTRIBUTION, samplePins, samplePlace } from '../../../sample-places-core'
 import { validLngLat } from '../../../shared/lib/geo'
 import type { ApiError, AttractionPoi, Coordinates, Id } from '../../../shared/model/types'
 
@@ -85,7 +85,11 @@ export async function searchPlaces({
 /** One record in full, with its provenance — for a stop that already names a
     place and wants to show what is behind it. */
 export async function placeById(id: string, signal?: AbortSignal): Promise<Place | null> {
-  if (!hasBackend || !id) return null
+  if (!id) return null
+  /* The demo answers its own pins, the way it answers its own viewport: a
+     card that opens on a pin the map drew and then knows nothing about it is
+     a demo that looks broken. */
+  if (!hasBackend) return samplePlace(id)
   try {
     const payload = await authClient.request<unknown>(`/places/${encodeURIComponent(id)}`, {
       signal,
