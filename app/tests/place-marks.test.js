@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   familyOf,
@@ -92,4 +93,26 @@ test('the dark map gets its own values, not the light ones dimmed by the GPU', (
     assert.notEqual(MARK_COLOURS[family].light, MARK_COLOURS[family].dark, family)
   }
   assert.notDeepEqual(markColourExpression('light'), markColourExpression('dark'))
+})
+
+test('the tile URL carries a generation, so a bad tile can be recalled', async () => {
+  /* A tile is cached for an hour in the browser with a day of
+     stale-while-revalidate behind it, which is what makes a tiled map quick
+     and is also why a wrong one could not be taken back. Squares built over
+     ground that had not been ingested yet cached empty, and fixing the server
+     does not reach into a phone that already holds the hole — a traveller in
+     the Highlands was looking at empty squares the server had been answering
+     correctly for an hour. The generation in the URL is the recall: the old
+     address is never asked for again. */
+  const source = await readFile(new URL('../src/backend-base.ts', import.meta.url), 'utf8')
+  assert.match(source, /export const PLACE_TILES_EPOCH = (\d+)/)
+  const epoch = Number(/export const PLACE_TILES_EPOCH = (\d+)/.exec(source)[1])
+  assert.ok(epoch >= 2, 'the empty-ground tiles were recalled at generation 2')
+  /* On both the same-origin and the named-API path, or half the clients go on
+     asking the old address. */
+  const templates = source.match(/places\/tiles\/\{z\}\/\{x\}\/\{y\}[^`']*/g) || []
+  assert.equal(templates.length, 2)
+  for (const template of templates) {
+    assert.match(template, /\?v=\$\{PLACE_TILES_EPOCH\}/)
+  }
 })

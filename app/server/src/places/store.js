@@ -663,15 +663,23 @@ export async function readPlaceTile(db, { z, x, y }) {
  * @returns {{covered: number, unready: number, refreshed: Date|null}}
  */
 export async function tileGround(db, { z, x, y }) {
-  const box = tileBounds(z, x, y)
+  /* By key, not by geometry.
+   *
+   * Which cells a tile sits on is arithmetic — the grid is one degree and the
+   * tile's corners are known — so this is a primary key lookup on one to four
+   * rows. Written first as an overlap test against every coverage row, which
+   * is a sequential scan constructing sixty thousand envelopes per tile:
+   * measured at 17.8ms against a planet-sized coverage table, on the cold
+   * path, next to a tile build that costs 13ms. It more than doubled the cost
+   * of a first look to answer a question the caller could already do in its
+   * head. */
+  const wanted = cellsForBounds(tileBounds(z, x, y))
   const { rows } = await db.query(
     `select count(*)::int as covered,
-            count(*) filter (where c.status not in ('ready', 'empty'))::int as unready,
-            max(c.last_refresh) as refreshed
-     from place_coverage c
-     where ST_MakeEnvelope(c.west, c.south, c.east, c.north, 4326)
-        && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-    [box.west, box.south, box.east, box.north],
+            count(*) filter (where status not in ('ready', 'empty'))::int as unready,
+            max(last_refresh) as refreshed
+     from place_coverage where cell = any($1::text[])`,
+    [wanted],
   )
   const found = rows[0] || {}
   return {
@@ -681,7 +689,7 @@ export async function tileGround(db, { z, x, y }) {
     /* How many cells there are to be covered, so the caller can tell "all of
        them are ready" from "the one with a row is ready and the other three
        have never been asked for". */
-    cells: cellsForBounds(box).length,
+    cells: wanted.length,
   }
 }
 
@@ -706,18 +714,17 @@ export async function tileGround(db, { z, x, y }) {
  * @param {Date|string|null} [since]  when the caller started reading
  */
 export async function writePlaceTile(db, { z, x, y }, body, places = 0, since = null) {
-  const box = tileBounds(z, x, y)
+  /* The same cells by key, for the same reason as tileGround above. */
+  const wanted = cellsForBounds(tileBounds(z, x, y))
   const result = await db.query(
     `insert into place_tiles (z, x, y, body, places, built_at)
      select $1, $2, $3, $4, $5, now()
      where $6::timestamptz is null or not exists (
-       select 1 from place_coverage c
-       where c.last_refresh > $6::timestamptz
-         and ST_MakeEnvelope(c.west, c.south, c.east, c.north, 4326)
-          && ST_MakeEnvelope($7, $8, $9, $10, 4326))
+       select 1 from place_coverage
+       where cell = any($7::text[]) and last_refresh > $6::timestamptz)
      on conflict (z, x, y) do update set
        body = excluded.body, places = excluded.places, built_at = excluded.built_at`,
-    [z, x, y, body, places, since, box.west, box.south, box.east, box.north],
+    [z, x, y, body, places, since, wanted],
   )
   return (result.rowCount ?? 0) > 0
 }
