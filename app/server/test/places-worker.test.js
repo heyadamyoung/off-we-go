@@ -104,6 +104,86 @@ function workerOver(pool, options = {}) {
   return { worker, handed }
 }
 
+/** A place with no zoom, of the kind that predates the column. */
+async function unplaced(pool, name, lng, lat, category = 'museum', confidence = 0.8) {
+  await pool.query(
+    `insert into places (gers_id, name, geom, category, category_raw, confidence, cell)
+     values ($1, $2, ST_SetSRID(ST_MakePoint($3,$4),4326)::geography, $5, $5, $6, 'N52E004')`,
+    [
+      `overture:${name.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`,
+      name,
+      lng,
+      lat,
+      category,
+      confidence,
+    ],
+  )
+}
+
+test('places written before the zoom column get their zoom', {
+  skip: unreachable,
+  concurrency: false,
+}, async t => {
+  await t.test('a tick places them, and throws away the tiles drawn without them', async t => {
+    const pool = await freshDatabase(t)
+    /* Enough in one 1° cell that the per-tile budget has to choose. */
+    for (let at = 0; at < 40; at += 1) {
+      await unplaced(pool, `Museum ${at}`, 4.88 + at * 0.0002, 52.36 + at * 0.0002)
+    }
+    await pool.query(
+      `insert into place_tiles (z, x, y, body, places, built_at)
+       values (12, 2096, 1343, $1, 40, now())`,
+      [Buffer.from('a tile drawn from zooms that were wrong')],
+    )
+
+    const { worker } = workerOver(pool)
+    await worker.once()
+    await worker.settled()
+
+    const { rows } = await pool.query(
+      'select count(*) filter (where label_zoom is null)::int as unplaced, ' +
+        'count(distinct label_zoom)::int as distinct_zooms from places',
+    )
+    assert.equal(rows[0].unplaced, 0, 'every place has the zoom it earns')
+    assert.ok(rows[0].distinct_zooms > 1, 'and they did not all earn the same one')
+
+    const tiles = await pool.query('select count(*)::int as left from place_tiles')
+    assert.equal(tiles.rows[0].left, 0, 'the tiles built from the old zooms are gone')
+  })
+
+  await t.test('a second tick does not run the pass again', async t => {
+    const pool = await freshDatabase(t)
+    await unplaced(pool, 'Rijksmuseum', 4.8852, 52.36)
+    const { worker } = workerOver(pool)
+    await worker.once()
+    await worker.settled()
+
+    /* A tile built after the pass survives, which is how we know the pass
+       did not run a second time and throw it away. */
+    await pool.query(
+      `insert into place_tiles (z, x, y, body, places, built_at)
+       values (12, 2096, 1343, $1, 1, now())`,
+      [Buffer.from('built from the zooms as they now are')],
+    )
+    await worker.once()
+    await worker.settled()
+    const tiles = await pool.query('select count(*)::int as left from place_tiles')
+    assert.equal(tiles.rows[0].left, 1, 'nothing to place, so nothing thrown away')
+  })
+
+  await t.test('stopping waits for the pass rather than cutting it off', async t => {
+    const pool = await freshDatabase(t)
+    await unplaced(pool, 'Van Gogh Museum', 4.881, 52.3584)
+    const { worker } = workerOver(pool)
+    await worker.once()
+    await worker.stop()
+    const { rows } = await pool.query(
+      'select count(*) filter (where label_zoom is null)::int as unplaced from places',
+    )
+    assert.equal(rows[0].unplaced, 0, 'the pass finished before stop() returned')
+  })
+})
+
 test('the queue drainer', { skip: unreachable, concurrency: false }, async t => {
   await t.test('takes the cells that are waiting, oldest ask first', async t => {
     const pool = await freshDatabase(t)
