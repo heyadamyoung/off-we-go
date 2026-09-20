@@ -178,6 +178,30 @@ async function pinPoint(page) {
   return spot
 }
 
+/* What the card says once it is open.
+ *
+ * Reported from the road: "I want to see the address on the cards from the
+ * map pins. You don't see them now." They were not there because the card was
+ * still the one written for Wikipedia pins — it read `poi.d`, which the places
+ * layer leaves empty, and asked Wikipedia about an id that is now one of our
+ * uuids. A pin carries a name, a position and a category and nothing else, by
+ * design; everything on this card beyond the name comes from the record the
+ * tap goes and fetches. */
+test('a tapped pin says what the place is and where it is', async ({ page }) => {
+  await open(page)
+  await expect.poll(() => drawn(page), { timeout: 30000 }).toBeGreaterThan(0)
+  await tapSight(page)
+
+  const card = page.locator('.acard')
+  // What it is, from the category the pin already carried.
+  await expect(card.locator('.kind')).not.toBeEmpty()
+  // Where it is, which can only have come from the record behind the pin.
+  await expect(card.locator('.awhere')).toContainText('Amsterdam', { timeout: 5000 })
+  /* And no dead link to somebody else's site. Every card used to carry a
+     button labelled Wikipedia pointing at ?curid=<a uuid of ours>. */
+  await expect(card.getByRole('link', { name: 'Wikipedia' })).toHaveCount(0)
+})
+
 test('a sight opens its card, and still does after a stop card has been opened', async ({
   page,
 }) => {

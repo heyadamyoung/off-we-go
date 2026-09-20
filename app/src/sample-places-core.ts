@@ -1,3 +1,4 @@
+import type { Place } from './places-core'
 import type { AttractionPoi } from './shared/model/types'
 
 /* The sample trip's pins.
@@ -81,4 +82,45 @@ export function samplePins(
   )
     .sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name))
     .slice(0, limit)
+}
+
+/** What the demo knows about where its pins are.
+ *
+ * Every one of them is in Amsterdam and in the Netherlands, which is true of
+ * all twenty-two and is the whole of what is claimed here. No street lines:
+ * the demo is not the place to guess at a house number, and a wrong address
+ * on a card is worse than a card with no address on it — the real records
+ * carry the street from upstream, and a blank here is the same blank a real
+ * place with no address upstream would show. */
+const SAMPLE_ADDRESS = Object.freeze({
+  freeform: null,
+  locality: 'Amsterdam',
+  region: null,
+  postcode: null,
+  country: 'NL',
+})
+
+/** One sample pin as the record behind it, for the card a tap opens.
+ *
+ * The demo has no server, so `/api/places/:id` cannot answer it — and a card
+ * that opens on a pin the map drew and then says nothing about it reads as
+ * broken rather than as a demo. Same shape the API sends, so the card has one
+ * code path for both. */
+export function samplePlace(id: string): Place | null {
+  const pin = SAMPLE_PINS.find(held => held.id === id)
+  if (!pin) return null
+  return {
+    id: pin.id,
+    name: pin.name,
+    category: pin.category,
+    lat: pin.lat,
+    lng: pin.lng,
+    address: { ...SAMPLE_ADDRESS },
+    website: null,
+    phone: null,
+    hours: null,
+    confidence: pin.confidence,
+    sources: [{ source: 'overture', license: 'CDLA-Permissive-2.0' }],
+    attribution: SAMPLE_ATTRIBUTION,
+  }
 }
