@@ -35,6 +35,11 @@
  *                         wants this. One source only; see places/sweep.js.
  *   --concurrency N       cells at a time (default 1); --sweep uses its own
  *   --resume              skip cells already ready or empty
+ *   --rezoom              give every place its zoom again, ranked over the
+ *                         whole region rather than one cell at a time. The
+ *                         ingest does this per cell as it goes, which is a
+ *                         little generous where a square straddles two; this
+ *                         is the authority. Loads nothing.
  *   --drop-indexes        take the name-search indexes off for the duration
  *                         and rebuild them after; faster, and search is
  *                         genuinely worse in between
@@ -54,6 +59,8 @@ import {
 } from '../src/places/ingest.js'
 import { createParquetReader } from '../src/places/parquet.js'
 import { createIndexStore, discoverRelease, releaseIndex } from '../src/places/release.js'
+import { LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
+import { assignLabelZoom } from '../src/places/store.js'
 import { createSweep, sweepPlan } from '../src/places/sweep.js'
 
 const argv = process.argv.slice(2)
@@ -74,6 +81,7 @@ const options = {
   release: value('release'),
   dryRun: flag('dry-run'),
   sweep: flag('sweep'),
+  rezoom: flag('rezoom'),
   dropIndexes: flag('drop-indexes'),
   resume: flag('resume'),
   concurrency: Math.max(1, Number(value('concurrency', '1')) || 1),
@@ -82,15 +90,14 @@ const options = {
 }
 
 const asked = [
+  options.rezoom && 'rezoom',
   options.cells.length && 'cells',
   options.bbox && 'bbox',
   options.planet && 'planet',
   options.trip && 'trip',
 ].filter(Boolean)
 if (asked.length !== 1) {
-  console.error(
-    'Give exactly one of --cells, --bbox, --planet, --trip. See the header of this file.',
-  )
+  console.error('Give exactly one of --cells, --bbox, --planet, --trip, --rezoom. See the header.')
   process.exit(64)
 }
 
@@ -148,6 +155,41 @@ async function releaseFor(source, pinned) {
 }
 
 const started = Date.now()
+
+/* The zoom pass on its own, over everything, and then nothing else.
+ *
+ * No release is discovered and no bytes are read: every place is already
+ * here and the only question is which of them earn a mark from how far away.
+ * It is the same function the ingest calls per cell, over the whole world, so
+ * the seams between cells rank against each other rather than against half a
+ * neighbourhood. Minutes, not hours, and it holds no transaction open. */
+if (options.rezoom) {
+  const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 })
+  say('Giving every place its zoom, ranked over the whole world.')
+  /* Null rather than a world-sized box: see assignLabelZoom. */
+  const placed = await assignLabelZoom(pool, null, {
+    weights: VIEW_WEIGHT,
+    perTile: LABEL_PER_TILE,
+    zooms: LABEL_ZOOMS,
+  })
+  const { rows } = await pool.query(
+    'select label_zoom, count(*)::int as places from places group by label_zoom order by label_zoom',
+  )
+  say(
+    `\n  ${placed.toLocaleString('en-GB')} places, in ${((Date.now() - started) / 1000).toFixed(1)}s\n`,
+  )
+  for (const row of rows) {
+    say(`  z${String(row.label_zoom).padStart(2)}  ${row.places.toLocaleString('en-GB')}`)
+  }
+  /* Every tile was encoded from the zooms these rows used to have. */
+  const cleared = await pool.query('delete from place_tiles')
+  say(
+    `\n  ${(cleared.rowCount || 0).toLocaleString('en-GB')} built tiles dropped; they rebuild on being asked`,
+  )
+  await pool.end()
+  process.exit(0)
+}
+
 const overture = await releaseFor('overture', options.release)
 if (!overture) {
   console.error('No Overture release to read. Nothing can be ingested.')

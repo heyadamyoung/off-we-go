@@ -314,11 +314,31 @@ test('an Overture place and a Foursquare place at one shopfront become one row w
 
   /* A record Overture took from OpenStreetMap carries both licences, because
      both oblige us. */
+  /* One row per dataset that named the place, each under its own licence.
+   *
+   * This used to be one row carrying every licence the place was under, comma
+   * joined — which says which licences apply without saying to what, and ODbL
+   * is an obligation attached to particular records rather than to a place in
+   * general. It also made "how many independent datasets named this" read as
+   * one for every row in the database, which is the only measure of prominence
+   * open data with no ratings has. */
   const museum = await pool.query(
-    `select ps.license from place_sources ps join places p on p.id = ps.place_id
-     where p.gers_id = 'ov-museum'`,
+    `select ps.license, ps.upstream_id from place_sources ps join places p on p.id = ps.place_id
+     where p.gers_id = 'ov-museum' order by ps.upstream_id`,
   )
-  assert.equal(museum.rows[0].license, 'CDLA-Permissive-2.0, ODbL-1.0')
+  assert.ok(museum.rows.length >= 1, 'the museum kept its upstream records')
+  for (const row of museum.rows) {
+    const osm = /^(openstreetmap|osm)/i.test(row.upstream_id)
+    assert.equal(
+      row.license,
+      osm ? 'ODbL-1.0' : 'CDLA-Permissive-2.0',
+      `${row.upstream_id} is under the licence its own dataset carries`,
+    )
+  }
+  /* And the attribution a viewer is shown is still every licence that
+     applies, gathered across the rows rather than baked into each. */
+  const notices = new Set(museum.rows.map(row => row.license))
+  assert.ok(notices.has('ODbL-1.0'), 'the OpenStreetMap-derived record still obliges us')
 })
 
 test('two genuinely different places three hundred metres apart stay two', {
@@ -707,4 +727,65 @@ test('a region is a list of cells however it was asked for', () => {
   assert.deepEqual(planet, ['N52E004'])
   assert.throws(() => cellsForRegion({ planet: true }), /needs a release index/)
   assert.deepEqual(cellsForRegion({}), [])
+})
+
+/* ---- marks earn their zoom, and keep it ------------------------------- */
+
+test('a cell comes out of an ingest with every place given a zoom', {
+  skip: unreachable,
+}, async t => {
+  const pool = await freshDatabase(t)
+  const ingest = createIngest({
+    pool,
+    reader: readerFor(),
+    releases: releases(),
+    now: () => new Date(NOW),
+  })
+  const outcome = await ingest.ingestCell('N52E004')
+  assert.equal(outcome.status, 'ready')
+  /* Inside the same transaction as the places, so there is never a moment
+     where a cell holds rows no tile would draw. */
+  const unmarked = await count(
+    pool,
+    "select count(*)::int as count from places where cell = 'N52E004' and label_zoom is null",
+  )
+  assert.equal(unmarked, 0, 'every place in the cell earned a zoom')
+  const marked = await pool.query(
+    "select label_zoom from places where cell = 'N52E004' order by label_zoom",
+  )
+  for (const row of marked.rows) {
+    assert.ok(row.label_zoom >= 11 && row.label_zoom <= 17, `${row.label_zoom} is a zoom`)
+  }
+})
+
+test('a mark that has appeared cannot disappear as you zoom in', {
+  skip: unreachable,
+}, async t => {
+  /* The property the whole design exists for, and the one the old per-tile
+     cap could not give: a square asks for label_zoom <= z with no limit, so
+     the set at z+1 is a superset of the set at z over the same ground. It was
+     reported as pins showing at one zoom and gone at the next, and it was
+     true — the cap fell differently on each square. */
+  const pool = await freshDatabase(t)
+  const ingest = createIngest({
+    pool,
+    reader: readerFor(),
+    releases: releases(),
+    now: () => new Date(NOW),
+  })
+  await ingest.ingestCell('N52E004')
+  const seen = new Map()
+  for (let z = 11; z <= 17; z += 1) {
+    const { rows } = await pool.query(
+      `select id::text as id from places
+       where cell = 'N52E004' and label_zoom is not null and label_zoom <= $1`,
+      [z],
+    )
+    const here = new Set(rows.map(row => row.id))
+    for (const [id, from] of seen) {
+      assert.ok(here.has(id), `a mark shown at z${from} vanished by z${z}`)
+    }
+    for (const id of here) if (!seen.has(id)) seen.set(id, z)
+  }
+  assert.ok(seen.size > 0, 'the fixture put something on the map')
 })

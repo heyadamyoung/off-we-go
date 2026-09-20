@@ -42,7 +42,7 @@
 import { cellBounds } from './cells.js'
 import { createIngest } from './ingest.js'
 import { createParquetReader } from './parquet.js'
-import { MARK_ZOOM, VIEW_WEIGHT, CONFIDENCE_FLOOR } from './rank.js'
+import { CONFIDENCE_FLOOR, VIEW_WEIGHT } from './rank.js'
 import { placeTile, readPlaceTile, writePlaceTile } from './store.js'
 import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
@@ -264,7 +264,6 @@ export function createPlaceWorker({
           const from = now()
           const body = await placeTile(pool, tile, {
             floor: CONFIDENCE_FLOOR,
-            zooms: MARK_ZOOM,
             weights: VIEW_WEIGHT,
           })
           if (await writePlaceTile(pool, tile, body, 0, from)) built += 1
