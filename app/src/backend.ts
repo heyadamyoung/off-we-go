@@ -25,7 +25,6 @@ export * from './backend-chat'
 import type {
   AccountArchive,
   ApiError,
-  AttractionPoi,
   AuthSession,
   Coordinates,
   Id,
@@ -351,28 +350,6 @@ export async function loadTripLegs(
     // engine 503s (expected, quiet), anything else is a recorded failure.
     if ((caught as { status?: number })?.status !== 503) trackError('load legs', caught)
     return null
-  }
-}
-
-export async function loadAttractions(
-  box: Record<string, string | number>,
-  { headlineOnly = false, limit = 1000 } = {},
-): Promise<AttractionPoi[] | null> {
-  if (!hasBackend) return null
-  const query = new URLSearchParams(
-    Object.fromEntries(
-      Object.entries({
-        ...box,
-        headlineOnly,
-        limit: Math.min(limit, 1000),
-      }).map(([key, value]) => [key, String(value)]),
-    ),
-  )
-  try {
-    return await authClient.request<AttractionPoi[]>(`/attractions?${query}`)
-  } catch (error) {
-    if ((error as ApiError).status === 404) return null
-    throw error
   }
 }
 

@@ -183,6 +183,29 @@ export const NEAR_BIAS_METRES = 30_000
  * weight of 0.3 the station lost to a bar named after it. Everything else
  * answers both questions the same way and is not repeated here. */
 export const SEARCH_KIND = Object.freeze({ transit: 0.8, lodging: 0.7 })
+
+/* And a third question: what deserves a pin on a map with no centre to it.
+ *
+ * Here the category weight is the whole ranking — there is no distance to a
+ * box — so what is wrong with the table shows. `sights` is the catch-all for
+ * anything attraction-shaped, and at the top weight it beat every museum in
+ * Amsterdam with canal bridges: measured, the best eight in the city centre
+ * were LAB111, CREA and six bridges. A bridge is honestly a sight; it is not
+ * what somebody zooming out to a city wants a dot for.
+ *
+ * So on a map the named kinds go first and the catch-all sits under them. It
+ * is not a claim that bridges do not matter, only that a promise beats a
+ * shrug when there is room for three hundred pins and the city has forty
+ * thousand places. */
+export const VIEW_KIND = Object.freeze({ sights: 0.6, services: 0.05, other: 0.05 })
+export const viewWeightOf = category => VIEW_KIND[category] ?? weightOf(category)
+
+/** The weights a map's viewport query ranks by, as one frozen table — the
+    database does that ordering, so it needs the numbers rather than the
+    function. store.js builds a CASE from exactly this. */
+export const VIEW_WEIGHT = Object.freeze(
+  Object.fromEntries(Object.keys(CATEGORY_WEIGHT).map(kind => [kind, viewWeightOf(kind)])),
+)
 const searchWeightOf = category => SEARCH_KIND[category] ?? weightOf(category)
 
 export const SEARCH_WEIGHT = Object.freeze({

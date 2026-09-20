@@ -337,14 +337,22 @@ export interface ViewerState {
 
 /** The compact attraction row the map layer draws — seeded by the server or
     fetched live from Wikipedia, one shape either way. */
+/* A pin on the map, as the places layer sends it.
+ *
+ * It used to be a Wikipedia page: a numeric page id, a one-line description
+ * and a file name for a photograph, from a table that only ever held two
+ * countries. It is a place record now — our own id, one of the twenty
+ * categories, and a confidence — which covers anywhere and which
+ * `/api/places/:id` will say more about when somebody taps it. */
 export interface AttractionPoi {
-  id: number
-  n: string
-  d: string
-  k: string
-  f: string | null
-  x: number
-  y: number
+  id: string
+  name: string
+  lng: number
+  lat: number
+  category: string
+  confidence: number
+  /** worth a dot when the map is zoomed out; the server decides */
+  big: boolean
 }
 
 export interface UploadInput {

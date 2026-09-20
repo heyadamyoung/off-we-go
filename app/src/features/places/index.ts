@@ -3,12 +3,14 @@
    presentation rules live in src/places-core.ts, which anything may import. */
 export {
   isAbortError,
+  loadPlacePins,
   MIN_QUERY,
   nearbyPlaces,
   placeById,
   searchPlaces,
   sightsNearby,
   type NearbyQuery,
+  type PlacePins,
   type PlaceSearchQuery,
 } from './api/places'
 export { default as PlaceAttribution } from './ui/place-attribution'

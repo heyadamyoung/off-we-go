@@ -200,30 +200,24 @@ docker compose exec -T api node server/scripts/day-census.mjs || true
 # this leaves the app reading the volume when anything goes wrong.
 bash ./deploy/object-storage.sh cutover "$APP_ROOT/.env" "$deployment_domain" || true
 
-# The attractions seed is versioned: bump the number when the seeding policy
-# changes and the next deploy walks the default regions again. Detached —
-# Wikipedia at two calls a second takes hours — and the marker is written only
-# after a walk finishes, so an interrupted seed simply resumes next deploy.
-# Marker and log live in data/ because rsync --delete sweeps everything else.
-# The throwaway container installs dev dependencies (tsx) into the release
-# tree; the next deploy's rsync clears that away too.
-#   Version 2: no editorial filter — every geotagged article earns a row.
-readonly ATTRACTIONS_SEED_VERSION=2
-seed_marker="$APP_ROOT/data/attractions-seed-version"
-if [[ "$(cat "$seed_marker" 2>/dev/null)" != "$ATTRACTIONS_SEED_VERSION" ]]; then
-  echo "Attractions seed wants version $ATTRACTIONS_SEED_VERSION; walking the default regions in the background."
-  mkdir -p "$APP_ROOT/data"
-  # Stop any superseded walker first: two at once would fight over Wikipedia's
-  # rate limit, and every row the old one writes is rewritten by the new one.
-  docker ps -q \
-    --filter label=com.docker.compose.oneoff=True \
-    --filter label=com.docker.compose.service=api \
-    | xargs -r docker stop || true
-  setsid nohup docker compose run --rm --no-deps --user root \
-    -v "$APP_ROOT:/seed" -w /seed --entrypoint sh api \
-    -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec tsx scripts/seed-attractions.mjs && echo $ATTRACTIONS_SEED_VERSION > /seed/data/attractions-seed-version" \
-    > "$APP_ROOT/data/seed-attractions.log" 2>&1 < /dev/null &
-fi
+# The attractions seed is gone, and a walker left running from a previous
+# release is stopped here.
+#
+# It walked Wikipedia's geosearch at two calls a second to fill a table the
+# map drew its pins from — but only for the regions it was ever pointed at,
+# which were the Netherlands and Scotland. Everywhere else the map asked
+# Wikipedia live from somebody's phone and got rate-limited. The places layer
+# answers anywhere from our own database now (see docs/places-layer.md), so
+# the walk is hours of somebody else's bandwidth for two countries we already
+# cover better.
+#
+# The table and its route stay for this release so a rollback has something to
+# roll back to; migration 044 drops them.
+docker ps -q \
+  --filter label=com.docker.compose.oneoff=True \
+  --filter label=com.docker.compose.service=api \
+  | xargs -r docker stop || true
+rm -f "$APP_ROOT/data/attractions-seed-version" || true
 
 # The disk is the quietest way this box dies: dangling images and build
 # cache from many deploys a day. Dangling only — the :rollback tags must

@@ -1,7 +1,8 @@
 import { authClient, hasBackend, isSample } from '../../../backend'
 import { EMPTY_PLACE_LIST, placeListFrom, type Place, type PlaceList } from '../../../places-core'
+import { SAMPLE_ATTRIBUTION, samplePins } from '../../../sample-places-core'
 import { validLngLat } from '../../../shared/lib/geo'
-import type { ApiError, Coordinates, Id } from '../../../shared/model/types'
+import type { ApiError, AttractionPoi, Coordinates, Id } from '../../../shared/model/types'
 
 /* The three ways in to the places layer.
 
@@ -135,4 +136,57 @@ export async function nearbyPlaces({
     ranking is the shortlist; the filter is for somebody who asked for cafés. */
 export async function sightsNearby(query: Omit<NearbyQuery, 'category'>): Promise<PlaceList> {
   return nearbyPlaces({ ...query, category: null })
+}
+
+/* Every pin on the map's screen, from the places layer.
+ *
+ * What this replaced held two countries. The `attractions` table was seeded by
+ * walking Wikipedia's geosearch a region at a time, and only the Netherlands
+ * and Scotland were ever walked; everywhere else the map asked Wikipedia live
+ * from this device, ten kilometres at a time, two requests a second, and got
+ * rate-limited for it. Somebody in Canada saw an empty map filling in slowly
+ * or not at all.
+ *
+ * One query now, answered anywhere, from data the server holds. `headline` is
+ * the zoomed-out view: the server decides what deserves a dot from orbit,
+ * because that is a question about the data and it owns the data. */
+export interface PlacePins {
+  places: AttractionPoi[]
+  attribution: { license: string; notice: string; url: string | null }[]
+  /** the ground under this view has not been ingested yet; it is filling in */
+  degraded: boolean
+}
+
+export async function loadPlacePins(
+  box: { west: number; south: number; east: number; north: number },
+  { headline = false, limit = 300 } = {},
+  signal?: AbortSignal,
+): Promise<PlacePins | null> {
+  /* The demo has no server to ask, so it draws its own canned Amsterdam —
+     the same shape, through the same code path, rather than the browser
+     walking Wikipedia to fill a map nobody is really using. */
+  if (!hasBackend) {
+    return {
+      places: samplePins(box, { headline, limit }),
+      attribution: SAMPLE_ATTRIBUTION,
+      degraded: false,
+    }
+  }
+  const query = new URLSearchParams({
+    west: String(box.west),
+    south: String(box.south),
+    east: String(box.east),
+    north: String(box.north),
+    headline: String(headline),
+    limit: String(Math.min(limit, 1000)),
+  })
+  try {
+    return await authClient.request<PlacePins>(`/places/in-view?${query}`, { signal })
+  } catch (error) {
+    /* A server from before this route existed, or one with no places half at
+       all, says so rather than erroring the map. */
+    const status = (error as ApiError).status
+    if (status === 404 || status === 503) return null
+    throw error
+  }
 }

@@ -14,6 +14,8 @@ import {
   coverageFor,
   markRequested,
   nearbyPlaces,
+  placesInView,
+  licensesFor,
   pendingCells,
   placeById,
   searchPlaces,
@@ -3256,6 +3258,12 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async nearbyPlaces(query) {
       return nearbyPlaces(pool, query)
+    },
+    async placesInView(bounds, options) {
+      return placesInView(pool, bounds, options)
+    },
+    async placeLicenses(ids) {
+      return licensesFor(pool, ids)
     },
     async placeCoverage(cells) {
       return coverageFor(pool, cells)
