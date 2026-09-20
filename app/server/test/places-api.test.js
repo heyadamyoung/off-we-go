@@ -502,8 +502,12 @@ test('a viewport draws the best of what is in it, not the first rows found', {
   assert.ok(Array.isArray(all.attribution))
   for (const notice of all.attribution) assert.ok(notice.notice, JSON.stringify(notice))
 
-  /* A pin is a dot and a label. The rest of a place is one tap away, and
-     sending it for three hundred pins is bytes nobody renders. */
+  /* A pin is a dot and a label, plus the two numbers that decide how it is
+     drawn. The rest of a place is one tap away, and sending it for three
+     hundred pins is bytes nobody renders.
+     `minzoom` and `rank` are here rather than one tap away because they are
+     not about the place, they are about the drawing of it, and the map needs
+     every pin's before it can draw any of them — see places/rank.js. */
   assert.deepEqual(Object.keys(all.places[0]).sort(), [
     'big',
     'category',
@@ -511,8 +515,17 @@ test('a viewport draws the best of what is in it, not the first rows found', {
     'id',
     'lat',
     'lng',
+    'minzoom',
     'name',
+    'rank',
   ])
+
+  /* And they are numbers the map layer can actually use: a zoom inside the
+     range the camera moves through, and a positive integer to sort by. */
+  for (const place of all.places) {
+    assert.ok(place.minzoom >= 11 && place.minzoom <= 18, `${place.name} draws at ${place.minzoom}`)
+    assert.ok(Number.isInteger(place.rank) && place.rank > 0, `${place.name} ranks ${place.rank}`)
+  }
 
   /* Public, like the layer it replaces: a map's pins are built from nobody's
      trip and carry nothing private. */
