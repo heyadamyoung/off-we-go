@@ -168,7 +168,7 @@ jobs:
           nohup docker run -d --name postgres -p 5432:5432 \
             --tmpfs /var/lib/postgresql/data \
             -e POSTGRES_DB=offwego_test -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
-            postgres:17-alpine > /tmp/postgres-start.log 2>&1 &
+            postgis/postgis:17-3.5-alpine > /tmp/postgres-start.log 2>&1 &
 
       - uses: ./.github/actions/node
 
