@@ -2,6 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import pg from 'pg'
 import { createPlaceWorker } from '../src/places/worker.js'
+import {
+  CONFIDENCE_FLOOR,
+  EARLIEST_ZOOM,
+  LABEL_PER_TILE,
+  LABEL_ZOOMS,
+  VIEW_WEIGHT,
+} from '../src/places/rank.js'
+import { assignLabelZoom, placeTile } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
 
 /* The thing that drains the coverage queue on the box that serves queries.
@@ -122,6 +130,204 @@ async function unplaced(pool, name, lng, lat, category = 'museum', confidence = 
     ],
   )
 }
+
+/* A city's worth of places, and what a square of it is allowed to hold.
+ *
+ * This is the test that should have existed before any of the zoom work
+ * shipped, and its absence is why a carpet of dots reached a phone twice.
+ * Everything around it was tested — the pass assigns zooms, the tile filters
+ * on them, a mark that appears does not vanish — and none of those is the
+ * property anybody cares about, which is simply:
+ *
+ *   zoomed out over a dense city, a square holds a couple of dozen marks,
+ *   not every place in it.
+ *
+ * Stated end to end, on thousands of rows, through the same query the route
+ * runs, because each of the pieces can be individually right while the thing
+ * they add up to is wrong. */
+test('a city does not arrive all at once', {
+  skip: unreachable,
+  concurrency: false,
+}, async t => {
+  /** A few thousand places spread over a cell, as a real city is. */
+  async function city(pool, count = 2500) {
+    const kinds = ['cafe', 'food', 'shopping', 'services', 'lodging', 'museum', 'historic']
+    const values = []
+    const args = []
+    for (let at = 0; at < count; at += 1) {
+      /* Spread over about a tenth of a degree — a city rather than a point,
+         so several squares at each zoom are in play. */
+      const lng = -104.62 + (at % 50) * 0.002
+      const lat = 50.44 + Math.floor(at / 50) * 0.002
+      const kind = kinds[at % kinds.length]
+      const base = at * 7
+      values.push(
+        `($${base + 1}, $${base + 2}, ST_SetSRID(ST_MakePoint($${base + 3}, $${base + 4}),4326)::geography,` +
+          ` $${base + 5}, $${base + 5}, $${base + 6}, $${base + 7})`,
+      )
+      args.push(`overture:r${at}`, `Place ${at}`, lng, lat, kind, 0.8, 'N50W105')
+    }
+    await pool.query(
+      `insert into places (gers_id, name, geom, category, category_raw, confidence, cell)
+       values ${values.join(',')}`,
+      args,
+    )
+  }
+
+  /* How many marks a square carries, by the tile query's own predicate.
+     placeTile returns encoded bytes and this suite has no MVT decoder, so the
+     count comes from the same `label_zoom <= z` filter the tile runs — which
+     is the thing being asserted. The bytes are checked too, so a tile that
+     agreed with the count and then encoded nothing is still caught. */
+  const marksIn = async (pool, { z, x, y }) => {
+    const { rows } = await pool.query(
+      `select count(*)::int as n
+         from places p, (select ST_TileEnvelope($1, $2, $3) as box) b
+        where p.geom && ST_Transform(b.box, 4326)::geography
+          and p.confidence >= $4::real
+          and coalesce(p.label_zoom, $5::real) <= $1::double precision`,
+      [z, x, y, CONFIDENCE_FLOOR, LABEL_ZOOMS.from],
+    )
+    return rows[0].n
+  }
+
+  const square = (lng, lat, z) => {
+    const side = 2 ** z
+    const rad = (lat * Math.PI) / 180
+    return {
+      z,
+      x: Math.floor(((lng + 180) / 360) * side),
+      y: Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * side),
+    }
+  }
+
+  /* The exact state the box was in: a table full of places with no zoom, and
+     no release index, because sixteen downloads off S3 had not finished. The
+     zoom pass needs none of that and must not wait for it. */
+  await t.test('heals a table of unplaced rows with no release index at all', async t => {
+    const pool = await freshDatabase(t)
+    await city(pool, 800)
+
+    const worker = createPlaceWorker({
+      pool,
+      loadIndex: async () => null,
+      loadSecondIndex: null,
+      makeReader: () => ({ readBox: async () => {} }),
+      makeIngest: () => ({
+        versions: {},
+        ingestCells: async () => ({ results: [] }),
+        stop: () => {},
+      }),
+    })
+    await worker.once()
+    await worker.settled()
+
+    const { rows } = await pool.query(
+      'select count(*) filter (where label_zoom is null)::int as unplaced from places',
+    )
+    assert.equal(rows[0].unplaced, 0, 'the zoom pass does not wait on the network')
+  })
+
+  await t.test(
+    'a square over a dense city holds a couple of dozen marks, not the city',
+    async t => {
+      const pool = await freshDatabase(t)
+      await city(pool)
+      await assignLabelZoom(pool, null, {
+        weights: VIEW_WEIGHT,
+        perTile: LABEL_PER_TILE,
+        zooms: LABEL_ZOOMS,
+        earliest: EARLIEST_ZOOM,
+      })
+
+      const centre = [-104.57, 50.47]
+      for (const z of [11, 12, 13]) {
+        const at = square(centre[0], centre[1], z)
+
+        /* The algorithm's own contract, stated exactly: within one square of
+           the grid assignLabelZoom partitioned by, at most LABEL_PER_TILE
+           places earned that zoom. */
+        const earned = await pool.query(
+          `select count(*)::int as n from places p
+            where p.label_zoom = $1::real
+              and ${'floor((((ST_X(p.geom::geometry)) + 180) / 360) * power(2, $1)) = $2'}
+              and ${'floor((1 - ln(tan(radians(ST_Y(p.geom::geometry))) + 1 / cos(radians(ST_Y(p.geom::geometry)))) / pi()) / 2 * power(2, $1)) = $3'}`,
+          [at.z, at.x, at.y],
+        )
+        assert.ok(
+          earned.rows[0].n <= LABEL_PER_TILE,
+          `z${z}: ${earned.rows[0].n} places earned that zoom in one square, over ${LABEL_PER_TILE}`,
+        )
+
+        /* And what the tile actually draws. A few more than the budget,
+           because the envelope reaches a little past its own square and a
+           mark on the far side of the line should not vanish at the seam —
+           but a couple of dozen, not the city. That is the whole property,
+           and its absence is what put a carpet of dots on a phone. */
+        const marks = await marksIn(pool, at)
+        assert.ok(
+          marks > 0 && marks <= LABEL_PER_TILE * 4,
+          `z${z} drew ${marks} marks of 2500 places; a square carries a couple of dozen`,
+        )
+        /* And the square really encodes to a tile, rather than agreeing with
+           the count and then producing nothing. */
+        const bytes = await placeTile(pool, at, { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
+        assert.ok(bytes.length > 0, `z${z} encoded an empty tile`)
+      }
+    },
+  )
+
+  /* The other half, and the reason there is no cap in the tile query: zoom
+     far enough in and a square is small enough that a selection is not what
+     anybody wants. Everything in it is drawn. */
+  await t.test('and close up, a square holds everything in it', async t => {
+    const pool = await freshDatabase(t)
+    await city(pool, 400)
+    await assignLabelZoom(pool, null, {
+      weights: VIEW_WEIGHT,
+      perTile: LABEL_PER_TILE,
+      zooms: LABEL_ZOOMS,
+      earliest: EARLIEST_ZOOM,
+    })
+    const at = square(-104.62, 50.44, 17)
+    const inSquare = await pool.query(
+      `select count(*)::int as n
+         from places p, (select ST_TileEnvelope($1, $2, $3) as box) b
+        where p.geom && ST_Transform(b.box, 4326)::geography
+          and p.confidence >= $4::real`,
+      [at.z, at.x, at.y, CONFIDENCE_FLOOR],
+    )
+    assert.ok(inSquare.rows[0].n > 0, 'the square has places in it to draw')
+    assert.equal(
+      await marksIn(pool, at),
+      inSquare.rows[0].n,
+      'and every one of them is drawn — no cap this far in',
+    )
+  })
+
+  /* And the rule the ceiling exists for, on real density rather than on a
+     sample of twenty-two: no cafe is ever drawn from across the city. */
+  await t.test('no everyday place is drawn from across the city', async t => {
+    const pool = await freshDatabase(t)
+    await city(pool)
+    await assignLabelZoom(pool, null, {
+      weights: VIEW_WEIGHT,
+      perTile: LABEL_PER_TILE,
+      zooms: LABEL_ZOOMS,
+      earliest: EARLIEST_ZOOM,
+    })
+    const early = await pool.query(
+      `select distinct category from places
+        where label_zoom < $1::real order by category`,
+      [EARLIEST_ZOOM.cafe],
+    )
+    const kinds = early.rows.map(row => row.category)
+    for (const everyday of ['cafe', 'food', 'shopping', 'services']) {
+      assert.ok(!kinds.includes(everyday), `a ${everyday} is never drawn from that far out`)
+    }
+    assert.ok(kinds.includes('museum'), 'but a museum is')
+  })
+})
 
 test('places written before the zoom column get their zoom', {
   skip: unreachable,
