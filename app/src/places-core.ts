@@ -358,33 +358,3 @@ export function addressLine(address: Place['address']): string {
 export function placeSubtitle(place: Place): string {
   return [categoryWord(place.category), addressLine(place.address)].filter(Boolean).join(' · ')
 }
-
-/* ---- reading the wire ------------------------------------------------- */
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null
-
-/** A list answer, read defensively: the typeahead runs on every keystroke, and
-    a payload that is a bare array, or that calls its rows something else, must
-    come back empty rather than as an exception inside a React render. */
-export function placeListFrom(payload: unknown): PlaceList {
-  const rows = Array.isArray(payload)
-    ? payload
-    : isRecord(payload) && Array.isArray(payload.places)
-      ? payload.places
-      : []
-  const places = rows.filter(
-    (row): row is Place =>
-      isRecord(row) && typeof row.id === 'string' && typeof row.name === 'string',
-  )
-  const degraded = isRecord(payload) && payload.degraded === true
-  const coverage = isRecord(payload) && isRecord(payload.coverage) ? payload.coverage : null
-  return {
-    places,
-    degraded,
-    coverage:
-      coverage && typeof coverage.cell === 'string'
-        ? { cell: coverage.cell, status: String(coverage.status || '') }
-        : null,
-  }
-}

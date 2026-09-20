@@ -10,10 +10,10 @@ import {
   creditsFor,
   groupByCategory,
   licenceNotice,
-  placeListFrom,
   placeSubtitle,
   PLACE_CATEGORIES,
 } from '../src/places-core.ts'
+import { placeFrom, placeListFrom } from '../src/places-wire.ts'
 
 /* The presentation rules of the places layer, pinned here rather than checked
    by eye on a screen. Three of them are the ones that matter: a licence notice
@@ -256,4 +256,40 @@ test('a list answer is read defensively, because a keystroke is not a place to t
   assert.deepEqual(placeListFrom(null), { places: [], degraded: false, coverage: null })
   assert.deepEqual(placeListFrom('nonsense'), { places: [], degraded: false, coverage: null })
   assert.deepEqual(placeListFrom({ places: [{ name: 'no id' }, 7] }).places, [])
+})
+
+/* The regression for "why don't any of the places have addresses or phone
+   numbers?".
+ *
+ * They did. Every one of them, sitting in the payload. GET /api/places/:id
+ * replies `{place, redirectedFrom}` — a wrapper, because a single record can
+ * also say where it went when upstream merged or dropped it — and the client
+ * handed that whole envelope to placeListFrom as though the envelope were a
+ * record. An envelope has no `id` and no `name`, so the filter dropped it and
+ * the lookup returned null. Every time, for every place, since the layer
+ * shipped: a card that knew a pin's name and category and could not say the
+ * address or the telephone number of anywhere. */
+test('a single place is read out of the envelope the API sends it in', () => {
+  const record = {
+    id: '0f2f8b9e-1c2d-4a5b-8e7f-9a0b1c2d3e4f',
+    name: 'Royal Saskatchewan Museum',
+    category: 'museum',
+    lat: 50.4452,
+    lng: -104.6167,
+    address: { freeform: '2445 Albert St', locality: 'Regina', region: 'SK', country: 'CA' },
+    phone: '+1 306-787-2815',
+    website: 'https://royalsaskmuseum.ca',
+  }
+  const found = placeFrom({ place: record, redirectedFrom: null })
+  assert.ok(found, 'the envelope is opened rather than parsed as a record')
+  assert.equal(found.name, 'Royal Saskatchewan Museum')
+  assert.equal(found.phone, '+1 306-787-2815')
+  assert.equal(addressLine(found.address), '2445 Albert St, Regina')
+
+  // A bare record, for anything that hands one over already unwrapped.
+  assert.equal(placeFrom(record)?.id, record.id)
+  // And nothing worth a card is nothing, not a throw.
+  assert.equal(placeFrom(null), null)
+  assert.equal(placeFrom({ place: null }), null)
+  assert.equal(placeFrom({ error: 'No such place' }), null)
 })
