@@ -54,22 +54,53 @@ export const LOAD_AHEAD = 4
 /** How often the run says where it is, in row groups. */
 export const SAY_EVERY = 25
 
-/** Attempts at one row group before the run gives up on it.
+/* How a read that fails is answered, which is the difference between a job
+ * that finishes and one that does not.
  *
- * Learned the expensive way. A read that fails stops the sweep, deliberately:
- * a cell loaded from a partial read is a cell that has quietly lost a third
- * of a city, and the collapse guard cannot see the difference. But "stops the
- * sweep" was written as "one 503 from a public bucket ends a three-hour run",
- * and that is what happened — the first live planet run died somewhere in the
- * Atlantic and the box sat there with an exited container and nothing to say
- * about it. Four thousand range requests against a bucket that owes us
- * nothing will meet a bad one; the answer is to ask again, not to treat the
- * first blip as the truth about the release. A group that fails four times in
- * a row with the delays below is a real failure and still stops the run. */
-export const READ_TRIES = 4
+ * Learned twice. A failed read must not become a loaded cell: a cell built
+ * from a short read has quietly lost a third of a city and the collapse guard
+ * cannot see the difference. That was written first as "throw", and one 503
+ * from a public bucket ended a three-hour run. It was then written as "four
+ * tries over fourteen seconds", which survives a blip and not a minute of bad
+ * network — and a minute of bad network is a thing that happens.
+ *
+ * So there is no attempt count. A group is asked for again, and again, with
+ * the delay doubling to a ceiling, for as long as the budget below allows —
+ * ten minutes of a link being down costs ten minutes and nothing else. Two
+ * things end that, and neither of them ends the planet:
+ *
+ *   the release moved   Overture keeps two releases and deletes the older at
+ *                       about sixty days. Every read then 404s and asking
+ *                       again is pointless, so the run stops with a non-zero
+ *                       exit — and the restart discovers the new release and
+ *                       carries on. Self-healing, not a failure.
+ *   the group is bad    A decode that throws the same way every time is not
+ *                       waiting on anything. After the budget the group is
+ *                       set aside, the cells that were waiting on it are left
+ *                       unwritten rather than written short, and the walk
+ *                       carries on. The other four thousand groups still load.
+ *
+ * Nothing is abandoned by either path. Cells left unwritten keep whatever
+ * coverage they had, the run exits non-zero, and `--resume` on the next run
+ * reads exactly the groups that still owe somebody rows. The retry of last
+ * resort is the process starting again, and that is the one that cannot be
+ * defeated by a bug in this file. */
 
-/** First backoff, doubled each attempt: 2s, 4s, 8s. */
-export const READ_BACKOFF_MS = 2000
+/** How long one row group may be retried before it is set aside. */
+export const RETRY_BUDGET_MS = 10 * 60_000
+
+/** First delay between attempts, doubling to the ceiling below. */
+export const RETRY_FROM_MS = 1000
+
+/** The longest gap between attempts: a bucket having an hour is met with one
+    ask a minute, not with a hot loop. */
+export const RETRY_TO_MS = 60_000
+
+/** An error that says the object is not there any more, which for these two
+    buckets means the release has been deleted and the index is describing a
+    past. Matched on the message because that is all fetch gives us. */
+export const expired = error =>
+  /\b(404|410)\b|NoSuchKey|NoSuchBucket|NoSuchVersion/i.test(String(error?.message || error))
 
 /** The square a record belongs to.
  *
@@ -141,7 +172,7 @@ export function sweepPlan(index, { cells = null } = {}) {
  * @param {(cell: string, rows: object[]) => Promise<object>} options.load
  * @param {number} [options.ahead]      row groups in flight
  * @param {number} [options.loadAhead]  squares being written at once
- * @param {number} [options.tries]      attempts at one row group
+ * @param {number} [options.budgetMs]   how long one group may be retried
  * @param {(ms: number) => Promise<void>} [options.wait]  injectable, for tests
  * @param {(line: string, detail?: object) => void} [options.log]
  * @param {(outcome: object) => void} [options.onCell]
@@ -153,8 +184,9 @@ export function createSweep({
   load,
   ahead = READ_AHEAD,
   loadAhead = LOAD_AHEAD,
-  tries = READ_TRIES,
-  backoffMs = READ_BACKOFF_MS,
+  budgetMs = RETRY_BUDGET_MS,
+  retryFromMs = RETRY_FROM_MS,
+  retryToMs = RETRY_TO_MS,
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
   log = () => {},
   onCell = () => {},
@@ -171,31 +203,57 @@ export function createSweep({
     empty: 0,
     failed: 0,
     retried: 0,
+    setAside: 0,
+    unread: 0,
   }
 
-  /** One row group, asked for again when the bucket is having a moment.
+  /** The error that ends the run, when one does. Kept so the caller can say
+      whether the release moved or something else went wrong. */
+  let expiry = null
+
+  /** One row group, asked for until it answers or the budget runs out.
    *
-   * The retry is here rather than in the reader because this is the caller
-   * that cannot simply return a worse answer: a short read hands a cell rows
-   * it does not have. Every other caller of readGroup is a query somebody is
-   * waiting on, where failing fast is right. */
+   * The retrying is here rather than in the reader because this is the one
+   * caller that cannot return a worse answer and carry on: a short read hands
+   * a cell rows it does not have. Every other caller of readGroup is a query
+   * somebody is waiting on, where failing fast is right.
+   *
+   * Returns null when the group is set aside — see the header. It never
+   * returns a partial read, which is the property all of this protects. */
   async function readGroup(part, group) {
+    const until = clock() + Math.max(0, budgetMs)
+    let delay = Math.max(1, retryFromMs)
     let last = null
-    for (let attempt = 1; attempt <= Math.max(1, tries); attempt += 1) {
+    for (;;) {
       try {
         return await read(part, group)
       } catch (error) {
         last = error
-        if (attempt >= Math.max(1, tries) || stopped) break
+        /* The release has been deleted under us. Every later read says the
+           same thing, so asking again is not patience, it is a hot loop. */
+        if (expired(error)) {
+          expiry = error
+          throw error
+        }
+        if (stopped) throw error
+        if (clock() >= until) {
+          totals.setAside += 1
+          log(
+            `sweep: rows ${group.s}-${group.e} of ${part.url} would not read in ` +
+              `${Math.round(budgetMs / 1000)}s (${String(error?.message || error)}); ` +
+              'set aside — its cells stay unwritten and the next run reads them',
+          )
+          return null
+        }
         totals.retried += 1
         log(
           `sweep: rows ${group.s}-${group.e} of ${part.url} failed ` +
-            `(${String(error?.message || error)}); attempt ${attempt + 1} of ${tries}`,
+            `(${String(error?.message || error)}); asking again in ${Math.round(delay / 1000)}s`,
         )
-        await wait(backoffMs * 2 ** (attempt - 1))
+        await wait(delay)
+        delay = Math.min(Math.max(1, retryToMs), delay * 2)
       }
     }
-    throw last
   }
 
   async function run() {
@@ -207,6 +265,11 @@ export function createSweep({
     const held = new Map()
     const left = new Map(plan.outstanding)
     const loads = new Set()
+    /* Cells that were waiting on a group which would not read. They are never
+       loaded — a cell short of one of its groups is a cell short of part of a
+       city — and they are never marked either, so `--resume` finds them
+       exactly as it left them. */
+    const owed = new Set()
 
     /* A read that has failed is not allowed to sit in `pending` unhandled —
        Node kills the process for an unhandled rejection, and losing an hour
@@ -268,9 +331,15 @@ export function createSweep({
       const entry = plan.groups[at]
       at += 1
       if (settled.error) throw settled.error
+      /* Set aside rather than read: its cells are owed rows nobody has, so
+         none of them may be written. The walk carries on, because the other
+         four thousand groups have nothing to do with this one. */
+      if (settled.rows === null) {
+        for (const cell of entry.cells) if (left.has(cell)) owed.add(cell)
+      }
       totals.groups += 1
-      totals.rows += settled.rows.length
-      for (const row of settled.rows) {
+      totals.rows += settled.rows?.length || 0
+      for (const row of settled.rows || []) {
         const cell = cellOfRecord(row)
         /* A square nobody is waiting for. Either the caller asked for a
            region and this row is outside it, or it is already loaded and
@@ -295,6 +364,10 @@ export function createSweep({
         left.delete(cell)
         const rows = held.get(cell) || []
         held.delete(cell)
+        if (owed.has(cell)) {
+          totals.unread += 1
+          continue
+        }
         await finish(cell, rows)
       }
       if (totals.groups % SAY_EVERY === 0) {
@@ -314,6 +387,9 @@ export function createSweep({
          which is what makes `--resume` pick them up rather than trust them. */
       unfinished: left.size,
       interrupted: stopped,
+      /* Set when the run ended because the release was deleted under it. The
+         caller exits non-zero on this and the restart finds the new one. */
+      expired: expiry ? String(expiry?.message || expiry) : null,
       ms: clock() - started,
     }
   }

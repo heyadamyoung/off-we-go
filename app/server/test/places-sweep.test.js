@@ -184,6 +184,96 @@ test('stopping leaves the open cells unwritten and says how many', async () => {
   assert.equal(totals.unfinished, 2)
 })
 
+test('a read is asked for again as long as the budget allows, not a fixed few times', async () => {
+  const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9))
+  const waits = []
+  let now = 0
+  let asked = 0
+  const swept = createSweep({
+    plan: sweepPlan(index),
+    /* Down for a minute and a half — far past any count of four — and then
+       back. A fixed number of tries loses the planet here; a budget does not. */
+    read: async () => {
+      asked += 1
+      if (asked <= 8) throw new Error('ECONNRESET')
+      return [record('N52E004', 'a')]
+    },
+    load: async (cell, held) => ({ cell, status: 'ready', places: held.length }),
+    wait: async ms => {
+      waits.push(ms)
+      now += ms
+    },
+    clock: () => now,
+    budgetMs: 600_000,
+    retryFromMs: 1000,
+    retryToMs: 60_000,
+  })
+  const totals = await swept.run()
+  assert.equal(totals.cells, 1, 'the cell loaded once the link came back')
+  assert.equal(totals.retried, 8)
+  assert.equal(totals.setAside, 0)
+  /* Doubling to a ceiling, so an outage costs one ask a minute rather than a
+     hot loop or a give-up. */
+  assert.deepEqual(waits, [1000, 2000, 4000, 8000, 16_000, 32_000, 60_000, 60_000])
+})
+
+test('a group that will never read is set aside, and the rest of the planet still loads', async () => {
+  const index = indexOf(
+    box(0, 2, 4.1, 52.1, 4.9, 52.9),
+    box(2, 4, 5.1, 52.1, 5.9, 52.9),
+    box(4, 6, 4.1, 52.1, 4.9, 52.9),
+  )
+  const written = []
+  let now = 0
+  const swept = createSweep({
+    plan: sweepPlan(index),
+    /* The third group is Amsterdam's second, and it is broken in a way no
+       amount of asking will fix — a decode that throws the same way every
+       time rather than a link that is down. */
+    read: async (_part, group) => {
+      if (group.s === 4) throw new TypeError('Cannot read properties of undefined')
+      return [record(group.s === 0 ? 'N52E004' : 'N52E005', String(group.s))]
+    },
+    load: async (cell, held) => {
+      written.push(cell)
+      return { cell, status: 'ready', places: held.length }
+    },
+    wait: async ms => {
+      now += ms
+    },
+    clock: () => now,
+    budgetMs: 60_000,
+  })
+  const totals = await swept.run()
+  /* The cell that was owed rows nobody has is not written short — that is the
+     whole point — and the cell that had everything it needed is. */
+  assert.deepEqual(written, ['N52E005'])
+  assert.equal(totals.setAside, 1)
+  assert.equal(totals.unread, 1)
+  assert.equal(totals.cells, 1)
+  assert.equal(totals.expired, null)
+})
+
+test('a deleted release stops the run at once, and says that is what happened', async () => {
+  const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9))
+  const waits = []
+  let asked = 0
+  const swept = createSweep({
+    plan: sweepPlan(index),
+    read: async () => {
+      asked += 1
+      throw new Error('places: 404 Not Found for release/2026-06-17.0/part-00000.parquet')
+    },
+    load: async () => assert.fail('nothing should have been written'),
+    wait: async ms => waits.push(ms),
+  })
+  /* Asking again is not patience when every later read says the same. The
+     restart discovers the release that does exist. */
+  await assert.rejects(swept.run(), /404 Not Found/)
+  assert.equal(asked, 1)
+  assert.deepEqual(waits, [])
+})
+
 test('a read that fails once is asked again, and the sweep carries on', async () => {
   const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9), box(2, 4, 5.1, 52.1, 5.9, 52.9))
   const written = []
@@ -203,7 +293,7 @@ test('a read that fails once is asked again, and the sweep carries on', async ()
       return { cell, status: 'ready', places: held.length }
     },
     wait: async ms => waits.push(ms),
-    backoffMs: 2000,
+    retryFromMs: 2000,
   })
   const totals = await swept.run()
   assert.deepEqual(written, ['N52E004', 'N52E005'])
@@ -215,29 +305,7 @@ test('a read that fails once is asked again, and the sweep carries on', async ()
   assert.deepEqual(waits, [2000])
 })
 
-test('a read that keeps failing stops the sweep, after it has really tried', async () => {
-  const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9))
-  const waits = []
-  let asked = 0
-  const swept = createSweep({
-    plan: sweepPlan(index),
-    read: async () => {
-      asked += 1
-      throw new Error('403 Forbidden')
-    },
-    load: async () => assert.fail('nothing should have been written'),
-    wait: async ms => waits.push(ms),
-    backoffMs: 2000,
-    tries: 4,
-  })
-  await assert.rejects(swept.run(), /403 Forbidden/)
-  assert.equal(asked, 4)
-  /* Doubling, so four attempts spread over fourteen seconds rather than four
-     in the same millisecond. */
-  assert.deepEqual(waits, [2000, 4000, 8000])
-})
-
-test('a failing read stops the sweep rather than silently loading half a cell', async () => {
+test('a failing read never becomes a half-loaded cell', async () => {
   const index = indexOf(box(0, 2, 4.1, 52.1, 4.9, 52.9), box(2, 4, 4.1, 52.1, 4.9, 52.9))
   const plan = sweepPlan(index)
   const swept = createSweep({
@@ -247,9 +315,16 @@ test('a failing read stops the sweep rather than silently loading half a cell', 
       return [record('N52E004', 'a')]
     },
     load: async () => assert.fail('nothing should have been written'),
-    tries: 1,
+    wait: async () => {},
+    clock: () => 1e9,
+    budgetMs: 0,
   })
-  await assert.rejects(swept.run(), /503 from the bucket/)
+  const totals = await swept.run()
+  /* Set aside rather than thrown: the cell it owed is left unwritten and the
+     run says so, which is the shape every unreadable group takes now. */
+  assert.equal(totals.setAside, 1)
+  assert.equal(totals.unread, 1)
+  assert.equal(totals.cells, 0)
 })
 
 /* ---- against a real database ------------------------------------------- */

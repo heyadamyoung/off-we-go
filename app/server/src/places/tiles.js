@@ -37,6 +37,30 @@ export const tileY = (lat, z) => {
  * @param {number} z
  * @returns {Array<{z: number, x: number, y: number}>}
  */
+/**
+ * The corners of one tile, in degrees — the inverse of tileX and tileY.
+ *
+ * Needed because a tile has to be able to say which one-degree cells it sits
+ * on: a tile whose ground has not been ingested yet must not be cached, and
+ * "has this ground been ingested" is a question about cells. Kept beside its
+ * inverse so a sign error in one is visible against the other.
+ *
+ * @param {number} z
+ * @param {number} x
+ * @param {number} y
+ * @returns {{west: number, south: number, east: number, north: number}}
+ */
+export function tileBounds(z, x, y) {
+  const side = 2 ** z
+  const lng = at => (at / side) * 360 - 180
+  const lat = at => {
+    const turn = Math.PI - (2 * Math.PI * at) / side
+    return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(turn) - Math.exp(-turn)))
+  }
+  /* North is the smaller row, which is the thing to get wrong. */
+  return { west: lng(x), east: lng(x + 1), south: lat(y + 1), north: lat(y) }
+}
+
 export function tilesForBounds(bounds, z) {
   const side = 2 ** z
   const clamp = value => Math.min(side - 1, Math.max(0, value))

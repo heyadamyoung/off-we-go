@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { EAGER_ZOOMS, tileX, tileY, tilesForBounds, tilesToBuild } from '../src/places/tiles.js'
+import { cellsForBounds } from '../src/places/cells.js'
+import {
+  EAGER_ZOOMS,
+  tileBounds,
+  tileX,
+  tileY,
+  tilesForBounds,
+  tilesToBuild,
+} from '../src/places/tiles.js'
 
 /* The slippy grid, asserted rather than eyeballed.
  *
@@ -75,4 +83,27 @@ test('a box at the edge of the world stays on the board', () => {
   }
   assert.ok(Number.isFinite(tileY(90, 10)), 'the pole is a number, not a NaN')
   assert.ok(Number.isFinite(tileY(-90, 10)))
+})
+
+/* ---- a tile is only as true as its ground ------------------------------ */
+
+test('a tile knows which cells it sits on', () => {
+  /* The inverse of tileX and tileY, and the thing that lets a square ask
+     whether its ground has been ingested. North is the smaller row. */
+  const amsterdam = tileBounds(14, tileX(4.89, 14), tileY(52.37, 14))
+  assert.ok(amsterdam.west <= 4.89 && 4.89 < amsterdam.east)
+  assert.ok(amsterdam.south < 52.37 && 52.37 <= amsterdam.north)
+  assert.ok(amsterdam.north > amsterdam.south, 'north is north of south')
+  /* A z11 square is about twenty kilometres, so it sits on one cell unless it
+     straddles a degree — which is the case the cache check exists for. */
+  assert.deepEqual(cellsForBounds(tileBounds(11, tileX(4.89, 11), tileY(52.37, 11))), ['N52E004'])
+  assert.ok(cellsForBounds(tileBounds(2, 1, 1)).length > 1)
+})
+
+test('the whole world is one tile at zoom zero', () => {
+  const world = tileBounds(0, 0, 0)
+  assert.equal(Math.round(world.west), -180)
+  assert.equal(Math.round(world.east), 180)
+  assert.ok(world.north > 85 && world.north < 85.1)
+  assert.ok(world.south < -85 && world.south > -85.1)
 })

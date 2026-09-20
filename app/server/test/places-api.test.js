@@ -593,7 +593,8 @@ test('a ready cell is never knocked back to pending by a query', { skip: reachab
 test('a tile of places is real vector tile bytes, and knows its own zoom', {
   skip: reachable,
 }, async t => {
-  const { app } = await world(t)
+  const { app, repository } = await world(t)
+  const ask = (sql, args) => repository.pool.query(sql, args)
   /* The tile over central Amsterdam at zoom 14, worked out from the slippy
      grid rather than copied: x = (lng + 180) / 360 * 2^z. */
   const z = 14
@@ -638,4 +639,35 @@ test('a tile of places is real vector tile bytes, and knows its own zoom', {
      200 — which is the assertion. */
   const ocean = await app.inject({ method: 'GET', url: '/api/places/tiles/14/8000/8000' })
   assert.ok([200, 204].includes(ocean.statusCode), ocean.body)
+
+  /* A square over ground nobody has ingested is answered and then forgotten.
+   *
+   * This is the bug that was reported as pins at one zoom and nothing a zoom
+   * in, never healing. A tile over a cell with no coverage builds empty —
+   * correctly, we hold nothing there — and keeping that emptiness is how a
+   * city that fills in half an hour goes on looking empty for a day: the row
+   * could only be removed by an ingest of that exact ground, and the browser
+   * held it for an hour with a day of stale-while-revalidate behind it.
+   *
+   * Somewhere in the Pacific, which no fixture has ever loaded. */
+  const unknown = { z: 14, x: 1000, y: 8000 }
+  const cold = await app.inject({
+    method: 'GET',
+    url: `/api/places/tiles/${unknown.z}/${unknown.x}/${unknown.y}`,
+  })
+  assert.ok([200, 204].includes(cold.statusCode), cold.body)
+  assert.equal(cold.headers['cache-control'], 'no-store', 'unfinished ground is never cached')
+  const held = await ask(
+    'select count(*)::int as n from place_tiles where z = $1 and x = $2 and y = $3',
+    [unknown.z, unknown.x, unknown.y],
+  )
+  assert.equal(held.rows[0].n, 0, 'and it left nothing behind to be wrong with')
+
+  /* The Amsterdam square, whose cell the fixture did load, is kept — which is
+     the other half: this is a cache, and it has to still be one. */
+  const kept = await ask(
+    'select count(*)::int as n from place_tiles where z = $1 and x = $2 and y = $3',
+    [z, x, y],
+  )
+  assert.equal(kept.rows[0].n, 1, 'finished ground is kept')
 })

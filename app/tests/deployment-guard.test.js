@@ -781,9 +781,13 @@ test('a planet sweep is behind a profile, so a deploy cannot kill one mid-run', 
      a sweep built from anything else would be writing seventy-three million
      rows with code nobody reviewed against this schema. */
   assert.equal(sweep.image, JSON.parse(asked.stdout).services.api.image)
-  /* Finished is finished: a restart policy here would sweep the planet again
-     the moment it succeeded, for ever. */
-  assert.equal(sweep.restart, 'no')
+  /* The retry of last resort, and the only one a bug in the sweep itself
+     cannot defeat. `on-failure` and not `always`: the script exits zero when
+     the planet is loaded or when a run made no progress at all, so this
+     restarts a crash, an out-of-memory kill, a reboot and a release deleted
+     mid-run, and does not sweep the planet again the moment it succeeds or
+     spin on a run that is getting nowhere. */
+  assert.equal(sweep.restart, 'on-failure')
   assert.ok(
     sweep.command.includes('--resume'),
     'a restarted sweep must pick up rather than start the planet again',

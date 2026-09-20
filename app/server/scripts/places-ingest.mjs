@@ -263,13 +263,37 @@ async function runSweep() {
   })
   stopSweep = () => swept.stop()
   const totals = await swept.run()
+  if (totals.retried) say(`  ${totals.retried} read(s) were asked for again`)
+  if (totals.setAside) {
+    say(
+      `  ! ${totals.setAside} row group(s) would not read at all, leaving ` +
+        `${totals.unread} cell(s) unwritten — the next run reads them`,
+    )
+  }
   if (totals.unfinished) {
     say(`  ! ${totals.unfinished} cells were left unread; re-run with --resume`)
   }
   if (totals.dropped) {
     say(`  ${totals.dropped.toLocaleString('en-GB')} rows fell outside the cells asked for`)
   }
-  return { results, skipped: cells.length - wanted.length, interrupted: totals.interrupted }
+  /* What the exit code has to mean, because a supervisor reads it and not
+     this log. Non-zero is "there is more to do and it is worth doing again",
+     which is what `restart: on-failure` on the compose service turns into the
+     retry of last resort. Zero when the run has nothing more to offer —
+     either it finished, or it made no progress at all, and a restart that
+     would make no progress either is a hot loop rather than a retry. */
+  const owing = totals.setAside + totals.unfinished
+  const worthAgain = owing > 0 && totals.cells > 0
+  if (owing && !worthAgain) {
+    say('  ! this run loaded nothing and still owes cells; stopping rather than looping')
+  }
+  return {
+    results,
+    skipped: cells.length - wanted.length,
+    interrupted: totals.interrupted,
+    again: worthAgain,
+    expired: totals.expired,
+  }
 }
 
 let stopping = false
@@ -287,9 +311,9 @@ process.on('SIGINT', () => {
 })
 
 let done = 0
-let results, skipped, interrupted
+let results, skipped, interrupted, again, expired
 try {
-  ;({ results, skipped, interrupted } = options.sweep
+  ;({ results, skipped, interrupted, again, expired } = options.sweep
     ? await runSweep()
     : await ingest.ingestCells(cells, {
         resume: options.resume,
@@ -328,6 +352,12 @@ say('')
 for (const [label, number] of table) say(`  ${label.padEnd(width)}  ${number}`)
 for (const failure of failed.slice(0, 10)) say(`  ! ${failure.cell}: ${failure.error}`)
 if (interrupted) say('  ! interrupted; re-run with --resume to continue')
+if (expired) {
+  say(`  ! the release was deleted while this run was reading it (${expired});`)
+  say('    starting again discovers the newest one and carries on from here')
+}
 
 await pool.end()
-process.exit(failed.length ? 1 : 0)
+/* `again` asks to be run again — see runSweep. An interrupt is a person
+   saying stop and is not a failure; a failed cell is. */
+process.exit(failed.length || again || expired ? 1 : 0)

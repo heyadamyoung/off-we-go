@@ -256,13 +256,18 @@ export function createPlaceWorker({
         }
         try {
           if (await readPlaceTile(pool, tile)) continue
+          /* Read before built, so a cell ingested while this square was being
+             encoded makes these bytes a past and writePlaceTile declines them.
+             The warming pass runs over ground that has just been loaded and
+             the drain is loading the next cell beside it, so this is not a
+             rare window — it is the normal one. */
+          const from = now()
           const body = await placeTile(pool, tile, {
             floor: CONFIDENCE_FLOOR,
             zooms: MARK_ZOOM,
             weights: VIEW_WEIGHT,
           })
-          await writePlaceTile(pool, tile, body)
-          built += 1
+          if (await writePlaceTile(pool, tile, body, 0, from)) built += 1
         } catch (error) {
           log(`places: tile ${tile.z}/${tile.x}/${tile.y} not built — ${error.message}`)
           /* One unbuildable tile is one slow square; a table that is not there
