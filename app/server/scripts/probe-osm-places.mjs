@@ -130,5 +130,7 @@ for (const tags of withWords.slice(0, 8)) {
 const linked = elements.filter(e => e.tags?.wikidata && e.tags?.name)
 console.log(`\n-- linked to Wikidata (${linked.length}) --`)
 for (const element of linked.slice(0, 10)) {
-  console.log(`  ${element.tags.name} → ${element.tags.wikidata}${element.tags.wikipedia ? ` · ${element.tags.wikipedia}` : ''}`)
+  console.log(
+    `  ${element.tags.name} → ${element.tags.wikidata}${element.tags.wikipedia ? ` · ${element.tags.wikipedia}` : ''}`,
+  )
 }
