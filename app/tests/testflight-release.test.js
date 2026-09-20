@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { createVerify, generateKeyPairSync } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   buildToken,
   chooseGroups,
@@ -96,4 +99,40 @@ test('a build only interrupts the testers when something asks it to', () => {
   assert.equal(shouldNotify(undefined), false)
   assert.equal(shouldNotify('false'), false)
   assert.equal(shouldNotify('yes'), false, 'only a plain true, so a stray value is not a page')
+})
+
+/* The flag above was right, and nothing asked it.
+ *
+ * Reported from the road: TestFlight is spamming people's inboxes. It was.
+ * The iOS build fires on every push to main that touches app/src, which on a
+ * working day is most merges, and at the end of it the script POSTed
+ * /buildBetaNotifications — the call Apple sends mail for — unconditionally.
+ * TESTFLIGHT_NOTIFY existed, was off, was tested, and only ever set
+ * autoNotifyEnabled on the build's beta detail, which is a different thing.
+ *
+ * So the test that matters is not what shouldNotify returns, it is whether
+ * the one line that emails a human is behind it. Read from the source,
+ * because the alternative is standing up App Store Connect in a test.
+ */
+test('the call that emails every tester is behind the flag', async () => {
+  const source = await readFile(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'testflightRelease.mjs'),
+    'utf8',
+  )
+  const at = source.indexOf('buildBetaNotifications')
+  assert.ok(at > 0, 'the notification call has moved; this test needs to follow it')
+
+  /* The guard has to be between the flag being read and the mail being sent,
+     and it has to be an early return — a notification sent and then regretted
+     is a notification sent. */
+  const before = source.slice(0, at)
+  assert.match(
+    before,
+    /if \(!notify\)[\s\S]{0,600}return/,
+    'nothing stops the notification when TESTFLIGHT_NOTIFY is off',
+  )
+  assert.ok(
+    before.indexOf('const notify') < before.lastIndexOf('if (!notify)'),
+    'the guard reads a flag that has not been read yet',
+  )
 })

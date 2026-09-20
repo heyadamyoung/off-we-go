@@ -210,6 +210,32 @@ async function main() {
     console.log('::warning::"TestFlight testers and build status" dispatch with distribute=latest.')
     return
   }
+  /* And this is the line that emails every tester, which it did on every
+   * push to main that touched app/src — eight times on a busy day.
+   *
+   * It was not gated on anything. TESTFLIGHT_NOTIFY existed and looked like
+   * the switch, but it only sets autoNotifyEnabled on the build's beta
+   * detail; the POST below is the one Apple actually sends mail for, and it
+   * ran unconditionally. Reported from the road as spamming people's inboxes,
+   * which is exactly what it was doing.
+   *
+   * Now it obeys the flag, and the flag is off unless somebody sets it to
+   * "true". What that costs is real and is stated rather than hidden: Apple
+   * couples "start testing" and "notify" into one endpoint, so a build that
+   * is not notified is a build external testers do not receive. It sits
+   * approved and linked until somebody fires the dispatch. Internal testers —
+   * anyone on the App Store Connect team — get every build regardless, with
+   * no mail from this.
+   *
+   * A quiet external release does not exist at Apple. Given the choice
+   * between a tester's inbox and a tester's convenience, the inbox wins, and
+   * the one who wants the build can be given it in a click. */
+  if (!notify) {
+    console.log(`build ${buildNumber} is approved and linked, and nobody was emailed.`)
+    console.log('Run the "TestFlight testers and build status" dispatch with distribute=latest')
+    console.log('to release it to external testers — that is the action that notifies them.')
+    return
+  }
   try {
     await api('/buildBetaNotifications', token, {
       method: 'POST',
