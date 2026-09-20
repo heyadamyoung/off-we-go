@@ -14,4 +14,5 @@ export {
   type PlaceSearchQuery,
 } from './api/places'
 export { default as PlaceAttribution } from './ui/place-attribution'
+export { default as PlaceCredits } from './ui/place-credit'
 export { default as PlaceSearch, type PlaceSearchProps } from './ui/place-search'

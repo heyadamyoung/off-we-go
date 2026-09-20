@@ -50,6 +50,8 @@ import {
 } from './rank.js'
 import { nameSimilarity } from './resolve.js'
 import { isCategory } from './taxonomy.js'
+import { shownAs } from './enrich/enrich.js'
+import { enqueue, readEnrichment, WANTED_NOW } from './enrich/store.js'
 import { event, span, stamp } from '../tracing.js'
 
 /** The most any one response will carry. A typeahead shows ten and a nearby
@@ -108,6 +110,9 @@ const SEARCH_FALLBACK_SIMILARITY = 0.3
  * one.
  */
 const PLACE_CACHE = 'private, max-age=86400'
+/* Nothing keeps a card we are still filling in — not the browser, not
+   anything between here and it. The same rule as an unfinished tile. */
+const PLACE_UNSETTLED = 'no-store'
 const NEARBY_CACHE = 'private, max-age=120'
 const SEARCH_CACHE = 'private, max-age=30'
 const DEGRADED_CACHE = 'no-store'
@@ -826,9 +831,36 @@ export function registerPlaceRoutes(
         'places.record.sources': found.sources.length,
         'places.record.redirected': Boolean(found.redirectedFrom),
       })
-      reply.header('cache-control', PLACE_CACHE)
       const { redirectedFrom = null, ...record } = found
-      return { place: present(record), redirectedFrom }
+
+      /* What we know about it, and — if nobody has ever asked — the asking.
+       *
+       * Opening a card is the request. A place the prominent backfill has
+       * not reached is queued here at the priority that jumps the backfill,
+       * because there is one person waiting on this and a batch behind it,
+       * so the card fills while they are still looking at it and the next
+       * open is instant.
+       *
+       * Nothing is fetched inline. A route that waited on Wikidata would tie
+       * how fast a card opens to how busy somebody else's server is. */
+      const known = await readEnrichment(repository.pool, record.id).catch(() => null)
+      if (known && !known.status) {
+        await enqueue(repository.pool, [record.id], WANTED_NOW).catch(() => {})
+      }
+      const waiting = !known?.status || known.status === 'pending' || known.status === 'working'
+      stamp({
+        'places.record.enrichment': known?.status ?? 'none',
+        'places.record.images': known?.images.length ?? 0,
+      })
+
+      /* A card still being filled must not be kept, or what somebody gets
+         for the next day is the answer from before we looked. */
+      reply.header('cache-control', waiting ? PLACE_UNSETTLED : PLACE_CACHE)
+      return {
+        place: present(record),
+        redirectedFrom,
+        about: { ...shownAs(known ?? {}), status: known?.status ?? 'pending', waiting },
+      }
     })
   })
 }

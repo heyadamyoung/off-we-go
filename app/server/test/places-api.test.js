@@ -317,18 +317,34 @@ test('a silly radius or limit is capped, not refused', { skip: reachable }, asyn
 })
 
 test('one place, in full, with its sources', { skip: reachable }, async t => {
-  const { get, ids } = await world(t)
+  const { get, ids, client } = await world(t)
   const response = await get(`/api/places/${ids.get('Rijksmuseum')}`)
   assert.equal(response.statusCode, 200)
-  const { place, redirectedFrom } = response.json()
+  const { place, redirectedFrom, about } = response.json()
   assert.equal(redirectedFrom, null)
   assert.equal(place.name, 'Rijksmuseum')
   assert.equal(place.address.locality, 'Amsterdam')
   assert.equal(place.sources.length, 2)
   assert.ok(place.attribution.length >= 2)
-  /* A record changes with a monthly ingest; a day is already far shorter than
-     the data's own life. */
-  assert.equal(response.headers['cache-control'], 'private, max-age=86400')
+
+  /* Nobody has enriched this one, so the card is still being filled and must
+     not be kept: an hour of a cached "we do not know yet" is the answer
+     somebody gets long after we found out. */
+  assert.equal(about.status, 'pending')
+  assert.equal(about.waiting, true)
+  assert.equal(about.description, null)
+  assert.deepEqual(about.images, [])
+  assert.equal(response.headers['cache-control'], 'no-store')
+
+  /* And opening it is the asking. A place the prominent backfill has not
+     reached is queued here, at the priority that jumps the backfill, because
+     there is a person waiting on this one. */
+  const queued = await client.query(
+    'select status, priority from place_enrichment where place_id = $1',
+    [ids.get('Rijksmuseum')],
+  )
+  assert.equal(queued.rows[0]?.status, 'pending', 'looking at it put it in the queue')
+  assert.equal(queued.rows[0]?.priority, 0, 'ahead of the backfill')
   assert.equal((await get('/api/places/not a uuid at all')).statusCode, 400)
   assert.equal(
     (await get('/api/places/3f0c8f0e-1111-4111-8111-111111111111')).statusCode,
@@ -344,6 +360,48 @@ test('one place, in full, with its sources', { skip: reachable }, async t => {
   assert.equal(byUpstream.statusCode, 200)
   assert.equal(byUpstream.json().place.id, ids.get('Rijksmuseum'))
   assert.equal((await get('/api/places/overture:nobody')).statusCode, 404)
+})
+
+/* The other half of the rule: once we have looked, the answer keeps. */
+test('a card we have finished filling is cached again', { skip: reachable }, async t => {
+  const { get, client, ids } = await world(t)
+  const id = ids.get('Rijksmuseum')
+  await client.query(
+    `insert into place_enrichment (place_id, status, finished_at) values ($1, 'ready', now())`,
+    [id],
+  )
+  await client.query(
+    `insert into place_descriptions (place_id, text, source, source_url, license)
+     values ($1, 'The Rijksmuseum is a Dutch national museum in Amsterdam.', 'Wikipedia',
+             'https://en.wikipedia.org/wiki/Rijksmuseum', 'CC BY-SA 4.0')`,
+    [id],
+  )
+  await client.query(
+    `insert into place_images
+       (place_id, url, width, height, author, license, license_url, source, source_url, rank)
+     values ($1, 'https://upload.wikimedia.org/r.jpg', 2400, 1600, 'Jane Photographer',
+             'CC BY-SA 4.0', 'https://creativecommons.org/licenses/by-sa/4.0/',
+             'Wikimedia Commons', 'https://commons.wikimedia.org/wiki/File:R.jpg', 0)`,
+    [id],
+  )
+
+  const response = await get(`/api/places/${id}`)
+  const { about } = response.json()
+  assert.equal(about.status, 'ready')
+  assert.equal(about.waiting, false)
+  assert.match(about.description.text, /^The Rijksmuseum is a Dutch national museum/)
+  assert.equal(response.headers['cache-control'], 'private, max-age=86400')
+
+  /* The notice travels with the thing it is about, never separately. */
+  assert.equal(
+    about.images[0].attribution.text,
+    'Jane Photographer · Wikimedia Commons · CC BY-SA 4.0',
+  )
+  assert.equal(
+    about.images[0].attribution.licenseUrl,
+    'https://creativecommons.org/licenses/by-sa/4.0/',
+  )
+  assert.equal(about.description.attribution.license, 'CC BY-SA 4.0')
 })
 
 test('a place that moved still resolves by its old id', { skip: reachable }, async t => {

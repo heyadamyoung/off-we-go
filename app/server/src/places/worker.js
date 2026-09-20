@@ -348,6 +348,12 @@ export function createPlaceWorker({
    * `placing` is what stops a second tick starting a second pass, and it is
    * what stop() waits on, so a shutdown does not pull the pool out from under
    * a statement that is rewriting every row in the table. */
+  /** The rule these zooms were computed under, written down beside them. */
+  async function recordZoomPolicy() {
+    await pool.query('delete from place_zoom_policy')
+    await pool.query('insert into place_zoom_policy (version) values ($1)', [ZOOM_POLICY])
+  }
+
   let placing = null
   async function placeTheUnplaced() {
     if (placing || stopped) return
@@ -356,12 +362,25 @@ export function createPlaceWorker({
        general case and the first is the special one — a stored number gives
        no hint of the rule that produced it, so the rule's version is kept
        beside it. */
-    const [unplaced, policy] = await Promise.all([
-      pool.query('select 1 from places where label_zoom is null limit 1'),
-      pool.query('select version from place_zoom_policy order by applied_at desc limit 1'),
-    ])
-    const current = Number(policy.rows[0]?.version ?? 0) === ZOOM_POLICY
-    if (!unplaced.rows.length && current) return
+    const policy = await pool.query(
+      'select version from place_zoom_policy order by applied_at desc limit 1',
+    )
+    const stale = Number(policy.rows[0]?.version ?? 0) !== ZOOM_POLICY
+    /* A stale policy means every row needs placing again, whatever it holds;
+       a current one means only the rows holding nothing do. One question
+       either way, and it stops at the first row it finds. */
+    const { rows } = await pool.query(
+      stale
+        ? 'select 1 from places limit 1'
+        : 'select 1 from places where label_zoom is null limit 1',
+    )
+    if (!rows.length) {
+      /* Nothing to place. On an empty table — a fresh box, a test — the
+         policy is still brought up to date, or every tick for ever would ask
+         the same question and answer it the same way. */
+      if (stale) await recordZoomPolicy()
+      return
+    }
     const started = Date.now()
     log('places: giving every place that has none the zoom it earns')
     placing = assignLabelZoom(pool, null, {
@@ -382,8 +401,7 @@ export function createPlaceWorker({
         /* And the policy these were computed under, so the next boot does
            not do it all again. Written after the pass, not before: a crash
            halfway through must leave the work looking undone. */
-        await pool.query('delete from place_zoom_policy')
-        await pool.query('insert into place_zoom_policy (version) values ($1)', [ZOOM_POLICY])
+        await recordZoomPolicy()
         warmed.clear()
       })
       .catch(error => log(`places: the zoom pass did not finish — ${error.message}`))
@@ -399,9 +417,22 @@ export function createPlaceWorker({
 
   async function tick() {
     if (stopped) return
+
+    /* Before the release index, not after it.
+     *
+     * This was below the `if (!pipe) return` below, which meant the zoom pass
+     * — which needs nothing but the database — could not run unless sixteen
+     * downloads off S3 had succeeded first. On the box that shipped it they
+     * had not yet, so every place in the world kept the null zoom that draws
+     * from zoom 11, and Regina and Toronto were a carpet of dots for an hour
+     * while the worker sat waiting on an index it did not need.
+     *
+     * The rule this is an instance of: work that can be done from the
+     * database alone must not be behind a network call. */
+    await placeTheUnplaced()
+
     const pipe = await pipeline()
     if (!pipe) return
-    await placeTheUnplaced()
     await recoverStuck()
     await markRefreshable(pipe.versions?.overture)
     const cells = await claim()
