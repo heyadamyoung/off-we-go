@@ -804,7 +804,12 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      `|| true`; the start is the test of an `if`, which `set -e` does not
      treat as an error either way. */
   assert.match(block, /\|\| true\n\}/, 'the coverage reading cannot fail the deploy')
-  assert.match(block, /^if \[ -n "\$\(docker compose --profile sweep ps/m)
+  /* By Compose's own labels rather than `compose ps`. The first live run
+     proved why: `compose ps --profile sweep --status running -q` came back
+     empty while the sweep was running, so the deploy said it had started one
+     when it had not. `docker ps --filter label=` needs no profile to see it. */
+  assert.match(block, /^if \[ -n "\$\(docker ps -q --filter status=running/m)
+  assert.ok(block.includes('label=com.docker.compose.service=places-sweep'))
   assert.match(block, /^elif docker compose --profile sweep up -d --no-build places-sweep/m)
   assert.ok(block.includes('else'), 'and a start that fails says so rather than passing silently')
   /* --no-build: the box pulls what the pipeline pushed and builds nothing. */
