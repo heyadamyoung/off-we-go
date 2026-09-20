@@ -367,7 +367,27 @@ export async function releaseIndex(
   log(
     `places: release index for ${key} built from ${index.parts.length} parts in ${Math.round((Date.now() - started) / 100) / 10}s`,
   )
-  if (store) await store.write(key, index)
+  /* The cache is an optimisation and is treated as one. It used to be
+     `await store.write(...)` bare, and that one unguarded line took the whole
+     layer down in production: the container runs as `node`, /data is owned by
+     root, so the mkdir threw EACCES — and the throw propagated out of a
+     function that had just spent seconds building a perfectly good index,
+     past the loader, into its catch, which logged "no upstream release" and
+     returned null. No release meant the worker could not drain the queue, so
+     every cell stayed pending, so every view came back degraded for ever and
+     the map said "still loading places here" and never stopped. A directory
+     nobody could write to made the map permanently empty.
+     Failing to keep a copy costs the next boot a rebuild. It is not allowed
+     to cost this one its answer. */
+  if (store) {
+    try {
+      await store.write(key, index)
+    } catch (error) {
+      log(
+        `places: release index for ${key} could not be cached — ${String(error?.message || error)}`,
+      )
+    }
+  }
   return index
 }
 

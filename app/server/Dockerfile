@@ -25,7 +25,16 @@ RUN pnpm install --frozen-lockfile --prod
 # the newest whenever this file, the dependencies or the node image change —
 # a line changed here is enough to ask for one. The personal login it uses
 # lives on the codex volume, never here.
-RUN npm install -g @openai/codex && install -d -o node -g node /data/codex
+# Both /data directories the server writes to, created here and owned by the
+# user it runs as. /data itself is root's — docker makes it when it lays the
+# mounts down — so a `mkdir /data/<anything>` at runtime is EACCES, and the
+# places layer found that out the hard way: the release-index cache could not
+# be written, the write threw out of the loader, the loader reported no
+# upstream release, the queue was never drained, and every map view came back
+# "still loading places here" for ever. One unwritable directory, an empty
+# map. The volumes mounted over these two inherit this ownership.
+RUN npm install -g @openai/codex \
+  && install -d -o node -g node /data/codex /data/places
 USER node
 EXPOSE 3000
 CMD ["node", "server/src/index.js"]

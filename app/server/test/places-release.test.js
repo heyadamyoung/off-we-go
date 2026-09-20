@@ -285,6 +285,42 @@ test('an index is built once and read from the store after that', async () => {
   assert.match(lines[0], /read from cache/)
 })
 
+/* The regression for the outage of 2026-09-20: the map said "still loading
+   places here" for ever, everywhere, and drew no pins at all.
+   The cause was one unguarded `await store.write(...)` at the end of this
+   function. The api container runs as `node`; /data belonged to root; the
+   mkdir for /data/places threw EACCES. That throw came out of a function that
+   had just successfully built the index, was caught by the loader — which
+   reports a build failure by returning null — and so the worker was told
+   there was no upstream release. No release, no drain; no drain, every cell
+   stayed `pending`; every cell pending, every view degraded, for ever.
+   A cache is an optimisation. It is not allowed to destroy the thing it was
+   asked to keep a copy of. */
+test('an index that cannot be cached is still returned, and says so', async () => {
+  const lines = []
+  const index = await releaseIndex(
+    { source: 'overture', version: '2026-08-19.10', parts: [] },
+    {
+      log: line => lines.push(line),
+      store: {
+        read: async () => null,
+        write: async () => {
+          throw Object.assign(new Error("EACCES: permission denied, mkdir '/data/places'"), {
+            code: 'EACCES',
+          })
+        },
+      },
+    },
+  )
+  assert.ok(index, 'the built index survives a cache that cannot be written')
+  assert.deepEqual(index.parts, [])
+  assert.equal(index.version, '2026-08-19.10')
+  assert.ok(
+    lines.some(line => /could not be cached/.test(line) && /EACCES/.test(line)),
+    `the failure is said out loud, not swallowed: ${JSON.stringify(lines)}`,
+  )
+})
+
 test('a key becomes a URL with its slashes intact', () => {
   assert.equal(
     objectUrl(OVERTURE_BUCKET, 'release/2026-08-19.0/theme=places/type=place/part-0.parquet'),

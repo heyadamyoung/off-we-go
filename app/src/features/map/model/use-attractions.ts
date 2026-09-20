@@ -93,6 +93,10 @@ function useAttractions(view: MapView, enabled: boolean) {
           setAvailable(false)
           return
         }
+        /* The server is restarting — a release, usually. Nothing changes:
+           the pins stay, the attribution stays, and the next pan asks again.
+           A deploy should be invisible on the map, not a map that empties. */
+        if (found.retry) return
         setFilling(found.degraded)
         setAttribution(found.attribution || [])
         /* The previous view's pins stay on screen while a cell is still

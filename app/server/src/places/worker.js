@@ -232,7 +232,7 @@ export function createPlaceWorker({
     }
   }
 
-  function schedule() {
+  function schedule(delay = tickMs) {
     if (stopped || timer) return
     timer = setTimeout(() => {
       timer = null
@@ -240,15 +240,24 @@ export function createPlaceWorker({
         running = null
         schedule()
       })
-    }, tickMs)
+    }, delay)
     /* Never a reason for the process to stay alive. */
     timer.unref?.()
   }
 
   return {
+    /* The first pass is now, not in a minute.
+     *
+     * Every restart — a deploy, a crash, an OOM — used to begin with a minute
+     * in which the queue was not read by anybody, and the first thing that
+     * happens on a cold box is the release index being built, which is itself
+     * sixteen downloads. So a traveller opening the map straight after a
+     * deploy waited out a minute of nothing before the fetching even started.
+     * Still a timer rather than a call, so start() returns immediately and
+     * stop() can take the run away before it begins. */
     start() {
       stopped = false
-      schedule()
+      schedule(0)
     },
     /** Stop after the cell in flight; the ingest leaves it resumable. */
     async stop() {
