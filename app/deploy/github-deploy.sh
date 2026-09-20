@@ -219,7 +219,16 @@ places_ask() {
   docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
 }
 echo "places: $(places_ask 'select count(*) from places') places in $(places_ask "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
-if [ -n "$(docker compose --profile sweep ps --status running -q places-sweep 2>/dev/null || true)" ]; then
+# `docker ps` by label rather than `docker compose ps`, and the reason is the
+# first run: `compose ps --profile sweep --status running -q` came back empty
+# while the sweep was demonstrably running — 8,357 cells covered between one
+# release and the next — so the deploy reported starting a sweep it had not
+# started. Harmless, because `up -d` on an unchanged service is a no-op, but a
+# line in a deploy log that is wrong about what it did is worse than no line.
+# The labels are Compose's own and need no profile to be visible, which is the
+# whole point; the cleanup below already reads them the same way.
+if [ -n "$(docker ps -q --filter status=running \
+  --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
   echo "places: a sweep is already running; left alone"
 elif docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
   echo "places: sweep started — docker compose logs -f places-sweep"
