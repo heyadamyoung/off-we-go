@@ -251,3 +251,104 @@ export function rankSearch(rows, query) {
     .sort((a, b) => b.score - a.score || a.at - b.at)
     .map(entry => ({ ...entry.row, score: entry.score }))
 }
+
+/* ---- what shows at which zoom ----------------------------------------- */
+
+/* A map is not a list, and this is the part that was missing.
+ *
+ * The layer shipped with one bit per place — `big`, meaning "survives a zoom
+ * out" — and below zoom 11 the big ones drew and above it everything did. So
+ * a city at zoom 12 drew three hundred dots at once, every one of them the
+ * same size and the same grey, and the honest description of the result was
+ * the one it got: a cluster of dots.
+ *
+ * Every map that does this well gives each place a zoom it earns its way onto
+ * the screen at, and there are many tiers rather than two. A cathedral is
+ * visible from across the city; a launderette is visible when you are in its
+ * street. Nothing is removed — a place with a late zoom is not a place we are
+ * hiding, it is a place you have not zoomed to yet.
+ *
+ * The tiers below are the category's answer. They are spaced to the way a
+ * person zooms: 11 is a whole city, 13 a district, 15 a few streets, 17 the
+ * pavement you are standing on. Deliberately not derived from CATEGORY_WEIGHT
+ * by arithmetic, because the weight answers "how worth seeing is this" and
+ * this answers "from how far away is this worth drawing", and they come apart:
+ * a railway station is not a sight and is visible from a long way off; a
+ * viewpoint is a sight and is pointless until you are near it.
+ */
+export const MARK_ZOOM = Object.freeze({
+  /* Across a city. What a stranger would say they came to see. */
+  museum: 11.5,
+  historic: 12,
+  gallery: 12.5,
+  nature: 12,
+  beach: 12,
+  /* Across a district. Big enough to plan an afternoon around. */
+  viewpoint: 13,
+  entertainment: 13.5,
+  religious: 13.5,
+  transit: 13.5,
+  market: 14,
+  /* The catch-all sits here rather than with the museums. `sights` is
+     whatever was attraction-shaped and unnameable — in Amsterdam it is mostly
+     canal bridges, measured — and a bridge is honestly a sight without being
+     what somebody zooming to a city wants a dot for. */
+  sights: 14,
+  /* A few streets. Things you choose once you are in the neighbourhood. */
+  lodging: 14.5,
+  food: 15,
+  sport: 15,
+  cafe: 15.5,
+  bar: 15.5,
+  health: 16,
+  shopping: 16,
+  /* The pavement. Real, and nobody plans around them. */
+  services: 16.5,
+  other: 17,
+})
+
+/** The zoom a whole category starts drawing at. */
+export const markZoomOf = category => MARK_ZOOM[category] ?? MARK_ZOOM.other
+
+/* How much later a place we are unsure of has to wait.
+ *
+ * Confidence already decides whether a record is shown at all (CONFIDENCE_FLOOR)
+ * and how it sorts. On a map it can do something better than either: a
+ * half-certain museum is still probably a museum, so it draws — just not from
+ * across the city, where a wrong dot is most of what you can see. A full zoom
+ * level at the floor, nothing at all at total confidence. */
+export const CONFIDENCE_DELAY = 1
+
+/**
+ * The zoom at which one place earns its dot.
+ *
+ * @param {{category?: string, confidence?: number}} place
+ * @returns {number} a map zoom, one decimal place
+ */
+export function markZoom(place) {
+  const base = markZoomOf(place?.category)
+  const sure = Math.min(1, Math.max(0, Number(place?.confidence ?? 0)))
+  /* Rounded, because this rides on every pin of every viewport and two
+     records of the same kind and similar confidence should share a tier
+     rather than differ in the third decimal. */
+  return Math.round((base + CONFIDENCE_DELAY * (1 - sure)) * 10) / 10
+}
+
+/**
+ * Which place wins when two want the same piece of screen.
+ *
+ * A collision has to be settled by something, and "whichever the database
+ * returned first" is how a café ends up hiding the cathedral behind it. The
+ * map's own category weighting decides, demoted by confidence — the same
+ * order the pins were chosen in, so what survives a crowded street is what
+ * would have been at the top of the list for it.
+ *
+ * Larger is more important. Kept as a 0..1000 integer because it travels as a
+ * GeoJSON property and is read by a sort expression, and floats in feature
+ * properties are where "equal" stops meaning equal.
+ */
+export function markRank(place) {
+  const kind = viewWeightOf(place?.category)
+  const sure = confidenceFactor(place?.confidence)
+  return Math.round(kind * sure * 1000)
+}

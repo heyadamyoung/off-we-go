@@ -353,6 +353,11 @@ export interface AttractionPoi {
   confidence: number
   /** worth a dot when the map is zoomed out; the server decides */
   big: boolean
+  /** the map zoom this place earns its dot at — the server decides, from the
+      category and from how sure we are of the record */
+  minzoom?: number
+  /** which place wins when two want the same piece of screen; larger wins */
+  rank?: number
 }
 
 export interface UploadInput {

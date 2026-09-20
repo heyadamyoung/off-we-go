@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { test, expect } from './fixture.js'
 
 /* This one is about the cartography, so it draws the real style. */
@@ -177,6 +178,71 @@ async function pinPoint(page) {
   if (!spot) throw new Error('no stop pin can be reached')
   return spot
 }
+
+/* Reported from the road, looking at a city: "ours is just a cluster fuck of
+   dots ... we need to only show points of interest like landmarks, museums
+   etc when zoomed out further and you have to zoom in more to see other shit".
+ *
+ * It was one bit per place — `big` — and above zoom 11 everything drew, so a
+ * whole city arrived as three hundred identical dots at once. Each place now
+ * earns a zoom from its category and from how sure we are of the record.
+ *
+ * Asserted by camera rather than by counting: moving the camera changes the
+ * viewport, which refetches the pins, so two counts taken at two zooms are
+ * not two measurements of the same thing. Putting one café in the middle of
+ * the screen and asking whether it is drawn is. */
+async function centreOn(page, [lng, lat], zoom) {
+  await page.evaluate(({ at, z }) => window.__offwegoMap?.jumpTo({ center: at, zoom: z }), {
+    at: [lng, lat],
+    z: zoom,
+  })
+  await expect.poll(() => page.evaluate(() => !window.__offwegoMap?.isMoving())).toBe(true)
+}
+
+/** The names actually painted right now — not what the source is holding. */
+const paintedNames = page =>
+  page.evaluate(() =>
+    (window.__offwegoMap?.queryRenderedFeatures({ layers: ['attr-dot'] }) || []).map(
+      feature => feature.properties?.n,
+    ),
+  )
+
+test('a museum is visible across the city; a cafe waits until you are in its street', async ({
+  page,
+}) => {
+  await open(page)
+  await expect.poll(() => drawn(page), { timeout: 30000 }).toBeGreaterThan(0)
+
+  // The sample's café, in the middle of the screen, from across the city.
+  const cafe = [4.8828, 52.3799]
+  await centreOn(page, cafe, 12.5)
+  await expect.poll(() => paintedNames(page), { timeout: 15000 }).not.toContain('Winkel 43')
+
+  // The same café, from its own street.
+  await centreOn(page, cafe, 17)
+  await expect.poll(() => paintedNames(page), { timeout: 15000 }).toContain('Winkel 43')
+
+  // And the museum is there at both — that is what "across the city" means.
+  const museum = [4.8852, 52.36]
+  await centreOn(page, museum, 12.5)
+  await expect.poll(() => paintedNames(page), { timeout: 15000 }).toContain('Rijksmuseum')
+})
+
+/* Colour is the other half of the same report. Every dot used to be the same
+   grey, so a street with three cafés and a museum on it looked like four of
+   the same thing. */
+test('the dots are coloured by what the place is', async ({ page }) => {
+  await open(page)
+  await expect.poll(() => drawn(page), { timeout: 30000 }).toBeGreaterThan(0)
+  await centreOn(page, [4.8852, 52.36], 17)
+
+  const colour = await page.evaluate(() =>
+    window.__offwegoMap?.getPaintProperty('attr-dot', 'circle-color'),
+  )
+  assert(Array.isArray(colour), 'the colour is an expression over the feature, not one flat value')
+  assert.equal(colour[0], 'match')
+  assert.deepEqual(colour[1], ['get', 'k'])
+})
 
 /* What the card says once it is open.
  *

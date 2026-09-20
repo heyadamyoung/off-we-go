@@ -42,6 +42,8 @@ import {
   CONFIDENCE_FLOOR,
   MAX_RADIUS_METRES,
   VIEW_WEIGHT,
+  markRank,
+  markZoom,
   rankNearby,
   rankSearch,
   widen,
@@ -187,6 +189,15 @@ const pin = record => ({
      be carrying a second copy of the taxonomy to answer the same question a
      different way. */
   big: VIEW_WEIGHT[record.category] >= HEADLINE_WEIGHT,
+  /* The zoom this one earns its dot at, and which place wins when two want
+     the same piece of screen. Both from places/rank.js, for the same reason
+     `big` is: the weighting lives there, and a client deciding it for itself
+     is a second copy of the taxonomy drifting away from the first.
+     `big` stays beside them because a client from before this release still
+     reads it, and a map that draws nothing is worse than one that draws the
+     old way for an afternoon. */
+  minzoom: markZoom(record),
+  rank: markRank(record),
 })
 
 /* A box of `metres` around a point, for the Parquet reader. Latitude is

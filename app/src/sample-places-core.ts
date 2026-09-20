@@ -13,6 +13,30 @@ import type { AttractionPoi } from './shared/model/types'
  * Amsterdam, because that is where the sample trip goes. Real places at real
  * coordinates, and the categories are the ones the server would give them.
  */
+/** Mirrors places/rank.js MARK_ZOOM — see the note where it is used. */
+const SAMPLE_MARK_ZOOM: Record<string, number> = {
+  museum: 11.5,
+  historic: 12,
+  gallery: 12.5,
+  nature: 12,
+  beach: 12,
+  viewpoint: 13,
+  entertainment: 13.5,
+  religious: 13.5,
+  transit: 13.5,
+  market: 14,
+  sights: 14,
+  lodging: 14.5,
+  food: 15,
+  sport: 15,
+  cafe: 15.5,
+  bar: 15.5,
+  health: 16,
+  shopping: 16,
+  services: 16.5,
+  other: 17,
+}
+
 export const SAMPLE_PINS: AttractionPoi[] = [
   ['Rijksmuseum', 'museum', 4.8852, 52.36, 1],
   ['Van Gogh Museum', 'museum', 4.8811, 52.3584, 0.99],
@@ -50,6 +74,16 @@ export const SAMPLE_PINS: AttractionPoi[] = [
       /* The same rule the server applies, stated once here: the named kinds
          survive a zoom out, the catch-all and the everyday ones do not. */
       big: !['cafe', 'bar', 'shopping', 'services', 'other', 'sights'].includes(String(category)),
+      /* And the zoom it earns its dot at, mirroring places/rank.js MARK_ZOOM
+         for the demo — which has no server to ask, exactly as `big` above has
+         had none since the sample was written. A second copy of a table is a
+         thing to be uneasy about; this one is twenty-two canned landmarks
+         that exist so the map draws without a backend, and the alternative is
+         a demo that behaves differently from the app it demonstrates. */
+      minzoom: SAMPLE_MARK_ZOOM[String(category)] ?? 17,
+      /* Ranked by the confidence above, which for canned data is the order
+         they deserve on screen. */
+      rank: Math.round(Number(confidence) * 1000),
     }) satisfies AttractionPoi,
 )
 

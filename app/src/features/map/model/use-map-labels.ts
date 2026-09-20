@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { Map as MapGL } from 'maplibre-gl'
 import { streetNamePlan } from '../../../map-labels-core'
-import { whenStyleReady } from './use-map-layers'
+import { whenStyleReady } from './style-ready'
 
 /* The basemap's own street names, turned up or off.
 
