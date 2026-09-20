@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import pg from 'pg'
-import { createPlaceWorker, MAX_ATTEMPTS } from '../src/places/worker.js'
+import { createPlaceWorker } from '../src/places/worker.js'
 import { privateDatabase } from './private-database.js'
 
 /* The thing that drains the coverage queue on the box that serves queries.
@@ -52,12 +52,14 @@ async function freshDatabase(t) {
 async function coverage(pool, cell, row = {}) {
   await pool.query(
     `insert into place_coverage
-      (cell, west, south, east, north, status, requested_at, started_at, last_refresh, attempts, versions)
-     values ($1, 0, 0, 1, 1, $2, $3, $4, $5, $6, $7)
+      (cell, west, south, east, north, status, requested_at, started_at, last_refresh, attempts,
+       versions, next_attempt_at)
+     values ($1, 0, 0, 1, 1, $2, $3, $4, $5, $6, $7, $8)
      on conflict (cell) do update set
        status = excluded.status, requested_at = excluded.requested_at,
        started_at = excluded.started_at, last_refresh = excluded.last_refresh,
-       attempts = excluded.attempts, versions = excluded.versions`,
+       attempts = excluded.attempts, versions = excluded.versions,
+       next_attempt_at = excluded.next_attempt_at`,
     [
       cell,
       row.status ?? 'pending',
@@ -66,6 +68,7 @@ async function coverage(pool, cell, row = {}) {
       row.lastRefresh ?? null,
       row.attempts ?? 0,
       JSON.stringify(row.versions ?? {}),
+      row.nextAttemptAt ?? null,
     ],
   )
 }
@@ -207,10 +210,49 @@ test('the queue drainer', { skip: unreachable, concurrency: false }, async t => 
     assert.equal(handed.length, 3)
   })
 
-  await t.test('retries a failed cell, but not for ever', async t => {
+  await t.test('retries a failed cell once its wait has passed, and not before', async t => {
     const pool = await freshDatabase(t)
-    await coverage(pool, 'N52E004', { status: 'failed', attempts: 1 })
-    await coverage(pool, 'N52E005', { status: 'failed', attempts: MAX_ATTEMPTS })
+    const hence = at => new Date(Date.now() + at)
+    await coverage(pool, 'N52E004', {
+      status: 'failed',
+      attempts: 1,
+      nextAttemptAt: hence(-60_000),
+    })
+    await coverage(pool, 'N52E005', {
+      status: 'failed',
+      attempts: 2,
+      nextAttemptAt: hence(10 * 60_000),
+    })
+    const { worker, handed } = workerOver(pool)
+    await worker.once()
+    assert.deepEqual(handed, ['N52E004'], 'the one that is due, and only that one')
+  })
+
+  /* The point of the change: no number of failures takes a cell out of the
+     queue. Paris was found in production `failed` at the old cap of five — a
+     capital with nothing behind it and nothing that would ever ask again. */
+  await t.test('takes a cell that has failed a hundred times, once it is due', async t => {
+    const pool = await freshDatabase(t)
+    await coverage(pool, 'N48E002', {
+      status: 'failed',
+      attempts: 100,
+      nextAttemptAt: new Date(Date.now() - 1000),
+    })
+    const { worker, handed } = workerOver(pool)
+    await worker.once()
+    assert.deepEqual(handed, ['N48E002'])
+  })
+
+  /* And the rows that predate the column have waited longer than any backoff,
+     so they are due now rather than never. */
+  await t.test('a failure with no wait written on it is due at once', async t => {
+    const pool = await freshDatabase(t)
+    await coverage(pool, 'N52E004', {
+      status: 'failed',
+      attempts: 9,
+      requestedAt: new Date('2026-01-01'),
+      nextAttemptAt: null,
+    })
     const { worker, handed } = workerOver(pool)
     await worker.once()
     assert.deepEqual(handed, ['N52E004'])
@@ -226,6 +268,7 @@ test('the queue drainer', { skip: unreachable, concurrency: false }, async t => 
         status: 'failed',
         attempts: 1,
         requestedAt: new Date('2026-01-01'),
+        nextAttemptAt: new Date('2026-01-01'),
       })
     }
     await coverage(pool, 'N52E004', { requestedAt: new Date() })

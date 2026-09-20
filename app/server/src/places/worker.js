@@ -20,12 +20,17 @@
  *                         A queue of four hundred cells drained flat out is
  *                         the API server spending its afternoon reading
  *                         Parquet instead of answering people.
- *   bounded attempts      a cell that fails for a reason that will not
+ *   failure backs off     a cell that fails for a reason that will not
  *                         change — a part that 404s, a row nothing can parse
  *                         — sorts to the front of the queue forever on its
  *                         old requested_at and starves everything behind it.
- *                         After MAX_ATTEMPTS it is left alone and its error
- *                         is on the row for somebody to read.
+ *                         So it waits: a minute, four, a quarter of an hour,
+ *                         an hour, six, and six from then on. It is never
+ *                         given up on. This was a cap of five tries once,
+ *                         and Paris was found in production `failed` with a
+ *                         whole capital behind it and nothing that would
+ *                         ever try it again. Waiting solves the starving;
+ *                         stopping solves nothing and loses a city.
  *   stuck cells recovered a process killed mid-cell leaves `ingesting` and a
  *                         cursor. Nothing else will ever move that row, and
  *                         the cursor is exactly what a resumed read wants.
@@ -51,8 +56,7 @@ import { event } from '../tracing.js'
 export const TICK_MS = 60_000
 /** How many cells one tick may ingest. */
 export const CELLS_PER_TICK = 4
-/** After this many tries a cell is left alone rather than retried forever. */
-export const MAX_ATTEMPTS = 5
+
 /** An `ingesting` row older than this belonged to a process that is gone. */
 export const STUCK_AFTER_MS = 30 * 60_000
 /** How many ready cells a tick may mark stale when the release moves on. */
@@ -94,8 +98,9 @@ const CLAIM_SQL = `
       order by requested_at asc nulls last, cell asc limit $1)
     union all
     (select cell, 1 as queue, requested_at from place_coverage
-      where status = 'failed' and attempts < $2
-      order by requested_at asc nulls last, cell asc limit $1)
+      where status = 'failed' and coalesce(next_attempt_at, requested_at) <= now()
+      order by next_attempt_at asc nulls first, requested_at asc nulls last, cell asc
+      limit $1)
   ),
   picked as (
     select c.cell from place_coverage c
@@ -142,7 +147,6 @@ export function createPlaceWorker({
   log = () => {},
   tickMs = TICK_MS,
   cellsPerTick = CELLS_PER_TICK,
-  maxAttempts = MAX_ATTEMPTS,
   stuckAfterMs = STUCK_AFTER_MS,
   refreshPerTick = REFRESH_PER_TICK,
   tileBudgetMs = TILE_BUDGET_MS,
@@ -207,7 +211,7 @@ export function createPlaceWorker({
   /** The cells this tick has taken, already moved to `ingesting`. */
   async function claim() {
     if (cellsPerTick <= 0) return []
-    const result = await pool.query(CLAIM_SQL, [cellsPerTick, maxAttempts])
+    const result = await pool.query(CLAIM_SQL, [cellsPerTick])
     return result.rows.map(row => row.cell)
   }
 

@@ -63,6 +63,7 @@ import {
   placesFromOverture,
 } from './overture.js'
 import { qualityReport } from './quality.js'
+import { retryAfterMs } from './retry.js'
 import { LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from './rank.js'
 import { assignLabelZoom } from './store.js'
 import { MATCH_METRES, bestMatch, mergeFields } from './resolve.js'
@@ -564,14 +565,38 @@ export function createIngest({
     )
   }
 
+  /** How many times in a row this cell has failed, the increment for this
+      attempt included — markStarted made it before the read began. */
+  async function attemptsFor(cell) {
+    const { rows } = await pool
+      .query('select attempts from place_coverage where cell = $1', [cell])
+      .catch(() => ({ rows: [] }))
+    return Number(rows[0]?.attempts ?? 1)
+  }
+
   async function markFailed(cell, error) {
     if (dryRun) return
     await pool
       .query(
         /* The cursor is deliberately left as it is: it is the note about where
-           this attempt got to, and it is what `--resume` reports. */
-        `update place_coverage set status = 'failed', error = $2 where cell = $1`,
-        [cell, String(error?.message || error).slice(0, 500)],
+           this attempt got to, and it is what `--resume` reports.
+
+           `next_attempt_at` is when the drain may take this cell again, and
+           writing it here rather than in the drain is deliberate: the row
+           itself carries when it is next due, so a cell is never eligible
+           merely because nobody has looked at it recently. The schedule grows
+           with the consecutive-failure count that markStarted has already
+           incremented, and the last step repeats, so a cell is put off but
+           never abandoned. */
+        `update place_coverage
+            set status = 'failed', error = $2,
+                next_attempt_at = now() + make_interval(secs => $3::double precision)
+          where cell = $1`,
+        [
+          cell,
+          String(error?.message || error).slice(0, 500),
+          retryAfterMs(await attemptsFor(cell)) / 1000,
+        ],
       )
       /* Said, not swallowed: a cell left `ingesting` with no error on it is a
          cell only the thirty-minute reaper will ever move, and an operator
@@ -769,6 +794,9 @@ export function createIngest({
               a year of monthly refreshes put every cell past the cap: the
               first time one then failed, the worker abandoned it for good. */
            attempts = 0,
+           /* And nothing is owed: a cell that has just been read is not
+              waiting on a backoff from the last time it did not. */
+           next_attempt_at = null,
            cursor = null, last_refresh = now(), error = null`,
         [
           cell,

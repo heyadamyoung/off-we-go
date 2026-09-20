@@ -27,6 +27,92 @@ import {
   sourcesFor,
 } from './places/store.js'
 
+/* How long a migration may sit in the lock queue before it gets out of the
+   way, and how long the whole run may keep trying. */
+export const MIGRATION_LOCK_TIMEOUT = '3s'
+export const MIGRATION_RETRY_MS = Object.freeze([1000, 2000, 5000, 10_000, 30_000])
+export const MIGRATION_BUDGET_MS = 30 * 60_000
+
+/** Postgres says "I gave up waiting for a lock" / "we deadlocked". */
+const contended = error => error?.code === '55P03' || error?.code === '40P01'
+
+/**
+ * One migration, applied. It waits its turn rather than blocking the queue,
+ * and it does not stop trying.
+ *
+ * Two things went wrong at once to make this necessary, and they are worth
+ * keeping written down.
+ *
+ * `alter table places add column label_zoom real` is a catalog change —
+ * microseconds of work — but it needs ACCESS EXCLUSIVE on `places`, and the
+ * sweep container writes to `places` without pause. With no lock_timeout the
+ * ALTER joined the queue and stayed there. The API runs migrations before it
+ * listens, so it never listened; twelve health probes failed over two
+ * minutes; the deploy concluded the release was bad and rolled it back. The
+ * release was fine. Nothing about it was ever tried again.
+ *
+ * And a statement waiting for ACCESS EXCLUSIVE is not waiting quietly: every
+ * query that arrives afterwards queues behind it, so for those two minutes
+ * the live map could not read the table either. A deploy took the map down
+ * and then reverted itself for having done so.
+ *
+ * So: a short lock_timeout, set inside the transaction, which turns "wait for
+ * ever and block everyone" into "ask, and step aside" — the statement fails
+ * with 55P03 in three seconds and the queue behind it never forms. Then ask
+ * again. The window this needs is microseconds long and the writer commits
+ * many times a minute, so it is had within a few tries.
+ *
+ * The fallback, which is the part that matters: it never gives up and it
+ * never moves on. A migration that cannot be applied is retried until the
+ * budget is gone and then throws, loudly, naming itself — it is never marked
+ * applied, never skipped, and the server never starts on a schema that does
+ * not match the code. Slow is recoverable. Silently skipped is not.
+ */
+export async function applyMigration(client, name, sql, checksum, options = {}) {
+  const {
+    budgetMs = MIGRATION_BUDGET_MS,
+    waits = MIGRATION_RETRY_MS,
+    lockTimeout = MIGRATION_LOCK_TIMEOUT,
+    log = console.warn,
+    sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    now = () => Date.now(),
+  } = options
+  const until = now() + budgetMs
+  for (let attempt = 1; ; attempt += 1) {
+    await client.query('begin')
+    try {
+      /* `local`, so it is the transaction's and not the connection's: the
+         pool hands this client on afterwards and the next thing to use it
+         must not inherit a three-second patience. */
+      await client.query(`set local lock_timeout = '${lockTimeout}'`)
+      await client.query(sql)
+      await client.query('insert into schema_migrations(name,checksum) values($1,$2)', [
+        name,
+        checksum,
+      ])
+      await client.query('commit')
+      if (attempt > 1) log(`migration ${name}: applied on attempt ${attempt}`)
+      return { attempts: attempt }
+    } catch (error) {
+      await client.query('rollback').catch(() => {})
+      if (!contended(error)) throw error
+      const wait = waits[Math.min(attempt, waits.length) - 1]
+      if (now() + wait >= until) {
+        throw new Error(
+          `Migration ${name} could not get its lock in ${Math.round(budgetMs / 60_000)} minutes — ` +
+            'something is holding the table it alters. It has NOT been applied, and nothing ' +
+            'below it has been either.',
+        )
+      }
+      log(
+        `migration ${name}: the table it alters is busy (${error.code}); ` +
+          `asking again in ${wait / 1000}s`,
+      )
+      await sleep(wait)
+    }
+  }
+}
+
 const here = dirname(fileURLToPath(import.meta.url))
 const migrationsDirectory = join(here, '..', 'migrations')
 
@@ -355,18 +441,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
             }
             continue
           }
-          await client.query('begin')
-          try {
-            await client.query(sql)
-            await client.query('insert into schema_migrations(name,checksum) values($1,$2)', [
-              name,
-              checksum,
-            ])
-            await client.query('commit')
-          } catch (error) {
-            await client.query('rollback')
-            throw error
-          }
+          await applyMigration(client, name, sql, checksum)
         }
       } finally {
         await client.query('select pg_advisory_unlock(9152027)').catch(() => {})
