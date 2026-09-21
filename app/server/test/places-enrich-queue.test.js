@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import pg from 'pg'
 import { READY, BARREN } from '../src/places/enrich/enrich.js'
-import { fromTable, fromTableThenOverpass } from '../src/places/enrich/osm.js'
 import {
   claimEnrichment,
   enqueue,
@@ -253,26 +252,25 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
     })
     await place(pool, 'Corner Shop', 17)
 
-    /* An OSM landmark sitting where the castle is, carrying the tags an
-       editor would have put on it. */
-    await pool.query(
-      `insert into osm_landmarks (id, name, geom, category, website, wikidata)
-       values ('way/1', 'Edinburgh Castle',
-               ST_SetSRID(ST_MakePoint(-3.1999, 55.9486),4326)::geography,
-               'historic', 'https://edinburghcastle.scot', 'Q209507')`,
-    )
-
     const worker = createEnrichWorker({
       pool,
       sources: {
-        osmNear: fromTable(pool),
-        entity: async () => ({
-          id: 'Q209507',
-          descriptions: { en: { value: 'castle in Edinburgh, Scotland' } },
-          claims: {},
-          sitelinks: {},
+        near: async () => ({
+          query: {
+            geosearch: [
+              { pageid: 1, title: 'Edinburgh Castle', lat: 55.9486, lon: -3.1999, dist: 3 },
+            ],
+          },
         }),
-        summary: async () => null,
+        entity: async () => null,
+        summary: async () => ({
+          type: 'standard',
+          lang: 'en',
+          extract:
+            'Edinburgh Castle is a historic castle in Edinburgh, Scotland, standing on ' +
+            'Castle Rock above the city.',
+          content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Edinburgh_Castle' } },
+        }),
         files: async () => ({ query: { pages: [] } }),
       },
     })
@@ -285,85 +283,53 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
     await worker.once()
     const read = await readEnrichment(pool, castle)
     assert.equal(read.status, READY)
-    assert.equal(read.description.source, 'Wikidata')
+    assert.equal(read.description.source, 'Wikipedia')
 
     const shop = await pool.query('select count(*)::int as n from place_enrichment')
     assert.equal(shop.rows[0].n, 1, 'and the corner shop was never queued')
   })
 
-  await t.test('the backfill never reaches the volunteer service', async t => {
-    /* The defect this replaces, in full, because it is the kind that costs
-       somebody else rather than us and so never shows up in our own graphs.
+  await t.test('nothing in the chain reaches a volunteer service', async t => {
+    /* The hazard this replaces: the chain went through OpenStreetMap, our
+       own copy of it was empty until somebody loaded a planet extract, and
+       every backfill place therefore fell through to overpass-api.de. Four
+       hundred queued at a time, six every thirty seconds — seven hundred and
+       twenty requests an hour to a service run on donations, for work nobody
+       was waiting on.
      *
-     * `fromTableThenOverpass` fell through to overpass-api.de whenever our
-     * own `osm_landmarks` had nothing within range. That table is empty
-     * until a planet extract is loaded into it, so "nothing" was every place
-     * — and the backfill queues four hundred prominent places at a time and
-     * takes six every thirty seconds. Seven hundred and twenty requests an
-     * hour to a service run on donations, for work nobody is waiting on.
-     *
-     * index.js said "the backfill never touches it" above the wiring. It had
-     * said so for three releases. Nothing checked. */
+     * It cannot happen now because there is no such hop: the chain asks
+     * Wikipedia for the article and Wikipedia is a CDN-fronted API built for
+     * being asked. This asserts the absence, because the absence is the
+     * fix — a source named here again would be a regression nobody would
+     * otherwise see until somebody else's server fell over. */
     const pool = await freshDatabase(t)
-    const castle = await place(pool, 'Edinburgh Castle', 11)
-    /* Zoom 17, so the prominent top-up never reaches it — the only way this
-       one is ever queued is somebody opening its card. */
-    const opened = await place(pool, 'Greyfriars Kirk', 17, { lng: -3.1918, lat: 55.9472 })
+    await place(pool, 'Edinburgh Castle', 11)
 
-    const asked = []
+    const named = []
     const worker = createEnrichWorker({
       pool,
-      sources: {
-        osmNear: fromTableThenOverpass(fromTable(pool), async there => {
-          asked.push(there.name)
-          return []
-        }),
-        entity: async () => null,
-        summary: async () => null,
-        files: async () => null,
-      },
+      sources: new Proxy(
+        {
+          near: async () => ({ query: { geosearch: [] } }),
+          entity: async () => null,
+          summary: async () => null,
+          files: async () => null,
+        },
+        {
+          get(target, key) {
+            if (typeof key === 'string') named.push(key)
+            return target[key]
+          },
+        },
+      ),
     })
-
-    /* With `osm_landmarks` empty the backfill does not start at all, which is
-       a stronger guarantee than "starts and declines to ask Overpass".
-     *
-     * It also stops the other half of this hazard, which is ours rather than
-     * somebody else's: a place looked up against an empty table comes back
-     * "no OpenStreetMap object matches", that is BARREN, and BARREN is
-     * written down as finished. Four hundred at a time, one evening, and
-     * every prominent place on earth is recorded as having nothing to show —
-     * from a query against an empty table. Nothing retries them either;
-     * enqueueProminent only picks a row up again when the pipeline version
-     * changes. */
     await worker.once()
-    assert.equal(await statusOf(pool, castle), undefined, 'the backfill queued with no landmarks')
     await worker.once()
-    assert.deepEqual(asked, [], `the backfill asked Overpass about ${asked.join(', ')}`)
-
-    /* Somebody opens a card, which is what /api/places/:id does for a place
-       enrichment has never reached. That is the one case the volunteer
-       service exists for, and it still works with an empty table — a gate
-       that stopped everything would be a worse bug wearing the same test. */
-    await enqueue(pool, [opened], WANTED_NOW)
-    await worker.once()
-    assert.deepEqual(asked, ['Greyfriars Kirk'])
-
-    /* And once there is something to match against, the backfill runs — and
-       still never asks. This is the assertion that keeps the original
-       guarantee alive: the gate above would satisfy this test on its own by
-       never doing any work at all, which is not the property we want. */
-    await pool.query(
-      `insert into osm_landmarks (id, name, geom, category, website, wikidata)
-       values ('way/1', 'Edinburgh Castle',
-               ST_SetSRID(ST_MakePoint(-3.1999, 55.9486),4326)::geography,
-               'historic', null, 'Q209507')`,
+    assert.deepEqual(
+      [...new Set(named)].filter(one => /osm|overpass/i.test(one)),
+      [],
+      `the chain reached for ${named.join(', ')}`,
     )
-    asked.length = 0
-    await worker.once()
-    assert.equal(await statusOf(pool, castle), 'pending', 'the backfill never started')
-    await worker.once()
-    assert.deepEqual(asked, [], `the backfill asked Overpass about ${asked.join(', ')}`)
-    assert.ok(await readEnrichment(pool, castle), 'the castle was never worked')
   })
 
   await t.test('a source that throws leaves the place waiting, not lost', async t => {
@@ -374,8 +340,8 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
     const worker = createEnrichWorker({
       pool,
       sources: {
-        osmNear: async () => {
-          throw new Error('Overpass answered 504')
+        near: async () => {
+          throw new Error('Wikipedia answered 504')
         },
         entity: async () => null,
         summary: async () => null,

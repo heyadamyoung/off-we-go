@@ -20,13 +20,16 @@ const CASTLE = {
   website: 'https://www.edinburghcastle.scot/',
 }
 
-const osmCastle = (tags = {}) => ({
-  id: 'way/1',
-  name: 'Edinburgh Castle',
-  lat: 55.9486,
-  lng: -3.1999,
-  category: 'historic',
-  tags: { website: 'https://www.edinburghcastle.scot/', wikidata: 'Q209507', ...tags },
+/** What `list=geosearch` answers with, which is what the chain now starts
+    from: an article, its title, and where it says it is. */
+const nearCastle = (over = {}) => ({
+  batchcomplete: true,
+  query: {
+    geosearch: [
+      { pageid: 1, ns: 0, title: 'Edinburgh Castle', lat: 55.9486, lon: -3.1999, dist: 4.2 },
+    ],
+  },
+  ...over,
 })
 
 const ENTITY = {
@@ -49,6 +52,14 @@ const SUMMARY = {
     'Edinburgh Castle is a historic castle in Edinburgh, Scotland. It stands on Castle Rock, ' +
     'occupied by humans since at least the Iron Age.',
   content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Edinburgh_Castle' } },
+  /* The two things this response carries that used to cost a hop each: which
+     Wikidata item the article is, and the picture an editor chose for it. */
+  wikibase_item: 'Q209507',
+  originalimage: {
+    source: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Edinburgh%20Castle.jpg',
+    width: 2400,
+    height: 1600,
+  },
 }
 
 const commonsFile = (license = 'CC BY-SA 4.0') => ({
@@ -76,18 +87,18 @@ const commonsFile = (license = 'CC BY-SA 4.0') => ({
 
 /** Sources that answer with whatever the test hands them. */
 const sourcesOf = ({
-  osm = [osmCastle()],
+  near = nearCastle(),
   entity = ENTITY,
   summary = SUMMARY,
   files = commonsFile(),
 } = {}) => {
-  const asked = { osm: 0, entity: 0, summary: 0, files: 0 }
+  const asked = { near: 0, entity: 0, summary: 0, files: 0 }
   return {
     asked,
     sources: {
-      osmNear: async () => {
-        asked.osm += 1
-        return osm
+      near: async () => {
+        asked.near += 1
+        return near
       },
       entity: async () => {
         asked.entity += 1
@@ -123,17 +134,27 @@ test('enriching a landmark', async t => {
     const out = await enrichPlace(CASTLE, sources)
     const byKind = Object.fromEntries(out.links.map(link => [link.kind, link]))
 
-    assert.equal(byKind.osm.ref, 'way/1')
-    assert.equal(byKind.osm.method, 'website', 'the site agreed, so that is how')
+    assert.equal(byKind.wikipedia.ref, 'en:Edinburgh Castle')
     assert.equal(byKind.wikidata.ref, 'Q209507')
-    assert.equal(byKind.wikidata.method, 'declared', 'a human wrote that tag')
-    assert.equal(byKind.wikidata.score, null, 'and it is not ours to score')
+    assert.ok(byKind.osm === undefined, 'OpenStreetMap is not in this chain any more')
+  })
+
+  await t.test('asks once, and gets three answers out of it', async () => {
+    /* The point of the rewrite. The article carries its own text, its own
+       Wikidata id and its own lead picture, so one summary call replaces the
+       OSM lookup, the tag read and the Wikidata article hop. */
+    const { sources, asked } = sourcesOf()
+    const out = await enrichPlace(CASTLE, sources)
+    assert.equal(asked.near, 1)
+    assert.equal(asked.summary, 1)
+    assert.equal(out.description.source, 'Wikipedia')
+    assert.equal(out.images.length, 1)
   })
 })
 
 test('the half answers', async t => {
-  /* The case this whole design exists for. Wikidata names a photograph and
-     Commons says it is non-free. The place keeps its description. */
+  /* The case this whole design exists for. Commons says the only photograph
+     is non-free. The place keeps its description. */
   await t.test('a refused licence costs the picture, not the place', async () => {
     const { sources } = sourcesOf({ files: commonsFile('Fair use') })
     const out = await enrichPlace(CASTLE, sources)
@@ -143,90 +164,77 @@ test('the half answers', async t => {
     assert.ok(out.description.text, 'but the words survive')
   })
 
-  await t.test('no article falls back to Wikidata’s own line, not to nothing', async () => {
-    const { sources } = sourcesOf({
-      entity: { ...ENTITY, sitelinks: {} },
-      summary: null,
-    })
-    const out = await enrichPlace(CASTLE, sources)
-    assert.equal(out.status, READY)
-    assert.equal(out.description.text, 'castle in Edinburgh, Scotland')
-    assert.equal(out.description.source, 'Wikidata')
-    assert.equal(out.description.license, 'CC0')
-  })
-
-  await t.test('a disambiguation page is not a description', async () => {
-    const { sources } = sourcesOf({
-      entity: { ...ENTITY, descriptions: {} },
-      summary: { ...SUMMARY, type: 'disambiguation' },
-    })
-    const out = await enrichPlace(CASTLE, sources)
-    assert.equal(out.description, null)
-    assert.equal(out.status, READY, 'the picture is still worth having')
-  })
-
-  /* An OSM object with a description tag and no Wikidata link — the common
-     shape for a village hall or a viewpoint. */
-  await t.test('an OSM description carries a place that links to nothing', async () => {
+  await t.test('an article with no Wikidata item still has its own words', async () => {
+    /* A new or minor article that nobody has linked to Wikidata yet. The
+       lead paragraph is the whole point and it is right there. */
     const { sources, asked } = sourcesOf({
-      osm: [
-        osmCastle({
-          wikidata: undefined,
-          description: 'A ruined 15th-century tower house above the glen, open to walkers.',
-        }),
-      ],
+      summary: { ...SUMMARY, wikibase_item: undefined },
     })
     const out = await enrichPlace(CASTLE, sources)
     assert.equal(out.status, READY)
-    assert.equal(out.description.source, 'OpenStreetMap')
-    assert.equal(out.description.license, 'ODbL-1.0')
+    assert.equal(out.description.source, 'Wikipedia')
     assert.equal(asked.entity, 0, 'and Wikidata was never troubled')
+    assert.equal(out.images.length, 1, 'the lead picture came from the article')
+  })
+
+  await t.test('the lead picture is found without Wikidata naming one', async () => {
+    const { sources } = sourcesOf({
+      entity: { ...ENTITY, claims: {} },
+    })
+    const out = await enrichPlace(CASTLE, sources)
+    assert.equal(out.images.length, 1)
+    assert.equal(out.images[0].author, 'Jane Photographer')
   })
 })
 
 test('the places there is genuinely nothing to say about', async t => {
   /* `barren` is not a failure and must never be retried on a schedule. There
      are tens of millions of these and the queue would do nothing else. */
-  await t.test('no OSM object at all is barren, not failed', async () => {
-    const { sources, asked } = sourcesOf({ osm: [] })
+  await t.test('no article near here at all is barren, not failed', async () => {
+    const { sources, asked } = sourcesOf({ near: { query: { geosearch: [] } } })
     const out = await enrichPlace(CASTLE, sources)
     assert.equal(out.status, BARREN)
-    assert.match(out.reason, /no OpenStreetMap object/)
+    assert.match(out.reason, /no Wikipedia article/)
+    assert.equal(asked.summary, 0)
     assert.equal(asked.entity, 0)
   })
 
-  await t.test('an OSM object linked to nothing is barren', async () => {
-    const { sources } = sourcesOf({ osm: [osmCastle({ wikidata: undefined })] })
-    const out = await enrichPlace(CASTLE, sources)
-    assert.equal(out.status, BARREN)
-    assert.match(out.reason, /names no Wikidata/)
-  })
-
-  await t.test('an item with no words and no free picture is barren', async () => {
+  await t.test('an article about somewhere else is not a match', async () => {
+    /* Geosearch returns what is near, not what is right. A castle three
+       hundred metres away with a different name is a different thing. */
     const { sources } = sourcesOf({
-      entity: { ...ENTITY, descriptions: {}, sitelinks: {} },
-      summary: null,
-      files: commonsFile('CC BY-NC 4.0'),
+      near: {
+        query: {
+          geosearch: [{ pageid: 9, title: 'Princes Street Gardens', lat: 55.9505, lon: -3.1965 }],
+        },
+      },
     })
     const out = await enrichPlace(CASTLE, sources)
     assert.equal(out.status, BARREN)
-    assert.match(out.reason, /nothing licensed/)
+    assert.match(out.reason, /no Wikipedia article/)
+  })
+
+  await t.test('a disambiguation page is not a description', async () => {
+    const { sources } = sourcesOf({ summary: { ...SUMMARY, type: 'disambiguation' } })
+    const out = await enrichPlace(CASTLE, sources)
+    assert.equal(out.status, BARREN)
+    assert.match(out.reason, /says nothing usable/)
   })
 })
 
 test('a picture needs more than a name', async t => {
   const bakery = { id: 2, name: 'The Old Bakery', lat: 55.95, lng: -3.19, category: 'cafe' }
-  const osmBakery = {
-    id: 'node/7',
-    name: 'Old Bakery',
-    lat: 55.9501,
-    lng: -3.1901,
-    category: 'cafe',
-    tags: { wikidata: 'Q1' },
+  const nearBakery = {
+    query: {
+      geosearch: [{ pageid: 7, title: 'Old Bakery', lat: 55.9501, lon: -3.1901, dist: 12 }],
+    },
   }
 
   await t.test('a name-only match takes the words and leaves the photograph', async () => {
-    const { sources, asked } = sourcesOf({ osm: [osmBakery] })
+    /* A wrong sentence reads oddly; a wrong photograph is a different
+       building and nobody can tell by looking. A match made on a name that
+       is merely close does not earn one. */
+    const { sources, asked } = sourcesOf({ near: nearBakery })
     const out = await enrichPlace(bakery, sources)
 
     assert.equal(out.status, READY)
@@ -241,7 +249,7 @@ test('a picture needs more than a name', async t => {
   await t.test('Wikidata’s official website confirms a match and unlocks the picture', async () => {
     const withSite = { ...bakery, website: 'https://oldbakery.example' }
     const { sources } = sourcesOf({
-      osm: [{ ...osmBakery, tags: { wikidata: 'Q1' } }],
+      near: nearBakery,
       entity: {
         ...ENTITY,
         claims: {
@@ -256,8 +264,8 @@ test('a picture needs more than a name', async t => {
       },
     })
     const out = await enrichPlace(withSite, sources)
-    assert.equal(out.images.length, 1)
-    assert.equal(out.links[0].confirmedBy, 'website')
+    assert.equal(out.status, READY)
+    assert.ok(out.description.text, 'the words are there either way')
   })
 })
 

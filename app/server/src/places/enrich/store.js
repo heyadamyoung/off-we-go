@@ -93,22 +93,16 @@ const CLAIM = `
 /**
  * The places this tick has taken, with what the enricher needs to work.
  *
- * `priority` travels with them, and that is not bookkeeping.
+ * `priority` travels with them: the claim sorts a person waiting on an open
+ * card in front of a backfill queued an hour ago, and returning six rows
+ * that looked identical meant nothing downstream could tell them apart.
  *
- * It used to be ordered by and then dropped: the claim sorted a person
- * waiting on a card in front of a backfill queued an hour ago, and then
- * returned six rows that looked identical. Nothing downstream could tell
- * them apart — so `fromTableThenOverpass` could not either, and fell through
- * to a volunteer-run public API for any place our own copy of OSM did not
- * know about. With `osm_landmarks` empty that is every place, backfill
- * included: four hundred prominent places queued at a time, six a tick,
- * every thirty seconds, against overpass-api.de. Seven hundred and twenty
- * requests an hour, from a backfill nobody is waiting for, at somebody
- * else's expense.
- *
- * The comment in index.js said "the backfill never touches it". It said that
- * for three releases and it was never true. It is true now because the
- * priority reaches the place that decides — see fromTableThenOverpass.
+ * It was load-bearing for a while. `fromTableThenOverpass` used it to decide
+ * whether a place was worth asking a volunteer API about — a gate that only
+ * existed because the chain went through OpenStreetMap at all. It does not
+ * any more, so nothing reads this to protect somebody else's service. It is
+ * kept because the ordering it records is real, and a claim that sorts by a
+ * field and then discards it is a claim you cannot debug.
  */
 export async function claimEnrichment(db, count = 4) {
   if (count <= 0) return []

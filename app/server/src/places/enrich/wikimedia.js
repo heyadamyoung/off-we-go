@@ -25,6 +25,14 @@
 const WIKIDATA = 'https://www.wikidata.org/w/api.php'
 const COMMONS = 'https://commons.wikimedia.org/w/api.php'
 const WIKIPEDIA = language => `https://${language}.wikipedia.org/api/rest_v1/page/summary`
+const WIKIPEDIA_API = language => `https://${language}.wikipedia.org/w/api.php`
+
+/** How far around a place to look for an article about it. Wider than the
+    200-metre gate identity.js applies: the search only has to not miss the
+    candidate, the gate decides. */
+export const NEAR_METRES = 300
+/** More than this and the matcher is choosing between duplicates anyway. */
+export const MOST_NEARBY = 20
 
 /** Most ids one `wbgetentities` or `imageinfo` call may carry. */
 export const BATCH = 50
@@ -111,6 +119,42 @@ export function createWikimedia({
   }
 
   return {
+    /**
+     * The articles written about somewhere near a point.
+     *
+     * This is the whole of the identification step, and it used to be three
+     * hops: find the OpenStreetMap object at these coordinates, read its
+     * `wikidata` tag, then ask Wikidata which article that is. OSM knew
+     * nothing about the place we did not already know — not its name, not
+     * its category, not where it is. It was a lookup table from a position
+     * to a Q-id, and it cost a planet extract, a second spatial index, a
+     * loader, and a fallback to a volunteer API for everything the extract
+     * did not have. Which, until somebody loaded one, was everywhere.
+     *
+     * An article is what we are actually looking for. It carries the
+     * sentences, the lead image, and its own Wikidata id — so asking for it
+     * directly is one hop, no extract, and nothing to keep in step.
+     *
+     * `list=geosearch` is the MediaWiki Action API, CDN-fronted and built for
+     * exactly this. Not the endpoint that got the old per-device Wikipedia
+     * walk rate-limited: that was every phone asking for a hundred and fifty
+     * circles of its own. This is one server asking once per place, six every
+     * thirty seconds, and writing the answer into our database for good.
+     */
+    async near({ lat, lng, radius = NEAR_METRES, lang = 'en' } = {}, options = {}) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+      const url = `${WIKIPEDIA_API(lang)}?${new URLSearchParams({
+        action: 'query',
+        list: 'geosearch',
+        gscoord: `${lat}|${lng}`,
+        gsradius: String(Math.round(radius)),
+        gslimit: String(MOST_NEARBY),
+        format: 'json',
+        formatversion: '2',
+      })}`
+      return await ask(url, options)
+    },
+
     /** One Wikidata entity, or several — `wbgetentities` takes up to fifty. */
     async entity(id, options = {}) {
       const ids = Array.isArray(id) ? id : [id]
