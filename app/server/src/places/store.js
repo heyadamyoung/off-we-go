@@ -882,7 +882,7 @@ const TILE_BUFFER = 64
  */
 /** The category weights, checked. They are composed into SQL rather than
     bound, so the names are proved to be our own twenty before they go in. */
-function weightPairs(weights, what) {
+export function weightPairs(weights, what) {
   const kinds = Object.entries(weights || {})
   if (!kinds.length) throw new Error(`places: ${what} needs the category weights`)
   for (const [category] of kinds) {
@@ -894,7 +894,7 @@ function weightPairs(weights, what) {
 /** What a mark is worth: its kind, scaled by how sure we are of the record.
     The same number decides which marks a crowded tile keeps and which name
     survives a collision. `p` is the places row. */
-function markRankSql(kinds) {
+export function markRankSql(kinds) {
   return `((case p.category ${kinds
     .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
     .join(' ')} else 0.100 end) * (0.4 + 0.6 * least(1, greatest(0, p.confidence))))`

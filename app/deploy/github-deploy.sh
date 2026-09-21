@@ -652,7 +652,11 @@ echo "places: $(places_now "
     (select count(*) from place_descriptions) || ' with words, ' ||
     (select count(distinct place_id) from place_images) || ' with a picture, ' ||
     (select count(*) from place_enrichment where status = 'barren') || ' nothing to show, ' ||
-    (select count(*) from place_enrichment where status in ('pending','working')) || ' queued'")"
+    (select count(*) from place_enrichment where status in ('pending','working')) || ' queued, ' ||
+    (select count(*) from places p
+       left join place_enrichment e on e.place_id = p.id
+      where p.label_zoom is not null and p.label_zoom <= 13 and e.place_id is null
+    ) || ' still to reach'")"
 
 # Whether a sweep is running, crash-looping or stopped — and its last words
 # in all three cases.
