@@ -95,11 +95,22 @@ test('the demo thins the way the server does, and cannot drift from it', async (
   const server = await readFile(new URL('../server/src/places/rank.js', import.meta.url), 'utf8')
   const demo = await readFile(new URL('../src/sample-places-core.ts', import.meta.url), 'utf8')
 
-  /* Neither side ranks any more. A quota on one and not the other would be a
-     demo of a different product, and a quota on both would be two copies of a
-     rule this stopped having. */
-  assert.ok(!/LABEL_PER_TILE/.test(server), 'the server thins by a per-tile quota again')
-  assert.ok(!/SAMPLE_PER_TILE|squareOf/.test(demo), 'the demo thins by a per-tile quota again')
+  /* The server thins by two rules — a kind may not rise above its station,
+     and among the kinds allowed at a zoom the best two dozen a square get the
+     slots. The second is what the demo does not need and must not fake: its
+     whole world is twenty-two places in one city, fewer than a single square
+     holds, so no square of it ever fills and the budget would never bind.
+     What it must do is agree about the first rule, which is the table below.
+
+     A budget copied into the demo would be a number drifting from the
+     server's in a file nobody re-reads; a budget missing from the server
+     would be the carpet of dots, which is what this line is really guarding.
+     So: exactly one side carries it. */
+  assert.match(server, /export const MARKS_PER_TILE = \d+/, 'the server has no per-tile budget')
+  assert.ok(
+    !/PER_TILE|squareOf/.test(demo),
+    'the demo carries a copy of the budget, which is a number waiting to drift',
+  )
   /* And the table that was deleted is not quietly still here. */
   assert.ok(!/MARK_ZOOM/.test(demo), 'no copy of the zoom table the server no longer has')
   assert.ok(!/MARK_ZOOM/.test(server), 'and the server does not have one either')

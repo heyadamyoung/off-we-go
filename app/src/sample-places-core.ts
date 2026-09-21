@@ -13,15 +13,15 @@ import type { AttractionPoi } from './shared/model/types'
  * Amsterdam, because that is where the sample trip goes. Real places at real
  * coordinates, and the categories are the ones the server would give them.
  */
-/* The zooms the server thins at, and the one it does not. Kept in step with
-   places/rank.js LABEL_ZOOMS and LABEL_PER_TILE by the test beside this file,
-   which reads both and fails when they part. */
-
 /* The furthest away each kind may ever be drawn from — places/rank.js
-   EARLIEST_ZOOM, kept in step by the test beside this file. Density alone put
-   a café on the map from across Amsterdam here, because twenty-two places do
-   not fill a square and the algorithm was right that there was room. Room is
-   not the only question. */
+   EARLIEST_ZOOM, kept in step by the test beside this file, which reads both
+   tables and fails when they part.
+   The server's other rule, the budget of marks a square may carry, is
+   deliberately not copied here. Twenty-two places in one city never fill a
+   square, so it would never bind — and a number copied into a file nobody
+   re-reads is a number that drifts. Density alone put a café on the map from
+   across Amsterdam once, because the algorithm was right that there was room;
+   room is not the only question, which is what this table answers. */
 const SAMPLE_EARLIEST: Record<string, number> = {
   sights: 11,
   viewpoint: 11,

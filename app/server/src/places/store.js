@@ -880,18 +880,45 @@ const TILE_BUFFER = 64
  *   taxonomy lives in one file and this is where it is spent.
  * @returns {Promise<Buffer>} the tile, empty when nothing is in it
  */
-export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
+/** The category weights, checked. They are composed into SQL rather than
+    bound, so the names are proved to be our own twenty before they go in. */
+function weightPairs(weights, what) {
   const kinds = Object.entries(weights || {})
-  if (!kinds.length) throw new Error('places: a tile needs the category weights')
+  if (!kinds.length) throw new Error(`places: ${what} needs the category weights`)
   for (const [category] of kinds) {
     if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
   }
-  /* Which mark wins a collision, once MapLibre is drawing them. The zoom a
-     place appears at is a column now; this is the only number still worked
-     out per request, and it is the same weight the zoom pass ranked by. */
-  const rank = `((case p.category ${kinds
+  return kinds
+}
+
+/** What a mark is worth: its kind, scaled by how sure we are of the record.
+    The same number decides which marks a crowded tile keeps and which name
+    survives a collision. `p` is the places row. */
+function markRankSql(kinds) {
+  return `((case p.category ${kinds
     .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
     .join(' ')} else 0.100 end) * (0.4 + 0.6 * least(1, greatest(0, p.confidence))))`
+}
+
+/* The slippy tile a point falls in, as SQL.
+ *
+ * Web Mercator, the same arithmetic the client does to decide which tiles to
+ * ask for and the same ST_TileEnvelope divides the world into. Latitude is
+ * clamped to the projection's own limit before the tangent, because tan(90°)
+ * is not a number and one row at a pole would take a whole cell's pass with
+ * it. */
+const TILE_X = (lng, z) => `floor(((${lng}) + 180) / 360 * (1 << ${z}))`
+const TILE_Y = (lat, z) =>
+  `floor((1 - ln(tan(radians(least(85.0511, greatest(-85.0511, ${lat})))) +
+     1 / cos(radians(least(85.0511, greatest(-85.0511, ${lat}))))) / pi()) / 2 * (1 << ${z}))`
+
+export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
+  const kinds = weightPairs(weights, 'a tile')
+  /* Which mark wins a collision, once MapLibre is drawing them — and, in
+     assignLabelZoom, which mark earns the zoom in the first place. One
+     expression for both, because a place that outranks another for a slot
+     and loses to it for a label is two rankings pretending to be one. */
+  const rank = markRankSql(kinds)
   const sql = `
     with bounds as (select ST_TileEnvelope($1, $2, $3) as box),
     picked as (
@@ -940,65 +967,82 @@ export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
   return result.rows[0]?.tile ?? Buffer.alloc(0)
 }
 
-/* The slippy tile a point falls in, as SQL rather than as JavaScript.
- *
- * The same arithmetic as places/tiles.js tileX and tileY, which is why the
- * two are tested against each other: a sign error here silently ranks places
- * against the wrong neighbours, which looks like nothing at all until a city
- * is bare and a field is crowded. */
 /**
- * Give every place the zoom its kind appears from.
+ * The zoom each place is drawn from, decided by what it is worth against what
+ * it stands next to.
  *
- * One lookup per row and nothing else: a museum is drawn from 11, a café from
- * 14, a launderette from 16, and that is true in Amsterdam and in Regina and
- * on Skye. The table is EARLIEST_ZOOM in rank.js and it is the whole rule.
+ * Two rules, and the map is wrong when either is missing.
  *
- * It used to be a ranking. For each zoom that thins, the places in each
- * square were put in order of what they are worth and the best
- * two dozen of them earned that zoom; everything else fell through to
- * the next. That is what a tiler does and it reads well on a screen, and it
- * had a property nobody wanted: a place's zoom depended on its neighbours. An
- * identical museum appeared at 12 in Regina and 15 in Amsterdam, and "the
- * zoom decides what is drawn" was not true — the crowd decided, and the zoom
- * only decided how big the crowd was allowed to be.
+ * The first is the kind. A launderette is not a thing you see from orbit
+ * whatever else is around it, so every category has a zoom it cannot appear
+ * before — EARLIEST_ZOOM in rank.js. That alone was the whole rule for three
+ * releases, and a rule of kinds thins nothing: eleven of our twenty
+ * categories sit at zoom 11, so a city seen from far out drew every museum,
+ * viewpoint, historic site, market and transit stop it had. Which is a
+ * carpet, reported as one, twice.
  *
- * So the quota is gone. At a zoom you get every place whose kind belongs
- * there, however many that is, which is the thing a person means when they
- * zoom in. Nothing downstream caps it either: the viewport query has no
- * limit, because the zoom a viewport derives from its own width already
- * bounds what can match.
+ * The second is the crowd, and it is the one that does the thinning. At each
+ * zoom the marks in each tile square are ordered by what they are worth —
+ * markRankSql, the same number that decides which label survives a collision
+ * — and the best `perTile` of them earn that zoom. A place takes the earliest
+ * zoom it wins a slot at, and never earlier than its kind allows.
  *
- * What is kept is the part that was load-bearing: one number per row, and a
- * tile is `label_zoom <= z`, so a mark that has appeared cannot disappear as
- * you zoom further in. Monotonic by construction, as before.
+ * That the two compose into something monotonic is not luck. A z+1 square
+ * holds a subset of its parent's places, so a mark among the best two dozen
+ * of the parent is among the best two dozen of the child: once a mark has
+ * appeared it cannot vanish as you go further in. Worth stating plainly,
+ * because dots flickering in and out on a zoom is the complaint this column
+ * exists to answer.
  *
- * And it is now a plain UPDATE rather than six zooms of window function over
- * every row in the region. The densest degree on Earth was measured at 18.2
- * seconds under the old rule, which is why the backfill never finished; this
- * is an index scan and an assignment. `is distinct from` so a re-run over a
- * region that is already right writes nothing at all.
+ * And at the deepest zoom there is no contest at all. `floor` is where every
+ * place that never earned a slot lands, the tile pyramid stops there, and the
+ * tile route caps nothing — so a street at full zoom carries every place on
+ * it, two dozen or two million. "Everything is visible close up" is not a
+ * special case bolted on; it is what is left when the ranking runs out of
+ * zooms to thin with.
  *
- * One function, called two ways: the ingest with a cell's bounds inside the
- * cell's own transaction, the backfill with the same. There are no seams to
- * get wrong any more, because no row's answer depends on any other row's.
+ * The cost is a sort of six rows per place — one per zoom between `from` and
+ * `to` — inside the cell's own transaction. The densest degree on Earth was
+ * measured at eighteen seconds of it. That is why this runs a cell at a time
+ * in a worker that yields between them, why the queue takes the cities first,
+ * and why `place_coverage.zoom_policy` records which rule each cell was
+ * placed under: a pass that cannot be resumed is a pass that never finishes,
+ * which is exactly how this failed the first time.
  *
  * @param {{west,south,east,north}|null} bounds  null for the whole world
- * @param {{earliest: Record<string, number>, floor: number}} options
+ * @param {object} options
+ * @param {Record<string, number>} options.earliest  category → its first zoom
+ * @param {Record<string, number>} options.weights   category → what it is worth
+ * @param {number} options.perTile  marks a square may carry before the floor
+ * @param {{from: number, to: number, floor: number}} options.zooms
  * @returns {Promise<number>} rows whose zoom changed
  */
-export async function assignLabelZoom(db, bounds, { earliest, floor }) {
+export async function assignLabelZoom(db, bounds, { earliest, weights, perTile, zooms }) {
   const ceilings = Object.entries(earliest || {})
   if (!ceilings.length) throw new Error('places: a zoom pass needs the category ceilings')
   for (const [category, zoom] of ceilings) {
     if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
     if (!Number.isInteger(zoom)) throw new Error(`places: not a zoom: ${category}=${zoom}`)
   }
-  if (!Number.isInteger(floor)) throw new Error('places: a zoom pass needs the floor zoom')
+  const kinds = weightPairs(weights, 'a zoom pass')
+  if (!Number.isInteger(perTile) || perTile < 1) {
+    throw new Error('places: a zoom pass needs how many marks a square may carry')
+  }
+  const { from, to, floor } = zooms || {}
+  for (const [name, value] of [
+    ['from', from],
+    ['to', to],
+    ['floor', floor],
+  ]) {
+    if (!Number.isInteger(value)) throw new Error(`places: a zoom pass needs ${name}`)
+  }
+  if (!(from <= to && to <= floor)) throw new Error('places: those zooms are not in order')
+
   /* Composed, and checked above, exactly as placeTile composes the same
      table: these are the only statements in this file that are not entirely
      parameters. The values are our own twenty category names, never user
      text. */
-  const at = `case p.category ${ceilings
+  const earliestSql = `case p.category ${ceilings
     .map(([category, zoom]) => `when '${category}' then ${Number(zoom)}`)
     .join(' ')} else ${Number(earliest.other ?? floor)} end`
 
@@ -1012,11 +1056,49 @@ export async function assignLabelZoom(db, bounds, { earliest, floor }) {
    * needs widening; it is a predicate that should not be there. */
   const within = bounds ? 'p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography' : 'true'
   const corners = bounds ? [bounds.west, bounds.south, bounds.east, bounds.north] : []
-  const result = await db.query(
-    `update places p set label_zoom = (${at})::real
-      where ${within} and label_zoom is distinct from (${at})::real`,
-    corners,
-  )
+
+  /* One pass over the zooms rather than a statement per zoom: the squares of
+     every zoom are ranked in a single window whose partition carries the zoom
+     itself, so this is one sort of six rows per place rather than six sorts
+     of one.
+
+     A square that straddles the edge of the region being placed is ranked
+     against the half of itself inside it, so a seam can carry up to twice the
+     budget until its neighbour is placed. Named rather than hidden: the
+     alternative is holding two cells open in one transaction, and the error
+     is one zoom step wide on a boundary nobody is looking at. */
+  const sql = `
+    with here as (
+      select p.id,
+             ST_X(p.geom::geometry) as lng,
+             ST_Y(p.geom::geometry) as lat,
+             (${markRankSql(kinds)}) as rank,
+             (${earliestSql}) as earliest
+      from places p
+      where ${within}
+    ),
+    tiers as (
+      select h.id, z.at,
+             row_number() over (
+               partition by z.at,
+                            ${TILE_X('h.lng', 'z.at')},
+                            ${TILE_Y('h.lat', 'z.at')}
+               order by h.rank desc, h.id
+             ) as place
+      from here h cross join generate_series(${Number(from)}, ${Number(to)}) as z(at)
+    ),
+    earned as (
+      select id, min(at) as at from tiers where place <= ${Number(perTile)} group by id
+    ),
+    decided as (
+      select h.id,
+             greatest(h.earliest, coalesce(e.at, ${Number(floor)}))::real as label_zoom
+      from here h left join earned e on e.id = h.id
+    )
+    update places p set label_zoom = d.label_zoom
+    from decided d
+    where p.id = d.id and p.label_zoom is distinct from d.label_zoom`
+  const result = await db.query(sql, corners)
   return result.rowCount ?? 0
 }
 

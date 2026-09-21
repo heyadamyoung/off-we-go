@@ -59,7 +59,7 @@ import {
 } from '../src/places/ingest.js'
 import { createParquetReader } from '../src/places/parquet.js'
 import { createIndexStore, discoverRelease, releaseIndex } from '../src/places/release.js'
-import { EARLIEST_ZOOM, LABEL_ZOOMS } from '../src/places/rank.js'
+import { EARLIEST_ZOOM, LABEL_ZOOMS, MARKS_PER_TILE, VIEW_WEIGHT } from '../src/places/rank.js'
 import { assignLabelZoom } from '../src/places/store.js'
 import { STANDOFF_MS, createSweep, sweepPlan } from '../src/places/sweep.js'
 
@@ -170,7 +170,9 @@ if (options.rezoom) {
   /* Null rather than a world-sized box: see assignLabelZoom. */
   const placed = await assignLabelZoom(pool, null, {
     earliest: EARLIEST_ZOOM,
-    floor: LABEL_ZOOMS.floor,
+    weights: VIEW_WEIGHT,
+    perTile: MARKS_PER_TILE,
+    zooms: LABEL_ZOOMS,
   })
   const { rows } = await pool.query(
     'select label_zoom, count(*)::int as places from places group by label_zoom order by label_zoom',

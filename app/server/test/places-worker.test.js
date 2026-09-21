@@ -6,10 +6,12 @@ import {
   CONFIDENCE_FLOOR,
   EARLIEST_ZOOM,
   LABEL_ZOOMS,
+  MARKS_PER_TILE,
   VIEW_WEIGHT,
   ZOOM_POLICY,
 } from '../src/places/rank.js'
 import { cellBounds, cellKey } from '../src/places/cells.js'
+import { tileHolds } from '../src/places/mvt.js'
 import {
   assignLabelZoom,
   cellsAwaitingZoom,
@@ -241,6 +243,47 @@ test('a city does not arrive all at once', {
     }
   }
 
+  /* What each square draws at a zoom, bucketed here rather than in SQL.
+   *
+   * The obvious way — count rows whose geography overlaps ST_TileEnvelope —
+   * is what the tile query itself does, and it is deliberately loose: `&&` on
+   * geography compares three-dimensional bounding boxes, which for a patch of
+   * a sphere is a conservative over-approximation. Measured on this fixture,
+   * a z11 square came back with thirty-one marks, six of which belong to the
+   * square next door. That is fine for the tile — ST_AsMVTGeom clips what it
+   * is given, and an edge mark inside the buffer is drawn on purpose — and it
+   * is useless for asking whether the budget held.
+   *
+   * So the rows come back with their coordinates and this puts them in
+   * squares with the same slippy arithmetic the client uses, which is also
+   * the arithmetic the pass uses in SQL. Two independent implementations of
+   * it having to agree is the point: a sign error in either shows up as a
+   * budget that is exceeded or a square that is empty. */
+  const drawnAt = async (pool, z) => {
+    const { rows } = await pool.query(
+      `select id, ST_X(geom::geometry) as lng, ST_Y(geom::geometry) as lat
+         from places
+        where confidence >= $1::real and coalesce(label_zoom, $2::real) <= $3::real`,
+      [CONFIDENCE_FLOOR, LABEL_ZOOMS.from, z],
+    )
+    const squares = new Map()
+    for (const row of rows) {
+      const at = square(Number(row.lng), Number(row.lat), z)
+      const key = `${at.x}/${at.y}`
+      squares.set(key, [...(squares.get(key) ?? []), row.id])
+    }
+    return squares
+  }
+
+  /** The pass itself, spelled once: four arguments that have to agree. */
+  const place = pool =>
+    assignLabelZoom(pool, null, {
+      earliest: EARLIEST_ZOOM,
+      weights: VIEW_WEIGHT,
+      perTile: MARKS_PER_TILE,
+      zooms: LABEL_ZOOMS,
+    })
+
   /* The exact state the box was in: a table full of places with no zoom, and
      no release index, because sixteen downloads off S3 had not finished. The
      zoom pass needs none of that and must not wait for it. */
@@ -268,91 +311,118 @@ test('a city does not arrive all at once', {
     assert.equal(rows[0].unplaced, 0, 'the zoom pass does not wait on the network')
   })
 
-  await t.test('a place is given the zoom its kind is drawn from, and nothing else', async t => {
+  await t.test('a square zoomed out holds two dozen marks, not two thousand', async t => {
     const pool = await freshDatabase(t)
     await city(pool)
-    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
+    await place(pool)
 
-    /* The whole rule, stated exactly. Two thousand five hundred places over a
-       tenth of a degree, seven kinds among them, and every row holds the
-       number its category is drawn from — not a number it won from its
-       neighbours. A ranking used to decide this, and a museum's zoom then
-       depended on how many cafes stood near it. */
-    const byKind = await pool.query(
-      'select category, min(label_zoom) as lo, max(label_zoom) as hi, count(*)::int as n' +
-        ' from places group by category order by category',
-    )
-    assert.ok(byKind.rows.length > 1, 'the fixture holds several kinds')
-    for (const row of byKind.rows) {
-      const wanted = EARLIEST_ZOOM[row.category] ?? EARLIEST_ZOOM.other
-      assert.equal(Number(row.lo), wanted, `${row.category} starts at ${row.lo}, not ${wanted}`)
-      assert.equal(Number(row.hi), wanted, `${row.category} is not all one zoom`)
+    /* The property the whole column exists for, stated over every square of
+       every zoom rather than over one square somebody picked.
+
+       It went missing for three releases: the rule became "a category has a
+       zoom" and nothing else, eleven of the twenty categories sit at 11, and
+       a city from far out therefore drew every museum, viewpoint, historic
+       site and market it had. The tests of the day all passed, because each
+       asserted a piece — the pass assigns, the tile filters, a mark does not
+       vanish — and none asserted the sum. */
+    let busiest = 0
+    for (let z = LABEL_ZOOMS.from; z <= LABEL_ZOOMS.to; z += 1) {
+      for (const [at, marks] of await drawnAt(pool, z)) {
+        busiest = Math.max(busiest, marks.length)
+        assert.ok(
+          marks.length <= MARKS_PER_TILE,
+          `z${z} square ${at} carries ${marks.length} marks, and the budget is ${MARKS_PER_TILE}`,
+        )
+      }
     }
+    assert.equal(busiest, MARKS_PER_TILE, 'a square of a city should be spending its whole budget')
 
-    /* And the same kind in a village gets the same answer as in the city,
-       which is the property a per-tile quota could not have. */
-    await pool.query(
-      `insert into places (gers_id, name, geom, category, category_raw, confidence, cell)
-       values ('overture:lonely', 'The Only Museum For Miles',
-               ST_SetSRID(ST_MakePoint(-109.5, 49.5),4326)::geography,
-               'museum', 'museum', 0.8, 'N49W110')`,
+    /* And through the tile the route actually serves, decoded. The count is
+       the budget plus whatever the 64-unit buffer catches from next door,
+       which is drawn on purpose so a mark on the seam is not half a dot. */
+    const at = square(-104.6, 50.48, LABEL_ZOOMS.from)
+    const bytes = await placeTile(pool, at, { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
+    const held = tileHolds(new Uint8Array(bytes))
+    assert.ok(held.features > 0, 'the square encodes to a tile')
+    assert.ok(
+      held.features <= MARKS_PER_TILE * 2,
+      `a z${at.z} tile carries ${held.features} marks: ${held.zooms}`,
     )
-    await ground(pool, 'N49W110', 1)
-    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
-    const lonely = await pool.query(
-      "select label_zoom from places where gers_id = 'overture:lonely'",
+
+    /* And the ones it kept are the best ones, not the first rows found.
+       Stated as the cut rather than as a list of kinds: nothing drawn at the
+       widest zoom is worth less than anything left out of it. On this fixture
+       every place carries the same confidence, so the ordering is the
+       category weighting alone and the cut has to fall cleanly between two
+       kinds. */
+    const worth = kind => VIEW_WEIGHT[kind] ?? VIEW_WEIGHT.other
+    const drawn = await pool.query(
+      `select distinct category from places where label_zoom <= $1::real`,
+      [LABEL_ZOOMS.from],
     )
-    const crowded = await pool.query(
-      "select distinct label_zoom from places where category = 'museum' and cell = 'N50W105'",
+    const waiting = await pool.query(
+      `select distinct category from places where label_zoom > $1::real`,
+      [LABEL_ZOOMS.from],
     )
-    assert.equal(crowded.rows.length, 1)
-    assert.equal(
-      Number(lonely.rows[0].label_zoom),
-      Number(crowded.rows[0].label_zoom),
-      'a museum alone in a county and a museum in a city are drawn from the same zoom',
-    )
+    const early = drawn.rows.map(row => row.category)
+    assert.ok(early.length > 0, 'nothing at all is drawn at the widest zoom')
+    for (const kind of early) {
+      for (const later of waiting.rows.map(row => row.category)) {
+        if (early.includes(later)) continue
+        assert.ok(
+          worth(kind) >= worth(later),
+          `${kind} (${worth(kind)}) is drawn from ${LABEL_ZOOMS.from} and ${later} (${worth(later)}) is not`,
+        )
+      }
+    }
+    assert.ok(early.includes('museum'), 'a museum is not drawn from across the city')
+    for (const everyday of ['cafe', 'food', 'shopping', 'services']) {
+      assert.ok(!early.includes(everyday), `a ${everyday} is drawn from across the city`)
+    }
   })
 
-  await t.test('a tile draws every place whose kind belongs at its zoom', async t => {
+  await t.test('what a square keeps is what it is worth, not what it is near', async t => {
     const pool = await freshDatabase(t)
     await city(pool)
-    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
+    /* One museum alone in a county, where nothing competes for the square. */
+    await unplaced(pool, 'The Only Museum For Miles', -109.5, 49.5)
+    await place(pool)
 
-    /* No quota, no cap, no "best of". Museums are drawn from 11, so a square
-       at 11 carries every museum inside it however many that is — which is
-       the thing a person means by zooming in. */
-    const at = square(-104.57, 50.47, 11)
-    const inSquare = await pool.query(
-      `select count(*)::int as n from places p, (select ST_TileEnvelope($1,$2,$3) as box) b
-        where p.geom && ST_Transform(b.box, 4326)::geography
-          and p.category = any($4::text[]) and p.confidence >= $5::real`,
-      [
-        at.z,
-        at.x,
-        at.y,
-        Object.keys(EARLIEST_ZOOM).filter(kind => EARLIEST_ZOOM[kind] <= 11),
-        CONFIDENCE_FLOOR,
-      ],
+    const lonely = await pool.query(
+      `select label_zoom from places where gers_id = 'overture:the-only-museum-for-miles'`,
     )
-    const marks = await marksIn(pool, at)
-    assert.ok(inSquare.rows[0].n > 100, `the fixture is dense: ${inSquare.rows[0].n} in one square`)
     assert.equal(
-      marks,
-      inSquare.rows[0].n,
-      'a square drew fewer marks than it holds places of the kinds that belong there',
+      Number(lonely.rows[0].label_zoom),
+      EARLIEST_ZOOM.museum,
+      'a museum with nothing near it is drawn from the first zoom its kind allows',
     )
 
-    /* And it really encodes, rather than agreeing with the count and then
-       producing nothing. */
-    const bytes = await placeTile(pool, at, { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
-    assert.ok(bytes?.length > 0, 'the square encodes to a tile')
+    /* The same kind in a city is a queue rather than a certainty: the best of
+       them are drawn from the same zoom, and the rest arrive as you go in.
+       That is the difference between "a museum is worth 11" and "this museum
+       earned 11 here", and it is the whole of the thinning. */
+    const museums = await pool.query(
+      `select label_zoom, count(*)::int as n from places
+        where category = 'museum' and cell = 'N50W105'
+        group by label_zoom order by label_zoom`,
+    )
+    assert.ok(museums.rows.length > 1, 'every museum in a city was given the same zoom')
+    assert.equal(
+      Number(museums.rows[0].label_zoom),
+      EARLIEST_ZOOM.museum,
+      'the best museums in a city are still drawn from across it',
+    )
+    assert.ok(
+      Number(museums.rows.at(-1).label_zoom) > EARLIEST_ZOOM.museum,
+      'and the rest of them wait for a zoom with room',
+    )
   })
 
   await t.test('and close up, a square holds everything in it', async t => {
     const pool = await freshDatabase(t)
     await city(pool, 400)
-    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
-    const at = square(-104.62, 50.44, 17)
+    await place(pool)
+    const at = square(-104.62, 50.44, LABEL_ZOOMS.floor)
     const inSquare = await pool.query(
       `select count(*)::int as n
          from places p, (select ST_TileEnvelope($1, $2, $3) as box) b
@@ -364,8 +434,32 @@ test('a city does not arrive all at once', {
     assert.equal(
       await marksIn(pool, at),
       inSquare.rows[0].n,
-      'and every one of them is drawn — no cap this far in',
+      'and every one of them is drawn — no budget, no contest, this far in',
     )
+    /* It really encodes, rather than agreeing with a count and producing
+       nothing. */
+    const bytes = await placeTile(pool, at, { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
+    assert.ok(bytes?.length > 0, 'the square encodes to a tile')
+  })
+
+  await t.test('a mark that has appeared never disappears on the way in', async t => {
+    const pool = await freshDatabase(t)
+    await city(pool, 900)
+    await place(pool)
+    /* Monotonic by construction — a tile asks `label_zoom <= z` — but the
+       construction is only as good as the column, and the column is decided
+       per square. A z+1 square holds a subset of its parent's places, so a
+       mark among the best of the parent is among the best of the child; this
+       is that argument checked against the rows rather than trusted. */
+    for (let z = LABEL_ZOOMS.from; z < LABEL_ZOOMS.floor; z += 1) {
+      const here = new Set([...(await drawnAt(pool, z)).values()].flat())
+      const deeper = new Set([...(await drawnAt(pool, z + 1)).values()].flat())
+      assert.ok(here.size > 0, `nothing at all is drawn at z${z}`)
+      for (const id of here) {
+        assert.ok(deeper.has(id), `a mark drawn at z${z} is gone at z${z + 1}`)
+      }
+      assert.ok(deeper.size >= here.size, `z${z + 1} draws fewer marks than z${z}`)
+    }
   })
 
   /* And the rule the ceiling exists for, on real density rather than on a
@@ -373,7 +467,7 @@ test('a city does not arrive all at once', {
   await t.test('no everyday place is drawn from across the city', async t => {
     const pool = await freshDatabase(t)
     await city(pool)
-    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
+    await place(pool)
     const early = await pool.query(
       `select distinct category from places
         where label_zoom < $1::real order by category`,
@@ -412,14 +506,23 @@ test('places written before the zoom column get their zoom', {
         'count(distinct label_zoom)::int as distinct_zooms, ' +
         'min(label_zoom) as zoom from places',
     )
-    assert.equal(rows[0].unplaced, 0, 'every place has the zoom its kind is drawn from')
-    /* Forty museums crowded into a few hundred metres, and all forty are
-       drawn from 11 — which is the point. Under the ranking this replaced
-       they would have been spread over six zooms by how close they stood to
-       each other, and thirty-nine of them would have been invisible at the
-       zoom the fortieth was drawn at. */
-    assert.equal(rows[0].distinct_zooms, 1, 'the same kind in one place is one zoom')
-    assert.equal(Number(rows[0].zoom), EARLIEST_ZOOM.museum)
+    assert.equal(rows[0].unplaced, 0, 'every place was given a zoom')
+    /* Forty museums crowded into a few hundred metres of one square. The best
+       of them are drawn from 11, the kind's own first zoom, and the rest
+       arrive as you go in: a square carries two dozen marks, so sixteen of
+       these have to wait. Both halves matter — all forty at 11 is the carpet
+       this column exists to prevent, and none of them at 11 would mean a city
+       with no museums on it until you were standing in one. */
+    assert.ok(rows[0].distinct_zooms > 1, 'forty museums in one square all drew at once')
+    assert.equal(Number(rows[0].zoom), EARLIEST_ZOOM.museum, 'the best of them is drawn from 11')
+    const early = await pool.query(
+      'select count(*)::int as n from places where label_zoom <= $1::real',
+      [EARLIEST_ZOOM.museum],
+    )
+    assert.ok(
+      early.rows[0].n <= MARKS_PER_TILE,
+      `${early.rows[0].n} museums drew at 11, and a square holds ${MARKS_PER_TILE}`,
+    )
 
     /* That square, specifically. Not "no tiles at all": the worker warms
        cold squares when it has nothing to ingest, and a square it builds
