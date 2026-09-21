@@ -533,6 +533,44 @@ export async function licensesFor(db, ids) {
     .sort()
 }
 
+/* ---- the index the map is served from ----------------------------------- */
+
+/** The index every map query is written against, in one place.
+ *
+ * Built by the worker rather than by a migration, and built CONCURRENTLY,
+ * because a GiST index over ten million places takes longer than a boot is
+ * allowed to take — see migration 051, which used to hold this and cost five
+ * releases in a row. CONCURRENTLY cannot run inside a transaction, so the
+ * caller must not wrap it in one.
+ *
+ * `ZOOM_AT` without the alias, because an index has no table to alias and the
+ * planner matches an expression index on its text. Spelling it from the same
+ * constant the queries spend is what makes that certain. */
+export const PLACE_VIEW_INDEX = 'places_view_idx'
+export const PLACE_VIEW_INDEX_SQL = `create index concurrently if not exists ${PLACE_VIEW_INDEX}
+  on places using gist (geom, (${ZOOM_AT.replace(/\bp\./g, '')}))`
+
+/** The geometry-only index it replaces. Measured, the two are
+    indistinguishable on every other statement in this file — nearest-first
+    50.7 ms against 50.1 ms — so keeping both is a gigabyte of disk and a
+    second write on every ingested row to buy nothing. */
+export const PLACE_GEOM_INDEX = 'places_geom_idx'
+
+/** Whether an index is there and usable. An index left behind by a failed
+    CONCURRENTLY build exists but is `indisvalid = false`, and a query will
+    not use it — so "there" has to mean valid, or the worker would look at a
+    broken index and decide its work was done. */
+export async function indexIsReady(db, name) {
+  const { rows } = await db.query(
+    `select i.indisvalid as valid
+       from pg_class c join pg_index i on i.indexrelid = c.oid
+      where c.relname = $1`,
+    [name],
+  )
+  if (!rows.length) return null
+  return Boolean(rows[0].valid)
+}
+
 /* ---- the zoom pass, a cell at a time ------------------------------------ */
 
 /* Which cells still hold places placed under some other rule.

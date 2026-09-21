@@ -44,18 +44,28 @@
  */
 create extension if not exists btree_gist;
 
-/* Larger than the default for the duration of the build only; this is one
-   index over every place we hold and the sort is the whole of the cost. */
-set local maintenance_work_mem = '256MB';
-
-/* The old one first, then the new one. Nothing reads either while this runs
-   — the api has not started listening — and building the replacement with
-   its predecessor still on disk is a second copy of the same tree to hold
-   and no benefit at all. */
-drop index if exists places_geom_idx;
-
-create index if not exists places_view_idx
-  on places using gist (geom, (coalesce(label_zoom, 11::real)));
-
-/* Every tile again. The ones already built are correct — this migration
-   changes how they are found, not what is in them — so they stay. */
+/* And that is the whole of the migration. The index itself is built by the
+ * worker, online, after the api is listening — places/worker.js buildTheIndex
+ * and places/store.js PLACE_VIEW_INDEX, which is the one definition of it.
+ *
+ * It was here, and five releases in a row died of it. A migration runs inside
+ * the api's boot; a boot is waited on by `compose up --wait` and by `web`'s
+ * `depends_on: api: service_healthy`, and both of those give up in minutes.
+ * Building a GiST index over ten million rows is not minutes on that box, so
+ * the api never became healthy, the deploy restored the previous release, and
+ * the half-built index rolled back with it. Then the next release did it all
+ * again. The loop could not be broken from inside the migration, because the
+ * deploy script that would have fixed it is only installed once a deploy
+ * succeeds.
+ *
+ * So it is not a migration's kind of work and it is not written as one. The
+ * worker builds it with CREATE INDEX CONCURRENTLY — no transaction, no
+ * ACCESS EXCLUSIVE, writes carry on throughout — and drops the geometry-only
+ * index it replaces once it is there. Until that has run the map's queries
+ * use the old index and are slower. Slower is a thing you can ship; a boot
+ * that never finishes is not.
+ *
+ * The extension stays here because it must exist before anything can build
+ * that index, it costs milliseconds, and a schema is exactly where a thing
+ * like that belongs.
+ */

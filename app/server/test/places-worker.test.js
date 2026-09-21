@@ -11,7 +11,7 @@ import {
   ZOOM_POLICY,
 } from '../src/places/rank.js'
 import { cellBounds, cellKey } from '../src/places/cells.js'
-import { assignLabelZoom, markRequested, placeTile } from '../src/places/store.js'
+import { assignLabelZoom, indexIsReady, markRequested, placeTile } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
 
 /* The thing that drains the coverage queue on the box that serves queries.
@@ -464,6 +464,32 @@ test('places written before the zoom column get their zoom', {
     assert.equal(stamped.rows[0].n, 2, 'both cells now record the rule they were placed under')
   })
 
+  /* The index the map is served from, built by the worker because a boot is
+     not allowed to take as long as it takes. Five releases in a row died of
+     this being a migration. */
+  await t.test(
+    'builds the index the map is served from, and drops the one it replaces',
+    async t => {
+      const pool = await freshDatabase(t)
+      await unplaced(pool, 'Rijksmuseum', 4.8852, 52.36)
+      /* A fresh database has the geometry-only index from migration 043 and
+       none of the replacement, which is the state every real box is in. */
+      assert.equal(await indexIsReady(pool, 'places_geom_idx'), true)
+      assert.equal(await indexIsReady(pool, 'places_view_idx'), null)
+
+      const { worker } = workerOver(pool)
+      await worker.once()
+      await worker.settled()
+      assert.equal(await indexIsReady(pool, 'places_view_idx'), true, 'built, and valid')
+
+      /* The drop is the tick after the build, so a build that fails cannot
+       take the working index with it. */
+      await worker.once()
+      await worker.settled()
+      assert.equal(await indexIsReady(pool, 'places_geom_idx'), null, 'one spatial index now')
+    },
+  )
+
   /* The clear is by primary key now, which is the same tiles named rather
      than tested — and "the same" is the whole risk, so it is asserted from
      both sides: the squares over the cell go, and the square next door does
@@ -731,8 +757,13 @@ test('the queue drainer', { skip: unreachable, concurrency: false }, async t => 
     })
     await worker.once()
     await worker.once()
-    assert.equal(said.length, 1, said.join(' | '))
-    assert.match(said[0], /no upstream release/)
+    await worker.settled()
+    /* Once, not twice. Counted among the lines about the release rather than
+       among all of them — the worker also builds the index the map is served
+       from on its first tick, and says so, which is a different subject and
+       has its own test. */
+    const aboutTheRelease = said.filter(line => /upstream release/.test(line))
+    assert.equal(aboutTheRelease.length, 1, said.join(' | '))
     assert.equal(await statusOf(pool, 'N52E004'), 'pending')
   })
 

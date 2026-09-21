@@ -59,8 +59,12 @@ import {
   assignLabelZoom,
   cellsAwaitingZoom,
   clearPlaceTiles,
+  indexIsReady,
   markEmptyCellsZoomed,
   markZoomed,
+  PLACE_GEOM_INDEX,
+  PLACE_VIEW_INDEX,
+  PLACE_VIEW_INDEX_SQL,
   placeTile,
   readPlaceTile,
   writePlaceTile,
@@ -390,6 +394,64 @@ export function createPlaceWorker({
     await pool.query('insert into place_zoom_policy (version) values ($1)', [ZOOM_POLICY])
   }
 
+  /* The index the map is served from, built while the map is being served.
+   *
+   * It used to be migration 051, and five releases in a row died of it: a
+   * migration runs inside the api's boot, a boot is waited on by `compose up
+   * --wait` and by web's `depends_on: api: service_healthy`, and building a
+   * GiST index over ten million places takes longer than either allows. The
+   * api never became healthy, the deploy restored the previous release, the
+   * half-built index rolled back with it, and the next release began again.
+   * The loop could not be broken from inside the migration, because the
+   * deploy script that would have fixed it is only installed once a deploy
+   * succeeds.
+   *
+   * CONCURRENTLY is what makes it the worker's job rather than the schema's:
+   * no transaction, no ACCESS EXCLUSIVE, writes carry on throughout. It takes
+   * longer than a plain build and nobody is waiting on it. Until it is there
+   * the map's queries use the geometry-only index and are slower — which is a
+   * thing you can ship, where a boot that never finishes is not.
+   *
+   * Once, and then never again: the check is one catalogue lookup, and a tick
+   * on a box that already has it costs that and nothing else. */
+  let building = null
+  async function buildTheIndex() {
+    if (building || stopped) return
+    const ready = await indexIsReady(pool, PLACE_VIEW_INDEX)
+    if (ready) {
+      /* There and valid. The one it replaces can go, and that is cheap —
+         dropping an index is a catalogue write. Concurrently, because a plain
+         drop takes ACCESS EXCLUSIVE and every reader queues behind it. */
+      if ((await indexIsReady(pool, PLACE_GEOM_INDEX)) !== null) {
+        await pool
+          .query(`drop index concurrently if exists ${PLACE_GEOM_INDEX}`)
+          .then(() => log(`places: ${PLACE_GEOM_INDEX} dropped; one spatial index now`))
+          .catch(error => log(`places: ${PLACE_GEOM_INDEX} not dropped — ${error.message}`))
+      }
+      return
+    }
+    const started = Date.now()
+    building = (async () => {
+      /* A CONCURRENTLY build that fails leaves the index behind, invalid and
+         unusable. Postgres is explicit that the fix is to drop it and go
+         again, so that is what this does rather than leaving a dead index in
+         the catalogue for somebody to find next year. */
+      if (ready === false) {
+        log(`places: ${PLACE_VIEW_INDEX} was left half-built; dropping it and starting again`)
+        await pool.query(`drop index concurrently if exists ${PLACE_VIEW_INDEX}`)
+      }
+      log('places: building the index the map is served from, online')
+      await pool.query(PLACE_VIEW_INDEX_SQL)
+      const seconds = Math.round((Date.now() - started) / 100) / 10
+      log(`places: ${PLACE_VIEW_INDEX} built in ${seconds}s`)
+      event('places index built', { 'places.index.ms': Date.now() - started })
+    })()
+      .catch(error => log(`places: the index did not build — ${error.message}`))
+      .finally(() => {
+        building = null
+      })
+  }
+
   /* Cells this run could not place, so one bad cell cannot block the planet.
      In memory only: a restart tries them again, which is the right default
      for something that is far more likely to be a lock than a defect. */
@@ -518,7 +580,7 @@ export function createPlaceWorker({
 
   /** Resolves when nothing a tick set going is still going. */
   async function settled() {
-    while (placing) await placing
+    while (placing || building) await Promise.all([placing, building])
   }
 
   async function tick() {
@@ -535,6 +597,7 @@ export function createPlaceWorker({
      *
      * The rule this is an instance of: work that can be done from the
      * database alone must not be behind a network call. */
+    await buildTheIndex()
     await placeTheUnplaced()
 
     const pipe = await pipeline()

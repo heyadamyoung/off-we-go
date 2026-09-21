@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
+  readdirSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -766,6 +767,90 @@ test('the enrichment pipeline can actually be switched on', () => {
   /* Empty is allowed and means off. A compose file that refused to render
      without it would stop every deploy on a box that has not set one. */
   assert.match(api, /PLACES_CONTACT: \$\{PLACES_CONTACT:-\}/, 'unset is off, not a failure')
+})
+
+/* A migration changes the schema. It does not do work whose size depends on
+ * how much data there is.
+ *
+ * Migrations run inside the api's boot, and a boot is waited on by
+ * `compose up --wait` and by web's `depends_on: api: service_healthy`. Those
+ * are timeouts that belong to containers: a few minutes, fixed, and one of
+ * them cannot be raised from the deploy at all. So anything a migration does
+ * has to be over in seconds on the largest database this will ever run
+ * against — an ALTER, a small table, a constraint.
+ *
+ * Building an index is the thing that looks like schema and is not. Migration
+ * 051 built a GiST index over ten million places, the api never became
+ * healthy, the deploy restored the previous release, the half-built index
+ * rolled back with it, and the next release did it all again — five in a row,
+ * and the loop could not be broken from inside, because the deploy script
+ * that would have fixed it is only installed once a deploy succeeds.
+ *
+ * An index on a table that grows with the world belongs to the worker, built
+ * CONCURRENTLY while the api serves — see places/worker.js buildTheIndex.
+ * Until it is there the queries are slower, which ships; a boot that never
+ * finishes does not.
+ *
+ * Creating the table and its indexes together is fine and is not this: at
+ * that moment the table is empty on every database in the world. What is
+ * caught here is a later migration reaching for a table that is not.
+ */
+test('no migration builds an index on a table that has grown', () => {
+  const directory = path.join(appRoot, 'server', 'migrations')
+  const files = readdirSync(directory)
+    .filter(name => name.endsWith('.sql'))
+    .sort()
+
+  /* The tables whose size is the world's, not a traveller's. */
+  const unbounded = [
+    'places',
+    'place_sources',
+    'place_tiles',
+    'place_links',
+    'place_images',
+    'osm_landmarks',
+    'photos',
+  ]
+  /* Four that shipped before the rule was known, and are applied on every
+     database there is — rewriting history would re-run them on nothing and
+     risk a great deal to tidy a list. Three are on `photos` and were written
+     when a trip held a few hundred; the fourth, 048, is the one that taught
+     the lesson on a table of ten million. Nothing may be added here without
+     the same kind of sentence beside it. */
+  const alreadyShipped = new Set([
+    '002_account_deletion_and_trip_integrity.sql:photos',
+    '004_photo_idempotency.sql:photos',
+    '022_photo_order_per_trip.sql:photos',
+    '048_a_place_earns_a_picture.sql:places',
+  ])
+  const born = new Map()
+  const offences = []
+  for (const name of files) {
+    const sql = readFileSync(path.join(directory, name), 'utf8')
+    /* Comments say what went wrong and quote the SQL that did it; only the
+       statements count. */
+    const statements = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ')
+    for (const table of unbounded) {
+      if (new RegExp(`create table (if not exists )?${table}\\b`).test(statements)) {
+        if (!born.has(table)) born.set(table, name)
+      }
+      const builds = new RegExp(`create (unique )?index[^;]*\\bon ${table}\\b`, 'i')
+      if (
+        builds.test(statements) &&
+        born.get(table) !== name &&
+        !alreadyShipped.has(`${name}:${table}`)
+      ) {
+        offences.push(
+          `${name} builds an index on ${table}, born in ${born.get(table) ?? 'nowhere'}`,
+        )
+      }
+    }
+  }
+  assert.deepEqual(
+    offences,
+    [],
+    `${offences.join('; ')}\n\nBuild it from the worker, concurrently, not from a boot.`,
+  )
 })
 
 /* Push to live is four minutes, and the deploy's own backup is what put it
