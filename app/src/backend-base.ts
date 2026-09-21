@@ -26,8 +26,18 @@ export const functionsUrl = hasBackend ? `${API_URL}/ingest` : null
  *
  *   1  the first tiled release
  *   2  the squares built over un-ingested ground, which cached empty for ever
- *      (see migration 045 for the server's half of the same recall) */
-export const PLACE_TILES_EPOCH = 2
+ *      (see migration 045 for the server's half of the same recall)
+ *   3  the zoom a mark is drawn from became a ranking again (rank.js
+ *      ZOOM_POLICY 4). Every tile already in a browser was built when a
+ *      category alone decided, so a phone held the old rule at the zooms it
+ *      had recently looked at and fetched the new one everywhere else: dots
+ *      at one zoom, gone a step in, back a step further. The database was
+ *      monotonic the whole time; the mixture was in the cache.
+ *
+ * Whenever ZOOM_POLICY changes, this changes with it — the tiles out there
+ * were built from the old rule, which is the definition of wrong above. A
+ * test holds the pair together so neither can move alone. */
+export const PLACE_TILES_EPOCH = 3
 
 /* Where the map fetches its places from, as a tile template the map library
    expands itself. Null in the demo, which has no server and draws its own

@@ -116,3 +116,31 @@ test('the tile URL carries a generation, so a bad tile can be recalled', async (
     assert.match(template, /\?v=\$\{PLACE_TILES_EPOCH\}/)
   }
 })
+
+test('a tile generation and the rule that fills it move together', async () => {
+  /* The bug this exists for, reported from the road: "grey dots show at a
+     further out zoom, then I scroll in a bit and they disappear, then I zoom
+     in more and they come back."
+     Nothing in the database was wrong. #219 changed how a mark earns its zoom
+     and did not bump the generation in the tile URL, so a browser kept the
+     tiles it already had for the zooms it had recently looked at and fetched
+     new ones for the rest. Two rules on one screen, a zoom step apart.
+     A tile is cached for an hour with a day of stale-while-revalidate behind
+     it, and nothing on the server can reach into a phone that already holds
+     one. The only recall is a different URL.
+     So the pair is written down. Change either number and this fails, which
+     is the point: it is a question, not an assertion — "the rule moved, does
+     every tile already out there need recalling?" — and the answer this time
+     was yes. */
+  const rank = await readFile(new URL('../server/src/places/rank.js', import.meta.url), 'utf8')
+  const backend = await readFile(new URL('../src/backend-base.ts', import.meta.url), 'utf8')
+  const policy = Number(rank.match(/export const ZOOM_POLICY = (\d+)/)?.[1])
+  const epoch = Number(backend.match(/export const PLACE_TILES_EPOCH = (\d+)/)?.[1])
+  assert.ok(Number.isInteger(policy), 'no ZOOM_POLICY in rank.js')
+  assert.ok(Number.isInteger(epoch), 'no PLACE_TILES_EPOCH in backend-base.ts')
+  assert.equal(
+    `zoom policy ${policy}, tiles epoch ${epoch}`,
+    'zoom policy 4, tiles epoch 3',
+    'one of these moved without the other being considered — see backend-base.ts',
+  )
+})
