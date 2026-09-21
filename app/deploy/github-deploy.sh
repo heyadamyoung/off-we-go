@@ -290,21 +290,45 @@ export RELEASE_SHA="$release_sha"
 # a deploy that is the same length every time instead of a lottery. `stop` is
 # how the service is meant to be stopped; the coverage rows are the record of
 # what is done, and a half-written cell is abandoned rather than committed.
+# Every step of the swap says when it started.
+#
+# Deploy 392 printed the backup line at 19:08:33 and then nothing at all until
+# the step was killed at 19:11:49 — three minutes and sixteen seconds of
+# silence covering a sweep stop, a registry login, an image pull and two
+# container swaps, with no way afterwards to say which of them had it. The
+# swap is the one part of a release that runs on a box nobody can log into,
+# so a stretch of it with no output is a stretch that cannot be diagnosed,
+# ever, by anybody.
+#
+# Seconds since the step began rather than a clock, because what matters is
+# which piece spent them.
+swap_began="$(date +%s)"
+step() { echo "release: +$(( $(date +%s) - swap_began ))s $1"; }
+
+step 'asking the planet sweep to stand aside'
 docker compose --profile sweep stop -t 20 places-sweep >/dev/null 2>&1 || true
 if [[ -n "$registry_token" ]]; then
   # The images the pipeline built and tested, pulled rather than rebuilt here:
   # building on this box was a minute and a half of every deploy, three on a
   # cache miss. Signed in for the moment of the pull, and out again before
   # anything else happens; only the layers that changed cross the wire.
+  step 'pulling the images the pipeline built'
   printf '%s' "$registry_token" | docker login ghcr.io -u "$registry_user" --password-stdin
+  # Nothing between this line and the pull. The token is in a variable until
+  # it is cleared, and a guard asserts the two are adjacent — the marker above
+  # belongs to the login as much as to the pull, so it goes above both.
   registry_token=""
   docker compose pull --quiet api web
   docker logout ghcr.io >/dev/null 2>&1 || true
+  step 'swapping the containers over'
   docker compose up -d --no-build --wait --wait-timeout 900
 else
+  step 'building the api here, with no registry to pull from'
   docker compose build --quiet api
+  step 'swapping the containers over'
   docker compose up -d --build --wait --wait-timeout 900
 fi
+step 'containers up; checking the site answers'
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
 if [[ -z "$deployment_domain" ]]; then
   echo "WAYFARE_DOMAIN is missing from $APP_ROOT/.env." >&2
