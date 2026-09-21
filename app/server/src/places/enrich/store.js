@@ -88,18 +88,38 @@ const CLAIM = `
   update place_enrichment set status = 'working', started_at = now(),
          attempts = attempts + 1
    where place_id in (select place_id from picked)
-  returning place_id`
+  returning place_id, priority`
 
-/** The places this tick has taken, with what the enricher needs to work. */
+/**
+ * The places this tick has taken, with what the enricher needs to work.
+ *
+ * `priority` travels with them, and that is not bookkeeping.
+ *
+ * It used to be ordered by and then dropped: the claim sorted a person
+ * waiting on a card in front of a backfill queued an hour ago, and then
+ * returned six rows that looked identical. Nothing downstream could tell
+ * them apart — so `fromTableThenOverpass` could not either, and fell through
+ * to a volunteer-run public API for any place our own copy of OSM did not
+ * know about. With `osm_landmarks` empty that is every place, backfill
+ * included: four hundred prominent places queued at a time, six a tick,
+ * every thirty seconds, against overpass-api.de. Seven hundred and twenty
+ * requests an hour, from a backfill nobody is waiting for, at somebody
+ * else's expense.
+ *
+ * The comment in index.js said "the backfill never touches it". It said that
+ * for three releases and it was never true. It is true now because the
+ * priority reaches the place that decides — see fromTableThenOverpass.
+ */
 export async function claimEnrichment(db, count = 4) {
   if (count <= 0) return []
   const claimed = await db.query(CLAIM, [count])
   if (!claimed.rowCount) return []
+  const priorities = new Map(claimed.rows.map(row => [row.place_id, Number(row.priority)]))
   const { rows } = await db.query(
     `select p.id, p.name, p.website, p.category,
             ST_Y(p.geom::geometry) as lat, ST_X(p.geom::geometry) as lng
        from places p where p.id = any($1::uuid[])`,
-    [claimed.rows.map(row => row.place_id)],
+    [[...priorities.keys()]],
   )
   return rows.map(row => ({
     id: row.id,
@@ -108,6 +128,9 @@ export async function claimEnrichment(db, count = 4) {
     category: row.category,
     lat: Number(row.lat),
     lng: Number(row.lng),
+    /* WANTED_NOW when a card is open on it. A row claimed here always has a
+       priority; the fallback is for a caller that built a place by hand. */
+    priority: priorities.get(row.id) ?? WANTED_SOON,
   }))
 }
 

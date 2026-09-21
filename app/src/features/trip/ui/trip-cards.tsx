@@ -39,7 +39,7 @@ export default function TripCards({
     setPlacing, removeDraft, indoor, trip, onDraftField, saveDraft, moveStop,
     lookUpDraft, saving, placing, editing, routeDraft, setRouteDraft, saveRoute,
     searchPlaces, places, setPlaces, route, attraction, stops, addAttraction,
-    setAttractionCard, showAttractions, attrFilling, attrCount, photos,
+    setAttractionCard, photos,
     transport, segmentEditing, setSegmentEditing, family,
   } = page
   return (
@@ -143,17 +143,25 @@ export default function TripCards({
         />
       )}
 
-      {/* The ground under this view has not been loaded yet. The server has
-          queued it and it fills in on its own, so this says what is happening
-          rather than leaving a map that looks broken. Whatever pins the
-          previous view had stay on screen underneath it. */}
-      {showAttractions && attrFilling && (
-        <div
-          className="glass absolute left-1/2 top-[calc(var(--trip-top)+68px)] z-[6] -translate-x-1/2 rounded-full px-3.5 py-2
-                        text-xs text-muted">
-          Still loading places here{attrCount ? ` · ${attrCount} so far` : ''}
-        </div>
-      )}
+      {/* There was a capsule here that said "still loading places here".
+          It is gone, and the words are not to come back.
+       *
+       * It was honest when the places layer was a live walk of Wikipedia from
+       * this device: filling was a thing the phone was doing, it took a
+       * minute, and a counter was the difference between waiting and broken.
+       * None of that is true now. The pins come from tiles built from our own
+       * database, a square is drawn the moment it is asked for, and what the
+       * capsule actually reported was `degraded` — which means "the sweep has
+       * not reached this one-degree cell of the planet yet", a fact about a
+       * backfill running on a box in another country. It hung over a map that
+       * was already drawing pins, with a count that is structurally zero on a
+       * tiled map, and it hung there for days at a time.
+       *
+       * A map does not apologise for the parts of the world nobody has
+       * finished cataloguing. It draws what it has. `degraded` still travels
+       * on the answer, because the server needs it to decide that a
+       * half-empty tile must not be cached for a day — see TILE_UNSETTLED in
+       * places/routes.js — but it is not something to put on the screen. */}
 
       {/* The paper itself, above every other thing that floats here. At a desk
           with a queue behind you the document IS the interface, so nothing on

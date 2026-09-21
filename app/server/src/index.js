@@ -268,7 +268,12 @@ const placesWorker =
  *
  * Overpass is only reached for a place somebody has opened that our own copy
  * of the interesting OSM objects does not know about. The backfill never
- * touches it: see places/enrich/osm.js. */
+ * touches it — and that is now a property of fromTableThenOverpass rather
+ * than of this comment. It was written here first and was false for three
+ * releases: the fallthrough had no idea who was waiting, `osm_landmarks` is
+ * empty until a planet extract is loaded into it, and every backfill place
+ * therefore went to overpass-api.de. A claim about behaviour belongs next to
+ * the behaviour, with a test on it. */
 const placesContact = process.env.PLACES_CONTACT || ''
 const enrichWorker = (() => {
   if (!placesContact) return null

@@ -79,9 +79,6 @@ function useAttractions(view: MapView, enabled: boolean) {
   const [attribution, setAttribution] = useState<
     { license: string; notice: string; url: string | null }[]
   >([])
-  /* The ground under this view has not been ingested yet. The server has
-     queued it; saying so beats an empty map that looks broken. */
-  const [filling, setFilling] = useState(false)
   /* Not `hasBackend`: the demo has no server and still draws pins, from its
      own canned Amsterdam. This turns false only when a server answers that it
      has no places layer at all. */
@@ -123,7 +120,6 @@ function useAttractions(view: MapView, enabled: boolean) {
            the pins stay, the attribution stays, and the next pan asks again.
            A deploy should be invisible on the map, not a map that empties. */
         if (found.retry) return
-        setFilling(found.degraded)
         setAttribution(found.attribution || [])
         /* Nothing to hold on a tiled map: the tiles on screen are the pins on
            screen, and MapLibre keeps them across a pan by itself. The answer
@@ -153,12 +149,23 @@ function useAttractions(view: MapView, enabled: boolean) {
     }
   }, [view, enabled, available])
 
-  const shown = enabled ? data : EMPTY_FC
+  /* No `filling` and no `count`.
+   *
+   * They existed for a capsule over the map that said "still loading places
+   * here" — see the note where it used to be drawn, in trip/ui/trip-cards.
+   * `filling` was the coverage answer's `degraded`, which is a fact about
+   * how far a backfill on a box in another country has got, and `count` was
+   * `data.features.length`, which on a tiled map is structurally zero
+   * because this hook stopped fetching pins when the tiles took over. A
+   * value that is always zero, shown beside a claim that is not about
+   * anything the person can see.
+   *
+   * `degraded` is still read below, for the demo's canned pins, and still
+   * travels on the answer for the server's own cache decision. It does not
+   * come back out of here. */
   return {
-    data: shown,
-    filling: enabled && filling,
+    data: enabled ? data : EMPTY_FC,
     attribution: enabled ? attribution : [],
-    count: shown.features.length,
   }
 }
 

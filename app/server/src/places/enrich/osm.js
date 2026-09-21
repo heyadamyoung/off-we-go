@@ -114,11 +114,33 @@ export function fromOverpass({
   }
 }
 
-/** Our own copy first; the volunteer service only when it had nothing. */
+/**
+ * Our own copy first; the volunteer service only for a place somebody is
+ * waiting on.
+ *
+ * That last clause was the comment in index.js for three releases and was
+ * never in this function. What was here fell through to Overpass whenever
+ * our table had nothing — and our table is `osm_landmarks`, which is empty
+ * until somebody loads a planet extract into it, so "nothing" was every
+ * place. The backfill queues four hundred prominent places at a time and
+ * takes six every thirty seconds: seven hundred and twenty requests an hour
+ * to overpass-api.de, indefinitely, for work nobody asked for and nobody is
+ * waiting on. That is not a performance problem, it is an abuse of a service
+ * run on donations, and the only reason it has not happened is that
+ * PLACES_CONTACT is unset and the whole enricher is dark.
+ *
+ * So the gate is here, where the call is, rather than in a comment above a
+ * different file. `waiting` comes from the enrichment row's own priority —
+ * WANTED_NOW means a card is open on this place and a person is looking at a
+ * blank space in it. Everything else gets our own copy or nothing, which is
+ * the correct answer for a backfill: the landmark table is how a backfill is
+ * supposed to be answered, and if it is empty the backfill has nothing to do
+ * yet.
+ */
 export function fromTableThenOverpass(table, overpass) {
-  return async function osmNear(place, options) {
+  return async function osmNear(place, options = {}) {
     const near = await table(place, options)
-    if (near.length || !overpass) return near
+    if (near.length || !overpass || !options.waiting) return near
     return await overpass(place, options)
   }
 }
