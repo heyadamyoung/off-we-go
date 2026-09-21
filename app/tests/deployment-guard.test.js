@@ -1134,9 +1134,20 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      proved why: `compose ps --profile sweep --status running -q` came back
      empty while the sweep was running, so the deploy said it had started one
      when it had not. `docker ps --filter label=` needs no profile to see it. */
-  assert.match(block, /^\s*if \[ -n "\$\(docker ps -q --filter status=running/m)
+  /* The running check is only about what to say in the log now. The `up`
+     itself is unconditional, and that is the point of this assertion: while
+     it was skipped whenever a sweep was running, a configuration change — the
+     four cores and the block-IO weight that stop it pinning the box during a
+     deploy — could never reach the container already going. `up -d` on a
+     service whose configuration has not changed is a no-op, so a run three
+     hours in is still left alone; the profile is what keeps a plain
+     `compose up` away from it. */
+  assert.match(block, /^\s*if \[ -z "\$\(docker ps -q --filter status=running/m)
   assert.ok(block.includes('label=com.docker.compose.service=places-sweep'))
-  assert.match(block, /^\s+if docker compose --profile sweep up -d --no-build places-sweep/m)
+  assert.match(block, /^\s*if docker compose --profile sweep up -d --no-build places-sweep/m)
+  const gateAt = block.search(/if \[ -z "\$\(docker ps -q --filter status=running/)
+  const upAt = block.search(/if docker compose --profile sweep up -d/)
+  assert.ok(upAt > gateAt, 'the up is outside the check, not inside it')
   assert.ok(block.includes('could not be started'), 'a start that fails says so')
   /* --no-build: the box pulls what the pipeline pushed and builds nothing. */
   assert.ok(!/docker compose[^\n]*up[^\n]*--build/.test(block))
