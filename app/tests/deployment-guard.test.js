@@ -1233,7 +1233,7 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      ninety seconds after the deploy's own stop — true for the instant it was
      asked, and identical to what a sweep that had genuinely died would say. */
   const restartAt = script.search(/^if docker compose --profile sweep up -d --no-build/m)
-  const censusAt = script.indexOf("echo \"places: $(places_now 'select count(*) from places')")
+  const censusAt = script.indexOf('places_held="$(places_now')
   const detachedAt = script.indexOf('Housekeeping detached')
   assert.ok(restartAt > 0, 'the deploy never starts the sweep again')
   assert.ok(restartAt > detachedAt, 'the restart is back inside the detached half')
@@ -1286,6 +1286,31 @@ test('the census can tell a crash-looping sweep from a finished one', () => {
   assert.match(census, /docker logs[^\n]*\| sed [^\n]*\|\| true/)
 })
 
+test('no line of the census can outlast the release it reports on', () => {
+  /* Deploy 387 was live, healthy and answering, and failed anyway. The step
+     that streams a release is allowed four minutes; the swap was done in
+     three and the census that follows it then sat on
+     `select count(*) from places` — thirteen million rows on a box where the
+     zoom pass was sorting six rows per place and the sweep was writing a cell
+     a minute — until the step timed out.
+
+     Every line down there ends in `|| true` so that a census cannot fail a
+     release, and a query that never returns walks straight around that. So
+     the bound is a clock, twice: ten seconds inside postgres and fifteen
+     outside it, because a wedged `docker exec` never reaches the statement
+     timeout at all. */
+  const script = deployScript()
+  const at = script.indexOf('places_now() {')
+  const helper = script.slice(at, script.indexOf('}', at))
+  assert.match(helper, /timeout \d+ docker compose exec/, 'the census can hang on the daemon')
+  assert.match(helper, /set statement_timeout = '\d+s'/, 'the census can hang in the database')
+  /* And it still says something when the clock wins: the planner's estimate,
+     marked as one. A blank where a number goes is a census that has failed
+     quietly, which is the thing this whole block exists to stop. */
+  assert.match(script, /reltuples::bigint from pg_class/, 'no fallback when the count is too slow')
+  assert.match(script, /places_held="~\$\(/, 'an estimate that does not say it is one')
+})
+
 test('a deploy reading a number does not mangle it on the way out', () => {
   /* `psql -tA` is tuples-only and unaligned: it pads nothing. The helper
      stripped spaces anyway, for padding that does not exist, and the backlog
@@ -1295,7 +1320,8 @@ test('a deploy reading a number does not mangle it on the way out', () => {
   const script = deployScript()
   const at = script.indexOf('places_now() {')
   const helper = script.slice(at, script.indexOf('}', at))
-  assert.ok(helper.includes('psql -U wayfare -d wayfare -tAc'), 'unaligned, tuples only')
+  assert.match(helper, /psql -U wayfare -d wayfare\b/, 'the census asks the database directly')
+  assert.match(helper, /-tAc/, 'unaligned, tuples only')
   assert.ok(!helper.includes("tr -d ' '"), 'and nothing strips the spaces back out of the answer')
 })
 
@@ -1664,7 +1690,7 @@ test('a deploy says where the planet has got to, where a person can read it', ()
      to a file on the box; what it *reports* cannot. */
   const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
   const detachedAt = deploy.indexOf('Housekeeping detached')
-  const censusAt = deploy.indexOf("echo \"places: $(places_now 'select count(*) from places')")
+  const censusAt = deploy.indexOf('places_held="$(places_now')
   const sweepAt = deploy.indexOf('places: the sweep is running')
   assert.ok(censusAt > 0, 'the deploy does not report how many places there are')
   assert.ok(sweepAt > 0, 'the deploy does not report whether the sweep is running')

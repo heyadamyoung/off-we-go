@@ -555,9 +555,28 @@ fi
 # padding that does not exist. Trailing newlines are the shell's to remove and
 # `$( )` already does it.
 places_now() {
-  docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null || true
+  timeout 15 docker compose exec -T db psql -U wayfare -d wayfare \
+    -tAc "set statement_timeout = '10s'; $1" 2>/dev/null || true
 }
-echo "places: $(places_now 'select count(*) from places') places in \
+# Exact while it is cheap, estimated when it is not.
+#
+# Deploy 387 was live, healthy and answering, and then failed: `select
+# count(*) from places` over thirteen million rows, on a box where the zoom
+# pass was sorting six rows per place and the sweep was writing a cell a
+# minute, took longer than the whole four minutes this step is allowed. A
+# release rolled back to report a number is exactly what the `|| true` on
+# every line here exists to prevent, and a timeout walks around `|| true`.
+#
+# So the census is bounded twice — ten seconds inside postgres, fifteen
+# outside it — and when the exact count does not come back in time the
+# planner's own estimate does, marked with a `~` so nobody reads it as
+# precise. A number that is approximately right on time beats an exact one
+# that fails the deploy.
+places_held="$(places_now 'select count(*) from places')"
+if [ -z "$places_held" ]; then
+  places_held="~$(places_now "select reltuples::bigint from pg_class where relname = 'places'")"
+fi
+echo "places: ${places_held:-?} places in \
 $(places_now "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
 echo "places: $(places_now "
   select
