@@ -452,11 +452,11 @@ after_release() {
   # skip in place the container already running would have kept the whole
   # machine until the day it happened to exit. A recreate costs the cell in
   # flight; `--resume` means the next run pays for that one and nothing else.
-  if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
-    echo "places: sweep up to date — docker compose logs -f places-sweep"
-  else
-    echo "places: the sweep could not be started"
-  fi
+  # The restart is not here any more. It is above the detach, beside the
+  # census, because the census reports on it: with the start down here the
+  # deploy said "no sweep running" on every release — true for the second it
+  # was asked, false a moment later, and indistinguishable from a sweep that
+  # had genuinely died. See "the sweep goes back to work" above.
 
   # Media onto the object store, once, with the release already live and
   # answering. Deliberately after the trap comes off: a copy that will not
@@ -513,6 +513,27 @@ setsid bash -c "$(declare -f after_release); after_release" \
   >> "$AFTER_LOG" 2>&1 < /dev/null &
 disown || true
 echo "Housekeeping detached; it writes to $AFTER_LOG on the box."
+
+# The sweep goes back to work.
+#
+# It was stopped before the swap so it could not hold the disk while the
+# containers changed over — see the stop above — and this is the other half of
+# that. `--resume` means it pays for the cell that was in flight and nothing
+# else.
+#
+# Above the census rather than in the detached housekeeping, and that ordering
+# is the whole point: the census reports whether a sweep is running, and with
+# the start detached it raced and lost every time. Deploy 380 read "no sweep
+# running; the last one exited 1" ninety seconds after the stop — true at the
+# instant it was asked, false a moment later, and identical to what a sweep
+# that had genuinely died would print. `up -d` returns as soon as the
+# container is started; what takes hours is the running, and nothing waits for
+# that.
+if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
+  echo "places: the sweep is back at work — docker compose logs -f places-sweep"
+else
+  echo "places: the sweep could not be started"
+fi
 
 # Where the planet has got to, in the log a person actually reads.
 #

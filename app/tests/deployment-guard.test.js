@@ -1225,19 +1225,31 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      `compose up` away from it. */
   assert.match(block, /^\s*if \[ -z "\$\(docker ps -q --filter status=running/m)
   assert.ok(block.includes('label=com.docker.compose.service=places-sweep'))
-  assert.match(block, /^\s*if docker compose --profile sweep up -d --no-build places-sweep/m)
-  const gateAt = block.search(/if \[ -z "\$\(docker ps -q --filter status=running/)
-  const upAt = block.search(/if docker compose --profile sweep up -d/)
-  assert.ok(upAt > gateAt, 'the up is outside the check, not inside it')
-  assert.ok(block.includes('could not be started'), 'a start that fails says so')
-  /* --no-build: the box pulls what the pipeline pushed and builds nothing. */
-  assert.ok(!/docker compose[^\n]*up[^\n]*--build/.test(block))
+  /* The restart is not in the detached half any more, and that ordering is
+     the assertion: the census above the detach reports whether a sweep is
+     running, so a start that happens after it reports a sweep that is down
+     when it is not. Deploy 380 said "no sweep running; the last one exited 1"
+     ninety seconds after the deploy's own stop — true for the instant it was
+     asked, and identical to what a sweep that had genuinely died would say. */
+  const restartAt = script.search(/^if docker compose --profile sweep up -d --no-build/m)
+  const censusAt = script.indexOf("echo \"places: $(places_now 'select count(*) from places')")
+  const detachedAt = script.indexOf('Housekeeping detached')
+  assert.ok(restartAt > 0, 'the deploy never starts the sweep again')
+  assert.ok(restartAt > detachedAt, 'the restart is back inside the detached half')
+  assert.ok(restartAt < censusAt, 'the census reports on a sweep the deploy has not started yet')
+  const stopAt = script.search(/^docker compose --profile sweep stop/m)
+  assert.ok(stopAt < restartAt, 'the sweep is started before it is stopped for the swap')
+  assert.ok(script.includes('could not be started'), 'a start that fails says so')
+  /* --no-build on the sweep: the box pulls what the pipeline pushed and
+     builds nothing. Scoped to the sweep's own line, because the hand-deploy
+     branch above legitimately builds when there is no registry token. */
+  assert.ok(!/--profile sweep up[^\n]*--build\b(?!-)/.test(script.replace(/--no-build/g, '')))
   /* And why the last one stopped, which is the whole diagnostic. The first
      live planet run exited somewhere in the Atlantic; the deploy key is
      restricted to `deploy <sha>` and there is no shell on that box, so a run
      that ends says so here or it has said so nowhere at all. */
-  assert.ok(block.includes('docker ps -aq --filter label=com.docker.compose.service=places-sweep'))
-  assert.ok(block.includes('{{.State.ExitCode}}'), 'the exit code of the last sweep')
+  assert.ok(script.includes('docker ps -aq --filter label=com.docker.compose.service=places-sweep'))
+  assert.ok(script.includes('{{.State.ExitCode}}'), 'the exit code of the last sweep')
   assert.match(block, /docker logs --tail \d+ "\$stopped_sweep"/, 'and its last words')
 })
 
