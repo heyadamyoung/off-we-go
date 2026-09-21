@@ -634,6 +634,26 @@ echo "places: $(places_now "
     ) || ' under an older rule, ' ||
     count(*) filter (where status = 'ingesting') || ' mid-ingest'
   from place_coverage")"
+# Whether the places have anything to show yet.
+#
+# This is the whole point of the enrichment half, and until now the deploy
+# could say how many places we hold and nothing at all about whether any of
+# them had a photograph or a sentence. "Ingested" and "worth looking at" are
+# different questions and only one of them was being asked.
+#
+# Four numbers, one indexed count each, from tables in the thousands rather
+# than the tens of millions: how many places have words, how many have a
+# picture, how many the enricher has finished with, and how many it is still
+# to reach. `barren` is a real answer — there is genuinely nothing openly
+# licensed to say about most shopfronts — so it is counted separately from
+# work outstanding rather than hidden in it.
+echo "places: $(places_now "
+  select
+    (select count(*) from place_descriptions) || ' with words, ' ||
+    (select count(distinct place_id) from place_images) || ' with a picture, ' ||
+    (select count(*) from place_enrichment where status = 'barren') || ' nothing to show, ' ||
+    (select count(*) from place_enrichment where status in ('pending','working')) || ' queued'")"
+
 # Whether a sweep is running, crash-looping or stopped — and its last words
 # in all three cases.
 #
