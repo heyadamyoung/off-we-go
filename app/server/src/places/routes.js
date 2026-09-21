@@ -964,10 +964,14 @@ export function registerPlaceRoutes(
    *               million rows outran the step it ran in.
    *   sweep       the run's own record, including `seenAt`. Two reads a minute
    *               apart are a rate; a seenAt that has not moved is a stall.
-   *   enrichment  what has words and a picture, and the rank check: of the
-   *               highest-ranked places, how many were reached. If the ordering
-   *               works that pulls away from the overall proportion; if it is
-   *               broken they track each other.
+   *   enrichment  what has words and a picture, and the ordering check: the
+   *               zoom-by-zoom shape of what has been reached. Working order
+   *               front-loads the low zooms, which is where the places anybody
+   *               sees without looking for them live; random order smears it
+   *               evenly. `prominent` is null when the one count that has to
+   *               touch a planet would not answer in three seconds — the first
+   *               production read of this route timed out at twenty because
+   *               that count was a CTE joined three times.
    *   attribution the licences these records are under, which we are obliged
    *               to be able to state.
    *
@@ -993,6 +997,11 @@ export function registerPlaceRoutes(
         'places.status.sweep.outcome': run?.outcome || 'running',
         'places.status.sweep.quiet.s': since(run?.seen_at) ?? -1,
         'places.status.words': held.enrichment?.withWords ?? 0,
+        'places.status.reached': held.enrichment?.reached ?? 0,
+        /* Whether the denominator answered. A status route that silently
+           reports a zero it does not believe is the anti-pattern this file's
+           rules are written against. */
+        'places.status.prominent.counted': held.enrichment?.prominent !== null,
       })
       timed(reply, { started, asked })
       reply.header('cache-control', STATUS_CACHE)

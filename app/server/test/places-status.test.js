@@ -21,7 +21,7 @@ import pg from 'pg'
 
 import { buildServer } from '../src/app.js'
 import { createPostgresRepository } from '../src/postgres.js'
-import { enrichmentCensus } from '../src/places/enrich/store.js'
+import { enrichmentCensus, prominentPlaces } from '../src/places/enrich/store.js'
 import { closeSweep, markSweep, openSweep, planetHeld } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
 
@@ -170,29 +170,79 @@ test('the census says whether the good places went first', { skip: reachable }, 
     [museum],
   )
 
-  const census = await enrichmentCensus(pool, { leading: 1 })
+  const census = await enrichmentCensus(pool)
   assert.equal(census.prominent, 2)
   assert.equal(census.withWords, 1)
+  assert.equal(census.reached, 1, 'one of the two has been looked at')
   assert.equal(census.toReach, 1, 'the launderette has not been asked about')
-  /* The rank check, which is the point. Of the single highest-ranked place,
-     one has words — so the ordering put the museum in front. Were the order
-     random this would be the overall proportion instead. */
-  assert.deepEqual(census.leading, { of: 1, withWords: 1 })
+  assert.equal(census.ready, 1)
+  /* The ordering check, which is the point. The museum is drawn from zoom 11
+     and it is the one that got reached, so what has been done clusters where
+     the prominent places are. A random order would put the launderette here
+     just as often. */
+  assert.deepEqual(census.byZoom, [{ zoom: 11, reached: 1 }])
 
   const status = await app.inject({ method: 'GET', url: '/api/places/status' })
   assert.equal(status.statusCode, 200, status.body)
   const body = status.json()
   assert.equal(body.enrichment.withWords, 1)
-  /* `of` is the size of the leading set that actually exists, not the limit
-     asked for — two places here, both of them in front of nothing. The
-     denominator is what was examined, which is the only denominator a
-     proportion can honestly use. */
-  assert.deepEqual(body.enrichment.leading, { of: 2, withWords: 1 })
+  assert.equal(body.enrichment.reached, 1)
+  assert.deepEqual(body.enrichment.byZoom, [{ zoom: 11, reached: 1 }])
   /* An estimate, and the route never pretends otherwise: counting rows over a
      planet is what took deploy 387 past the time it was allowed. */
   assert.ok(Number.isFinite(body.planet.places))
   assert.equal(body.planet.cells.of, 53333)
   assert.ok(Array.isArray(body.attribution), 'the layer can always state its licences')
+})
+
+test('a count that will not finish is a null, not a dead route', { skip: reachable }, async t => {
+  /* The first production read of the status route timed out at twenty seconds.
+     The census asked "how many places are prominent" as a CTE over thirty-five
+     million rows and then joined it three times, so every other number hung off
+     a count that could not finish. Everything else now comes off the small
+     tables; this one cannot, so it is bounded — and when the bound bites it
+     reports that it could not count rather than a zero it does not believe.
+
+     Forced with a one-millisecond budget, which no count survives. */
+  const { app, repository } = await world(t)
+
+  /* The timeout itself, against a stub rather than against a table big enough
+     to be slow: 57014 is what Postgres raises when statement_timeout bites, and
+     what matters is what this does with it. A test that needed millions of rows
+     to provoke it would be a test that stopped provoking it on a faster box. */
+  const said = []
+  const timedOut = {
+    async connect() {
+      return {
+        async query(sql) {
+          said.push(String(sql).split(' ')[0].toLowerCase())
+          if (/count\(\*\)/.test(String(sql))) {
+            const error = new Error('canceling statement due to statement timeout')
+            error.code = '57014'
+            throw error
+          }
+          return { rows: [] }
+        },
+        release() {
+          said.push('release')
+        },
+      }
+    },
+  }
+  assert.equal(await prominentPlaces(timedOut, {}), null, 'a count past its budget is null')
+  assert.ok(said.includes('rollback'), 'and the transaction is rolled back')
+  assert.equal(said.at(-1), 'release', 'and the client always goes home')
+
+  /* On a real pool it answers, and the next caller is unaffected — a
+     statement_timeout left on a checked-out client would be their problem,
+     which is why this runs inside its own transaction with `set local`. */
+  const first = await prominentPlaces(repository.pool, { budgetMs: 1 })
+  assert.ok(first === null || typeof first === 'number')
+  const after = await prominentPlaces(repository.pool)
+  assert.equal(typeof after, 'number', 'the next count is unaffected')
+
+  const status = await app.inject({ method: 'GET', url: '/api/places/status' })
+  assert.equal(status.statusCode, 200, 'the route answers either way')
 })
 
 test('the layer can be counted without counting every row', { skip: reachable }, async t => {
