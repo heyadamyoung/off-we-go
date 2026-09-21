@@ -58,11 +58,6 @@ import { event, span, stamp } from '../tracing.js'
 /** The most any one response will carry. A typeahead shows ten and a nearby
     list twenty; fifty is generous for a map that wants to draw the lot. */
 export const MAX_LIMIT = 50
-/** Pins on a map, which is a different question: a map draws hundreds of dots
-    happily and clusters what it cannot. Measured at 500 over an Amsterdam
-    viewport of 168,523 places: 33 ms. */
-export const MAX_PINS = 1_000
-const DEFAULT_PINS = 300
 /** A viewport whose best pins are all below this weight is a viewport with
     nothing worth a dot from orbit — see VIEW_KIND in rank.js on why the
     catch-all category sits under the named ones. */
@@ -302,11 +297,6 @@ const viewQuery = z
     east: z.coerce.number().min(-180).max(180),
     south: z.coerce.number().min(-90).max(90),
     north: z.coerce.number().min(-90).max(90),
-    limit: z.coerce
-      .number()
-      .int()
-      .transform(value => Math.min(MAX_PINS, Math.max(1, value)))
-      .default(DEFAULT_PINS),
     /* Zoomed out, only the things worth a dot from orbit. The client sends
        this rather than a zoom level, because what counts as "worth it" is a
        decision about data and belongs on this side. */
@@ -642,8 +632,8 @@ export function registerPlaceRoutes(
    *
    * Unauthenticated, like the attractions route it replaces and like the
    * airport indoor route beside it: a map's pins are not built from anybody's
-   * trip and carry nothing private. Bounded by MAX_PINS and by the envelope
-   * itself, so being public costs one index scan.
+   * trip and carry nothing private. Bounded by the zoom the envelope derives
+   * and by the envelope itself, so being public costs one index scan.
    */
   /* A tile of places, which is what a map should have been asking for all
    * along.
@@ -756,9 +746,9 @@ export function registerPlaceRoutes(
     if (!servable) return unavailable(reply)
     const parsed = viewQuery.safeParse(request.query || {})
     if (!parsed.success) return reply.code(400).send({ error: message(parsed.error) })
-    const { west, south, east, north, limit, headline } = parsed.data
+    const { west, south, east, north, headline } = parsed.data
 
-    return span('places in view', { 'places.view.limit': limit }, async () => {
+    return span('places in view', {}, async () => {
       const started = Date.now()
       /* The zoom the viewport is looking at, from its own width. What comes
          back is what has earned that zoom — not the best N of everything in
@@ -768,7 +758,6 @@ export function registerPlaceRoutes(
       const rows = await repository.placesInView(
         { west, south, east, north },
         {
-          limit,
           zoom,
           floor: CONFIDENCE_FLOOR,
           floorWeight: headline ? HEADLINE_WEIGHT : 0,
@@ -776,13 +765,6 @@ export function registerPlaceRoutes(
         },
       )
       stamp({ 'places.view.zoom': zoom, 'places.view.found': rows.length })
-      if (rows.capped) {
-        /* Never for a real viewport. Said loudly rather than silently cut. */
-        event('places view hit the planet backstop', {
-          'places.view.zoom': zoom,
-          'places.view.span': Math.abs(east - west),
-        })
-      }
       /* Coverage is asked about the middle of the view, because that is where
          somebody is looking. A box the size of a continent touches more cells
          than any one answer should queue — coverageCells caps that — and the

@@ -410,11 +410,6 @@ export async function nearbyPlaces(
   return result.rows.map(placeRow)
 }
 
-/* A number a real viewport never reaches. Not a cap on what is shown — the
-   zoom decides that — but a refusal to serve a client that asked for the
-   whole planet in one request. */
-export const PLANET_BACKSTOP = 5000
-
 /* Everything inside a map's viewport, for the pin layer.
  *
  * A box, not a radius, because that is the question a map asks: it has corners
@@ -436,11 +431,7 @@ export const PLANET_BACKSTOP = 5000
  * @param {{limit?: number, floor?: number, floorWeight?: number, zoom: number,
  *          weights: Record<string, number>}} input
  */
-export async function placesInView(
-  db,
-  bounds,
-  { limit = PLANET_BACKSTOP, floor = 0, floorWeight = 0, weights, zoom } = {},
-) {
+export async function placesInView(db, bounds, { floor = 0, floorWeight = 0, weights, zoom } = {}) {
   const kinds = Object.entries(weights || {})
   if (!kinds.length) throw new Error('places: a viewport query needs the category weights')
   if (!Number.isFinite(zoom)) throw new Error('places: a viewport query needs the zoom it is at')
@@ -465,9 +456,14 @@ export async function placesInView(
    * answer away and reintroduces the flicker.
    *
    * So: the zoom the viewport is looking at, and every place that has earned
-   * it. The count is bounded by the zoom rather than by a number — a square
-   * holds about LABEL_PER_TILE marks, so a viewport a few squares wide holds
-   * a few times that, and a continent holds the most prominent tier.
+   * it. No limit at all, because the zoom is one: it is derived from the
+   * span, so a box can never be large and zoomed-in at once. A city is four
+   * squares of whatever their kinds put there; a continent is zoom 3, no
+   * place has earned 3, and nothing is drawn. The number that used to sit
+   * here existed because zoomForBounds clamped a world-sized box up to zoom
+   * 11 and asked for ninety-five million marks; it does not clamp any more,
+   * and a cap on top of a rank is a second answer to a question the rank has
+   * already answered better.
    *
    * Both halves of that go to the index together, which is the only reason it
    * is quick: PLACE_VIEW_INDEX is `gist (geom, coalesce(label_zoom, 17))`,
@@ -482,8 +478,7 @@ export async function placesInView(
       and ${ZOOM_AT} <= $7::real
       and p.confidence >= $5::real
       and ${weight} >= $6::double precision
-    order by (${weight}) * p.confidence desc, p.id
-    limit $8`
+    order by (${weight}) * p.confidence desc, p.id`
   const result = await db.query(sql, [
     bounds.west,
     bounds.south,
@@ -492,16 +487,8 @@ export async function placesInView(
     floor,
     floorWeight,
     zoom,
-    /* Not a view cap: a backstop against a client asking for the planet.
-       A real viewport never reaches it, and reaching it is a bug report
-       rather than a silent truncation — see `capped` below. */
-    limit,
   ])
-  const places = result.rows.map(pinRow)
-  /* Said rather than swallowed. If this ever fires, the zoom is not doing its
-     job and somebody should know which viewport did it. */
-  places.capped = result.rows.length >= limit
-  return places
+  return result.rows.map(pinRow)
 }
 
 /** The sources behind a page of places, in one round trip rather than N. */
@@ -838,8 +825,8 @@ export async function pendingCells(db, { statuses = ['pending', 'stale'], limit 
    to whatever the zoom tiers let through — which meant the cap did the
    thinning in a city and nothing did it on an island, and which square a mark
    fell in decided whether it survived. It is decided once now, per place, by
-   where that place comes among its neighbours: places/rank.js LABEL_PER_TILE
-   and store.js assignLabelZoom. A tile asks for everything at its zoom and
+   what kind of place it is: places/rank.js EARLIEST_ZOOM and store.js
+   assignLabelZoom. A tile asks for everything at its zoom and
    gets about that many, evenly, because that is what the number on the row
    already arranged. */
 
@@ -891,7 +878,7 @@ export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
         and p.confidence >= $4::real
         -- No limit, and that is the whole design rather than an oversight.
         -- label_zoom was chosen so that each square of each zoom holds about
-        -- LABEL_PER_TILE marks (see assignLabelZoom); capping here on top of
+        -- the zoom its kind earns (see assignLabelZoom); capping here on top of
         -- that is what used to make a mark visible at one zoom and gone at
         -- the next, because the cap fell differently on each square.
         -- A row from before the zoom pass has none yet, and it is drawn from
@@ -927,63 +914,62 @@ export async function placeTile(db, { z, x, y }, { floor = 0, weights } = {}) {
  * two are tested against each other: a sign error here silently ranks places
  * against the wrong neighbours, which looks like nothing at all until a city
  * is bare and a field is crowded. */
-const TILE_X = (lng, z) => `floor((((${lng}) + 180) / 360) * power(2, ${z}))`
-const TILE_Y = (lat, z) => `floor(
-  (1 - ln(tan(radians(${lat})) + 1 / cos(radians(${lat}))) / pi()) / 2 * power(2, ${z}))`
-
 /**
- * Give every place in a region the zoom it earns among its neighbours.
+ * Give every place the zoom its kind appears from.
  *
- * For each zoom that thins, the places in each square of that zoom are put in
- * order of what they are worth and the best `perTile` of them that have not
- * already earned a zoom earn this one; everything still unclaimed lands on
- * the floor zoom, where a square is three hundred metres across and somebody
- * has asked for everything. The result is one number per row, and a tile is
- * then `label_zoom <= z` with no cap — so a mark that has appeared cannot
- * disappear as you zoom in. Monotonic by construction.
+ * One lookup per row and nothing else: a museum is drawn from 11, a café from
+ * 14, a launderette from 16, and that is true in Amsterdam and in Regina and
+ * on Skye. The table is EARLIEST_ZOOM in rank.js and it is the whole rule.
  *
- * One function, called two ways, and the difference is only how much
- * neighbourhood it can see. The ingest calls it with a cell's bounds inside
- * the cell's own transaction, so a square is never loaded without its marks
- * being placed; a square that straddles two cells is then ranked against the
- * half we have, which is a little generous at the seams. The planet pass
- * calls it with the whole world and is the authority. Same SQL either way,
- * because two implementations of one rule is how the seams stop matching the
- * middle.
+ * It used to be a ranking. For each zoom that thins, the places in each
+ * square were put in order of what they are worth and the best
+ * two dozen of them earned that zoom; everything else fell through to
+ * the next. That is what a tiler does and it reads well on a screen, and it
+ * had a property nobody wanted: a place's zoom depended on its neighbours. An
+ * identical museum appeared at 12 in Regina and 15 in Amsterdam, and "the
+ * zoom decides what is drawn" was not true — the crowd decided, and the zoom
+ * only decided how big the crowd was allowed to be.
+ *
+ * So the quota is gone. At a zoom you get every place whose kind belongs
+ * there, however many that is, which is the thing a person means when they
+ * zoom in. Nothing downstream caps it either: the viewport query has no
+ * limit, because the zoom a viewport derives from its own width already
+ * bounds what can match.
+ *
+ * What is kept is the part that was load-bearing: one number per row, and a
+ * tile is `label_zoom <= z`, so a mark that has appeared cannot disappear as
+ * you zoom further in. Monotonic by construction, as before.
+ *
+ * And it is now a plain UPDATE rather than six zooms of window function over
+ * every row in the region. The densest degree on Earth was measured at 18.2
+ * seconds under the old rule, which is why the backfill never finished; this
+ * is an index scan and an assignment. `is distinct from` so a re-run over a
+ * region that is already right writes nothing at all.
+ *
+ * One function, called two ways: the ingest with a cell's bounds inside the
+ * cell's own transaction, the backfill with the same. There are no seams to
+ * get wrong any more, because no row's answer depends on any other row's.
  *
  * @param {{west,south,east,north}|null} bounds  null for the whole world
- * @param {{weights: Record<string, number>, perTile?: number,
- *          zooms?: {from: number, to: number, floor: number}}} options
- * @returns {Promise<number>} rows given a zoom
+ * @param {{earliest: Record<string, number>, floor: number}} options
+ * @returns {Promise<number>} rows whose zoom changed
  */
-export async function assignLabelZoom(db, bounds, { weights, perTile, zooms, earliest }) {
-  const kinds = Object.entries(weights || {})
-  if (!kinds.length) throw new Error('places: a zoom pass needs the category weights')
-  for (const [category] of kinds) {
-    if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
-  }
+export async function assignLabelZoom(db, bounds, { earliest, floor }) {
   const ceilings = Object.entries(earliest || {})
   if (!ceilings.length) throw new Error('places: a zoom pass needs the category ceilings')
   for (const [category, zoom] of ceilings) {
     if (!/^[a-z]+$/.test(category)) throw new Error(`places: not a category: ${category}`)
     if (!Number.isInteger(zoom)) throw new Error(`places: not a zoom: ${category}=${zoom}`)
   }
+  if (!Number.isInteger(floor)) throw new Error('places: a zoom pass needs the floor zoom')
   /* Composed, and checked above, exactly as placeTile composes the same
-     table: these are the only two statements in this file that are not
-     entirely parameters. */
-  const weight = `(case p.category ${kinds
-    .map(([category, value]) => `when '${category}' then ${Number(value).toFixed(3)}`)
-    .join(' ')} else 0.100 end) * (0.4 + 0.6 * least(1, greatest(0, p.confidence)))`
-  /* The ceiling: how prominent this kind of place may ever be. Composed the
-     same way and checked the same way as the weights above. Density decides
-     which of the places allowed at a zoom take its slots; this decides which
-     are allowed there at all, because a café does not become a landmark by
-     being the only one in an empty county. */
-  const earliestAt = `(case p.category ${ceilings
+     table: these are the only statements in this file that are not entirely
+     parameters. The values are our own twenty category names, never user
+     text. */
+  const at = `case p.category ${ceilings
     .map(([category, zoom]) => `when '${category}' then ${Number(zoom)}`)
-    .join(' ')} else ${Number(earliest.other ?? zooms.floor)} end)`
-  const lng = 'ST_X(p.geom::geometry)'
-  const lat = 'ST_Y(p.geom::geometry)'
+    .join(' ')} else ${Number(earliest.other ?? floor)} end`
+
   /* No bounds means everywhere, and everywhere is not an envelope.
    *
    * The planet pass was written first as an envelope of the whole world cast
@@ -992,40 +978,14 @@ export async function assignLabelZoom(db, bounds, { weights, perTile, zooms, ear
    * everything. Measured, on two million rows: the world envelope matched
    * zero and a one-degree box matched 174,634. It is not a predicate that
    * needs widening; it is a predicate that should not be there. */
-  const everywhere = !bounds
-  const box = 'ST_MakeEnvelope($1, $2, $3, $4, 4326)'
-  const within = everywhere ? 'true' : `p.geom && ${box}::geography`
-  const at = n => (everywhere ? `$${n - 4}` : `$${n}`)
-  const sql = `
-    with claimed as (
-      select id, min(z) as z from (
-        select p.id, z,
-               row_number() over (
-                 partition by z, ${TILE_X(lng, 'z')}, ${TILE_Y(lat, 'z')}
-                 order by ${weight} desc, p.id
-               ) as place
-        from places p, generate_series(${at(5)}::int, ${at(6)}::int) as z
-        where ${within} and z >= ${earliestAt}
-      ) ranked
-      where place <= ${at(7)}::int
-      group by id
-    ),
-    given as (
-      update places p set label_zoom = c.z from claimed c where p.id = c.id
-      returning p.id
-    ),
-    -- Everything the thinning zooms did not claim belongs to the floor, where
-    -- a square is small enough that a selection is not what anybody wants.
-    rest as (
-      update places p set label_zoom = ${at(8)}::real
-      where ${within} and not exists (select 1 from claimed c where c.id = p.id)
-      returning p.id
-    )
-    select (select count(*) from given) + (select count(*) from rest) as placed`
-  const { from, to, floor } = zooms
-  const corners = everywhere ? [] : [bounds.west, bounds.south, bounds.east, bounds.north]
-  const result = await db.query(sql, [...corners, from, to, perTile, floor])
-  return Number(result.rows[0]?.placed) || 0
+  const within = bounds ? 'p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography' : 'true'
+  const corners = bounds ? [bounds.west, bounds.south, bounds.east, bounds.north] : []
+  const result = await db.query(
+    `update places p set label_zoom = (${at})::real
+      where ${within} and label_zoom is distinct from (${at})::real`,
+    corners,
+  )
+  return result.rowCount ?? 0
 }
 
 /**

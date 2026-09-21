@@ -194,8 +194,11 @@ export const SAMPLE_ATTRIBUTION = [
     arbitrary few. */
 export function samplePins(
   box: { west: number; south: number; east: number; north: number },
-  { headline = false, limit = 300 } = {},
+  { headline = false } = {},
 ): AttractionPoi[] {
+  /* No slice. The real route has no limit either — what a viewport shows is
+     decided by the zoom a place earned and nothing else — and a demo that
+     cut at a number would be a demo of a different thing. Twenty-two pins. */
   return SAMPLE_PINS.filter(
     pin =>
       pin.lng >= box.west &&
@@ -203,9 +206,7 @@ export function samplePins(
       pin.lat >= box.south &&
       pin.lat <= box.north &&
       (!headline || pin.big),
-  )
-    .sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name))
-    .slice(0, limit)
+  ).sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name))
 }
 
 /** What the demo knows about where its pins are.

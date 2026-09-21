@@ -70,20 +70,36 @@ export function tileBounds(z, x, y) {
  * enough: this decides which tier of marks belongs on screen, and being a
  * level out shows the next tier rather than the wrong thing.
  *
- * Clamped, and both ends matter. Below the first thinning zoom no place has
- * earned anything, so an unclamped continent view would filter to nothing and
- * the map would be empty exactly where somebody is trying to see the shape of
- * a country; clamped, they get the most prominent tier. Above the floor there
- * is nothing left to thin.
+ * Clamped at the top and nowhere else. Above the floor there is nothing left
+ * to thin, so 17 and 20 are the same question.
+ *
+ * It used to clamp at the bottom too — up to LABEL_ZOOMS.from — on the
+ * argument that a continent view would otherwise filter to nothing and the
+ * map would be empty where somebody wants the shape of a country. That is
+ * true and it is not what the clamp did. A world-sized box came back as zoom
+ * 11, which is one city's worth of thinning applied to the whole planet:
+ * 3,962,880 tile squares in view at twenty-four marks each, ninety-five
+ * million marks asked for. Nothing can draw that, so a limit was bolted on
+ * top to cut it to three hundred — and a limit is a second answer to the
+ * question `label_zoom` already answers, arbitrary where that one is ordered,
+ * which is why panning changed what was on screen.
+ *
+ * Unclamped, the count is bounded by construction and the limit is not
+ * needed. The zoom comes from the span, so a box can never be large and
+ * zoomed-in at once: a city is 4 squares and about 96 marks, a district the
+ * same, a street is the floor and draws everything in three hundred metres.
+ * A continent is zoom 3, no place has earned 3, and the map draws no pins —
+ * which is the honest answer. Country outlines are the basemap's job, and
+ * `headline` is the thing that exists for "worth a dot from further out".
  *
  * @param {{west: number, south: number, east: number, north: number}} bounds
- * @param {{from: number, floor: number}} zooms
+ * @param {{floor: number}} zooms
  */
-export function zoomForBounds(bounds, { from, floor }) {
+export function zoomForBounds(bounds, { floor }) {
   const span = Math.abs(Number(bounds?.east) - Number(bounds?.west))
   if (!Number.isFinite(span) || span <= 0) return floor
   const at = Math.round(Math.log2(360 / span))
-  return Math.min(floor, Math.max(from, at))
+  return Math.min(floor, at)
 }
 
 /**
