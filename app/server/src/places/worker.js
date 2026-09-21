@@ -60,6 +60,7 @@ import {
   PLACE_VIEW_INDEX_SQL,
   placeTile,
   readPlaceTile,
+  seedLicensesHeld,
   writePlaceTile,
 } from './store.js'
 import { tilesToBuild } from './tiles.js'
@@ -413,6 +414,36 @@ export function createPlaceWorker({
    * Once, and then never again: the check is one catalogue lookup, and a tick
    * on a box that already has it costs that and nothing else. */
   let building = null
+  /* The attribution line, for a planet loaded before it was a fact.
+   *
+   * Every cell written from now on records its own licences inside its
+   * transaction — see ingest.js — so this is only for the twelve million
+   * places that were already here. One scan of `place_sources`, once, on a
+   * box where the release is already live and answering, which is the whole
+   * reason it is here and not in a migration.
+   *
+   * The map draws no attribution until this has run, and that is the right
+   * way round: a line that says nothing for a minute after a release is a
+   * line that is late, while a deploy that scans a source row per place is a
+   * release that is late. */
+  let licencesNoted = false
+  async function noteTheLicences() {
+    if (licencesNoted || stopped) return
+    const held = await pool.query('select 1 from place_licenses limit 1').catch(() => null)
+    if (!held) return
+    if (held.rowCount) {
+      licencesNoted = true
+      return
+    }
+    const added = await seedLicensesHeld(pool).catch(error => {
+      log(`places: the licences could not be read — ${error.message}`)
+      return null
+    })
+    if (added === null) return
+    licencesNoted = true
+    log(`places: ${added} licence(s) recorded from the sources already held`)
+  }
+
   async function buildTheIndex() {
     if (building || stopped) return
     const ready = await indexIsReady(pool, PLACE_VIEW_INDEX)
@@ -614,6 +645,7 @@ export function createPlaceWorker({
      * database alone must not be behind a network call. */
     await buildTheIndex()
     await placeTheUnplaced()
+    await noteTheLicences()
 
     const pipe = await pipeline()
     if (!pipe) return

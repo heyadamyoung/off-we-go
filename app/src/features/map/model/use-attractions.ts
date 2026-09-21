@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import { hasBackend } from '../../../backend'
-import { loadPlacePins } from '../../places'
+import { type PlaceCoverage, loadPlaceCoverage, loadPlacePins } from '../../places'
 import { MIN_ZOOM_KEY, RANK_KEY } from '../../../place-marks-core'
 import { trackError } from '../../../shared/lib/telemetry'
 import type { AttractionPoi, MapView } from '../../../shared/model/types'
@@ -93,17 +93,25 @@ function useAttractions(view: MapView, enabled: boolean) {
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const found = await loadPlacePins(
-          boxFor(view),
-          /* With a tiled map this call is not fetching pins any more — the
-             map does that itself, one square at a time — it is asking the
-             one question the tiles cannot answer: is the ground under this
-             view ingested yet. So it asks for a single place rather than
-             three hundred, and reads only `degraded` and the attribution off
-             the answer. The demo, which has no tiles, still wants its pins. */
-          { headline: view.zoom < HEADLINE_BELOW_ZOOM, limit: tiled ? 1 : 300 },
-          controller.signal,
-        )
+        /* Two different questions, and they stopped being the same request.
+         *
+         * With a tiled map this hook does not fetch pins — the map does that
+         * itself, one square at a time — it answers the one thing the tiles
+         * cannot: is the ground under this view ingested yet. That was asked
+         * by requesting pins with `limit: 1` and throwing them away, which
+         * was fine while a viewport was capped and became "send me every
+         * place in this box" when the cap went: seventeen hundred rows over
+         * Toronto, four seconds, on every settled pan, to read one boolean.
+         *
+         * The demo has no tiles and no server, so it still wants its canned
+         * pins and asks the other question. */
+        const found: (PlaceCoverage & { places?: AttractionPoi[] }) | null = tiled
+          ? await loadPlaceCoverage(boxFor(view), controller.signal)
+          : await loadPlacePins(
+              boxFor(view),
+              { headline: view.zoom < HEADLINE_BELOW_ZOOM },
+              controller.signal,
+            )
         if (controller.signal.aborted) return
         if (!found) {
           /* No places layer on this deployment. Said once, and the map simply
@@ -118,8 +126,12 @@ function useAttractions(view: MapView, enabled: boolean) {
         setFilling(found.degraded)
         setAttribution(found.attribution || [])
         /* Nothing to hold on a tiled map: the tiles on screen are the pins on
-           screen, and MapLibre keeps them across a pan by itself. */
+           screen, and MapLibre keeps them across a pan by itself. The answer
+           in hand carries no places either — it was never asked for them. */
         if (tiled) return
+        /* The coverage answer carries no places — it was never asked for
+           them — and a pins answer always does, empty or not. */
+        if (!found.places) return
         /* The previous view's pins stay on screen while a cell is still
            filling, so panning into an uningested country does not blank the
            map between one answer and the next. */

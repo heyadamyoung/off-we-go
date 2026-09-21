@@ -3,6 +3,7 @@
    presentation rules live in src/places-core.ts, which anything may import. */
 export {
   isAbortError,
+  loadPlaceCoverage,
   loadPlacePins,
   MIN_QUERY,
   nearbyPlaces,
@@ -10,6 +11,7 @@ export {
   searchPlaces,
   sightsNearby,
   type NearbyQuery,
+  type PlaceCoverage,
   type PlacePins,
   type PlaceSearchQuery,
 } from './api/places'

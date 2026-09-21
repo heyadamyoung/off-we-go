@@ -70,11 +70,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # Three things side by side, none of which waits on another: the unit
-      # tests; the deployment guard, which has docker here and so must run
-      # its compose check rather than skip it; and the release images. On one
-      # runner because every job a run asks for is a runner it may wait on,
-      # and the images are mostly a wait on the registry that the tests fill.
+      # Four things side by side, none of which waits on another: the unit
+      # tests; the typechecker; the deployment guard, which has docker here
+      # and so must run its compose check rather than skip it; and the release
+      # images. On one runner because every job a run asks for is a runner it
+      # may wait on, and the images are mostly a wait on the registry that the
+      # tests fill.
+      #
+      # The typechecker was not run by this pipeline at all until 21
+      # September, when `tsc --noEmit` turned out to have been failing on main
+      # for the length of three releases: a call site still passing a `limit`
+      # to a places API that had stopped taking one. Nothing caught it,
+      # because Vite builds with esbuild and esbuild strips types rather than
+      # checking them — the bundle was built, shipped and served by a pipeline
+      # that had never once asked whether it compiled. Two seconds, beside the
+      # tests.
       #
       # Neither image is built by Docker on a release. Each is a base and one
       # layer over it — the server over the api's base, the bundle over Caddy
@@ -140,15 +150,19 @@ jobs:
           }
           ( time pnpm test:unit ) > /tmp/unit.log 2>&1 &
           unit=$!
+          ( time pnpm typecheck ) > /tmp/types.log 2>&1 &
+          types=$!
           ( time REQUIRE_DOCKER=1 pnpm test:guard ) > /tmp/guard.log 2>&1 &
           guard=$!
           ( time images ) > /tmp/images.log 2>&1 &
           built=$!
           failed=0
           wait "$unit" || failed=1
+          wait "$types" || failed=1
           wait "$guard" || failed=1
           wait "$built" || failed=1
           sed 's/^/[unit] /' /tmp/unit.log
+          sed 's/^/[types] /' /tmp/types.log
           sed 's/^/[guard] /' /tmp/guard.log
           sed 's/^/[images] /' /tmp/images.log
           exit "$failed"

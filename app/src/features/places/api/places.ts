@@ -155,14 +155,21 @@ export async function sightsNearby(query: Omit<NearbyQuery, 'category'>): Promis
  * One query now, answered anywhere, from data the server holds. `headline` is
  * the zoomed-out view: the server decides what deserves a dot from orbit,
  * because that is a question about the data and it owns the data. */
-export interface PlacePins {
-  places: AttractionPoi[]
+/** What the map has to know about the ground under a view, and what every
+    answer from this layer carries. `degraded` is "this square is still being
+    ingested"; `attribution` is the layer's licence line, which has to be on
+    screen wherever the data is; `retry` is "the server could not answer just
+    now and will be able to shortly" — hold whatever is on screen rather than
+    acting on it. */
+export interface PlaceCoverage {
   attribution: { license: string; notice: string; url: string | null }[]
-  /** the ground under this view has not been ingested yet; it is filling in */
   degraded: boolean
-  /** the server could not answer just now and will be able to shortly — hold
-      whatever is on screen rather than acting on this */
   retry?: boolean
+}
+
+/** The same, plus the places themselves. */
+export interface PlacePins extends PlaceCoverage {
+  places: AttractionPoi[]
 }
 
 export async function loadPlacePins(
@@ -201,6 +208,46 @@ export async function loadPlacePins(
        layer and drew no pins again until the page was reloaded. It is "not
        this second", not "not here". */
     if (status === 503) return { places: [], attribution: [], degraded: true, retry: true }
+    throw error
+  }
+}
+
+/**
+ * Is the ground under this view ingested yet.
+ *
+ * The map draws its pins from tiles, so this is the only other question it
+ * has, and it used to be asked by requesting pins and dropping them: `limit:
+ * 1` beside the viewport, read two fields off the answer, throw the rest
+ * away. When the cap on a viewport went — a zoom decides what is drawn, and
+ * nothing truncates it — that quietly became "send me every place in this
+ * box": seventeen hundred rows and four seconds over Toronto, on every
+ * settled pan, for one boolean.
+ *
+ * Its own question now, answered from coverage rows and a three-row licence
+ * table without touching `places` at all.
+ */
+export async function loadPlaceCoverage(
+  box: { west: number; south: number; east: number; north: number },
+  signal?: AbortSignal,
+): Promise<PlaceCoverage | null> {
+  /* The demo has no server and nothing to ingest, so the ground under it is
+     always ready and the notice is the canned one. */
+  if (!hasBackend) return { attribution: SAMPLE_ATTRIBUTION, degraded: false }
+  const query = new URLSearchParams({
+    west: String(box.west),
+    south: String(box.south),
+    east: String(box.east),
+    north: String(box.north),
+  })
+  try {
+    return await authClient.request<PlaceCoverage>(`/places/coverage?${query}`, { signal })
+  } catch (error) {
+    const status = (error as ApiError).status
+    /* A server from before this route existed, or one with no places half at
+       all. The caller stops asking — the same contract as the pins. */
+    if (status === 404) return null
+    /* Restarting, which it does on every release. Hold what is on screen. */
+    if (status === 503) return { attribution: [], degraded: true, retry: true }
     throw error
   }
 }
