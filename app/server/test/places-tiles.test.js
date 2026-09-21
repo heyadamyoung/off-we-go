@@ -161,3 +161,67 @@ test('the SQL tile arithmetic agrees with the JavaScript', async () => {
     await pool.end()
   }
 })
+
+/* The probe's own reader, against a tile PostGIS actually encoded.
+ *
+ * The live probe is the only window we have into production — the box has no
+ * shell and the deploy key runs one command — and until now it measured
+ * `/api/places/in-view`, which is not the path a map draws from. It reads the
+ * tiles now, which means it has to decode a tile, which means the sixty lines
+ * of protobuf in places/mvt.js are now load-bearing for every number anybody
+ * quotes about how the map performs.
+ *
+ * So they are checked against the encoder rather than against themselves: a
+ * hundred and thirty-seven points at seven different zooms, encoded by
+ * ST_AsMVT exactly as the tile route encodes them, and the count and the
+ * per-zoom histogram have to come back out matching what the table holds. A
+ * reader that silently dropped a feature would make the probe say the map is
+ * thinner than it is, and a reader that silently dropped the last tag would
+ * make every zoom read as `none`.
+ */
+test('the probe reads a tile the way PostGIS wrote it', async t => {
+  const { databaseUrl, skip } = await database()
+  if (skip) return t.skip('no test database')
+  const pg = (await import('pg')).default
+  const { tileHolds } = await import('../src/places/mvt.js')
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  /* Registered in the order they have to run: the table goes before the
+     connection that drops it does. */
+  t.after(() => client.query('drop table if exists mvt_probe'))
+  t.after(() => client.end())
+
+  await client.query('drop table if exists mvt_probe')
+  await client.query(
+    'create table mvt_probe (id int, n text, minzoom int, geom geometry(Point, 4326))',
+  )
+  await client.query(`
+    insert into mvt_probe
+    select g, 'Place ' || g, 11 + (g % 7),
+           ST_SetSRID(ST_MakePoint(4.88 + (g % 13) * 0.0005, 52.36 + (g % 7) * 0.0005), 4326)
+    from generate_series(1, 137) g`)
+
+  /* The tile Amsterdam's centre falls in at zoom 13, by the same arithmetic
+     the map uses to decide what to ask for. */
+  const z = 13
+  const [x, y] = [tileX(4.88, z), tileY(52.36, z)]
+  const { rows } = await client.query(
+    `with bounds as (select ST_TileEnvelope($1, $2, $3) as box)
+     select ST_AsMVT(t, 'places', 4096, 'geom') as tile from (
+       select id::text as id, n, minzoom,
+              ST_AsMVTGeom(ST_Transform(geom, 3857), b.box, 4096, 64, true) as geom
+       from mvt_probe, bounds b
+     ) t where t.geom is not null`,
+    [z, x, y],
+  )
+  const held = tileHolds(new Uint8Array(rows[0].tile))
+  const expected = await client.query(
+    'select minzoom, count(*)::int as n from mvt_probe group by minzoom order by minzoom',
+  )
+  assert.equal(held.features, 137, 'the reader lost features the encoder wrote')
+  assert.equal(
+    held.zooms,
+    expected.rows.map(row => `${row.minzoom}:${row.n}`).join(' '),
+    'the reader disagrees with the table about which zoom each mark is drawn from',
+  )
+})
