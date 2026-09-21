@@ -769,6 +769,69 @@ test('the enrichment pipeline can actually be switched on', () => {
   assert.match(api, /PLACES_CONTACT: \$\{PLACES_CONTACT:-\}/, 'unset is off, not a failure')
 })
 
+/* The deploy's critical path is: make the schema right, swap the containers,
+ * check the site answers. Nothing else.
+ *
+ * Everything before that health check can roll a release back, so everything
+ * before it has to be a thing whose failure genuinely means the release is
+ * bad. Configuring Logto's sign-in experience is not: it is idempotent, it
+ * has been true for three hundred releases, and it waits on somebody else's
+ * container seeding its own schema — three minutes of deploy 364, above the
+ * gate, where a slow neighbour could undo a perfect release.
+ *
+ * So the order is asserted, not just the contents. Asking whether the site
+ * answers comes first; the census, the sweep, the object-store cutover and
+ * Logto's sign-in configuration all come after, each with `|| true`, each
+ * loud in the log, none able to undo a release that is up and answering.
+ */
+test('nothing that cannot fail a release runs before the health check', () => {
+  const script = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const gate = script.indexOf('/api/health')
+  assert.ok(gate > 0, 'the deploy asks whether the site answers')
+
+  for (const [what, needle] of [
+    ["Logto's sign-in configuration", 'bash ./deploy/configure-logto.sh'],
+    ['the day census', 'api node server/scripts/day-census.mjs'],
+    ['the object store cutover', 'object-storage.sh cutover'],
+  ]) {
+    const at = script.indexOf(needle)
+    assert.ok(at > 0, `the deploy runs ${what}`)
+    assert.ok(at > gate, `${what} runs after the health check, not before it`)
+    /* And on a line that cannot fail the deploy. */
+    const line = script.slice(at, script.indexOf('\n', at))
+    assert.match(line, /\|\| true\s*$/, `${what} cannot undo a release that is answering`)
+  }
+
+  /* And none of it holds the deploy open.
+   *
+   * `|| true` stops housekeeping failing a release; it does nothing about
+   * housekeeping taking twenty-five minutes of one, which deploy 368 did
+   * with the release live for most of them. The deploy ends at the health
+   * check and the rest runs in a session of its own — `setsid` so closing
+   * the channel cannot signal it, and the redirections because ssh waits on
+   * the pipe rather than on the process. */
+  const detached = script.indexOf('setsid bash -c')
+  assert.ok(detached > gate, 'the housekeeping is detached after the health check')
+  const call = script.slice(detached, script.indexOf('disown', detached))
+  assert.match(
+    call,
+    />>\s*"\$AFTER_LOG"\s*2>&1\s*<\s*\/dev\/null\s*&/,
+    'and lets go of the channel',
+  )
+  /* A detached shell gets the environment and nothing else. */
+  assert.match(script, /export APP_ROOT deployment_domain image_repo release_sha/)
+  for (const [what, needle] of [
+    ["Logto's sign-in configuration", 'bash ./deploy/configure-logto.sh'],
+    ['the day census', 'api node server/scripts/day-census.mjs'],
+    ['the object store cutover', 'object-storage.sh cutover'],
+  ]) {
+    assert.ok(
+      script.indexOf(needle) < detached,
+      `${what} is inside the detached block, not left holding the deploy open`,
+    )
+  }
+})
+
 /* A migration changes the schema. It does not do work whose size depends on
  * how much data there is.
  *
@@ -1064,14 +1127,16 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      that is live and answering being reported as a failure. The reading is
      `|| true`; the start is the test of an `if`, which `set -e` does not
      treat as an error either way. */
-  assert.match(block, /\|\| true\n\}/, 'the coverage reading cannot fail the deploy')
+  /* Indented now: the whole block lives inside `after_release`, which runs
+     detached once the release is live. */
+  assert.match(block, /\|\| true\n\s*\}/, 'the coverage reading cannot fail the deploy')
   /* By Compose's own labels rather than `compose ps`. The first live run
      proved why: `compose ps --profile sweep --status running -q` came back
      empty while the sweep was running, so the deploy said it had started one
      when it had not. `docker ps --filter label=` needs no profile to see it. */
-  assert.match(block, /^if \[ -n "\$\(docker ps -q --filter status=running/m)
+  assert.match(block, /^\s*if \[ -n "\$\(docker ps -q --filter status=running/m)
   assert.ok(block.includes('label=com.docker.compose.service=places-sweep'))
-  assert.match(block, /^ {2}if docker compose --profile sweep up -d --no-build places-sweep/m)
+  assert.match(block, /^\s+if docker compose --profile sweep up -d --no-build places-sweep/m)
   assert.ok(block.includes('could not be started'), 'a start that fails says so')
   /* --no-build: the box pulls what the pipeline pushed and builds nothing. */
   assert.ok(!/docker compose[^\n]*up[^\n]*--build/.test(block))

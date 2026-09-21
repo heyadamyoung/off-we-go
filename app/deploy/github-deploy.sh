@@ -204,7 +204,6 @@ else
   migrate_with_new_image
   docker compose up -d --build --wait --wait-timeout 900
 fi
-bash ./deploy/configure-logto.sh
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
 if [[ -z "$deployment_domain" ]]; then
   echo "WAYFARE_DOMAIN is missing from $APP_ROOT/.env." >&2
@@ -231,118 +230,168 @@ install -o root -g root -m 755 \
 printf '%s\n' "$release_sha" > .deployed-sha
 trap - ERR
 
-# What the day repair actually did, counted rather than assumed. Migrations
-# 025 and 026 are one-time and neither says a word about what it changed, so
-# this is how anybody finds out whether it reached the trips that needed it —
-# the same discipline as the media cutover below, which reports its files and
-# its failures rather than claiming success. Read-only, and never a reason a
-# deploy fails: a census that cannot run tells nobody anything, but a release
-# that is already live and answering is not worth rolling back over it.
-docker compose exec -T api node server/scripts/day-census.mjs || true
+# Everything from here on is after the release. None of it is the release.
+#
+# The deploy's job is done at the health check above: the new code is running
+# and the site answers. What follows — sign-in configuration, the day census,
+# the planet sweep, the media cutover, pruning old images — is housekeeping
+# that was already `|| true`, already unable to fail a release, and yet still
+# held the deploy open for as long as it took. Deploy 368 was twenty-five
+# minutes, and the release had been live for most of them.
+#
+# So it runs detached, and the deploy ends. `setsid` gives it a session of
+# its own so closing the SSH channel cannot signal it; the redirections are
+# what actually free the channel, because ssh waits on the pipe rather than
+# on the process. It keeps its own log on the box, named here so anybody
+# reading a deploy knows where the rest of the story went.
+#
+# Nothing in it may ever become load-bearing. A step that must succeed for
+# the release to be good belongs above the health check, where it can fail
+# the deploy and roll it back; a step down here cannot be waited on by
+# anybody and must not pretend otherwise.
+AFTER_LOG=/var/log/wayfare-after-release.log
+after_release() {
+  cd "$APP_ROOT" || return 0
+  echo "--- after the release of $release_sha, $(date -u +%FT%TZ) ---"
 
-# The planet, filling itself in the background.
-#
-# The queue inside the API drains four one-degree cells a minute, which is the
-# right rate for the cells a trip touches and about nine days for the 53,333
-# the Overture release has data in. Panning to somewhere nobody has been yet
-# finds empty ground until then, and that was the report.
-#
-# So the other job runs here: read the sixteen Parquet parts once each and put
-# every row into the cell it falls in (server/src/places/sweep.js). Measured at
-# 7,250 places a second, which is the whole planet in under three hours and
-# about 88 GB of table and index against the 544 GB this box has free.
-#
-# Its own profiled compose service rather than an `exec` into the API, and
-# that is the reason this line can run on every release: `compose up` does not
-# touch a profiled service, so a deploy no longer kills a run three hours in.
-# --resume means a restarted one pays only for the cells still owing, and a
-# run with nothing to do exits in seconds.
-#
-# Every line ends in `|| true`, like the capacity block below: a sweep that
-# will not start is worth a sentence in the log, and is not worth rolling back
-# a release that is live and answering.
-places_ask() {
-  docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
-}
-echo "places: $(places_ask 'select count(*) from places') places in $(places_ask "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
-# `docker ps` by label rather than `docker compose ps`, and the reason is the
-# first run: `compose ps --profile sweep --status running -q` came back empty
-# while the sweep was demonstrably running — 8,357 cells covered between one
-# release and the next — so the deploy reported starting a sweep it had not
-# started. Harmless, because `up -d` on an unchanged service is a no-op, but a
-# line in a deploy log that is wrong about what it did is worse than no line.
-# The labels are Compose's own and need no profile to be visible, which is the
-# whole point; the cleanup below already reads them the same way.
-if [ -n "$(docker ps -q --filter status=running \
-  --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
-  echo "places: a sweep is already running; left alone"
-else
-  # Why the last one stopped, before starting another.
+
+  # What the day repair actually did, counted rather than assumed. Migrations
+  # 025 and 026 are one-time and neither says a word about what it changed, so
+  # this is how anybody finds out whether it reached the trips that needed it —
+  # the same discipline as the media cutover below, which reports its files and
+  # its failures rather than claiming success. Read-only, and never a reason a
+  # deploy fails: a census that cannot run tells nobody anything, but a release
+  # that is already live and answering is not worth rolling back over it.
+  # Sign-in configuration, asserted again now the release is live.
   #
-  # The first live planet run exited somewhere in the Atlantic and left an
-  # exited container nobody could ask, because the deploy key is restricted to
-  # `deploy <sha>` and there is no shell on this box. A run that ends has to
-  # say so here or it has said so nowhere. Read-only, and `|| true` throughout.
-  stopped_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
-    2>/dev/null | head -n 1 || true)"
-  if [ -n "$stopped_sweep" ]; then
-    echo "places: the last sweep exited $(docker inspect \
-      -f '{{.State.ExitCode}} after {{.State.StartedAt}} to {{.State.FinishedAt}}' \
-      "$stopped_sweep" 2>/dev/null || echo '?') — its last lines:"
-    docker logs --tail 15 "$stopped_sweep" 2>&1 | sed 's/^/places:   /' || true
-  fi
-  if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
-    echo "places: sweep started — docker compose logs -f places-sweep"
+  # It was above the health gate and it was three minutes of deploy 364: the
+  # script waits for Logto to finish seeding its own schema, up to a minute of
+  # it, on every release — and a release that is otherwise perfect must not be
+  # rolled back because somebody else's container is still starting.
+  #
+  # It is idempotent and it has been true for three hundred releases, so being
+  # a minute late is nothing and being a reason to roll back is not nothing.
+  # `|| true` for the same reason as the census below: said in the log, never a
+  # release undone. If sign-in configuration is genuinely wrong the line here
+  # says so, and it says so on a box that is up and answering.
+  bash ./deploy/configure-logto.sh || true
+
+  docker compose exec -T api node server/scripts/day-census.mjs || true
+
+  # The planet, filling itself in the background.
+  #
+  # The queue inside the API drains four one-degree cells a minute, which is the
+  # right rate for the cells a trip touches and about nine days for the 53,333
+  # the Overture release has data in. Panning to somewhere nobody has been yet
+  # finds empty ground until then, and that was the report.
+  #
+  # So the other job runs here: read the sixteen Parquet parts once each and put
+  # every row into the cell it falls in (server/src/places/sweep.js). Measured at
+  # 7,250 places a second, which is the whole planet in under three hours and
+  # about 88 GB of table and index against the 544 GB this box has free.
+  #
+  # Its own profiled compose service rather than an `exec` into the API, and
+  # that is the reason this line can run on every release: `compose up` does not
+  # touch a profiled service, so a deploy no longer kills a run three hours in.
+  # --resume means a restarted one pays only for the cells still owing, and a
+  # run with nothing to do exits in seconds.
+  #
+  # Every line ends in `|| true`, like the capacity block below: a sweep that
+  # will not start is worth a sentence in the log, and is not worth rolling back
+  # a release that is live and answering.
+  places_ask() {
+    docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
+  }
+  echo "places: $(places_ask 'select count(*) from places') places in $(places_ask "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
+  # `docker ps` by label rather than `docker compose ps`, and the reason is the
+  # first run: `compose ps --profile sweep --status running -q` came back empty
+  # while the sweep was demonstrably running — 8,357 cells covered between one
+  # release and the next — so the deploy reported starting a sweep it had not
+  # started. Harmless, because `up -d` on an unchanged service is a no-op, but a
+  # line in a deploy log that is wrong about what it did is worse than no line.
+  # The labels are Compose's own and need no profile to be visible, which is the
+  # whole point; the cleanup below already reads them the same way.
+  if [ -n "$(docker ps -q --filter status=running \
+    --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
+    echo "places: a sweep is already running; left alone"
   else
-    echo "places: the sweep could not be started"
+    # Why the last one stopped, before starting another.
+    #
+    # The first live planet run exited somewhere in the Atlantic and left an
+    # exited container nobody could ask, because the deploy key is restricted to
+    # `deploy <sha>` and there is no shell on this box. A run that ends has to
+    # say so here or it has said so nowhere. Read-only, and `|| true` throughout.
+    stopped_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
+      2>/dev/null | head -n 1 || true)"
+    if [ -n "$stopped_sweep" ]; then
+      echo "places: the last sweep exited $(docker inspect \
+        -f '{{.State.ExitCode}} after {{.State.StartedAt}} to {{.State.FinishedAt}}' \
+        "$stopped_sweep" 2>/dev/null || echo '?') — its last lines:"
+      docker logs --tail 15 "$stopped_sweep" 2>&1 | sed 's/^/places:   /' || true
+    fi
+    if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
+      echo "places: sweep started — docker compose logs -f places-sweep"
+    else
+      echo "places: the sweep could not be started"
+    fi
   fi
-fi
 
-# Media onto the object store, once, with the release already live and
-# answering. Deliberately after the trap comes off: a copy that will not
-# finish must not roll back a deploy that is otherwise perfectly good, and
-# this leaves the app reading the volume when anything goes wrong.
-bash ./deploy/object-storage.sh cutover "$APP_ROOT/.env" "$deployment_domain" || true
+  # Media onto the object store, once, with the release already live and
+  # answering. Deliberately after the trap comes off: a copy that will not
+  # finish must not roll back a deploy that is otherwise perfectly good, and
+  # this leaves the app reading the volume when anything goes wrong.
+  bash ./deploy/object-storage.sh cutover "$APP_ROOT/.env" "$deployment_domain" || true
 
-# The attractions seed is gone, and a walker left running from a previous
-# release is stopped here.
-#
-# It walked Wikipedia's geosearch at two calls a second to fill a table the
-# map drew its pins from — but only for the regions it was ever pointed at,
-# which were the Netherlands and Scotland. Everywhere else the map asked
-# Wikipedia live from somebody's phone and got rate-limited. The places layer
-# answers anywhere from our own database now (see docs/places-layer.md), so
-# the walk is hours of somebody else's bandwidth for two countries we already
-# cover better.
-#
-# The table and its route stay for this release so a rollback has something to
-# roll back to; migration 044 drops them.
-docker ps -q \
-  --filter label=com.docker.compose.oneoff=True \
-  --filter label=com.docker.compose.service=api \
-  | xargs -r docker stop || true
-rm -f "$APP_ROOT/data/attractions-seed-version" || true
+  # The attractions seed is gone, and a walker left running from a previous
+  # release is stopped here.
+  #
+  # It walked Wikipedia's geosearch at two calls a second to fill a table the
+  # map drew its pins from — but only for the regions it was ever pointed at,
+  # which were the Netherlands and Scotland. Everywhere else the map asked
+  # Wikipedia live from somebody's phone and got rate-limited. The places layer
+  # answers anywhere from our own database now (see docs/places-layer.md), so
+  # the walk is hours of somebody else's bandwidth for two countries we already
+  # cover better.
+  #
+  # The table and its route stay for this release so a rollback has something to
+  # roll back to; migration 044 drops them.
+  docker ps -q \
+    --filter label=com.docker.compose.oneoff=True \
+    --filter label=com.docker.compose.service=api \
+    | xargs -r docker stop || true
+  rm -f "$APP_ROOT/data/attractions-seed-version" || true
 
-# The disk is the quietest way this box dies: dangling images and build
-# cache from many deploys a day. Dangling only — the :rollback tags must
-# survive — and the builder keeps a working set so rebuilds stay quick.
-docker image prune -f >/dev/null 2>&1 || true
-docker builder prune -f --keep-storage 8GB >/dev/null 2>&1 || true
-# Pulled releases are kept by commit; the newest two are the running one and
-# the way back, and the rest are disk.
-for image in api web; do
-  docker image ls --format '{{.Tag}}' "$image_repo/$image" 2>/dev/null \
-    | grep -E '^[0-9a-f]{40}$' | tail -n +3 \
-    | xargs -r -I{} docker image rm "$image_repo/$image:{}" >/dev/null 2>&1 || true
-done
+  # The disk is the quietest way this box dies: dangling images and build
+  # cache from many deploys a day. Dangling only — the :rollback tags must
+  # survive — and the builder keeps a working set so rebuilds stay quick.
+  docker image prune -f >/dev/null 2>&1 || true
+  docker builder prune -f --keep-storage 8GB >/dev/null 2>&1 || true
+  # Pulled releases are kept by commit; the newest two are the running one and
+  # the way back, and the rest are disk.
+  for image in api web; do
+    docker image ls --format '{{.Tag}}' "$image_repo/$image" 2>/dev/null \
+      | grep -E '^[0-9a-f]{40}$' | tail -n +3 \
+      | xargs -r -I{} docker image rm "$image_repo/$image:{}" >/dev/null 2>&1 || true
+  done
 
-# What the box has left, in the deploy log.
-#
-# Nothing else reports this. The deploy key is restricted to this one
-# command — deliberately, and a capacity probe over SSH is rightly refused —
-# so the deploy is the only place on the machine that can say. It matters
-# now: the places layer holds tens of gigabytes of open data, and the
-# honest answer to "will the planet fit" has until now been a guess.
+  # What the box has left, in the deploy log.
+  #
+  # Nothing else reports this. The deploy key is restricted to this one
+  # command — deliberately, and a capacity probe over SSH is rightly refused —
+  # so the deploy is the only place on the machine that can say. It matters
+  # now: the places layer holds tens of gigabytes of open data, and the
+  # honest answer to "will the planet fit" has until now been a guess.
+  echo "--- done, $(date -u +%FT%TZ) ---"
+}
+# The three it needs, named rather than inherited by luck: a detached shell
+# gets the environment and nothing else, so anything the body reads has to be
+# exported here or it is empty on the box and silently does the wrong thing.
+export APP_ROOT deployment_domain image_repo release_sha
+setsid bash -c "$(declare -f after_release); after_release" \
+  >> "$AFTER_LOG" 2>&1 < /dev/null &
+disown || true
+echo "Housekeeping detached; it writes to $AFTER_LOG on the box."
+
 echo
 echo "--- capacity ---"
 # Every line below ends in `|| true`. The script runs under `set -Eeuo

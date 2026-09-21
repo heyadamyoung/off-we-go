@@ -72,6 +72,11 @@ import {
 import { tilesToBuild } from './tiles.js'
 import { event } from '../tracing.js'
 
+/** How long a shutdown waits for work in flight before leaving without it.
+    Every piece of that work is resumable; what this buys is the ingest
+    letting go of its cell cleanly. Docker sends SIGKILL at ten seconds. */
+export const STOP_GRACE_MS = 3_000
+
 /** The longest the zoom pass will stand aside for between two cells. */
 export const MOST_REST_MS = 2_000
 
@@ -677,13 +682,38 @@ export function createPlaceWorker({
       schedule(0)
     },
     /** Stop after the cell in flight; the ingest leaves it resumable. */
+    /* Asked to stop, and gone in seconds.
+     *
+     * This used to await everything in flight, and the everything included a
+     * zoom pass over the planet. Deploy 368 spent five minutes and fifty-seven
+     * seconds recreating the api container and six minutes and forty-three on
+     * the web one, on a box whose database was pinned by exactly that — a
+     * normal recreate on this machine is three seconds.
+     *
+     * Waiting was never buying anything. Every piece of background work here
+     * is built to be picked up again: the zoom pass commits a cell at a time
+     * and records which cells are done, the index build is CONCURRENTLY and
+     * idempotent, and an unfinished transaction is rolled back by the database
+     * the moment the connection goes. What the grace is actually for is the
+     * ingest, which wants a moment to let go of the cell it has claimed so the
+     * next process does not have to recover it.
+     *
+     * So: a few seconds, and then the process leaves. Docker's own patience
+     * with a container that will not exit is ten seconds, after which it sends
+     * a signal nothing can catch — a shutdown that takes longer than this is
+     * not a graceful one, it is a killed one with extra steps. */
     async stop() {
       stopped = true
       if (timer) clearTimeout(timer)
       timer = null
       ingest?.stop?.()
-      await running
-      await settled()
+      await Promise.race([
+        (async () => {
+          await running
+          await settled()
+        })(),
+        pause(STOP_GRACE_MS),
+      ])
     },
     /** Tests and the first boot: run one pass now rather than in a minute. */
     async once() {

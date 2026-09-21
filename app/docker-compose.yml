@@ -236,6 +236,26 @@ services:
       # after a release does not re-parse sixteen 1.6 MB footers.
       PLACES_INDEX_DIR: /data/places
       PLACES_RELEASE: ${PLACES_RELEASE:-}
+    # A share of the box, not the box.
+    #
+    # Deploy 368 took eighteen minutes and all but a minute of it was two
+    # container recreates — five minutes fifty-seven for the api, six
+    # forty-three for the web — on a machine where the same operation takes
+    # three seconds. Nothing was wrong with either container. The sweep was
+    # reading the planet at seven thousand records a second on all sixteen
+    # cores, and the Docker daemon was queueing behind it for disk.
+    #
+    # Four cores of sixteen and a low block-IO weight. The planet takes longer
+    # and nobody is waiting on the planet; a deploy is a person waiting, and a
+    # release that cannot be swapped in because a backfill has the disk is a
+    # backfill that has been allowed to matter more than the product.
+    #
+    # Memory is left alone on purpose: the run holds about 1.5 million records
+    # across the cells still open, and a limit below that buys an out-of-memory
+    # kill two hours in rather than a share of anything.
+    cpus: 4.0
+    blkio_config:
+      weight: 100
     volumes:
       - places_data:/data/places
     depends_on:
