@@ -193,7 +193,10 @@ test('the probe reads a tile the way PostGIS wrote it', async t => {
 
   await client.query('drop table if exists mvt_probe')
   await client.query(
-    'create table mvt_probe (id int, n text, minzoom int, geom geometry(Point, 4326))',
+    /* `real`, because that is what `places.label_zoom` is and therefore what
+       ST_AsMVT writes into a tile: a four-byte float, not a varint. Declared
+       `int` here once, and the reader's blindness to floats sailed through. */
+    'create table mvt_probe (id int, n text, minzoom real, geom geometry(Point, 4326))',
   )
   await client.query(`
     insert into mvt_probe

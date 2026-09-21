@@ -332,6 +332,29 @@ export function rankSearch(rows, query) {
 export const LABEL_ZOOMS = Object.freeze({ from: 11, to: 16, floor: 17 })
 
 /**
+ * How many marks a tile square may carry before the deepest zoom.
+ *
+ * This is the whole of the thinning, and it went missing for three releases.
+ * Without it the rule was the category table below and nothing else — and
+ * eleven of the twenty categories sit at zoom 11, so a city from far out drew
+ * every museum, viewpoint, historic site, market and transit stop it held. A
+ * carpet of dots, reported as one, twice.
+ *
+ * Twenty-four is what a square can carry and still read as a map. A tile is
+ * 512 device pixels on a phone, so two dozen marks is one per hundred pixels
+ * square — about what Google shows at the same zoom, and enough that four or
+ * six tiles on screen give a hundred-odd dots rather than a texture.
+ *
+ * It applies from LABEL_ZOOMS.from to LABEL_ZOOMS.to and nowhere else. At the
+ * floor there is no budget and no contest: every place that never won a slot
+ * lands there, the tile pyramid stops there, and the tile route caps nothing,
+ * so the closest zoom shows everything on the street. That is deliberate and
+ * it is the point — the ranking decides what you see from far away, and when
+ * you are standing on top of it there is nothing left to decide.
+ */
+export const MARKS_PER_TILE = 24
+
+/**
  * The furthest away a kind of place may ever be drawn from.
  *
  * Density alone is not enough, and the case that proved it is small enough to
@@ -374,8 +397,9 @@ export const EARLIEST_ZOOM = Object.freeze({
   beach: 11,
   /* A destination is a destination. Oude Kerk is the oldest building in
      Amsterdam and Albert Cuyp is the reason people go to De Pijp; a station
-     is what a traveller navigates a city by. All of them at 11, everywhere —
-     there are no slots to compete for any more. */
+     is what a traveller navigates a city by. All of them allowed at 11 — and
+     in a city, allowed is not the same as drawn: eleven thousand of them
+     compete for two dozen slots a square, and what they are worth decides. */
   entertainment: 11,
   religious: 11,
   market: 11,
@@ -398,8 +422,11 @@ export const EARLIEST_ZOOM = Object.freeze({
 /* Bumped whenever anything above changes how a zoom is decided. The worker
    keeps a copy of the last version it ran and redoes the whole pass when they
    differ, because a stored number gives no hint of the rule that made it.
-   3 is the move from a per-tile ranking to EARLIEST_ZOOM alone. */
-export const ZOOM_POLICY = 3
+   3 was EARLIEST_ZOOM alone, which drew every museum in a city from orbit.
+   4 puts the ranking back in front of it: a kind may not rise above its
+   station, and among the kinds allowed at a zoom the best two dozen a square
+   get the slots. */
+export const ZOOM_POLICY = 4
 
 /** The zoom this kind of place is drawn from. Not a ceiling on a ranking:
     the whole rule. */

@@ -41,8 +41,10 @@ function fields(bytes, from, to, each) {
     } else if (wire === 0) {
       each(field, 0, 0, varint(bytes, at))
     } else if (wire === 5) {
+      each(field, at.i, at.i + 4, null)
       at.i += 4
     } else if (wire === 1) {
+      each(field, at.i, at.i + 8, null)
       at.i += 8
     } else {
       throw new Error(`mvt: wire type ${wire}`)
@@ -52,11 +54,20 @@ function fields(bytes, from, to, each) {
 
 const text = new TextDecoder()
 
-/** One Value message, as whichever of its seven shapes it carries. */
+/** One Value message, as whichever of its seven shapes it carries.
+ *
+ * All seven, and the float is not padding: `label_zoom` is a `real`, so
+ * ST_AsMVT writes every mark's zoom as a four-byte float. A reader that knows
+ * only about integers gets `null` for all of them and reports a live tile as
+ * carrying no zooms at all — which this did, against production, while its
+ * test passed because the fixture happened to declare an `int` column. */
 function oneValue(bytes, from, to) {
   let found = null
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   fields(bytes, from, to, (field, start, end, number) => {
     if (field === 1) found = text.decode(bytes.subarray(start, end))
+    else if (field === 2) found = view.getFloat32(start, true)
+    else if (field === 3) found = view.getFloat64(start, true)
     else if (field >= 4 && field <= 6) found = number
     else if (field === 7) found = Boolean(number)
   })
