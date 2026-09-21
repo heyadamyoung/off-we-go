@@ -127,7 +127,13 @@ test('places index', { skip: unreachable }, async t => {
     /* The index has no alias and the queries do; everything else about the
        two strings has to be identical, because Postgres matches an
        expression index on its text. */
-    assert.equal(built[1], `coalesce(label_zoom, ${LABEL_ZOOMS.from}::real)`)
+    assert.equal(built[1], `coalesce(label_zoom, ${LABEL_ZOOMS.floor}::real)`)
+    /* The floor, not the first zoom. A place nothing has ranked is the least
+       prominent there is, not the most — see ZOOM_AT in places/store.js, and
+       the case below that draws a city with two hundred unranked places in
+       it. And the index's name carries the number, so changing it can never
+       leave a stale index that the planner silently stops choosing. */
+    assert.match(PLACE_VIEW_INDEX_SQL, new RegExp(`_z${LABEL_ZOOMS.floor}_idx`))
     /* And it is built online. A GiST index over ten million places is longer
        than a boot may take, and putting it in a migration cost five releases
        in a row — see migration 051, which now says so and builds nothing. */
@@ -242,5 +248,52 @@ test('places index', { skip: unreachable }, async t => {
     assert.ok(near.every(place => place.category === 'museum'))
     assert.match(watch.sql, /and p\.category = \$6::text/)
     assert.doesNotMatch(watch.sql, /is null or p\.category/)
+  })
+
+  /* The carpet.
+   *
+   * A place whose cell has not been ranked yet has label_zoom null, and what
+   * the default in ZOOM_AT decides is what a map draws in the meantime. It
+   * was LABEL_ZOOMS.from — 11, a whole city — so every unranked place was
+   * treated as the most prominent kind there is and drawn at every zoom from
+   * 11 inward. On a phone over Regina that is thousands of dots at street
+   * level, and it is not a ranking that went wrong: it is ground the pass had
+   * not reached, and the sweep loads the planet far faster than four cells a
+   * minute can rank it.
+   *
+   * Unknown prominence is the least prominence. An unranked place waits at
+   * the floor, where somebody has asked for everything, and a city reads as
+   * empty until the pass has something true to say about it. */
+  await t.test('a place nobody has ranked yet is not drawn over a city', async t => {
+    const pool = await freshDatabase(t)
+    await fill(pool)
+    await pool.query(
+      `insert into places (name, geom, category, confidence, cell)
+       select 'unranked ' || i, ST_MakePoint(2.3522 + i * 0.0001, 48.8566)::geography,
+              'shopping', 0.9, 'N48E002'
+       from generate_series(1, 200) as i`,
+    )
+    await pool.query('analyze places')
+
+    const ask = zoom =>
+      placesInView(pool, box, { zoom, floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
+
+    for (const zoom of [11, 12, 14, 16]) {
+      const drawn = await ask(zoom)
+      assert.equal(
+        drawn.filter(place => place.name.startsWith('unranked')).length,
+        0,
+        `zoom ${zoom} drew places nothing has ranked`,
+      )
+      assert.ok(drawn.length > 0, `zoom ${zoom} drew nothing at all`)
+    }
+
+    /* And they are not lost — the floor is where everything left over lands,
+       and somebody zoomed that far in is asking for all of it. */
+    const pavement = await ask(LABEL_ZOOMS.floor)
+    assert.ok(
+      pavement.filter(place => place.name.startsWith('unranked')).length > 0,
+      'the floor draws what nothing has ranked',
+    )
   })
 })

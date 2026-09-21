@@ -22,7 +22,7 @@
  *   3. the zoom filter and the spatial index are one index and have to be
  *      written the same way, literal for literal — `ZOOM_AT` below is that
  *      string and every statement spends it verbatim. `coalesce(label_zoom,
- *      $5::real)` does not match an index on `coalesce(label_zoom, 11::real)`,
+ *      $5::real)` does not match an index on `coalesce(label_zoom, 17::real)`,
  *      and `<= $1::double precision` widens the column rather than narrowing
  *      the constant; either one loses the index condition and the query reads
  *      every place in the viewport to throw almost all of them away. That was
@@ -69,12 +69,26 @@ const PIN_COLUMNS = `p.id, p.name,
 
 /* The zoom a place is drawn from, as the index holds it.
  *
- * Null means the placing pass has not reached this row yet, and it is drawn
- * from the first zoom rather than the last — see migration 046 on why the
- * floor is exactly wrong. `11` is LABEL_ZOOMS.from written out, because an
- * expression index is matched on its text: a parameter here, or the constant
- * spelled any other way, silently costs every map query its index. */
-const ZOOM_AT = `coalesce(p.label_zoom, ${LABEL_ZOOMS.from}::real)`
+ * Null means the placing pass has not reached this row yet, and the question
+ * is what to draw in the meantime. It used to be LABEL_ZOOMS.from, which is
+ * 11, which is a whole city — so a place nobody had ranked yet was treated as
+ * the most prominent kind there is and drawn at every zoom from 11 inward.
+ * That is the carpet of dots over Regina: not a cell that was placed badly, a
+ * cell that had not been placed at all, and the sweep loads the planet far
+ * faster than four cells a minute can rank it.
+ *
+ * Unknown prominence is the least prominence, not the most. LABEL_ZOOMS.floor
+ * is 17, the pavement, where somebody is asking for everything rather than a
+ * selection of it — so an unranked place waits there until the pass gives it a
+ * real zoom, and until then a city reads as empty rather than as noise. Empty
+ * is honest about what we know; the carpet was not.
+ *
+ * The constant is written out, because an expression index is matched on its
+ * text: a parameter here, or the number spelled any other way, silently costs
+ * every map query its index. Which is also why the index below is named after
+ * the number — change this and the name changes, so an index built on the old
+ * one can never be mistaken for a current one. */
+const ZOOM_AT = `coalesce(p.label_zoom, ${LABEL_ZOOMS.floor}::real)`
 
 const COVERAGE_COLUMNS = `cell, west, south, east, north, status, versions,
   place_count, quality, requested_at, started_at, last_refresh, attempts, error`
@@ -456,7 +470,7 @@ export async function placesInView(
    * a few times that, and a continent holds the most prominent tier.
    *
    * Both halves of that go to the index together, which is the only reason it
-   * is quick: `places_view_idx` is `gist (geom, coalesce(label_zoom, 11))`,
+   * is quick: PLACE_VIEW_INDEX is `gist (geom, coalesce(label_zoom, 17))`,
    * so the box and the zoom are one index condition and the eighty thousand
    * places a Paris viewport contains never leave the index. Fifty-six do.
    * ZOOM_AT is spent verbatim and compared against `real` for that reason —
@@ -546,15 +560,31 @@ export async function licensesFor(db, ids) {
  * `ZOOM_AT` without the alias, because an index has no table to alias and the
  * planner matches an expression index on its text. Spelling it from the same
  * constant the queries spend is what makes that certain. */
-export const PLACE_VIEW_INDEX = 'places_view_idx'
+/* Named after the constant inside it, deliberately.
+ *
+ * The planner matches an expression index by its text, so the index and every
+ * query that wants it have to spell ZOOM_AT identically. Nothing about that
+ * fails loudly: an index built on the old spelling stays valid, stays in the
+ * catalogue, and is simply never chosen — the map goes back to a sequential
+ * scan over ten million rows and says nothing about why.
+ *
+ * So the name carries the number. Change ZOOM_AT's default and this is a
+ * different index with a different name, which the worker finds missing and
+ * builds, and the one it replaced is dropped by name below. There is no state
+ * in which a stale index is mistaken for a current one. */
+export const PLACE_VIEW_INDEX = `places_view_z${LABEL_ZOOMS.floor}_idx`
 export const PLACE_VIEW_INDEX_SQL = `create index concurrently if not exists ${PLACE_VIEW_INDEX}
   on places using gist (geom, (${ZOOM_AT.replace(/\bp\./g, '')}))`
 
-/** The geometry-only index it replaces. Measured, the two are
+/** The indexes it replaces, dropped once it is built and valid — never
+    before, so a build that fails cannot take the working index with it.
+    `places_geom_idx` is the geometry-only original: measured, the two are
     indistinguishable on every other statement in this file — nearest-first
     50.7 ms against 50.1 ms — so keeping both is a gigabyte of disk and a
-    second write on every ingested row to buy nothing. */
-export const PLACE_GEOM_INDEX = 'places_geom_idx'
+    second write on every ingested row to buy nothing. `places_view_idx` is
+    the same index as this one built on the old default of 11, which is the
+    one this replaces. */
+export const PLACE_INDEXES_REPLACED = Object.freeze(['places_geom_idx', 'places_view_idx'])
 
 /** Whether an index is there and usable. An index left behind by a failed
     CONCURRENTLY build exists but is `indisvalid = false`, and a query will
