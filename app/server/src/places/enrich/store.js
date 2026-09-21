@@ -307,69 +307,127 @@ export async function readEnrichment(db, placeId) {
   }
 }
 
+/** How long the one unavoidably expensive count is allowed to take. */
+export const CENSUS_BUDGET_MS = 3000
+
+/**
+ * The prominent set's size — the only number here that has to touch `places`.
+ *
+ * On its own, bounded, and null rather than fatal when it will not answer in
+ * time. The first production read of the status route timed out at twenty
+ * seconds because the census asked this as a CTE and then joined it three
+ * times: `label_zoom <= 13` over thirty-five million rows is millions of index
+ * entries, and every other count hung off it. A public route that can be taken
+ * down by its own denominator is worse than one that says "I could not count
+ * that quickly".
+ *
+ * Its own checked-out client with its own timeout, so a slow count is a null in
+ * one field rather than a connection left with a statement_timeout on it for
+ * whoever gets it next.
+ */
+export async function prominentPlaces(db, { zoom = 13, budgetMs = CENSUS_BUDGET_MS } = {}) {
+  if (typeof db.connect !== 'function') {
+    const { rows } = await db.query(
+      `select count(*)::bigint as n from places
+        where label_zoom is not null and label_zoom <= $1::real`,
+      [zoom],
+    )
+    return Number(rows[0]?.n ?? 0)
+  }
+  const client = await db.connect()
+  try {
+    await client.query('begin')
+    await client.query(`set local statement_timeout = ${Math.max(1, Math.floor(budgetMs))}`)
+    const { rows } = await client.query(
+      `select count(*)::bigint as n from places
+        where label_zoom is not null and label_zoom <= $1::real`,
+      [zoom],
+    )
+    await client.query('commit')
+    return Number(rows[0]?.n ?? 0)
+  } catch {
+    /* 57014 is the timeout; anything else here is equally not worth failing a
+       status read over. Rolled back so the client goes home clean. */
+    await client.query('rollback').catch(() => {})
+    return null
+  } finally {
+    client.release()
+  }
+}
+
 /**
  * What the enrichment has actually achieved, and whether it did the important
  * places first.
  *
- * Two questions, and the second is the one worth the extra clause. "How many
- * have words and a picture" says whether the pipeline works. It does not say
- * whether the queue is being drained in the right order — and the order was
- * wrong for three releases, because the backfill's tiebreak was `p.id asc` and
- * an id here is a random uuid, so a planet's worth of launderettes went ahead
- * of the Rijksmuseum. That was fixed by ordering on the same rank the map
- * draws with, and a fix nobody can see the effect of is a fix nobody can trust.
+ * Asked entirely of the small tables, which is the fix for the twenty-second
+ * timeout the first version earned. `place_enrichment`, `place_descriptions`
+ * and `place_images` hold one row per place we have *looked at* — tens of
+ * thousands at the very most — while `places` holds a planet. Every question
+ * below is answerable from the small side, and the one that is not gets its own
+ * bounded query above.
  *
- * So `leading` asks it directly: of the places the map would draw first, how
- * many have been reached? If the ordering is working that number climbs away
- * from the overall proportion immediately. If it is broken the two track each
- * other, which is exactly what random order looks like.
+ * The arithmetic that removes the joins: `enqueueProminent` only ever inserts
+ * prominent places, so the number of rows in `place_enrichment` for this
+ * pipeline *is* the number reached, and what is left to reach is subtraction
+ * rather than a left join over millions.
  *
- * Every count is over the prominent set — label_zoom at or under `zoom` — and
- * not over the planet's tens of millions, so this is index work rather than a
- * sequential scan. It is read by a public route and must stay cheap.
+ * And the ordering question — which is the one worth asking, because the
+ * backfill's tiebreak was a random uuid for three releases and a planet's worth
+ * of launderettes went ahead of the Rijksmuseum. It is asked as a shape rather
+ * than a proportion: the zoom a place is drawn from is what makes it prominent,
+ * so if the queue is working, the places it has reached cluster at the low
+ * zooms and in the categories the map weights. A random order smears them
+ * evenly across every zoom instead. Read off the enrichment table's side, so it
+ * costs what that table costs and nothing more.
  */
-export async function enrichmentCensus(db, { zoom = 13, pipeline = 1, leading = 500 } = {}) {
-  const { rows } = await db.query(
-    `with prominent as (
-       select p.id, p.label_zoom, p.confidence
-         from places p
-        where p.label_zoom is not null and p.label_zoom <= $1::real
-     ),
-     front as (
-       select id from prominent order by label_zoom asc, confidence desc nulls last limit $3::int
-     )
-     select
-       (select count(*) from prominent) as prominent,
-       (select count(*) from place_descriptions d join prominent p on p.id = d.place_id)
-         as with_words,
-       (select count(distinct i.place_id) from place_images i join prominent p on p.id = i.place_id)
-         as with_picture,
-       (select count(*) from place_enrichment e join prominent p on p.id = e.place_id
-          where e.pipeline = $2::smallint and e.status = 'barren') as barren,
-       (select count(*) from place_enrichment e join prominent p on p.id = e.place_id
-          where e.status in ('pending', 'stale', 'working')) as queued,
-       (select count(*) from place_enrichment e join prominent p on p.id = e.place_id
-          where e.status = 'failed') as failed,
-       (select count(*) from prominent p
-          left join place_enrichment e on e.place_id = p.id
-         where e.place_id is null or e.pipeline <> $2::smallint) as to_reach,
-       (select count(*) from front) as front,
-       (select count(*) from place_descriptions d join front f on f.id = d.place_id)
-         as front_with_words`,
-    [zoom, pipeline, leading],
-  )
-  const row = rows[0] || {}
-  const count = key => Number(row[key] ?? 0)
+export async function enrichmentCensus(
+  db,
+  { zoom = 13, pipeline = 1, budgetMs = CENSUS_BUDGET_MS } = {},
+) {
+  const [prominent, states, words, pictures, shape] = await Promise.all([
+    prominentPlaces(db, { zoom, budgetMs }),
+    db.query(
+      `select status, count(*)::int as n from place_enrichment
+        where pipeline = $1::smallint group by status`,
+      [pipeline],
+    ),
+    db.query('select count(*)::int as n from place_descriptions'),
+    db.query('select count(distinct place_id)::int as n from place_images'),
+    /* The shape of what was reached, from the small side. Joining the
+       enrichment rows to their places is bounded by how many we have looked
+       at, which is the point. */
+    db.query(
+      `select p.label_zoom::int as zoom, count(*)::int as n
+         from place_enrichment e
+         join places p on p.id = e.place_id
+        where e.pipeline = $1::smallint and p.label_zoom is not null
+        group by p.label_zoom
+        order by p.label_zoom asc`,
+      [pipeline],
+    ),
+  ])
+
+  const byStatus = {}
+  let reached = 0
+  for (const row of states.rows) {
+    byStatus[row.status] = Number(row.n)
+    reached += Number(row.n)
+  }
+  const at = key => Number(byStatus[key] ?? 0)
   return {
-    prominent: count('prominent'),
-    withWords: count('with_words'),
-    withPicture: count('with_picture'),
-    barren: count('barren'),
-    queued: count('queued'),
-    failed: count('failed'),
-    toReach: count('to_reach'),
-    /* The rank check. `of` is how many of the highest-ranked places were
-       looked at, `withWords` how many of those came back with something. */
-    leading: { of: count('front'), withWords: count('front_with_words') },
+    /* Null when it would not count in time, and the route says so rather than
+       printing a zero it does not believe. */
+    prominent,
+    reached,
+    toReach: prominent === null ? null : Math.max(0, prominent - reached),
+    withWords: Number(words.rows[0]?.n ?? 0),
+    withPicture: Number(pictures.rows[0]?.n ?? 0),
+    ready: at('ready'),
+    barren: at('barren'),
+    queued: at('pending') + at('stale') + at('working'),
+    failed: at('failed'),
+    /* Zoom by zoom, lowest first: the ordering check. Working order front-loads
+       this at 11 and 12; random order spreads it evenly to 13. */
+    byZoom: shape.rows.map(row => ({ zoom: Number(row.zoom), reached: Number(row.n) })),
   }
 }

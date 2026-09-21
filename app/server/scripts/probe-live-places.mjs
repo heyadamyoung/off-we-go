@@ -313,20 +313,22 @@ if (state.error) {
   }
   const rich = state.enrichment
   if (rich) {
+    const many = n => (n === null || n === undefined ? '?' : n.toLocaleString('en-GB'))
     console.log(
       `words:  ${rich.withWords} with words, ${rich.withPicture} with a picture, ` +
-        `${rich.barren} nothing to show, ${rich.queued} queued, ${rich.failed} failed, ` +
-        `${rich.toReach.toLocaleString('en-GB')} of ${rich.prominent.toLocaleString('en-GB')} still to reach`,
+        `${rich.barren} nothing to show, ${rich.queued} queued, ${rich.failed} failed`,
     )
-    /* Whether the rank ordering took. If the good places go first this climbs
-       away from the overall proportion immediately; if the order is random the
-       two track each other. */
-    const front = rich.leading || { of: 0, withWords: 0 }
-    const share = n => (rich.prominent ? ((100 * n) / rich.prominent).toFixed(2) : '0.00')
     console.log(
-      `rank:   ${front.withWords}/${front.of} of the highest-ranked have words ` +
-        `(${front.of ? ((100 * front.withWords) / front.of).toFixed(1) : '0.0'}%) ` +
-        `against ${share(rich.withWords)}% overall`,
+      `reach:  ${many(rich.reached)} looked at, ${many(rich.toReach)} of ` +
+        `${many(rich.prominent)} prominent still to go` +
+        (rich.prominent === null ? '   (the planet would not count in time)' : ''),
+    )
+    /* Whether the rank ordering took. Working order front-loads the low zooms,
+       where the places anybody sees without looking for them live; random order
+       spreads it evenly across all of them. */
+    const shape = rich.byZoom || []
+    console.log(
+      `rank:   ${shape.length ? shape.map(one => `z${one.zoom}:${one.reached}`).join(' ') : 'nothing reached yet'}`,
     )
   }
   console.log('')
