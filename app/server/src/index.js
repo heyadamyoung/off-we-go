@@ -15,7 +15,6 @@ import { createFooterStore, createReleaseLoader, DEFAULT_INDEX_DIR } from './pla
 import { createPlaceWorker } from './places/worker.js'
 import { createEnrichWorker } from './places/enrich/worker.js'
 import { createWikimedia } from './places/enrich/wikimedia.js'
-import { fromOverpass, fromTable, fromTableThenOverpass } from './places/enrich/osm.js'
 import { productionLoggerOptions } from './logging.js'
 import { createOidcIdentityProvider, readOidcConfig } from './oidc.js'
 import { createMediaWorker } from './media-worker.js'
@@ -266,31 +265,12 @@ const placesWorker =
  * start without one, so the switch is the contact address itself rather than
  * a separate flag somebody could set while leaving the address blank.
  *
- * Overpass is only reached for a place somebody has opened that our own copy
- * of the interesting OSM objects does not know about. The backfill never
- * touches it — and that is now a property of fromTableThenOverpass rather
- * than of this comment. It was written here first and was false for three
- * releases: the fallthrough had no idea who was waiting, `osm_landmarks` is
- * empty until a planet extract is loaded into it, and every backfill place
- * therefore went to overpass-api.de. A claim about behaviour belongs next to
- * the behaviour, with a test on it. */
-/* Never unset.
- *
- * This was `process.env.PLACES_CONTACT || ''`, and a blank contact turns the
- * whole enricher off — so the pictures-and-descriptions half of the places
- * layer has been dark since it was written, because a GitHub variable nobody
- * set was the switch. A feature that is off until somebody remembers a secret
- * is a feature that is off.
- *
- * What Wikimedia's policy actually asks for is a User-Agent naming the
- * application and a way to reach its operator, and createWikimedia accepts
- * either an address or a URL for that second part. The deployment already has
- * a public URL that reaches us — it is the site — so that is the default, and
- * it needs nothing from anybody. PLACES_CONTACT still wins when it is set, for
- * a deployment that would rather publish an address.
- *
- * Deliberately not a person's email. It rides on every request to a public
- * API, which is not a place to put somebody's inbox without them asking. */
+ * Nothing here reaches OpenStreetMap any more. The chain used to find the
+ * OSM object at a place's coordinates, read its `wikidata` tag and ask
+ * Wikidata which article that was — three hops, a planet extract nobody had
+ * loaded, and a fallback to Overpass for everything the extract was missing.
+ * OSM knew nothing about the place we did not already hold. The article is
+ * what we were looking for, so it is what we ask for. */
 const placesContact = (process.env.PLACES_CONTACT || '').trim() || required('WAYFARE_PUBLIC_URL')
 const enrichWorker = (() => {
   if (!placesContact) return null
@@ -302,10 +282,7 @@ const enrichWorker = (() => {
     placesPerTick: Number(process.env.PLACES_ENRICH_PER_TICK) || undefined,
     prominentZoom: Number(process.env.PLACES_ENRICH_ZOOM) || undefined,
     sources: {
-      osmNear: fromTableThenOverpass(
-        fromTable(repository.background),
-        process.env.PLACES_OVERPASS === 'off' ? null : fromOverpass({ userAgent }),
-      ),
+      near: (place, options) => wikimedia.near(place, options),
       entity: (id, options) => wikimedia.entity(id, options),
       summary: (article, options) => wikimedia.summary(article, options),
       files: (wanted, options) => wikimedia.files(wanted, options),
