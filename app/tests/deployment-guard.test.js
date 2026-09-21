@@ -1273,7 +1273,7 @@ test('the census can tell a crash-looping sweep from a finished one', () => {
      a running sweep has a progress line, a crash-looping one has the stack
      that kills it, and each answers a different question a person has. */
   const logsAt = census.search(/^\s*docker logs --tail \d+ "\$sweep_box"/m)
-  assert.ok(logsAt > 0, 'the census prints the sweep\'s last lines')
+  assert.ok(logsAt > 0, 'the census prints the last lines of the sweep')
   assert.ok(
     logsAt > census.indexOf('esac'),
     'the last lines are printed after the case, so every state gets them',

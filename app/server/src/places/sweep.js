@@ -240,12 +240,10 @@ export function createSweep({
   async function readGroup(part, group) {
     const until = clock() + Math.max(0, budgetMs)
     let delay = Math.max(1, retryFromMs)
-    let last = null
     for (;;) {
       try {
         return await read(part, group)
       } catch (error) {
-        last = error
         /* The release has been deleted under us. Every later read says the
            same thing, so asking again is not patience, it is a hot loop. */
         if (expired(error)) {
