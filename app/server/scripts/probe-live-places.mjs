@@ -145,15 +145,15 @@ async function pyramid(view) {
   for (const z of TILE_ZOOMS) {
     const at = tileFor(lng, lat, z)
     const drawn = await tile(view, z)
-    held.set(z, { at, ids: new Set(drawn.ids || []), error: drawn.error })
+    held.set(z, { at, ids: new Set(drawn.own || []), error: drawn.error })
   }
   for (let z = TILE_ZOOMS[0]; z < TILE_ZOOMS.at(-1); z += 1) {
     const here = held.get(z)
     const next = held.get(z + 1)
     if (!here || !next || here.error || next.error) continue
-    /* The child under the camera holds a quarter of the parent's ground, so
-       only the parent's marks in that quarter are owed. Which quarter is
-       arithmetic: the child's own x,y say which half of each axis it is. */
+    /* Only the marks inside the parent's own square are owed: a tile also
+       carries its neighbours' marks within the buffer, to draw a seam whole,
+       and those belong to another square's four children. */
     const children = [
       { z: z + 1, x: here.at.x * 2, y: here.at.y * 2 },
       { z: z + 1, x: here.at.x * 2 + 1, y: here.at.y * 2 },
