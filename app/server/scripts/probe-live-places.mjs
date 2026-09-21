@@ -80,11 +80,10 @@ function tileFor(lng, lat, z) {
   }
 }
 
-/* The zooms worth asking about: the widest one that has tiles at all, the
-   neighbourhood where the cafés arrive, and a street where everything down to
-   a launderette is drawn. If a tier is missing from the middle line and
-   present in the last, that is the pyramid working. */
-const TILE_ZOOMS = [11, 14, 17]
+/* Every zoom the pyramid has, because the bug that needed seeing was a mark
+   present at one zoom, gone a step in, and back a step further — which no
+   sample of three zooms can show. */
+const TILE_ZOOMS = [11, 12, 13, 14, 15, 16, 17]
 
 /**
  * One tile, twice: what it costs to build and what it costs once kept.
@@ -94,7 +93,11 @@ const TILE_ZOOMS = [11, 14, 17]
  * first is what the unlucky first visitor to a square pays.
  */
 async function tile(view, z) {
-  const { x, y } = tileFor((view.west + view.east) / 2, (view.south + view.north) / 2, z)
+  return tileAt(tileFor((view.west + view.east) / 2, (view.south + view.north) / 2, z))
+}
+
+/** One square, named by the grid rather than by a viewport. */
+async function tileAt({ z, x, y }) {
   const url = `https://${host}/api/places/tiles/${z}/${x}/${y}`
   const timed = async () => {
     const started = Date.now()
@@ -117,6 +120,57 @@ async function tile(view, z) {
     }
   } catch (error) {
     return { z, x, y, error: String(error?.message || error) }
+  }
+}
+
+/**
+ * Whether a mark drawn at one zoom is still drawn at the next.
+ *
+ * Reported from the road: "grey dots show at a further out zoom, then I
+ * scroll in a bit and they disappear, then I zoom in more and they come
+ * back." Nothing in the database could do that — a tile asks
+ * `label_zoom <= z`, so what a zoom draws is a subset of what the next one
+ * draws — and nothing we could ask from here would have shown it, because
+ * the probe read one tile at a time and never compared two.
+ *
+ * So it compares them. A square at z covers exactly the four squares below
+ * it, so the ids in the parent must all appear among its children's. What is
+ * missing is named, which is the difference between "something is wrong with
+ * the map" and "these eleven marks vanish between 12 and 13".
+ */
+async function pyramid(view) {
+  const lng = (view.west + view.east) / 2
+  const lat = (view.south + view.north) / 2
+  const held = new Map()
+  for (const z of TILE_ZOOMS) {
+    const at = tileFor(lng, lat, z)
+    const drawn = await tile(view, z)
+    held.set(z, { at, ids: new Set(drawn.ids || []), error: drawn.error })
+  }
+  for (let z = TILE_ZOOMS[0]; z < TILE_ZOOMS.at(-1); z += 1) {
+    const here = held.get(z)
+    const next = held.get(z + 1)
+    if (!here || !next || here.error || next.error) continue
+    /* The child under the camera holds a quarter of the parent's ground, so
+       only the parent's marks in that quarter are owed. Which quarter is
+       arithmetic: the child's own x,y say which half of each axis it is. */
+    const children = [
+      { z: z + 1, x: here.at.x * 2, y: here.at.y * 2 },
+      { z: z + 1, x: here.at.x * 2 + 1, y: here.at.y * 2 },
+      { z: z + 1, x: here.at.x * 2, y: here.at.y * 2 + 1 },
+      { z: z + 1, x: here.at.x * 2 + 1, y: here.at.y * 2 + 1 },
+    ]
+    const below = new Set()
+    for (const child of children) {
+      const drawn = await tileAt(child)
+      if (drawn.error) continue
+      for (const id of drawn.ids || []) below.add(id)
+    }
+    const lost = [...here.ids].filter(id => !below.has(id))
+    console.log(
+      `             z${pad(z, 3)}→${z + 1}  ${pad(`${here.ids.size} marks`, 12)}` +
+        (lost.length ? `${lost.length} vanish on the way in` : 'all still drawn'),
+    )
   }
 }
 
@@ -230,6 +284,7 @@ for (const view of VIEWS) {
         ` ${pad(`${drawn.features} drawn`, 12)} ${drawn.zooms}`,
     )
   }
+  await pyramid(view)
   for (const place of found.sample) console.log(`             · ${place.name} — ${place.category}`)
 }
 

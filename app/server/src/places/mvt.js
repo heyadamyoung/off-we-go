@@ -83,6 +83,7 @@ function oneValue(bytes, from, to) {
 export function tileHolds(bytes, attribute = 'minzoom') {
   let features = 0
   const zooms = new Map()
+  const ids = []
   fields(bytes, 0, bytes.length, (field, from, to) => {
     if (field !== 3) return
     const keys = []
@@ -94,24 +95,29 @@ export function tileHolds(bytes, attribute = 'minzoom') {
       else if (inner === 4) values.push(oneValue(bytes, start, end))
     })
     const wanted = keys.indexOf(attribute)
+    const named = keys.indexOf('id')
     for (const [start, end] of rows) {
       features += 1
       let at = null
+      let id = null
       fields(bytes, start, end, (inner, tagsFrom, tagsTo) => {
-        if (inner !== 2 || wanted < 0) return
+        if (inner !== 2) return
         const walk = { i: tagsFrom }
         while (walk.i < tagsTo) {
           const key = varint(bytes, walk)
           const value = varint(bytes, walk)
-          if (key === wanted) at = values[value] ?? null
+          if (key === wanted && wanted >= 0) at = values[value] ?? null
+          if (key === named && named >= 0) id = values[value] ?? null
         }
       })
+      if (id !== null) ids.push(String(id))
       const key = at === null ? 'none' : String(at)
       zooms.set(key, (zooms.get(key) ?? 0) + 1)
     }
   })
   return {
     features,
+    ids,
     zooms: [...zooms.entries()]
       .sort((a, b) => Number(a[0]) - Number(b[0]))
       .map(([zoom, count]) => `${zoom}:${count}`)
