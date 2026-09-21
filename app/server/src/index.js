@@ -245,7 +245,10 @@ for (const worker of workers) worker.start()
 const placesWorker =
   placesOn && process.env.PLACES_WORKER !== 'off'
     ? createPlaceWorker({
-        pool: repository.pool,
+        /* The background pool, never the serving one: a cell's zoom pass holds
+           its connection for seconds and a map is asking for tiles the whole
+           time. See createPostgresRepository. */
+        pool: repository.background,
         loadIndex: placesUpstream,
         loadSecondIndex: placesRelease('fsq'),
         footers: createFooterStore({ directory: placesDirectory, log: placesSay }),
@@ -272,13 +275,13 @@ const enrichWorker = (() => {
   const userAgent = `OffWeGo/1.0 (${placesContact})`
   const wikimedia = createWikimedia({ userAgent, log: placesSay })
   return createEnrichWorker({
-    pool: repository.pool,
+    pool: repository.background,
     log: placesSay,
     placesPerTick: Number(process.env.PLACES_ENRICH_PER_TICK) || undefined,
     prominentZoom: Number(process.env.PLACES_ENRICH_ZOOM) || undefined,
     sources: {
       osmNear: fromTableThenOverpass(
-        fromTable(repository.pool),
+        fromTable(repository.background),
         process.env.PLACES_OVERPASS === 'off' ? null : fromOverpass({ userAgent }),
       ),
       entity: (id, options) => wikimedia.entity(id, options),

@@ -1286,6 +1286,39 @@ test('the census can tell a crash-looping sweep from a finished one', () => {
   assert.match(census, /docker logs[^\n]*\| sed [^\n]*\|\| true/)
 })
 
+test('work nobody is waiting for does not hold the connections people are', () => {
+  /* The places worker runs inside the api process, and it held connections
+     from the same pool of ten that serves the map. A dense cell's zoom pass
+     is seven and a half seconds inside one transaction, continuously, for
+     thirteen thousand cells; a phone wants six connections for the six tiles
+     on its screen. The query was never the problem — 1.3ms on an idle box,
+     270 to 970ms in production — the queue in front of it was.
+
+     Read from the source rather than from a running server, because the thing
+     that must not drift is which pool the wiring hands over. */
+  const wiring = readFileSync(path.join(appRoot, 'server', 'src', 'index.js'), 'utf8')
+  /* Stated as the absence rather than by finding each worker and reading its
+     arguments: whatever is wired up in here, none of it may be handed the
+     pool the map is served from. */
+  assert.ok(
+    !/pool: repository\.pool\b/.test(wiring),
+    'something inside the api runs on the pool that serves the map',
+  )
+  assert.ok(
+    (wiring.match(/repository\.background/g) || []).length >= 2,
+    'the workers are not on the background pool',
+  )
+  const postgres = readFileSync(path.join(appRoot, 'server', 'src', 'postgres.js'), 'utf8')
+  assert.match(postgres, /const background = new pg\.Pool/, 'there is no background pool')
+  /* Both bounded, so a starved pool is an error somebody can see rather than
+     a request that hangs until the phone gives up. */
+  assert.equal(
+    (postgres.match(/connectionTimeoutMillis/g) || []).length,
+    2,
+    'a pool can wait for ever for a connection',
+  )
+})
+
 test('no line of the census can outlast the release it reports on', () => {
   /* Deploy 387 was live, healthy and answering, and failed anyway. The step
      that streams a release is allowed four minutes; the swap was done in
@@ -1303,7 +1336,15 @@ test('no line of the census can outlast the release it reports on', () => {
   const at = script.indexOf('places_now() {')
   const helper = script.slice(at, script.indexOf('}', at))
   assert.match(helper, /timeout \d+ docker compose exec/, 'the census can hang on the daemon')
-  assert.match(helper, /set statement_timeout = '\d+s'/, 'the census can hang in the database')
+  assert.match(
+    helper,
+    /PGOPTIONS="-c statement_timeout=\d+s"/,
+    'the census can hang in the database',
+  )
+  /* As a connection option, not as a statement: psql prints a command tag for
+     every statement it runs, and a `SET` in front of the query put the word
+     SET where each number should have been. */
+  assert.ok(!/set statement_timeout/i.test(helper.replace(/PGOPTIONS[^"]*"[^"]*"/, '')))
   /* And it still says something when the clock wins: the planner's estimate,
      marked as one. A blank where a number goes is a census that has failed
      quietly, which is the thing this whole block exists to stop. */
