@@ -204,7 +204,6 @@ else
   migrate_with_new_image
   docker compose up -d --build --wait --wait-timeout 900
 fi
-bash ./deploy/configure-logto.sh
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
 if [[ -z "$deployment_domain" ]]; then
   echo "WAYFARE_DOMAIN is missing from $APP_ROOT/.env." >&2
@@ -238,6 +237,20 @@ trap - ERR
 # its failures rather than claiming success. Read-only, and never a reason a
 # deploy fails: a census that cannot run tells nobody anything, but a release
 # that is already live and answering is not worth rolling back over it.
+# Sign-in configuration, asserted again now the release is live.
+#
+# It was above the health gate and it was three minutes of deploy 364: the
+# script waits for Logto to finish seeding its own schema, up to a minute of
+# it, on every release — and a release that is otherwise perfect must not be
+# rolled back because somebody else's container is still starting.
+#
+# It is idempotent and it has been true for three hundred releases, so being
+# a minute late is nothing and being a reason to roll back is not nothing.
+# `|| true` for the same reason as the census below: said in the log, never a
+# release undone. If sign-in configuration is genuinely wrong the line here
+# says so, and it says so on a box that is up and answering.
+bash ./deploy/configure-logto.sh || true
+
 docker compose exec -T api node server/scripts/day-census.mjs || true
 
 # The planet, filling itself in the background.

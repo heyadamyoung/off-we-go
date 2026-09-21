@@ -769,6 +769,40 @@ test('the enrichment pipeline can actually be switched on', () => {
   assert.match(api, /PLACES_CONTACT: \$\{PLACES_CONTACT:-\}/, 'unset is off, not a failure')
 })
 
+/* The deploy's critical path is: make the schema right, swap the containers,
+ * check the site answers. Nothing else.
+ *
+ * Everything before that health check can roll a release back, so everything
+ * before it has to be a thing whose failure genuinely means the release is
+ * bad. Configuring Logto's sign-in experience is not: it is idempotent, it
+ * has been true for three hundred releases, and it waits on somebody else's
+ * container seeding its own schema — three minutes of deploy 364, above the
+ * gate, where a slow neighbour could undo a perfect release.
+ *
+ * So the order is asserted, not just the contents. Asking whether the site
+ * answers comes first; the census, the sweep, the object-store cutover and
+ * Logto's sign-in configuration all come after, each with `|| true`, each
+ * loud in the log, none able to undo a release that is up and answering.
+ */
+test('nothing that cannot fail a release runs before the health check', () => {
+  const script = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const gate = script.indexOf('/api/health')
+  assert.ok(gate > 0, 'the deploy asks whether the site answers')
+
+  for (const [what, needle] of [
+    ["Logto's sign-in configuration", 'bash ./deploy/configure-logto.sh'],
+    ['the day census', 'api node server/scripts/day-census.mjs'],
+    ['the object store cutover', 'object-storage.sh cutover'],
+  ]) {
+    const at = script.indexOf(needle)
+    assert.ok(at > 0, `the deploy runs ${what}`)
+    assert.ok(at > gate, `${what} runs after the health check, not before it`)
+    /* And on a line that cannot fail the deploy. */
+    const line = script.slice(at, script.indexOf('\n', at))
+    assert.match(line, /\|\| true\s*$/, `${what} cannot undo a release that is answering`)
+  }
+})
+
 /* A migration changes the schema. It does not do work whose size depends on
  * how much data there is.
  *
