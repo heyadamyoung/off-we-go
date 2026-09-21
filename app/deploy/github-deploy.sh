@@ -225,43 +225,45 @@ docker compose config --quiet
 # The release sha reaches the web build so browser telemetry can be sliced
 # by deploy.
 export RELEASE_SHA="$release_sha"
-# The schema first, in a container of its own, before anything is recreated.
+# The schema is applied by the api as it boots, and the deploy creates no
+# container to do it.
 #
-# It used to happen inside the api's boot, and that is fine right up until a
-# migration does real work. Migration 051 builds one GiST index over ten
-# million places — minutes on this box — and during those minutes the api is
-# not listening, so its healthcheck does not pass, so `web` waits on
-# `depends_on: api: service_healthy` until Compose gives up. That limit is
-# Compose's own and is not the --wait-timeout below: deploys 363 and 365 both
-# died exactly 180 seconds after the api container started, and neither had
-# anything wrong with it.
+# It was a step here for four releases, and the measurements say it should not
+# have been. Creating the one-off container cost 1m56s in deploy 370 and 2m51s
+# in 374, either side of two seconds of SQL — so the fix in 372 was to strip
+# that container to a service with no volumes, no instrumentation and no
+# dependencies. It made no difference; 374's 2m51s is the stripped one. And
+# deploy 373 created the *unstripped* container, with all four mounts, in 8.8
+# seconds.
 #
-# A container's boot is measured against timeouts that belong to containers. A
-# migration is not a boot — it is something the release does once — and this
-# script can wait on it for as long as it takes. The previous release keeps
-# serving throughout, which is what makes this better than patience: the site
-# is up for the whole of it.
+# Same box, same command, 8.8 seconds against 2m51s, six minutes apart. The
+# container was never the variable. What is running beside it is: the planet
+# sweep has been going since deploy 370, reading sixteen Parquet parts at
+# 7,250 records a second across all sixteen cores, and a container create
+# queues behind it for the disk. Which is why the sweep is paused below for
+# the length of the swap.
 #
-# Not `|| true`. A schema that will not migrate is the one thing that must
-# stop a release, and the ERR trap restores the previous one.
+# The reason this was ever extracted from the boot is gone. It was migration
+# 051 building a GiST index over ten million rows: the api could not listen
+# while it ran, so its healthcheck could not pass, so `web` sat on
+# `depends_on: api: service_healthy` until Compose gave up at three minutes —
+# deploys 363 and 365, both dead exactly 180 seconds in with nothing wrong
+# with them. That index is built by the worker now, online and after the api
+# is serving, and migration 051 is one `create extension` line.
 #
-# --no-deps and a service of its own, because the container is the cost. The
-# `compose run api` this used to be spent 1m56s of deploy 370 being created
-# before node started, against 2.1 seconds of actual SQL: it instantiates the
-# api's four mounts, one of them the twelve-gigabyte tile volume, and loads
-# the OpenTelemetry SDK. The migrate service carries a database URL and an
-# admin address and nothing else, and the database is already up and healthy
-# by the time we are here, so there is nothing to wait on either.
-migrate_with_new_image() {
-  echo "Bringing the schema up to date before anything is recreated."
-  # --no-deps means nothing starts the database for us, so we start it. A
-  # no-op on every release — it has been running since the last one, and
-  # `up -d` on an unchanged service does nothing — and the three seconds it
-  # costs on a box being brought up from nothing is the whole reason the
-  # migrate container can skip resolving the api's dependency graph.
-  docker compose up -d --no-build --wait --wait-timeout 120 db
-  docker compose --profile migrate run --rm --no-deps -T migrate
-}
+# What makes it safe to put back is not that, though. It is the guard from
+# 201: a migration changes the schema and never does work whose size depends
+# on how much data there is. Every migration is bounded by rule, the whole
+# set of 53 applies in 0.4 seconds, and the api has always migrated on boot
+# anyway — index.js does it before it listens, which is what makes a fresh box
+# and a hand start work. So the deploy step was applying a schema that the
+# container it was about to start would have applied itself, and paying a
+# container create for the privilege.
+#
+# server/scripts/migrate.mjs and the profiled `migrate` service stay, for a
+# schema that has to be moved by hand without recreating anything:
+#
+#     docker compose --profile migrate run --rm migrate
 
 # Fifteen minutes, which is the api healthcheck's start period and not a
 # number picked for comfort. The two have to agree: compose stops waiting at
@@ -273,6 +275,22 @@ migrate_with_new_image() {
 # up perfectly well was restored away. A genuinely broken release is still
 # caught: the healthcheck probes every ten seconds once the start period is
 # over, so this is patience with a boot, not with a failure.
+#
+# The planet sweep stands aside for the length of the swap.
+#
+# Not a cap — there was one for a release, four cores of sixteen, and it was
+# the wrong lever on a box with sixteen cores and sixty-two gigabytes. This is
+# the right one: the two are not made to share, they are made to take turns.
+# A container create on this box is 8.8 seconds with the sweep between phases
+# and 2m51s with it reading Parquet, and a deploy is a person waiting while a
+# backfill that nobody is waiting for holds the disk.
+#
+# It costs the sweep the cell in flight and nothing else — `--resume` means the
+# run started again in the housekeeping below pays for that one cell — against
+# a deploy that is the same length every time instead of a lottery. `stop` is
+# how the service is meant to be stopped; the coverage rows are the record of
+# what is done, and a half-written cell is abandoned rather than committed.
+docker compose --profile sweep stop -t 20 places-sweep >/dev/null 2>&1 || true
 if [[ -n "$registry_token" ]]; then
   # The images the pipeline built and tested, pulled rather than rebuilt here:
   # building on this box was a minute and a half of every deploy, three on a
@@ -282,11 +300,9 @@ if [[ -n "$registry_token" ]]; then
   registry_token=""
   docker compose pull --quiet api web
   docker logout ghcr.io >/dev/null 2>&1 || true
-  migrate_with_new_image
   docker compose up -d --no-build --wait --wait-timeout 900
 else
   docker compose build --quiet api
-  migrate_with_new_image
   docker compose up -d --build --wait --wait-timeout 900
 fi
 deployment_domain="$(sed -n 's/^WAYFARE_DOMAIN=//p' .env | tail -n 1)"
