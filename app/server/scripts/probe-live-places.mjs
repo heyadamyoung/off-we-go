@@ -30,22 +30,9 @@
  */
 
 import { tileHolds } from '../src/places/mvt.js'
+import { STANDING, tileFor } from '../src/places/viewpoints.js'
 
 const host = process.argv[2] || process.env.PLACES_HOST || 'offwego.to'
-
-/* Viewports, not points: this is the query shape the map makes. Two dense
-   European cities, one prairie city, and the two ends of the trip that is
-   running right now — a layer that works in Amsterdam and nowhere else is
-   the failure this whole layer was built to end. Edinburgh is here because
-   the map was panned to Scotland and found nothing, and a standing viewport
-   is the only kind that gets checked without somebody remembering to. */
-const STANDING = [
-  { name: 'Amsterdam', west: 4.86, south: 52.35, east: 4.92, north: 52.39 },
-  { name: 'Edinburgh', west: -3.21, south: 55.94, east: -3.17, north: 55.96 },
-  { name: 'Regina', west: -104.65, south: 50.42, east: -104.55, north: 50.47 },
-  { name: 'Toronto', west: -79.4, south: 43.64, east: -79.36, north: 43.66 },
-  { name: 'Dublin', west: -6.28, south: 53.33, east: -6.24, north: 53.36 },
-]
 
 /** `Glasgow:-4.3,55.84,-4.2,55.88`, from the command line or PLACES_VIEWS. */
 function viewFrom(text) {
@@ -67,18 +54,6 @@ const VIEWS = [...STANDING, ...asked]
 
 const pad = (text, width) => String(text).padEnd(width)
 const kb = bytes => `${(bytes / 1024).toFixed(1)}KB`
-
-/** The slippy tile a point falls in. The same arithmetic the map does to
-    decide which tiles to ask for, so these are the requests a phone makes. */
-function tileFor(lng, lat, z) {
-  const side = 2 ** z
-  const radians = (lat * Math.PI) / 180
-  return {
-    z,
-    x: Math.floor(((lng + 180) / 360) * side),
-    y: Math.floor(((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * side),
-  }
-}
 
 /* Every zoom the pyramid has, because the bug that needed seeing was a mark
    present at one zoom, gone a step in, and back a step further — which no

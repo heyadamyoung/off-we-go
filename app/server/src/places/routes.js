@@ -384,6 +384,43 @@ export function registerPlaceRoutes(
     reply.code(503).send({ error: 'The places layer is not available on this deployment' })
 
   /**
+   * Where the time went, on the answer itself.
+   *
+   * A tile build is 1.3 milliseconds of database on an idle box and was
+   * measured at 270 to 970 in production while the planet was loading.
+   * Nothing about the query had changed, so the time was somewhere no span
+   * could see and no probe outside the box could separate from the network.
+   *
+   * `data` is from the first question put to the database to the answer in
+   * hand. `total` is the whole handler, so `total` minus `data` is this
+   * process and nothing else. `queue` is how many callers were waiting for a
+   * connection at that moment, which is the one number that separates a slow
+   * query from a query that never got to start. What is left between the
+   * box's `total` and a client's own clock is the wire.
+   *
+   * On every route in this file rather than only on the tiles. The tiles were
+   * the half that was reported as slow, so the tiles were the half that got
+   * an answer, and the result was a layer where the one path anybody could
+   * measure was the one path already known to be fast: a viewport took 3.7
+   * seconds in production and there was no way to say whether that was the
+   * database, this process, the connection queue or Toronto being far away.
+   * A number that only exists where somebody already looked is not
+   * instrumentation.
+   *
+   * Server-Timing because a browser's own devtools draw it beside the
+   * request, and `curl -I` prints it, and neither needs us to ship a
+   * dashboard first.
+   */
+  function timed(reply, { started, asked = started }) {
+    const done = Date.now()
+    reply.header(
+      'server-timing',
+      `total;dur=${done - started}, data;dur=${done - asked}` +
+        `, queue;dur=${repository.pending?.() ?? 0}`,
+    )
+  }
+
+  /**
    * Sources for a page of records, in one round trip.
    *
    * Only for the records that need one, and only for ids the database can
@@ -486,6 +523,10 @@ export function registerPlaceRoutes(
       const started = Date.now()
       let near = parsed.data.near ?? null
       let scope = null
+      /* The first question put to the database, which is the trip's stops
+         when a trip narrows the search and the search itself when it does
+         not. Both are the database; neither is this process. */
+      const asked = Date.now()
       if (parsed.data.trip_id) {
         const stops = await repository.listStops(user, parsed.data.trip_id)
         if (!stops) return reply.code(404).send({ error: 'That trip was not found' })
@@ -539,6 +580,7 @@ export function registerPlaceRoutes(
         'places.degraded': Boolean(degraded),
         'places.fallback.reason': degraded?.reason ?? null,
       })
+      timed(reply, { started, asked })
       reply.header('cache-control', degraded ? DEGRADED_CACHE : SEARCH_CACHE)
       return {
         places: page.map(present),
@@ -573,6 +615,7 @@ export function registerPlaceRoutes(
            country nobody has loaded, and walking all four rungs out to 25 km
            before discovering there is no coverage was four KNN scans spent
            learning what one indexed row already knew. */
+        const asked = Date.now()
         const found = await coverageFor({ lng, lat, radius: base.radius })
 
         /* The ladder from rank.js, walked here rather than there because each
@@ -618,6 +661,7 @@ export function registerPlaceRoutes(
           'places.degraded': Boolean(degraded),
           'places.fallback.reason': degraded?.reason ?? null,
         })
+        timed(reply, { started, asked })
         reply.header('cache-control', degraded ? DEGRADED_CACHE : NEARBY_CACHE)
         return {
           places: page.map(present),
@@ -737,30 +781,10 @@ export function registerPlaceRoutes(
         'places.tile.bytes': body.length,
         'places.tile.built': !kept,
       })
-      /* Where the time went, on the answer itself.
-       *
-       * A tile build is 1.3 milliseconds of database on an idle box and was
-       * measured at 270 to 970 in production while the planet was loading.
-       * Nothing about the query had changed, so the time was somewhere this
-       * span could not see and no probe outside the box could separate from
-       * the network.
-       *
-       * `data` is from the first question asked of the database to the bytes
-       * in hand — the lookup, or the build and the coverage read behind it.
-       * `total` is the whole handler, so `total` minus `data` is this process
-       * and nothing else. `queue` is how many callers were waiting for a
-       * connection at that moment, which is the one number that separates a
-       * slow query from a query that never got to start. What is left between
-       * the box's `total` and a client's own clock is the wire.
-       *
-       * Server-Timing because a browser's own devtools draw it beside the
-       * request, and `curl -I` prints it, and neither needs us to ship a
-       * dashboard first. */
-      reply.header(
-        'server-timing',
-        `total;dur=${Date.now() - started}, data;dur=${Date.now() - queried}` +
-          `, queue;dur=${repository.pending?.() ?? 0}`,
-      )
+      /* Where the time went — `timed` above, which every route in this file
+         answers with. Here `data` covers the lookup, or the build and the
+         coverage read behind it. */
+      timed(reply, { started, asked: queried })
       /* A tile is the same bytes for everybody for as long as the data behind
          it holds, which is a release — so it is cached hard and at the edge.
          This is the other half of why a tiled map does not flicker: the
@@ -792,6 +816,7 @@ export function registerPlaceRoutes(
          the box, which is what a cap gives and is why panning used to change
          which places were on screen. */
       const zoom = zoomForBounds({ west, south, east, north }, LABEL_ZOOMS)
+      const asked = Date.now()
       const rows = await repository.placesInView(
         { west, south, east, north },
         {
@@ -826,6 +851,7 @@ export function registerPlaceRoutes(
          Parquet read per pan, which is the one thing the cap exists to
          prevent; the cell is queued and the map fills in as it lands. Said
          rather than hidden, so the client can show that it is still filling. */
+      timed(reply, { started, asked })
       reply.header('cache-control', found.ready ? NEARBY_CACHE : DEGRADED_CACHE)
       return {
         places: page.map(pin),
@@ -864,6 +890,7 @@ export function registerPlaceRoutes(
       /* The middle of the view, because that is where somebody is looking —
          the same centre the viewport query asks about, so the two never
          disagree about whether this ground is ready. */
+      const asked = Date.now()
       const found = await coverageFor({
         lng: (west + east) / 2,
         lat: (south + north) / 2,
@@ -875,6 +902,7 @@ export function registerPlaceRoutes(
         'places.query.ms': Date.now() - started,
         'places.degraded': !found.ready,
       })
+      timed(reply, { started, asked })
       reply.header('cache-control', found.ready ? NEARBY_CACHE : DEGRADED_CACHE)
       return {
         attribution: attributionFor(licenses.map(license => ({ license }))),
@@ -896,6 +924,10 @@ export function registerPlaceRoutes(
       return reply.code(400).send({ error: 'A place id is a uuid or an upstream id' })
 
     return span('read place', {}, async () => {
+      /* No `asked` of its own: this handler is database calls end to end — the
+         record, its sources, what enrichment knows — so `data` is `total` and
+         saying otherwise would be inventing a gap that is not there. */
+      const started = Date.now()
       const found = await repository.placeById(id.data)
       if (!found) return reply.code(404).send({ error: 'No such place' })
       if (found.gone) {
@@ -903,6 +935,7 @@ export function registerPlaceRoutes(
         /* 410, not 404: the id was real and we know what became of it. A stop
            pointing here can say "this has closed" instead of losing its pin
            to a generic not-found. */
+        timed(reply, { started })
         reply.header('cache-control', PLACE_CACHE)
         return reply.code(410).send({ place: null, gone: true, reason: found.reason, at: found.at })
       }
@@ -935,6 +968,7 @@ export function registerPlaceRoutes(
 
       /* A card still being filled must not be kept, or what somebody gets
          for the next day is the answer from before we looked. */
+      timed(reply, { started })
       reply.header('cache-control', waiting ? PLACE_UNSETTLED : PLACE_CACHE)
       return {
         place: present(record),

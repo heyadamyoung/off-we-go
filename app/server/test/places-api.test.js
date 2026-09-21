@@ -629,17 +629,8 @@ test('a viewport draws the best of what is in it, not the first rows found', {
  * drawn, and nothing truncates it — that became a request for every place in
  * the box: seventeen hundred rows and four seconds over Toronto, on every
  * settled pan, to read one boolean. */
-test('a tile says where its milliseconds went', {
-  skip: reachable,
-}, async t => {
-  /* A tile build is 1.3 milliseconds of database on an idle box, and the same
-     build was measured at 270 to 970 in production while the planet was
-     loading. Nothing about the query had changed. Without these three numbers
-     there is no way to tell a slow query from a queue for a connection from a
-     phone on a train, and the first two are ours to fix. */
-  const { app } = await world(t)
-  const reply = await app.inject({ method: 'GET', url: '/api/places/tiles/11/1051/673' })
-  assert.equal(reply.statusCode, 200)
+/** `total;dur=3, data;dur=3, queue;dur=0` as three numbers. */
+function whereTheTimeWent(reply) {
   const timing = reply.headers['server-timing'] || ''
   const parts = Object.fromEntries(
     timing.split(',').map(one => {
@@ -650,11 +641,45 @@ test('a tile says where its milliseconds went', {
   for (const name of ['total', 'data', 'queue']) {
     assert.ok(Number.isFinite(parts[name]), `no ${name} in "${timing}"`)
   }
-  /* The handler cannot take less time than the part of it that fetched the
-     bytes, which is the only relationship between them that always holds —
+  /* The handler cannot take less time than the part of it that spoke to the
+     database, which is the only relationship between them that always holds —
      and the one that makes `total` minus `data` mean anything. */
   assert.ok(parts.total >= parts.data, `total ${parts.total} < data ${parts.data}`)
-  assert.ok(parts.queue >= 0)
+  assert.ok(parts.queue >= 0, `queue ${parts.queue}`)
+  return parts
+}
+
+test('every places route says where its milliseconds went', {
+  skip: reachable,
+}, async t => {
+  /* A tile build is 1.3 milliseconds of database on an idle box, and the same
+     build was measured at 270 to 970 in production while the planet was
+     loading. Nothing about the query had changed. Without these three numbers
+     there is no way to tell a slow query from a queue for a connection from a
+     phone on a train, and the first two are ours to fix.
+   *
+   * On every route, not just the tiles. The tiles were the half reported as
+   * slow, so the tiles were the half that got measured — and the result was a
+   * layer where the one path anybody could see was the one already known to
+   * be fast. A viewport took 3.7 seconds in production and nothing could say
+   * whether that was the database, the process, the connection queue or
+   * Toronto being far away. This test is what stops that happening again to
+   * whichever route is added next. */
+  const { app, get, ids } = await world(t)
+  const box = 'west=4.87&south=52.35&east=4.89&north=52.37'
+  const everywhere = [
+    ['tile', () => app.inject({ method: 'GET', url: '/api/places/tiles/11/1051/673' })],
+    ['coverage', () => app.inject({ method: 'GET', url: `/api/places/coverage?${box}` })],
+    ['in-view', () => app.inject({ method: 'GET', url: `/api/places/in-view?${box}` })],
+    ['search', () => get('/api/places/search?q=rijks')],
+    ['nearby', () => get('/api/places/nearby?lat=52.36&lng=4.885')],
+    ['one place', () => get(`/api/places/${ids.get('Rijksmuseum')}`)],
+  ]
+  for (const [name, ask] of everywhere) {
+    const reply = await ask()
+    assert.equal(reply.statusCode, 200, `${name}: ${reply.body}`)
+    whereTheTimeWent(reply)
+  }
 })
 
 test('the coverage question is answered without the places in view', {
