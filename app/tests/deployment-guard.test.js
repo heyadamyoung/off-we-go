@@ -1494,6 +1494,21 @@ test('the day census only ever reads', () => {
   }
 })
 
+/** One top-level job of a workflow, from its name to the next job's.
+    By structure rather than by a character count: two guards below used fixed
+    windows of 900 and 1,200 characters, and both quietly stopped covering
+    what they were named the moment a comment above the thing grew. A guard
+    defeated by a comment is a guard nobody can trust the absence of. */
+function blockOf(workflow, name) {
+  const from = workflow.indexOf(`\n  ${name}:\n`)
+  if (from < 0) return ''
+  /* Past the job's own header line, which matches the same pattern the next
+     job does. */
+  const body = from + `\n  ${name}:\n`.length
+  const next = workflow.slice(body).search(/^ {2}[a-z][a-z0-9_-]*:$/m)
+  return next === -1 ? workflow.slice(from) : workflow.slice(from, body + next)
+}
+
 test('nothing in the pipeline may run without a limit', () => {
   /* Every job had six hours, which is GitHub's default and nobody's
      intention. Deploy 368 ran for eighteen minutes and 370 for eleven, and in
@@ -1514,12 +1529,36 @@ test('nothing in the pipeline may run without a limit', () => {
     )
     assert.match(block, /^ {4}timeout-minutes: \d+$/m, `job "${job}" has no timeout-minutes`)
   }
-  /* And the release itself, inside the job that runs it. */
-  const release = workflow.slice(workflow.indexOf('name: Stream release to the VPS'))
-  assert.match(
-    release.slice(0, 900),
-    /^ {8}timeout-minutes: [1-5]$/m,
-    'the ssh release step is unbounded',
+  /* And the release itself, inside the job that runs it — bounded, and by
+     less than the job that contains it.
+   *
+   * That second half is the one with teeth, and it is the one this missed. A
+   * step allowed eight minutes inside a job allowed five is killed at five,
+   * by the job, with a message about the job: the step's number is
+   * decoration, and the ceiling anybody reads when the deploy goes red is
+   * not the ceiling that stopped it. This test used to say `[1-5]` and would
+   * have let that through as long as the digit was small enough.
+   *
+   * Measured by structure rather than by a character count. Both windows
+   * here were fixed slices — 900 and 1200 — and both silently stopped
+   * covering what they were named after the moment a comment above the thing
+   * grew. A guard that is defeated by a comment is a guard nobody can trust
+   * the absence of. */
+  const deploy = blockOf(workflow, 'deploy')
+  const jobCeiling = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(deploy)?.[1])
+  assert.ok(Number.isFinite(jobCeiling), 'the deploy job is unbounded')
+
+  const stepFrom = deploy.indexOf('name: Stream release to the VPS')
+  assert.ok(stepFrom > 0, 'the release step is not in the deploy job')
+  const after = deploy.slice(stepFrom)
+  const stepEnd = after.slice(1).search(/^ {6}- name:/m)
+  const step = stepEnd === -1 ? after : after.slice(0, stepEnd + 1)
+  const stepCeiling = Number(/^ {8}timeout-minutes: (\d+)$/m.exec(step)?.[1])
+  assert.ok(Number.isFinite(stepCeiling), 'the ssh release step is unbounded')
+  assert.ok(
+    stepCeiling < jobCeiling,
+    `the release step is allowed ${stepCeiling} minutes inside a job allowed ${jobCeiling}; ` +
+      'the job would kill it first and say nothing about the release',
   )
 })
 
@@ -1538,9 +1577,13 @@ test('tests do not queue behind the previous deploy', () => {
     !/^concurrency:$/m.test(top),
     'a workflow-level concurrency group makes every job queue, tests included',
   )
-  const deploy = workflow.slice(workflow.indexOf('\n  deploy:\n'))
+  /* The whole job, not the first 1,200 characters of it: that window stopped
+     covering the concurrency block the first time a comment above it grew,
+     and a guard defeated by a comment is one nobody can trust the absence
+     of. */
+  const deploy = blockOf(workflow, 'deploy')
   assert.match(
-    deploy.slice(0, 1200),
+    deploy,
     /^ {4}concurrency:\n {6}group: off-we-go-production\n {6}cancel-in-progress: false$/m,
     'the deploy job does not hold the production lock',
   )
@@ -1866,4 +1909,49 @@ test('the timings script cannot change a row', () => {
   /* And a deadline it stops at, because the census step has four minutes for
      everything it does and an in-view query over a city was 3.7 seconds. */
   assert.match(source, /BUDGET_MS/)
+})
+
+test('a release that is live is never reported as a failure', () => {
+  /* Deploys 391 and 392 were both red with the site live, healthy and
+     answering. The step that streams a release had `timeout-minutes: 4` and a
+     note saying that past it "the ERR trap on the box has already restored
+     the previous release" — which is not what happens. The timeout kills an
+     ssh client on a runner. It runs nothing on the box, and the box's own
+     compose swap is allowed `--wait-timeout 900`: the watcher gave up at four
+     minutes on work the box was allowed fifteen to do.
+
+     A red deploy that means nothing is worse than none, because the next real
+     failure looks exactly like the last two. */
+  const workflow = readFileSync(
+    path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
+    'utf8',
+  )
+  const at = workflow.indexOf('Stream release to the VPS')
+  assert.ok(at > 0, 'the release step was renamed')
+  const ceiling = /timeout-minutes:\s*(\d+)/.exec(workflow.slice(at))
+  assert.ok(ceiling, 'the release step has no ceiling at all')
+  assert.ok(
+    Number(ceiling[1]) >= 8,
+    `the release step is bounded at ${ceiling[1]} minutes; a saturated box took 3m39s ` +
+      'to swap its containers alone',
+  )
+
+  /* And the swap says where its time goes. Deploy 392 printed the backup line
+     and then nothing for three minutes and sixteen seconds — covering a sweep
+     stop, a login, an image pull and two container swaps — and no one could
+     say afterwards which of them had it. There is no shell on that box: a
+     stretch of a release with no output is a stretch nobody can ever
+     diagnose. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  assert.match(deploy, /^step\(\) \{/m, 'the swap no longer marks its steps')
+  for (const marked of ['sweep stand aside', 'pulling the images', 'swapping the containers']) {
+    const words = marked.split(' ')
+    assert.ok(
+      words.every(word => deploy.includes(word)),
+      `the swap does not say when it is ${marked}`,
+    )
+  }
+  /* Timed from the start of the swap, so the report is which piece spent the
+     minutes rather than what o'clock it was. */
+  assert.match(deploy, /swap_began="\$\(date \+%s\)"/)
 })

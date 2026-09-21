@@ -342,12 +342,24 @@ jobs:
     name: Deploy production
     needs: [checks, server, browser, live]
     runs-on: ubuntu-24.04
-    # Five for the job, four for the release below. A deploy is a pull, a
-    # schema step, two container swaps and a health check; deploy 370 did the
-    # swaps in 3.3 seconds and the health check in 19. Anything that runs past
-    # four minutes is not being slow, it is stuck, and a stuck deploy that
-    # fails is worth more than one that holds the box for eleven minutes.
-    timeout-minutes: 5
+    # Twelve for the job, eight for the release below, and the job's has to be
+    # the larger of the two or the smaller one is decoration: a step allowed
+    # eight minutes inside a job allowed five is killed at five, by the job,
+    # with a message about the job.
+    #
+    # It was five and four. A deploy is a pull, a schema step, two container
+    # swaps and a health check, and deploy 370 did the swaps in 3.3 seconds
+    # and the health check in 19 — on a box that was not then carrying thirty
+    # million places with a sweep reading forty-two million rows. Deploy 391
+    # took 3m39s to get its containers healthy and 392 did not finish inside
+    # four at all, and both were reported red while the site was live,
+    # healthy and answering.
+    #
+    # Anything past this is still stuck rather than slow, and a stuck deploy
+    # that fails is worth more than one that holds the box. What is not worth
+    # anything is a red deploy on a release that went out fine, because the
+    # next real failure then looks exactly like the last two.
+    timeout-minutes: 12
     # The box, one release at a time. This is the only real conflict in the
     # workflow and this is the only place it is locked.
     concurrency:
@@ -425,11 +437,32 @@ jobs:
       - name: Stream release to the VPS
         # The release itself, bounded. Deploy 370 ran for 10m58s and 368 for
         # eighteen minutes, and in both cases the extra minutes bought nothing
-        # — the release was either already live or never going to be. Four
-        # minutes is a generous ceiling for a pull, a schema step, two
-        # container swaps and a health check, and past it the ERR trap on the
-        # box has already restored the previous release.
-        timeout-minutes: 4
+        # — the release was either already live or never going to be.
+        #
+        # Four minutes was that bound, with a note saying that past it "the
+        # ERR trap on the box has already restored the previous release".
+        # That is not what happens. This timeout kills an ssh client on a
+        # runner; it does not run anything on the box, and the box's own
+        # compose swap is allowed `--wait-timeout 900`. The two numbers
+        # disagreed by a factor of nearly four, so a timeout here meant "we
+        # stopped watching", not "the release failed" — and deploys 391 and
+        # 392 were both reported red while the release was live, healthy and
+        # answering. A red deploy that means nothing is worse than no deploy
+        # status at all, because the next real failure looks like the last two.
+        #
+        # Eight. The box now carries thirty million places and a sweep reading
+        # forty-two million rows, and a swap that was seconds when this number
+        # was chosen is minutes while the disk is held: 391 took 3m39s to get
+        # its containers healthy and 392 did not finish inside four. Eight
+        # covers a bad day on a saturated box and still fails fast on a
+        # genuinely stuck release — nothing here waits out the box's own
+        # fifteen, which is the ceiling for a migration building a GiST index
+        # over ten million rows and is a different kind of patience.
+        #
+        # Whatever the ceiling, the swap says where its time goes now: see the
+        # `step` markers in deploy/github-deploy.sh. Deploy 392 spent 3m16s
+        # in silence and no one could say which command had it.
+        timeout-minutes: 8
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
         run: |
