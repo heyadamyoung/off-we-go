@@ -29,6 +29,7 @@ import {
   enqueueProminent,
   failEnrichment,
   writeEnrichment,
+  WANTED_NOW,
   WANTED_SOON,
 } from './store.js'
 
@@ -59,7 +60,15 @@ export function createEnrichWorker({
   /** One place: fetch, decide, write. Never throws — a failure waits. */
   async function enrichOne(place) {
     try {
-      const outcome = await enrichPlace(place, sources)
+      /* Whether a person is looking at this place right now, which is the one
+         thing that decides whether a public volunteer-run service may be
+         asked about it. WANTED_NOW is set by the card route when somebody
+         opens a place we have never enriched; everything else here is the
+         backfill, and a backfill is answered from our own landmark table or
+         not at all — see fromTableThenOverpass in enrich/osm.js. */
+      const outcome = await enrichPlace(place, sources, {
+        waiting: Number(place.priority) <= WANTED_NOW,
+      })
       await writeEnrichment(pool, place.id, outcome, pipeline)
       log(
         `places: ${place.name} ${outcome.status}` +

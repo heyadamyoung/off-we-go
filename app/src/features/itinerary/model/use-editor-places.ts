@@ -223,11 +223,7 @@ export default function useEditorPlaces({
     [tripId, dayForNewStop, stops, toast, setStops, setPhotos],
   )
 
-  const {
-    data: attractions,
-    filling: attrFilling,
-    count: attrCount,
-  } = useAttractions(view, showAttractions && tab === 'map')
+  const { data: attractions } = useAttractions(view, showAttractions && tab === 'map')
 
   const toggleAttractions = useCallback(() => {
     setShowAttractions(on => {
@@ -295,8 +291,6 @@ export default function useEditorPlaces({
     lookUpDraft,
     addSight,
     attractions,
-    attrFilling,
-    attrCount,
     toggleAttractions,
     addAttraction,
     showSight,

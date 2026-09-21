@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import pg from 'pg'
 import { READY, BARREN } from '../src/places/enrich/enrich.js'
-import { fromTable } from '../src/places/enrich/osm.js'
+import { fromTable, fromTableThenOverpass } from '../src/places/enrich/osm.js'
 import {
   claimEnrichment,
   enqueue,
@@ -289,6 +289,58 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
 
     const shop = await pool.query('select count(*)::int as n from place_enrichment')
     assert.equal(shop.rows[0].n, 1, 'and the corner shop was never queued')
+  })
+
+  await t.test('the backfill never reaches the volunteer service', async t => {
+    /* The defect this replaces, in full, because it is the kind that costs
+       somebody else rather than us and so never shows up in our own graphs.
+     *
+     * `fromTableThenOverpass` fell through to overpass-api.de whenever our
+     * own `osm_landmarks` had nothing within range. That table is empty
+     * until a planet extract is loaded into it, so "nothing" was every place
+     * — and the backfill queues four hundred prominent places at a time and
+     * takes six every thirty seconds. Seven hundred and twenty requests an
+     * hour to a service run on donations, for work nobody is waiting on.
+     *
+     * index.js said "the backfill never touches it" above the wiring. It had
+     * said so for three releases. Nothing checked. */
+    const pool = await freshDatabase(t)
+    const castle = await place(pool, 'Edinburgh Castle', 11)
+    /* Zoom 17, so the prominent top-up never reaches it — the only way this
+       one is ever queued is somebody opening its card. */
+    const opened = await place(pool, 'Greyfriars Kirk', 17, { lng: -3.1918, lat: 55.9472 })
+    /* No osm_landmarks row anywhere: our own copy knows nothing, which is
+       the state that used to send every one of these to Overpass. */
+
+    const asked = []
+    const worker = createEnrichWorker({
+      pool,
+      sources: {
+        osmNear: fromTableThenOverpass(fromTable(pool), async there => {
+          asked.push(there.name)
+          return []
+        }),
+        entity: async () => null,
+        summary: async () => null,
+        files: async () => null,
+      },
+    })
+
+    /* The backfill: queued by the worker's own top-up, at WANTED_SOON. */
+    await worker.once()
+    assert.equal(await statusOf(pool, castle), 'pending')
+    await worker.once()
+    assert.deepEqual(asked, [], `the backfill asked Overpass about ${asked.join(', ')}`)
+    /* And it is a real answer, not a deferral: nothing to find, said so. */
+    assert.equal((await readEnrichment(pool, castle)).status, BARREN)
+
+    /* Somebody opens a card, which is what /api/places/:id does for a place
+       enrichment has never reached. That is the one case the service exists
+       for, and it still works — a gate that stopped everything would be a
+       worse bug wearing the same test. */
+    await enqueue(pool, [opened], WANTED_NOW)
+    await worker.once()
+    assert.deepEqual(asked, ['Greyfriars Kirk'])
   })
 
   await t.test('a source that throws leaves the place waiting, not lost', async t => {

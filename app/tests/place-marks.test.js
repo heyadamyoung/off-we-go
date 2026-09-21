@@ -144,3 +144,57 @@ test('a tile generation and the rule that fills it move together', async () => {
     'one of these moved without the other being considered — see backend-base.ts',
   )
 })
+
+/* Words the map is not allowed to say.
+ *
+ * "Still loading places here" hung over the map in a glass capsule for as
+ * long as the coverage answer said `degraded`, which means "the sweep has
+ * not reached this one-degree cell of the planet yet" — a fact about a
+ * backfill running on a box in another country, reported to somebody looking
+ * at a city. It sat there for days at a time, over a map that was already
+ * drawing pins, next to a count that is structurally zero once the pins come
+ * from tiles.
+ *
+ * Asked for twice, in as many words, and this is what stops a third time: a
+ * map does not apologise for the parts of the world nobody has finished
+ * cataloguing. It draws what it has.
+ *
+ * Comments are stripped before the check, because the note where the capsule
+ * used to be quotes the words on purpose — a removal nobody can find the
+ * reason for is one somebody puts back. */
+test('the map never says it is still loading places', async () => {
+  const roots = ['src/features', 'src/shared', 'src/pages', 'src/widgets']
+  const { readdir } = await import('node:fs/promises')
+  const path = await import('node:path')
+  const here = path.dirname(new URL(import.meta.url).pathname)
+
+  const walk = async dir => {
+    const found = []
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return found
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) found.push(...(await walk(full)))
+      else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) found.push(full)
+    }
+    return found
+  }
+
+  /* Block and line comments out; string and template contents stay, which is
+     the whole point — the ban is on what can reach a screen. */
+  const withoutComments = source =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+
+  const banned = /still\s+loading\s+places/i
+  const guilty = []
+  for (const root of roots) {
+    for (const file of await walk(path.join(here, '..', root))) {
+      if (banned.test(withoutComments(await readFile(file, 'utf8')))) guilty.push(file)
+    }
+  }
+  assert.deepEqual(guilty, [], `the map says it again in:\n${guilty.join('\n')}`)
+})
