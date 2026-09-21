@@ -695,6 +695,7 @@ export function registerPlaceRoutes(
        * the normal case nobody pays even the first one. Dropped when the
        * ground under them is re-ingested — see clearPlaceTiles, which is the
        * only thing standing between "built once" and "wrong for ever". */
+      const queried = Date.now()
       let body = repository.readPlaceTile ? await repository.readPlaceTile({ z, x, y }) : null
       const kept = body !== null
       /* Whether this square is worth keeping, which is a question about the
@@ -736,6 +737,30 @@ export function registerPlaceRoutes(
         'places.tile.bytes': body.length,
         'places.tile.built': !kept,
       })
+      /* Where the time went, on the answer itself.
+       *
+       * A tile build is 1.3 milliseconds of database on an idle box and was
+       * measured at 270 to 970 in production while the planet was loading.
+       * Nothing about the query had changed, so the time was somewhere this
+       * span could not see and no probe outside the box could separate from
+       * the network.
+       *
+       * `data` is from the first question asked of the database to the bytes
+       * in hand — the lookup, or the build and the coverage read behind it.
+       * `total` is the whole handler, so `total` minus `data` is this process
+       * and nothing else. `queue` is how many callers were waiting for a
+       * connection at that moment, which is the one number that separates a
+       * slow query from a query that never got to start. What is left between
+       * the box's `total` and a client's own clock is the wire.
+       *
+       * Server-Timing because a browser's own devtools draw it beside the
+       * request, and `curl -I` prints it, and neither needs us to ship a
+       * dashboard first. */
+      reply.header(
+        'server-timing',
+        `total;dur=${Date.now() - started}, data;dur=${Date.now() - queried}` +
+          `, queue;dur=${repository.pending?.() ?? 0}`,
+      )
       /* A tile is the same bytes for everybody for as long as the data behind
          it holds, which is a release — so it is cached hard and at the edge.
          This is the other half of why a tiled map does not flicker: the

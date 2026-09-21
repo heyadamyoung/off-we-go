@@ -103,7 +103,14 @@ async function tileAt({ z, x, y }) {
     const started = Date.now()
     const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
     const body = new Uint8Array(await response.arrayBuffer())
-    return { ms: Date.now() - started, status: response.status, body }
+    return {
+      ms: Date.now() - started,
+      status: response.status,
+      body,
+      /* What the box says it spent on it — total, database, and how many
+         callers were queued for a connection. The wire is the difference. */
+      timing: response.headers.get('server-timing') || '',
+    }
   }
   try {
     const first = await timed()
@@ -116,6 +123,8 @@ async function tileAt({ z, x, y }) {
       ms: first.ms,
       kept: again.ms,
       bytes: first.body.length,
+      /* What the box says it spent, so what is left over is the wire. */
+      timing: again.timing,
       ...tileHolds(first.body),
     }
   } catch (error) {
@@ -281,7 +290,8 @@ for (const view of VIEWS) {
     console.log(
       `             z${pad(z, 3)} ${pad(`${drawn.x}/${drawn.y}`, 12)}` +
         ` ${pad(`${drawn.ms}ms then ${drawn.kept}ms`, 17)} ${pad(kb(drawn.bytes), 8)}` +
-        ` ${pad(`${drawn.features} drawn`, 12)} ${drawn.zooms}`,
+        ` ${pad(`${drawn.features} drawn`, 12)} ${drawn.zooms}` +
+        (drawn.timing ? `\n                  the box says ${drawn.timing}` : ''),
     )
   }
   await pyramid(view)

@@ -629,6 +629,34 @@ test('a viewport draws the best of what is in it, not the first rows found', {
  * drawn, and nothing truncates it — that became a request for every place in
  * the box: seventeen hundred rows and four seconds over Toronto, on every
  * settled pan, to read one boolean. */
+test('a tile says where its milliseconds went', {
+  skip: reachable,
+}, async t => {
+  /* A tile build is 1.3 milliseconds of database on an idle box, and the same
+     build was measured at 270 to 970 in production while the planet was
+     loading. Nothing about the query had changed. Without these three numbers
+     there is no way to tell a slow query from a queue for a connection from a
+     phone on a train, and the first two are ours to fix. */
+  const { app } = await world(t)
+  const reply = await app.inject({ method: 'GET', url: '/api/places/tiles/11/1051/673' })
+  assert.equal(reply.statusCode, 200)
+  const timing = reply.headers['server-timing'] || ''
+  const parts = Object.fromEntries(
+    timing.split(',').map(one => {
+      const [name, value] = one.trim().split(';dur=')
+      return [name, Number(value)]
+    }),
+  )
+  for (const name of ['total', 'data', 'queue']) {
+    assert.ok(Number.isFinite(parts[name]), `no ${name} in "${timing}"`)
+  }
+  /* The handler cannot take less time than the part of it that fetched the
+     bytes, which is the only relationship between them that always holds —
+     and the one that makes `total` minus `data` mean anything. */
+  assert.ok(parts.total >= parts.data, `total ${parts.total} < data ${parts.data}`)
+  assert.ok(parts.queue >= 0)
+})
+
 test('the coverage question is answered without the places in view', {
   skip: reachable,
 }, async t => {

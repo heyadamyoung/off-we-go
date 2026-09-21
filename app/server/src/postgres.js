@@ -332,7 +332,45 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
      from, and why the settings showed nothing and the home card said "NaN".
      The wire form is the ISO date, and that is what every reader wants. */
   pg.types.setTypeParser(1082, value => value)
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
+  /* Two pools, and which one a caller gets is the difference between a map
+   * that answers in a millisecond and one that answers in a second.
+   *
+   * There was one, of ten connections, and the places worker ran on it from
+   * inside this process. That worker holds a connection for as long as its
+   * unit of work takes — a dense cell's zoom pass is seven and a half seconds
+   * of sorting inside one transaction — and it does that continuously while
+   * it walks thirteen thousand cells. A phone asking for the six tiles on its
+   * screen wants six connections at once. Measured on an idle box, a tile is
+   * 1.3 milliseconds of database; measured in production while the planet was
+   * loading, the same tile took between 270 and 970. Nothing about the query
+   * changed. What changed is what it had to queue behind.
+   *
+   * So the background keeps its own, deliberately small: it is work nobody is
+   * waiting for, and four connections is plenty for a job that walks a cell at
+   * a time. The serving pool is sized for the box rather than for 2019 —
+   * sixteen cores, and Postgres' own default is a hundred — and both fail an
+   * acquire rather than waiting for ever, because a request that cannot get a
+   * connection in ten seconds is a request nobody is still waiting for, and an
+   * error says so where a hang says nothing. */
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    max: Number(process.env.DATABASE_POOL) || 16,
+    connectionTimeoutMillis: 10_000,
+  })
+  const background = new pg.Pool({
+    connectionString: databaseUrl,
+    max: Number(process.env.DATABASE_BACKGROUND_POOL) || 4,
+    connectionTimeoutMillis: 30_000,
+  })
+  background.on('error', error => {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        message: 'background postgres idle client',
+        error: String(error?.message || error),
+      }),
+    )
+  })
   /* An idle client losing its connection is Tuesday: Postgres restarted, a
      deploy recreated it, the network blinked. The pool discards the client
      and dials fresh on the next query — but only if somebody is listening.
@@ -3409,7 +3447,7 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       }
     },
     async close() {
-      await pool.end()
+      await Promise.all([pool.end(), background.end()])
     },
     /* The connection pool itself, for the one consumer that cannot go through
        a repository method: the places ingest runs COPY into temp tables and
@@ -3418,6 +3456,14 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
        this file into a second copy of places/ingest.js. Nothing else should
        reach for this. */
     pool,
+    /* The same database, through connections nobody on a phone is waiting
+       behind. Every worker that runs inside this process takes this one: see
+       the comment where the two are made. */
+    background,
+    /** How many callers are queued for a serving connection right now. Zero
+        almost always; above zero is the pool being the bottleneck, which is
+        the thing that is otherwise indistinguishable from a slow query. */
+    pending: () => pool.waitingCount ?? 0,
   }
   return repository
 }

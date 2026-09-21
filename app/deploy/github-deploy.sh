@@ -554,9 +554,19 @@ fi
 # line whose job is to be read by a person, made unreadable by a tidy-up for
 # padding that does not exist. Trailing newlines are the shell's to remove and
 # `$( )` already does it.
+# The timeout travels as a connection option rather than as a statement.
+#
+# It was written as `-tAc "set statement_timeout = '10s'; $1"`, and psql prints
+# the command tag of every statement it is given — so the census came out as
+#
+#     places: SET
+#     21372260 places in SET
+#
+# with the tag where each number should be. PGOPTIONS sets it on the way in,
+# before a statement exists to print a tag for.
 places_now() {
-  timeout 15 docker compose exec -T db psql -U wayfare -d wayfare \
-    -tAc "set statement_timeout = '10s'; $1" 2>/dev/null || true
+  timeout 15 docker compose exec -T -e PGOPTIONS="-c statement_timeout=10s" db \
+    psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null || true
 }
 # Exact while it is cheap, estimated when it is not.
 #
