@@ -85,6 +85,23 @@ async function tileAt({ z, x, y }) {
       /* What the box says it spent on it — total, database, and how many
          callers were queued for a connection. The wire is the difference. */
       timing: response.headers.get('server-timing') || '',
+      /* And whether anything between here and the box kept a copy.
+       *
+       * A tile is `public, max-age=3600` and is the same bytes for everybody,
+       * so it is exactly what an edge cache is for — and a HIT from a nearby
+       * point of presence is tens of milliseconds where a trip to the origin
+       * is hundreds. But a CDN decides for itself what is cacheable, and the
+       * usual default is that anything under `/api/` is dynamic and goes
+       * straight through however the origin labels it.
+       *
+       * Which means the difference between "the box answers in 2 ms" and
+       * "the dots take ten seconds" can be entirely this header, and we have
+       * never once looked at it. BYPASS or DYNAMIC on a tile means every
+       * phone pays the full distance for bytes that never change. */
+      edge:
+        response.headers.get('cf-cache-status') ||
+        response.headers.get('x-cache') ||
+        (response.headers.get('age') ? `age=${response.headers.get('age')}` : 'not cached'),
     }
   }
   try {
@@ -100,6 +117,7 @@ async function tileAt({ z, x, y }) {
       bytes: first.body.length,
       /* What the box says it spent, so what is left over is the wire. */
       timing: again.timing,
+      edge: `${first.edge} then ${again.edge}`,
       ...tileHolds(first.body),
     }
   } catch (error) {
@@ -266,7 +284,8 @@ for (const view of VIEWS) {
       `             z${pad(z, 3)} ${pad(`${drawn.x}/${drawn.y}`, 12)}` +
         ` ${pad(`${drawn.ms}ms then ${drawn.kept}ms`, 17)} ${pad(kb(drawn.bytes), 8)}` +
         ` ${pad(`${drawn.features} drawn`, 12)} ${drawn.zooms}` +
-        (drawn.timing ? `\n                  the box says ${drawn.timing}` : ''),
+        (drawn.timing ? `\n                  the box says ${drawn.timing}` : '') +
+        (drawn.edge ? `\n                  the edge says ${drawn.edge}` : ''),
     )
   }
   await pyramid(view)
