@@ -1955,3 +1955,28 @@ test('a release that is live is never reported as a failure', () => {
      minutes rather than what o'clock it was. */
   assert.match(deploy, /swap_began="\$\(date \+%s\)"/)
 })
+
+test('the deploy says whether the places have anything to show', () => {
+  /* "How many places do we hold" and "how many are worth looking at" are
+     different questions, and for several releases only the first was asked.
+     A layer whose whole enrichment half could be silently dark — and was,
+     because a variable nobody set switched it off — needs the second one in
+     the log where a person reads it. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  for (const table of ['place_descriptions', 'place_images', 'place_enrichment']) {
+    assert.ok(deploy.includes(table), `the census never looks at ${table}`)
+  }
+  /* Counted apart from work outstanding. `barren` is a real answer — there is
+     genuinely nothing openly licensed to say about most shopfronts — and
+     folding it into a backlog would make a finished layer look stuck for
+     ever. */
+  assert.match(deploy, /nothing to show/)
+  assert.match(deploy, /status in \('pending','working'\)/)
+  /* Through the bounded helper, like every other line of the census: an
+     unbounded count over a growing table is how deploy 387 died. */
+  const at = deploy.indexOf('place_descriptions')
+  assert.ok(
+    deploy.lastIndexOf('places_now', at) > deploy.lastIndexOf('\n\n', at),
+    'the enrichment census does not go through places_now',
+  )
+})
