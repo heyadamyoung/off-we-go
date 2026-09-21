@@ -1215,16 +1215,13 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      proved why: `compose ps --profile sweep --status running -q` came back
      empty while the sweep was running, so the deploy said it had started one
      when it had not. `docker ps --filter label=` needs no profile to see it. */
-  /* The running check is only about what to say in the log now. The `up`
-     itself is unconditional, and that is the point of this assertion: while
+  /* The `up` is unconditional, and that is the point of this assertion: while
      it was skipped whenever a sweep was running, a configuration change — the
      four cores and the block-IO weight that stop it pinning the box during a
      deploy — could never reach the container already going. `up -d` on a
      service whose configuration has not changed is a no-op, so a run three
      hours in is still left alone; the profile is what keeps a plain
      `compose up` away from it. */
-  assert.match(block, /^\s*if \[ -z "\$\(docker ps -q --filter status=running/m)
-  assert.ok(block.includes('label=com.docker.compose.service=places-sweep'))
   /* The restart is not in the detached half any more, and that ordering is
      the assertion: the census above the detach reports whether a sweep is
      running, so a start that happens after it reports a sweep that is down
@@ -1244,13 +1241,142 @@ test('the deploy starts a sweep without being able to fail over it', () => {
      builds nothing. Scoped to the sweep's own line, because the hand-deploy
      branch above legitimately builds when there is no registry token. */
   assert.ok(!/--profile sweep up[^\n]*--build\b(?!-)/.test(script.replace(/--no-build/g, '')))
-  /* And why the last one stopped, which is the whole diagnostic. The first
-     live planet run exited somewhere in the Atlantic; the deploy key is
-     restricted to `deploy <sha>` and there is no shell on that box, so a run
-     that ends says so here or it has said so nowhere at all. */
-  assert.ok(script.includes('docker ps -aq --filter label=com.docker.compose.service=places-sweep'))
-  assert.ok(script.includes('{{.State.ExitCode}}'), 'the exit code of the last sweep')
-  assert.match(block, /docker logs --tail \d+ "\$stopped_sweep"/, 'and its last words')
+})
+
+test('the census can tell a crash-looping sweep from a finished one', () => {
+  /* The line this replaces could not see the state that actually happened.
+     It asked `docker ps --filter status=running`, and a container Docker is
+     restarting is neither running nor exited — `inspect` even reports its
+     exit code as 0 while it restarts. So a sweep dying at module load in 150
+     milliseconds, put back every minute for eight hours, printed "no sweep
+     running; the last one exited 0", which is what a sweep that finished the
+     planet prints. Nothing else on this box can be asked: the key runs one
+     command and there is no shell. */
+  const script = deployScript()
+  const census = script.slice(
+    script.indexOf('sweep_box="$(docker ps -aq'),
+    script.indexOf('--- capacity ---'),
+  )
+  assert.ok(census.includes('docker ps -aq'), 'the census finds the sweep by Compose label')
+  assert.ok(census.includes('label=com.docker.compose.service=places-sweep'))
+  assert.match(
+    census,
+    /docker inspect -f '\{\{\.State\.Status\}\}'/,
+    'the state comes from the word Docker has for it, not from a ps filter',
+  )
+  for (const state of ['running)', 'restarting)']) {
+    assert.ok(census.includes(state), `the census has a branch for ${state.slice(0, -1)}`)
+  }
+  assert.ok(census.includes('{{.State.ExitCode}}'), 'the exit code of a sweep that stopped')
+  assert.ok(census.includes('{{.RestartCount}}'), 'how many times a crash-looping one has died')
+  /* Its last lines in every one of the three cases, not only the stopped one:
+     a running sweep has a progress line, a crash-looping one has the stack
+     that kills it, and each answers a different question a person has. */
+  const logsAt = census.search(/^\s*docker logs --tail \d+ "\$sweep_box"/m)
+  assert.ok(logsAt > 0, 'the census prints the sweep\'s last lines')
+  assert.ok(
+    logsAt > census.indexOf('esac'),
+    'the last lines are printed after the case, so every state gets them',
+  )
+  /* And none of it may fail a release that is live and answering. */
+  assert.match(census, /docker logs[^\n]*\| sed [^\n]*\|\| true/)
+})
+
+test('a deploy reading a number does not mangle it on the way out', () => {
+  /* `psql -tA` is tuples-only and unaligned: it pads nothing. The helper
+     stripped spaces anyway, for padding that does not exist, and the backlog
+     sentence came out as `494neverzoomed,73underanolderrule,8mid-ingest`.
+     A line whose only job is to be read by a person, made unreadable by a
+     tidy-up for a problem the flags had already solved. */
+  const script = deployScript()
+  const at = script.indexOf('places_now() {')
+  const helper = script.slice(at, script.indexOf('}', at))
+  assert.ok(helper.includes('psql -U wayfare -d wayfare -tAc'), 'unaligned, tuples only')
+  assert.ok(!helper.includes("tr -d ' '"), 'and nothing strips the spaces back out of the answer')
+})
+
+/** JSON with comments, which is how Biome's own configuration is written. A
+    scanner rather than a regex, because `"$schema": "https://biomejs.dev/..."`
+    is a string that contains what looks like a comment. */
+const readJsonc = file => {
+  const text = readFileSync(file, 'utf8')
+  let out = ''
+  let at = 0
+  while (at < text.length) {
+    if (text[at] === '"') {
+      let end = at + 1
+      while (end < text.length) {
+        if (text[end] === '\\') {
+          end += 2
+          continue
+        }
+        if (text[end] === '"') break
+        end += 1
+      }
+      out += text.slice(at, end + 1)
+      at = end + 1
+      continue
+    }
+    if (text[at] === '/' && text[at + 1] === '/') {
+      while (at < text.length && text[at] !== '\n') at += 1
+      continue
+    }
+    if (text[at] === '/' && text[at + 1] === '*') {
+      const end = text.indexOf('*/', at + 2)
+      at = end < 0 ? text.length : end + 2
+      continue
+    }
+    out += text[at]
+    at += 1
+  }
+  return JSON.parse(out)
+}
+
+test('the commands the containers run are checked before a container runs them', () => {
+  /* The bug this exists for. #211 deleted LABEL_PER_TILE from rank.js;
+     server/scripts/places-ingest.mjs still imported it; the planet sweep is
+     `node server/scripts/places-ingest.mjs --planet --sweep --resume` and it
+     died at module load in 150 milliseconds. Docker put it back every minute
+     for eight hours, the deploy log said "no sweep running; the last one
+     exited 0", and the world stopped loading at a quarter of it.
+
+     Every test in the suite passed, because a script is an entrypoint:
+     nothing imports it, so nothing loads it, and a deleted export is
+     invisible until the container runs the command. `src/` cannot have this
+     bug — tsc reads every file under full strict — and the server is plain
+     JavaScript that no typechecker ever opened.
+
+     So: the paths exist, and the lint step link-checks the tree they live
+     in. Both halves matter. A path that exists proves nothing about whether
+     the module graph behind it resolves, which is what actually broke. */
+  const named = new Set()
+  for (const file of ['docker-compose.yml', path.join('server', 'Dockerfile')]) {
+    const text = readFileSync(path.join(appRoot, file), 'utf8')
+    for (const [match] of text.matchAll(/server\/[\w/.-]+\.m?js\b/g)) named.add(match)
+  }
+  assert.ok(named.size >= 3, `expected the containers to name scripts, saw ${[...named]}`)
+  for (const script of named) {
+    assert.ok(
+      existsSync(path.join(appRoot, script)),
+      `docker runs ${script} and it is not in the repository`,
+    )
+  }
+
+  const biome = readJsonc(path.join(appRoot, 'biome.jsonc'))
+  /* Cross-file analysis is what reads an export in one file against an import
+     in another; without the domain the rule below cannot see anything. */
+  assert.ok(biome.linter?.domains?.project, 'the project domain is off, so nothing is link-checked')
+  const covers = new Set()
+  for (const override of biome.overrides || []) {
+    const rule = override.linter?.rules?.correctness?.noUnresolvedImports
+    if (rule !== 'error' && rule?.level !== 'error') continue
+    for (const pattern of override.includes || []) covers.add(pattern)
+  }
+  const reaches = file => [...covers].some(pattern => file.startsWith(pattern.replace(/\*+$/, '')))
+  for (const script of named) {
+    assert.ok(reaches(script), `nothing link-checks ${script}; see biome.jsonc overrides`)
+  }
+  assert.ok(reaches('server/src/'), 'the modules those scripts import are link-checked too')
 })
 
 test('the day census only ever reads', () => {

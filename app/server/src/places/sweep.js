@@ -96,6 +96,23 @@ export const RETRY_FROM_MS = 1000
     ask a minute, not with a hot loop. */
 export const RETRY_TO_MS = 60_000
 
+/* What a run that got nowhere does next, which used to be "nothing, for ever".
+ *
+ * A run that still owes cells and loaded none of them exited zero, and the
+ * reasoning was sound as far as it went: `restart: on-failure` would put a
+ * non-zero exit straight back, and a restart that makes no progress either is
+ * a hot loop rather than a retry. What it missed is the other half — a planet
+ * a quarter loaded, a supervisor told never to try again, and nobody to tell.
+ * Every cause of "no progress" we have actually seen was temporary: a bucket
+ * refusing reads, a disk that filled, a release moved under a running sweep.
+ *
+ * So the answer is not to give up, it is to not spin. The run waits here
+ * before exiting non-zero, and the restart that follows is paced by this
+ * rather than by how fast the process can die. A minute is slow enough that a
+ * thousand restarts is a thousand minutes of logs, and fast enough that a
+ * bucket coming back costs a minute of the planet and nothing else. */
+export const STANDOFF_MS = 60_000
+
 /** An error that says the object is not there any more, which for these two
     buckets means the release has been deleted and the index is describing a
     past. Matched on the message because that is all fetch gives us. */

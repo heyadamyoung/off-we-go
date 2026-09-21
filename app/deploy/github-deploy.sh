@@ -420,23 +420,9 @@ after_release() {
   # line in a deploy log that is wrong about what it did is worse than no line.
   # The labels are Compose's own and need no profile to be visible, which is the
   # whole point; the cleanup below already reads them the same way.
-  # Why the last one stopped, if it did.
-  #
-  # The first live planet run exited somewhere in the Atlantic and left an
-  # exited container nobody could ask, because the deploy key is restricted to
-  # `deploy <sha>` and there is no shell on this box. A run that ends has to
-  # say so here or it has said so nowhere. Read-only, and `|| true` throughout.
-  if [ -z "$(docker ps -q --filter status=running \
-    --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
-    stopped_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
-      2>/dev/null | head -n 1 || true)"
-    if [ -n "$stopped_sweep" ]; then
-      echo "places: the last sweep exited $(docker inspect \
-        -f '{{.State.ExitCode}} after {{.State.StartedAt}} to {{.State.FinishedAt}}' \
-        "$stopped_sweep" 2>/dev/null || echo '?') — its last lines:"
-      docker logs --tail 15 "$stopped_sweep" 2>&1 | sed 's/^/places:   /' || true
-    fi
-  fi
+  # Why the last sweep stopped is reported above the detach now, with the rest
+  # of the census, because this log is a file on a box with no shell: the one
+  # line that matters was written where only the box could read it.
 
   # And then `up`, whether or not one is running.
   #
@@ -562,8 +548,14 @@ fi
 # `ingesting` is here for the same reason — the pass skips those cells by
 # design, because another process is inside their transaction, so a cell
 # wedged in `ingesting` is backlog that looks like nothing at all.
+# `-tA` is tuples-only and unaligned, so psql pads nothing and there is
+# nothing to strip. What was here stripped every space in the answer, which
+# turned the backlog sentence into `494neverzoomed,73underanolderrule` — a
+# line whose job is to be read by a person, made unreadable by a tidy-up for
+# padding that does not exist. Trailing newlines are the shell's to remove and
+# `$( )` already does it.
 places_now() {
-  docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
+  docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null || true
 }
 echo "places: $(places_now 'select count(*) from places') places in \
 $(places_now "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
@@ -576,18 +568,47 @@ echo "places: $(places_now "
     ) || ' under an older rule, ' ||
     count(*) filter (where status = 'ingesting') || ' mid-ingest'
   from place_coverage")"
-if [ -n "$(docker ps -q --filter status=running \
-  --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
-  echo "places: the sweep is running"
+# Whether a sweep is running, crash-looping or stopped — and its last words
+# in all three cases.
+#
+# `docker ps --filter status=running` was the whole test, and it cannot see
+# the state that actually happened. A container Docker is restarting is
+# neither running nor exited, and `docker inspect` reports its ExitCode as 0
+# while it sits in that state. So on 21 September, with the sweep dying at
+# module load in 150 milliseconds and `restart: on-failure` putting it back
+# every minute for eight hours, this block printed
+#
+#     places: no sweep running; the last one exited 0
+#
+# which reads exactly like a sweep that finished its work. The planet stayed
+# at a quarter loaded, every test passed, and the only line anybody had said
+# nothing was wrong.
+#
+# So the state comes from `docker inspect`, which has a word for it, and the
+# container's last lines are printed whatever that word is: a running sweep
+# has a progress line, a crash-looping one has the stack that kills it, and a
+# stopped one has the reason it stopped. There is no shell on this box and the
+# deploy key runs one command — these lines are the whole diagnosis.
+sweep_box="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
+  --latest 2>/dev/null || true)"
+if [ -z "$sweep_box" ]; then
+  echo "places: no sweep has ever run on this box"
 else
-  last_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
-    --latest 2>/dev/null || true)"
-  if [ -n "$last_sweep" ]; then
-    echo "places: no sweep running; the last one exited $(docker inspect \
-      --format '{{.State.ExitCode}} at {{.State.FinishedAt}}' "$last_sweep" 2>/dev/null || echo '?')"
-  else
-    echo "places: no sweep has ever run on this box"
-  fi
+  case "$(docker inspect -f '{{.State.Status}}' "$sweep_box" 2>/dev/null || echo '?')" in
+    running)
+      echo "places: the sweep is running — its last lines:"
+      ;;
+    restarting)
+      echo "places: the sweep is crash-looping after $(docker inspect \
+        -f '{{.RestartCount}}' "$sweep_box" 2>/dev/null || echo '?') restarts — its last lines:"
+      ;;
+    *)
+      echo "places: no sweep running; the last one exited $(docker inspect \
+        -f '{{.State.ExitCode}} at {{.State.FinishedAt}}' "$sweep_box" 2>/dev/null \
+        || echo '?') — its last lines:"
+      ;;
+  esac
+  docker logs --tail 12 "$sweep_box" 2>&1 | sed 's/^/places:   /' || true
 fi
 
 echo
