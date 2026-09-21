@@ -12,9 +12,17 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: off-we-go-production
-  cancel-in-progress: false
+# No workflow-level lock. There was one — `off-we-go-production`, over the
+# whole run — and it meant a push waited for the previous push's deploy to
+# finish before its own tests were allowed to start. Deploy 370 held it until
+# 02:24:42, so 372's jobs, which share nothing with it and touch no box, sat
+# in a queue from 02:19:52: four minutes and fifty seconds of a run that then
+# tested in eighty-one seconds.
+#
+# Tests are independent and run the moment a commit lands. Deploys are
+# serialized, because two of them on one box is a real conflict — and that
+# lock lives on the deploy job, where the conflict is. By the time a deploy
+# can start, the next commit's tests are usually already done and waiting.
 
 # Jobs side by side rather than one chain: pushed to live was ten and a half
 # minutes, of which nine and a half were one runner doing everything in turn.
@@ -29,6 +37,7 @@ jobs:
   checks:
     name: Lint, unit tests, the entrypoint and the release images
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
@@ -151,6 +160,7 @@ jobs:
   server:
     name: Server tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: app
@@ -196,6 +206,7 @@ jobs:
   browser:
     name: Browser tests (${{ matrix.shard }} of 7)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       # To ask which sibling shards have a runner yet, and what they covered.
@@ -268,6 +279,7 @@ jobs:
   live:
     name: Browser tests against a real server (${{ matrix.half }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: app
@@ -316,6 +328,17 @@ jobs:
     name: Deploy production
     needs: [checks, server, browser, live]
     runs-on: ubuntu-24.04
+    # Five for the job, four for the release below. A deploy is a pull, a
+    # schema step, two container swaps and a health check; deploy 370 did the
+    # swaps in 3.3 seconds and the health check in 19. Anything that runs past
+    # four minutes is not being slow, it is stuck, and a stuck deploy that
+    # fails is worth more than one that holds the box for eleven minutes.
+    timeout-minutes: 5
+    # The box, one release at a time. This is the only real conflict in the
+    # workflow and this is the only place it is locked.
+    concurrency:
+      group: off-we-go-production
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: read
@@ -386,6 +409,13 @@ jobs:
           } > app/deploy/registry.env
 
       - name: Stream release to the VPS
+        # The release itself, bounded. Deploy 370 ran for 10m58s and 368 for
+        # eighteen minutes, and in both cases the extra minutes bought nothing
+        # — the release was either already live or never going to be. Four
+        # minutes is a generous ceiling for a pull, a schema step, two
+        # container swaps and a health check, and past it the ERR trap on the
+        # box has already restored the previous release.
+        timeout-minutes: 4
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
         run: |

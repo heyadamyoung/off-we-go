@@ -278,10 +278,13 @@ test('the deploy pulls with a token it destroys, builds without one, and keeps t
    * nothing wrong with them. Asserted as an order, because the order is the
    * whole of it: the previous release serves while the schema moves. */
   const migrateAt = script.indexOf('migrate_with_new_image\n')
-  const upAt = script.indexOf('docker compose up -d --no-build --wait')
+  /* The recreate, not the `up -d db` inside migrate_with_new_image: that one
+     only makes sure there is a database to migrate against, which is what
+     lets the migrate container run --no-deps. */
+  const upAt = script.indexOf('docker compose up -d --no-build --wait --wait-timeout 900')
   assert.ok(migrateAt > 0, 'the deploy migrates in a container of its own')
   assert.ok(upAt > migrateAt, 'and does it before it recreates anything')
-  assert.match(script, /docker compose run --rm -T api node server\/scripts\/migrate\.mjs/)
+  assert.match(script, /docker compose --profile migrate run --rm --no-deps -T migrate/)
   assert.ok(
     existsSync(path.join(appRoot, 'server', 'scripts', 'migrate.mjs')),
     'and the script it runs is in the image',
@@ -1053,15 +1056,36 @@ test('the api is given time to boot before a probe can roll a release back', {
    * a GiST index over ten million places, passed three minutes, and took a
    * release with it that would have come up fine. */
   const deployScript = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
-  const waits = [...deployScript.matchAll(/--wait-timeout (\d+)/g)].map(found => Number(found[1]))
+  const services = JSON.parse(result.stdout).services
+  /* Each wait against the boot it is actually waiting for. A line that names
+     services waits for those; a line that names none waits for the whole
+     stack, and the api's is the longest start period in it. */
+  const waits = [...deployScript.matchAll(/--wait-timeout (\d+)([^\n]*)/g)].map(found => ({
+    seconds: Number(found[1]),
+    named: found[2]
+      .trim()
+      .split(/\s+/)
+      .filter(name => name && name in services),
+  }))
   assert.ok(waits.length >= 2, 'the deploy waits for the stack to come up')
   for (const wait of waits) {
-    assert.ok(
-      wait >= seconds(health.start_period),
-      `the deploy gives up after ${wait}s on a boot the healthcheck allows ` +
-        `${health.start_period} for`,
-    )
+    const waitedOn = wait.named.length ? wait.named : Object.keys(services)
+    for (const name of waitedOn) {
+      const period = services[name].healthcheck?.start_period
+      if (!period) continue
+      assert.ok(
+        wait.seconds >= seconds(period),
+        `the deploy gives up after ${wait.seconds}s on ${name}, whose healthcheck ` +
+          `allows ${period} to boot`,
+      )
+    }
   }
+  /* And the one that waits for everything is still the api's, which is the
+     number that took five releases to get right. */
+  assert.ok(
+    waits.some(wait => !wait.named.length && wait.seconds >= seconds(health.start_period)),
+    'no unqualified wait covers the api start period',
+  )
 })
 
 test('the object store has no healthcheck that can fail a deploy', {
@@ -1234,4 +1258,102 @@ test('the day census only ever reads', () => {
   ]) {
     assert.ok(!source.includes(write), `day-census.mjs contains "${write.trim()}"`)
   }
+})
+
+test('nothing in the pipeline may run without a limit', () => {
+  /* Every job had six hours, which is GitHub's default and nobody's
+     intention. Deploy 368 ran for eighteen minutes and 370 for eleven, and in
+     both cases the extra minutes bought nothing: the release was either
+     already live or was never going to be. A job that runs past its budget is
+     not being slow, it is stuck, and a stuck job that fails is worth more than
+     one that holds the box and a runner until somebody notices. */
+  const workflow = readFileSync(
+    path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
+    'utf8',
+  )
+  const jobs = [...workflow.matchAll(/^ {2}([a-z][a-z0-9_-]*):$/gm)].map(m => m[1])
+  assert.ok(jobs.length >= 5, `expected the five jobs, saw ${jobs.join(', ')}`)
+  for (const job of jobs) {
+    const block = workflow.slice(
+      workflow.indexOf(`\n  ${job}:\n`),
+      workflow.indexOf(`\n  ${job}:\n`) + 2000,
+    )
+    assert.match(block, /^ {4}timeout-minutes: \d+$/m, `job "${job}" has no timeout-minutes`)
+  }
+  /* And the release itself, inside the job that runs it. */
+  const release = workflow.slice(workflow.indexOf('name: Stream release to the VPS'))
+  assert.match(
+    release.slice(0, 900),
+    /^ {8}timeout-minutes: [1-5]$/m,
+    'the ssh release step is unbounded',
+  )
+})
+
+test('tests do not queue behind the previous deploy', () => {
+  /* The production lock was over the whole workflow, so a push waited for the
+     previous push's deploy before its own tests could start: run 372 sat in a
+     queue from 02:19:52 until 370 released it at 02:24:42, then tested in
+     eighty-one seconds. Tests share nothing and touch no box. The box is the
+     only real conflict, so the lock belongs on the job that touches it. */
+  const workflow = readFileSync(
+    path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
+    'utf8',
+  )
+  const top = workflow.slice(0, workflow.indexOf('\njobs:'))
+  assert.ok(
+    !/^concurrency:$/m.test(top),
+    'a workflow-level concurrency group makes every job queue, tests included',
+  )
+  const deploy = workflow.slice(workflow.indexOf('\n  deploy:\n'))
+  assert.match(
+    deploy.slice(0, 1200),
+    /^ {4}concurrency:\n {6}group: off-we-go-production\n {6}cancel-in-progress: false$/m,
+    'the deploy job does not hold the production lock',
+  )
+})
+
+test('the schema step carries nothing but the schema', () => {
+  /* `docker compose run --rm api node server/scripts/migrate.mjs` was 1m56s
+     of deploy 370 spent creating a container, against 2.1 seconds of SQL
+     inside it. `run api` instantiates the api's whole service: four mounts,
+     one of them the twelve-gigabyte tile volume, and a NODE_OPTIONS that
+     loads the OpenTelemetry SDK before any of our code. A migration needs a
+     database URL and an admin address. */
+  const compose = readFileSync(path.join(appRoot, 'docker-compose.yml'), 'utf8')
+  const service = compose.slice(
+    compose.indexOf('\n  migrate:\n'),
+    compose.indexOf('\n  # The planet, once, in the background.'),
+  )
+  assert.ok(service.includes('profiles: ["migrate"]'), 'a plain `compose up` would start it')
+  assert.ok(!/^\s+volumes:/m.test(service), 'the schema step mounts a volume')
+  assert.ok(!service.includes('NODE_OPTIONS'), 'the schema step loads instrumentation')
+  assert.ok(!/^\s+depends_on:/m.test(service), 'the schema step waits on a container')
+  assert.ok(service.includes('server/scripts/migrate.mjs'))
+
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  assert.match(
+    deploy,
+    /docker compose --profile migrate run --rm --no-deps -T migrate/,
+    'the deploy does not use the migrate service',
+  )
+  const code = deploy
+    .split('\n')
+    .filter(line => !/^\s*#/.test(line))
+    .join('\n')
+  assert.ok(!/compose run[^\n]*\bapi\b/.test(code), 'the deploy still runs a one-off api container')
+})
+
+test('a deploy that cannot have the box fails instead of waiting it out', () => {
+  /* Deploy 370 printed nothing for 2m06s because cancelled 369 still held the
+     lock — a superseded run nobody was watching, charging the run that
+     replaced it. Ten minutes of patience cannot tell that apart from a
+     healthy deploy, and the answer is the same either way. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const wait = deploy.match(/flock -w (\d+) 9/)
+  assert.ok(wait, 'the deploy does not take the lock with a timeout')
+  assert.ok(
+    Number(wait[1]) <= 120,
+    `the deploy waits ${wait[1]}s for the lock; the whole release has 240`,
+  )
+  assert.ok(deploy.includes('fuser -v "$LOCK_FILE"'), 'a blocked deploy does not say what holds it')
 })

@@ -259,6 +259,43 @@ services:
       # still caught in under a minute once the boot is over.
       start_period: 900s
 
+  # The schema, in a container that carries nothing else.
+  #
+  # `docker compose run --rm api node server/scripts/migrate.mjs` did this
+  # job and it cost a minute and fifty-six seconds of deploy 370 — all of it
+  # before the process started. Its own log says so:
+  #
+  #     02:16:39  Container wayfare-api-run-ca300a5b4a58 Creating
+  #     02:18:35  Container wayfare-api-run-ca300a5b4a58 Created   1m 56s
+  #     02:18:47  migrations applied in 2.1s
+  #
+  # Two point one seconds of SQL behind two minutes of container. `run` builds
+  # the api's whole service definition: four mounts, one of them the
+  # twelve-gigabyte tile volume shared with the routing engine, and a
+  # NODE_OPTIONS that loads the OpenTelemetry SDK before any of our code.
+  # None of that is what a migration needs, and a migration needs exactly two
+  # things, both below.
+  #
+  # So the schema step has a service of its own: the same image the release
+  # ships, the database URL, the admin address the first migration seeds, and
+  # nothing else. No volumes, no instrumentation, no dependencies — the deploy
+  # runs it with --no-deps because it has already waited for the database.
+  #
+  # Profiled, so `compose up` never touches it. It is the one piece of work
+  # that has to happen between the old code stopping and the new code starting,
+  # and the rule it lives under is migration 051's: a migration changes the
+  # schema, it never does work whose size depends on how much data there is.
+  # Anything that does belongs in the worker, after the release is live.
+  migrate:
+    image: ${IMAGE_REPO:-ghcr.io/heyadamyoung/off-we-go}/api:${IMAGE_TAG:-latest}
+    profiles: ["migrate"]
+    restart: "no"
+    command: ["node", "server/scripts/migrate.mjs"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://wayfare:${POSTGRES_PASSWORD}@db:5432/wayfare
+      WAYFARE_ADMIN_EMAIL: ${WAYFARE_ADMIN_EMAIL}
+
   # The planet, once, in the background.
   #
   # The queue in the API drains four one-degree cells a minute, which is the
