@@ -624,14 +624,26 @@ export async function indexIsReady(db, name) {
  * for ever, silently — which is the exact failure the skipping was written to
  * prevent.
  *
- * And the cheapest first, not the densest. The order was `place_count desc`,
- * and the densest cell on Earth is eighteen seconds of window function, so
- * the twelve thousand cells that take milliseconds each were queued behind
- * the twenty-five that take minutes. On a box that restarts every deploy that
- * meant the pass got through about one of them: production has ranked exactly
- * one cell in the world, and it is Toronto. Cheapest first fills the map in
- * at thousands of cells a minute and the expensive ones still get done, just
- * not in front of everybody else.
+ * And the densest first — a premise that changed under this line twice in an
+ * hour, so both turns are written down.
+ *
+ * It was `place_count desc`. Then the pass stalled and the ordering looked
+ * like the cause: the densest cell on Earth was eighteen seconds of window
+ * function, so twelve thousand cells that take milliseconds each queued
+ * behind twenty-five that take minutes, and on a box redeployed every few
+ * minutes the pass got through about one of them — Toronto. So it became
+ * `place_count asc`, and the planet's sparse cells drained inside an hour.
+ *
+ * What that bought was a map empty in every city. Cheapest first is last for
+ * anywhere a person looks: the live probe found Amsterdam, Edinburgh, Dublin
+ * and Regina answering with no pins at all — including a street-level
+ * Amsterdam box, where a cafe is drawn from zoom 14 and there are hundreds —
+ * because those cells were still behind thirteen thousand others.
+ *
+ * And the eighteen seconds is gone. assignLabelZoom is a CASE and an
+ * assignment now rather than six zooms of window function, so a dense cell is
+ * an index scan. The cost that justified `asc` no longer exists, and what is
+ * left is what was always true: the map is worth most where the places are.
  *
  * `priority` still leads, which is what keeps this honest: a cell somebody is
  * looking at right now is priority 0 and goes before any of the backfill,
@@ -642,7 +654,7 @@ const CELLS_AWAITING_ZOOM_SQL = `
   where coalesce(zoom_policy, -1) <> $1::smallint
     and status <> 'ingesting'
     and cell <> all($3::text[])
-  order by priority asc, place_count asc, cell asc
+  order by priority asc, place_count desc, cell asc
   limit $2`
 
 /**

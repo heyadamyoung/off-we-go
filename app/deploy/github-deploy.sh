@@ -545,15 +545,37 @@ fi
 # to "is the sweep still going, and how much of the world do we hold" is the
 # size of a docker volume.
 #
-# Two read-only queries and a `docker ps`, seconds in total, and every line
-# `|| true` because a release that is live and answering is not rolled back
-# over a count.
+# One statement, read-only, `|| true`: a release that is live and answering is
+# not rolled back over a count.
+#
+# The zoom backlog is two numbers and the first version of this reported one
+# of them. `zoom_policy is null` is a cell the pass has never touched; a cell
+# ranked under an older rule is equally owing, and rank.js ZOOM_POLICY had
+# just gone from 2 to 3, so twelve thousand cells were backlog the census
+# could not see and the deploy log said 617. A report that undercounts the
+# thing it exists to report is the failure this whole block was added to fix.
+#
+# Against `max(zoom_policy)` rather than a number copied into bash: the
+# newest rule any cell has been placed under is a fact the table already
+# holds, and a constant duplicated here is a constant that drifts.
+#
+# `ingesting` is here for the same reason — the pass skips those cells by
+# design, because another process is inside their transaction, so a cell
+# wedged in `ingesting` is backlog that looks like nothing at all.
 places_now() {
   docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
 }
 echo "places: $(places_now 'select count(*) from places') places in \
-$(places_now "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells, \
-$(places_now 'select count(*) from place_coverage where zoom_policy is null') cell(s) awaiting a zoom"
+$(places_now "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells"
+echo "places: $(places_now "
+  select
+    count(*) filter (where zoom_policy is null) || ' never zoomed, ' ||
+    count(*) filter (
+      where zoom_policy is not null
+        and zoom_policy <> (select max(zoom_policy) from place_coverage)
+    ) || ' under an older rule, ' ||
+    count(*) filter (where status = 'ingesting') || ' mid-ingest'
+  from place_coverage")"
 if [ -n "$(docker ps -q --filter status=running \
   --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
   echo "places: the sweep is running"
