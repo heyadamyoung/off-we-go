@@ -482,6 +482,19 @@ after_release() {
       | xargs -r -I{} docker image rm "$image_repo/$image:{}" >/dev/null 2>&1 || true
   done
 
+  # And what each places query costs on this box, for the next release's
+  # census to report. Here rather than in the deploy step because it is a
+  # minute of work and that step has four minutes for the whole release —
+  # deploy 391 put it there and timed out live and healthy. Nothing is
+  # waiting on this, which is exactly what the detached half is for.
+  #
+  # Read-only, two connections and a budget of its own; bounded outside as
+  # well, because `|| true` does not save anything from a command that simply
+  # never returns.
+  cd "$APP_ROOT" || true
+  echo "--- timings $release_sha $(date -u +%FT%TZ) ---"
+  timeout 120 docker compose exec -T api node server/scripts/places-timings.mjs 2>&1 || true
+
   # What the box has left, in the deploy log.
   #
   # Nothing else reports this. The deploy key is restricted to this one
@@ -640,7 +653,8 @@ else
   docker logs --tail 12 "$sweep_box" 2>&1 | sed 's/^/places:   /' || true
 fi
 
-# What each places query costs on this box, measured on this box.
+# What each places query cost, measured on this box by the release before
+# this one.
 #
 # The tile path was reported as slow, so the tile path got a Server-Timing
 # header and a probe on a runner to read it, and it is now two milliseconds.
@@ -649,13 +663,28 @@ fi
 # for as long as that was true. A number that only exists where somebody
 # already looked is not instrumentation.
 #
-# So it is measured here, in the container that holds the code, by a script
-# that imports the very functions the routes call rather than a copy of their
-# SQL. Read-only, two connections, and a budget it stops at: a census must
-# never be the reason a release is rolled back. Bounded outside as well as
-# in, because a `timeout` is the only thing that walks around `|| true`.
-timeout 75 docker compose exec -T api node server/scripts/places-timings.mjs 2>&1 \
-  | sed 's/^/places: /' || true
+# Measuring it is a minute of work, and this step has four minutes for the
+# whole release. Deploy 391 ran the measurement here and timed the step out
+# at exactly that: live, healthy, answering, and red. Deploy 387 failed the
+# same way on a `select count(*)`. The lesson is not a smaller budget — the
+# step is near its limit before the census starts, and any number I pick is
+# a number that is fine until the box is busy.
+#
+# So the measuring happens in the detached housekeeping, which has no clock
+# over it, and the reporting happens here, which does: one read of a file the
+# last release wrote. The numbers are a release old. For "how fast is search
+# on this box" that is the right resolution — it is a property of the box and
+# the data, not of the commit — and a reading that always arrives beats a
+# fresher one that costs a red deploy.
+awk '
+  /^--- timings /   { from = $3; kept = ""; next }
+  /^timings: /      { kept = kept $0 "\n" }
+  END { if (kept != "") {
+          printf "places: the release before this one measured its own queries (%s):\n",
+            substr(from, 1, 7)
+          printf "%s", kept
+        } }
+' "$AFTER_LOG" 2>/dev/null || true
 
 echo
 echo "--- capacity ---"

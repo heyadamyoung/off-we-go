@@ -1764,29 +1764,56 @@ test('a deploy says where the planet has got to, where a person can read it', ()
   )
 })
 
-test('the deploy measures the queries that sit behind a login', () => {
+test('measuring the places queries cannot cost a release', () => {
   /* The tiles were the half reported as slow, so the tiles got a
      Server-Timing header and a probe on a runner to read it. Search and
      nearby sit behind a login, so nothing outside the box could time them —
      and "searching for places takes seconds" stayed a deduction for as long
-     as that was true.
+     as that was true. So the box times them itself.
 
-     So the box times them itself, on every deploy, in the container that
-     holds the code. Three things have to hold for that to be safe, and each
-     of them is one line of this test. */
+     Deploy 391 did that in the deploy step, and the step — which has four
+     minutes for the whole release — timed out at exactly that: live,
+     healthy, answering, and red. Deploy 387 failed the same way on a `select
+     count(*)`. The step is near its limit before the census begins, so any
+     budget is one that holds until the box is busy.
+
+     The shape that cannot fail: the measuring goes in the detached
+     housekeeping, which has no clock over it, and the reporting is a read of
+     what the last release wrote. Each assertion below is one way back to a
+     red deploy. */
   const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
   const at = deploy.indexOf('places-timings.mjs')
   assert.ok(at > 0, 'the deploy does not measure the places queries')
-  /* Below `trap - ERR`, like the rest of the census: a release must never be
-     rolled back for a measurement. */
+  /* Run once, and inside the detached half — between the function opening
+     and the `setsid` that launches it. */
+  assert.equal(
+    deploy.split('places-timings.mjs').length - 1,
+    1,
+    'the timings script is run from more than one place',
+  )
+  const detachedFrom = deploy.indexOf('after_release() {')
+  const detachedTo = deploy.indexOf('setsid bash -c')
+  assert.ok(detachedFrom > 0 && detachedTo > detachedFrom, 'the housekeeping is no longer detached')
+  assert.ok(
+    at > detachedFrom && at < detachedTo,
+    'the timings run inside the four-minute step again',
+  )
+  /* Below `trap - ERR`: nothing after the release is live may roll it back. */
   assert.ok(deploy.indexOf('trap - ERR') < at, 'the timings can fail a release')
-  /* Bounded outside as well as in. `|| true` does not save a step from a
-     command that simply never returns, which is how deploy 387 failed — a
-     `select count(*)` over thirteen million rows outlasting the four minutes
-     the step is allowed. */
+  /* Bounded, because `|| true` does not save anything from a command that
+     simply never returns — which is the failure both times. */
   const line = deploy.slice(deploy.lastIndexOf('\n', at), deploy.indexOf('\n', at) + 40)
   assert.match(line, /timeout \d+ docker compose exec/, `not bounded: ${line}`)
   assert.ok(deploy.slice(at, at + 200).includes('|| true'), 'the timings can fail the step')
+
+  /* And the census reports them by reading that file, which is the half that
+     has to be cheap. A census that runs the measurement is deploy 391 again
+     whatever else is true of it. */
+  const censusAt = deploy.indexOf('places_held="$(places_now')
+  const reads = deploy.indexOf('/^timings: /')
+  assert.ok(reads > 0, 'the census does not report the timings at all')
+  assert.ok(reads > censusAt, 'the timings are reported before the census that frames them')
+  assert.ok(reads > detachedTo, 'the census reads them from inside the detached half')
 })
 
 test('the box and the runner watch the same ground', async () => {
