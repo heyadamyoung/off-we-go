@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import test from 'node:test'
 
@@ -1762,4 +1762,81 @@ test('a deploy says where the planet has got to, where a person can read it', ()
     deploy.indexOf('trap - ERR') < censusAt,
     'the census runs while a failure can still restore the previous release',
   )
+})
+
+test('the deploy measures the queries that sit behind a login', () => {
+  /* The tiles were the half reported as slow, so the tiles got a
+     Server-Timing header and a probe on a runner to read it. Search and
+     nearby sit behind a login, so nothing outside the box could time them —
+     and "searching for places takes seconds" stayed a deduction for as long
+     as that was true.
+
+     So the box times them itself, on every deploy, in the container that
+     holds the code. Three things have to hold for that to be safe, and each
+     of them is one line of this test. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const at = deploy.indexOf('places-timings.mjs')
+  assert.ok(at > 0, 'the deploy does not measure the places queries')
+  /* Below `trap - ERR`, like the rest of the census: a release must never be
+     rolled back for a measurement. */
+  assert.ok(deploy.indexOf('trap - ERR') < at, 'the timings can fail a release')
+  /* Bounded outside as well as in. `|| true` does not save a step from a
+     command that simply never returns, which is how deploy 387 failed — a
+     `select count(*)` over thirteen million rows outlasting the four minutes
+     the step is allowed. */
+  const line = deploy.slice(deploy.lastIndexOf('\n', at), deploy.indexOf('\n', at) + 40)
+  assert.match(line, /timeout \d+ docker compose exec/, `not bounded: ${line}`)
+  assert.ok(deploy.slice(at, at + 200).includes('|| true'), 'the timings can fail the step')
+})
+
+test('the box and the runner watch the same ground', async () => {
+  /* Two things ask whether the places layer is alright: a probe on a runner,
+     which can only reach what is public over HTTPS, and a script inside the
+     box, which can reach the database but not the internet. They held a
+     viewport list each for one release, and two lists drift — the runner
+     watching Amsterdam while the box measured Toronto, and the first time
+     the two disagreed nobody would know whether the layer or the lists had. */
+  const shared = path.join(appRoot, 'server', 'src', 'places', 'viewpoints.js')
+  const { STANDING, tileFor, centreOf } = await import(pathToFileURL(shared).href)
+  assert.ok(STANDING.length >= 5, 'the standing viewports were thinned out')
+  for (const name of ['Amsterdam', 'Edinburgh', 'Regina', 'Toronto', 'Dublin']) {
+    assert.ok(
+      STANDING.some(view => view.name === name),
+      `${name} is no longer watched`,
+    )
+  }
+  for (const view of STANDING) {
+    assert.ok(view.west < view.east, `${view.name}: west is not west of east`)
+    assert.ok(view.south < view.north, `${view.name}: south is not south of north`)
+    const middle = centreOf(view)
+    assert.ok(middle.lng > view.west && middle.lng < view.east, `${view.name}: centre is outside`)
+    assert.ok(middle.lat > view.south && middle.lat < view.north, `${view.name}: centre is outside`)
+    /* The slippy arithmetic the map itself does, so a probe built on it asks
+       for the squares a phone asks for. A z11 tile of Amsterdam is 1051/673,
+       which is the request the live probe has been making all along. */
+    const at = tileFor(middle.lng, middle.lat, 11)
+    assert.ok(at.x >= 0 && at.x < 2 ** 11, `${view.name}: x off the grid`)
+    assert.ok(at.y >= 0 && at.y < 2 ** 11, `${view.name}: y off the grid`)
+  }
+  assert.deepEqual(tileFor(4.89, 52.37, 11), { z: 11, x: 1051, y: 673 })
+
+  /* And both readers read it from here rather than from a copy. */
+  for (const script of ['probe-live-places.mjs', 'places-timings.mjs']) {
+    const source = readFileSync(path.join(appRoot, 'server', 'scripts', script), 'utf8')
+    assert.match(source, /from '\.\.\/src\/places\/viewpoints\.js'/, `${script} holds its own list`)
+  }
+})
+
+test('the timings script cannot change a row', () => {
+  /* It runs against production on every deploy. That is only defensible
+     because every statement it reaches is a select — so it goes through the
+     same store.js functions the read routes use, and touches nothing else. */
+  const source = readFileSync(path.join(appRoot, 'server', 'scripts', 'places-timings.mjs'), 'utf8')
+  assert.ok(!/\b(insert|update|delete|drop|alter|truncate|writePlaceTile)\b/i.test(source))
+  /* Two connections. A measurement that takes connections away from the
+     people it is measuring is measuring itself. */
+  assert.match(source, /max: 2\b/)
+  /* And a deadline it stops at, because the census step has four minutes for
+     everything it does and an in-view query over a city was 3.7 seconds. */
+  assert.match(source, /BUDGET_MS/)
 })

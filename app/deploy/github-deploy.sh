@@ -640,6 +640,23 @@ else
   docker logs --tail 12 "$sweep_box" 2>&1 | sed 's/^/places:   /' || true
 fi
 
+# What each places query costs on this box, measured on this box.
+#
+# The tile path was reported as slow, so the tile path got a Server-Timing
+# header and a probe on a runner to read it, and it is now two milliseconds.
+# Search and nearby sit behind a login, so nothing outside the box could time
+# them at all — and "searching for places takes seconds" stayed a deduction
+# for as long as that was true. A number that only exists where somebody
+# already looked is not instrumentation.
+#
+# So it is measured here, in the container that holds the code, by a script
+# that imports the very functions the routes call rather than a copy of their
+# SQL. Read-only, two connections, and a budget it stops at: a census must
+# never be the reason a release is rolled back. Bounded outside as well as
+# in, because a `timeout` is the only thing that walks around `|| true`.
+timeout 75 docker compose exec -T api node server/scripts/places-timings.mjs 2>&1 \
+  | sed 's/^/places: /' || true
+
 echo
 echo "--- capacity ---"
 # Every line below ends in `|| true`. The script runs under `set -Eeuo

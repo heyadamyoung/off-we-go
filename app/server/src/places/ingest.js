@@ -1129,10 +1129,21 @@ export async function cellsForTrip(pool, tripId) {
 
    Only for a planet-scale run, and the caller is told, because search is
    genuinely worse until `resumeIndexes` finishes. */
+/** The three `pauseIndexes` drops, named once so the rebuild and the
+    invalid-index sweep below cannot disagree about which they are. They did:
+    the sweep listed two of the three, so a failed build of
+    `places_search_prefix_idx` left an INVALID index that `if not exists`
+    skipped for ever afterwards — and a two-letter typeahead went back to a
+    sequential scan of the planet with an index in the catalogue insisting it
+    was fine. A list written twice is a list that is wrong once. */
+export const PAUSED_INDEXES = Object.freeze([
+  'places_search_name_idx',
+  'places_category_idx',
+  'places_search_prefix_idx',
+])
+
 export async function pauseIndexes(pool) {
-  await pool.query('drop index if exists places_search_name_idx')
-  await pool.query('drop index if exists places_category_idx')
-  await pool.query('drop index if exists places_search_prefix_idx')
+  for (const name of PAUSED_INDEXES) await pool.query(`drop index if exists ${name}`)
 }
 
 export async function resumeIndexes(pool) {
@@ -1140,19 +1151,20 @@ export async function resumeIndexes(pool) {
      and `if not exists` then happily skips it on every later run — so search
      would stay on a sequential scan with an index sitting there saying it
      exists. Any invalid one is dropped first. */
-  await pool.query(`
-    do $$
+  await pool.query(
+    `do $$
     declare broken text;
     begin
       for broken in
         select c.relname from pg_index i
         join pg_class c on c.oid = i.indexrelid
         where not i.indisvalid
-          and c.relname in ('places_search_name_idx', 'places_category_idx')
+          and c.relname = any(array[${PAUSED_INDEXES.map(name => `'${name}'`).join(', ')}])
       loop
         execute format('drop index if exists %I', broken);
       end loop;
-    end $$`)
+    end $$`,
+  )
   await pool.query(
     'create index concurrently if not exists places_search_name_idx on places using gin (search_name gin_trgm_ops)',
   )
