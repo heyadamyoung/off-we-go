@@ -1003,3 +1003,78 @@ test('the queue drainer', { skip: unreachable, concurrency: false }, async t => 
     )
   })
 })
+
+test('the ground somebody is standing on is warmed first', {
+  skip: unreachable,
+  concurrency: false,
+}, async t => {
+  /* Reported: "I clicked a button to go to Regina. It took maybe 10 seconds
+     before places started to show."
+   *
+   * The tiles were cold because nothing had built them. The sweep loads the
+   * planet and builds no tiles at all, and the only thing that did was an
+   * idle pass that runs solely when the ingest queue happens to be empty —
+   * one cell at a time, about two minutes each, against twenty-six thousand
+   * cells already swept. The first person to look at any of that ground paid
+   * for a screenful of cold builds at once.
+   *
+   * A trip's stops are a handful of cells, and they are the only cells we
+   * know somebody will open, because somebody has already put a stop in one.
+   * So they are warmed on every tick — including, and this is the case that
+   * matters, a tick with ingesting to do. */
+  const pool = await freshDatabase(t)
+
+  /* A cell with a stop in it, and a cell without. Both ready, both holding
+     places, so the only thing separating them is the stop. */
+  for (const [cell, west, south] of [
+    ['N52E004', 4, 52],
+    ['N55W004', -4, 55],
+  ]) {
+    await pool.query(
+      `insert into place_coverage
+        (cell, west, south, east, north, status, place_count, last_refresh, versions,
+         zoom_policy)
+       values ($1, $2::numeric, $3::numeric, $2::numeric + 1, $3::numeric + 1,
+               'ready', 1, now(), '{}'::jsonb, $4::smallint)`,
+      [cell, west, south, ZOOM_POLICY],
+    )
+    await pool.query(
+      `insert into places (gers_id, name, geom, category, category_raw, confidence, cell, label_zoom)
+       values ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography,
+               'museum', 'museum', 0.9, $5, 11)`,
+      [`ov-${cell}`, `Museum of ${cell}`, west + 0.5, south + 0.5, cell],
+    )
+  }
+  await pool.query(
+    "insert into trips (id, slug, title, day_count) values ('11111111-1111-1111-1111-111111111111', 'a-trip', 'A trip', 1)",
+  )
+  await pool.query(
+    `insert into stops (id, trip_id, name, lng, lat)
+     values ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111',
+             'The museum', 4.5, 52.5)`,
+  )
+
+  /* And something for the ingest queue to do, so the tick is a busy one.
+     This is the state in which the idle pass never ran. */
+  await coverage(pool, 'N00E000', { status: 'pending', requestedAt: new Date() })
+
+  const { worker, handed } = workerOver(pool)
+  await worker.once()
+  await worker.settled()
+
+  assert.ok(handed.length > 0, 'the tick had ingesting to do, which is the point')
+
+  const built = async cell => {
+    const { rows } = await pool.query(
+      `select count(*)::int as n from place_tiles t
+       join place_coverage c on c.cell = $1
+       where t.z = 11
+         and t.x = floor((c.west + 180) / 360 * 2048)
+         and t.y = floor((1 - ln(tan(radians(c.north)) + 1 / cos(radians(c.north))) / pi())
+                         / 2 * 2048)`,
+      [cell],
+    )
+    return rows[0].n
+  }
+  assert.ok(await built('N52E004'), 'the cell with a stop in it was never warmed')
+})
