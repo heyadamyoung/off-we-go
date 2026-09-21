@@ -309,8 +309,6 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
     /* Zoom 17, so the prominent top-up never reaches it — the only way this
        one is ever queued is somebody opening its card. */
     const opened = await place(pool, 'Greyfriars Kirk', 17, { lng: -3.1918, lat: 55.9472 })
-    /* No osm_landmarks row anywhere: our own copy knows nothing, which is
-       the state that used to send every one of these to Overpass. */
 
     const asked = []
     const worker = createEnrichWorker({
@@ -326,21 +324,46 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
       },
     })
 
-    /* The backfill: queued by the worker's own top-up, at WANTED_SOON. */
+    /* With `osm_landmarks` empty the backfill does not start at all, which is
+       a stronger guarantee than "starts and declines to ask Overpass".
+     *
+     * It also stops the other half of this hazard, which is ours rather than
+     * somebody else's: a place looked up against an empty table comes back
+     * "no OpenStreetMap object matches", that is BARREN, and BARREN is
+     * written down as finished. Four hundred at a time, one evening, and
+     * every prominent place on earth is recorded as having nothing to show —
+     * from a query against an empty table. Nothing retries them either;
+     * enqueueProminent only picks a row up again when the pipeline version
+     * changes. */
     await worker.once()
-    assert.equal(await statusOf(pool, castle), 'pending')
+    assert.equal(await statusOf(pool, castle), undefined, 'the backfill queued with no landmarks')
     await worker.once()
     assert.deepEqual(asked, [], `the backfill asked Overpass about ${asked.join(', ')}`)
-    /* And it is a real answer, not a deferral: nothing to find, said so. */
-    assert.equal((await readEnrichment(pool, castle)).status, BARREN)
 
     /* Somebody opens a card, which is what /api/places/:id does for a place
-       enrichment has never reached. That is the one case the service exists
-       for, and it still works — a gate that stopped everything would be a
-       worse bug wearing the same test. */
+       enrichment has never reached. That is the one case the volunteer
+       service exists for, and it still works with an empty table — a gate
+       that stopped everything would be a worse bug wearing the same test. */
     await enqueue(pool, [opened], WANTED_NOW)
     await worker.once()
     assert.deepEqual(asked, ['Greyfriars Kirk'])
+
+    /* And once there is something to match against, the backfill runs — and
+       still never asks. This is the assertion that keeps the original
+       guarantee alive: the gate above would satisfy this test on its own by
+       never doing any work at all, which is not the property we want. */
+    await pool.query(
+      `insert into osm_landmarks (id, name, geom, category, website, wikidata)
+       values ('way/1', 'Edinburgh Castle',
+               ST_SetSRID(ST_MakePoint(-3.1999, 55.9486),4326)::geography,
+               'historic', null, 'Q209507')`,
+    )
+    asked.length = 0
+    await worker.once()
+    assert.equal(await statusOf(pool, castle), 'pending', 'the backfill never started')
+    await worker.once()
+    assert.deepEqual(asked, [], `the backfill asked Overpass about ${asked.join(', ')}`)
+    assert.ok(await readEnrichment(pool, castle), 'the castle was never worked')
   })
 
   await t.test('a source that throws leaves the place waiting, not lost', async t => {

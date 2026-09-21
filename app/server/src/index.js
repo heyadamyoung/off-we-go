@@ -274,7 +274,24 @@ const placesWorker =
  * empty until a planet extract is loaded into it, and every backfill place
  * therefore went to overpass-api.de. A claim about behaviour belongs next to
  * the behaviour, with a test on it. */
-const placesContact = process.env.PLACES_CONTACT || ''
+/* Never unset.
+ *
+ * This was `process.env.PLACES_CONTACT || ''`, and a blank contact turns the
+ * whole enricher off — so the pictures-and-descriptions half of the places
+ * layer has been dark since it was written, because a GitHub variable nobody
+ * set was the switch. A feature that is off until somebody remembers a secret
+ * is a feature that is off.
+ *
+ * What Wikimedia's policy actually asks for is a User-Agent naming the
+ * application and a way to reach its operator, and createWikimedia accepts
+ * either an address or a URL for that second part. The deployment already has
+ * a public URL that reaches us — it is the site — so that is the default, and
+ * it needs nothing from anybody. PLACES_CONTACT still wins when it is set, for
+ * a deployment that would rather publish an address.
+ *
+ * Deliberately not a person's email. It rides on every request to a public
+ * API, which is not a place to put somebody's inbox without them asking. */
+const placesContact = (process.env.PLACES_CONTACT || '').trim() || required('WAYFARE_PUBLIC_URL')
 const enrichWorker = (() => {
   if (!placesContact) return null
   const userAgent = `OffWeGo/1.0 (${placesContact})`
