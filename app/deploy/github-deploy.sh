@@ -42,26 +42,47 @@ if [[ -z "${WAYFARE_STAGED:-}" ]]; then
   fi
   bootstrap_sha="${BASH_REMATCH[1]}"
 
-  # Ninety seconds, not ten minutes.
+  # Wait for the release in front, out loud, and only give up after five
+  # minutes.
   #
-  # One release at a time on this box is right; waiting out a predecessor is
-  # not. Deploy 370 spent 2m06s here before it printed a single line, because
-  # 369 had been cancelled and its script was still holding the lock — a run
-  # nobody was watching, whose work was already superseded, charging the run
-  # that replaced it. Ten minutes of patience cannot distinguish that from a
-  # healthy deploy, and either way the answer is the same: this release is
-  # not going out in the next ninety seconds, so fail now and say what is
-  # holding it, rather than eating the budget in silence.
+  # This was ninety seconds, on the argument that a release which is not
+  # going out in the next ninety seconds should fail now and name what is
+  # holding it rather than eat the budget in silence. Deploy 400 is what that
+  # argument costs. It found 399's docker-compose still on the lock, waited
+  # its ninety seconds, and exited 75 — so the merge it was carrying simply
+  # never reached the box, and production sat on the release before it with
+  # nothing anywhere saying so but a red tick.
+  #
+  # The argument had two halves and only one of them was right. Silence is
+  # bad: a run that prints nothing for two minutes looks hung, which is what
+  # deploy 370 was really complaining about. Impatience is not: a predecessor
+  # holding this lock is a compose swap that ends, and every extra minute
+  # spent waiting for it buys a release that otherwise does not happen at
+  # all. That asymmetry is sharper here than anywhere, because the step
+  # timeout above kills an ssh client and nothing else — the box finishes the
+  # release it was handed whether or not anyone is still listening. Giving up
+  # early is the single outcome where the code does not ship.
+  #
+  # So: five minutes, and a line every fifteen seconds saying how long it has
+  # been and who has it. A predecessor that has not let go after five minutes
+  # is stuck rather than busy, and that is worth failing on.
   #
   # The lock is an open file description on fd 9, so it is held across the
   # exec below rather than dropped and retaken — the two passes are one
   # process and one PID.
+  readonly LOCK_WAIT_SECONDS=300
   exec 9>"$LOCK_FILE"
-  if ! flock -w 90 9; then
-    echo "Another Off We Go deployment is still running:" >&2
-    fuser -v "$LOCK_FILE" >&2 2>&1 || true
-    exit 75
-  fi
+  lock_wait_began="$(date +%s)"
+  until flock -w 15 9; do
+    lock_waited=$(( $(date +%s) - lock_wait_began ))
+    if [ "$lock_waited" -ge "$LOCK_WAIT_SECONDS" ]; then
+      echo "Another Off We Go deployment has held the lock for ${lock_waited}s:" >&2
+      fuser -v "$LOCK_FILE" >&2 2>&1 || true
+      exit 75
+    fi
+    echo "waiting for the release in front: ${lock_waited}s"
+    fuser -v "$LOCK_FILE" 2>&1 | sed 's/^/  /' || true
+  done
 
   # A handover that fails to exec leaves its staging directory behind, which
   # is the one path out of here that cannot clean up after itself.
@@ -532,8 +553,27 @@ after_release() {
 # gets the environment and nothing else, so anything the body reads has to be
 # exported here or it is empty on the box and silently does the wrong thing.
 export APP_ROOT deployment_domain image_repo release_sha
+# `9>&-` is the whole of why deploy 400 never happened, and 393 before it.
+#
+# A child inherits every open descriptor, and fd 9 is the release lock. So
+# the housekeeping below — which is detached precisely because it is not the
+# release and must never hold anybody up — was inheriting the one thing that
+# says a release is in progress and keeping it for as long as it ran. The
+# deploy would report itself done, the ssh channel would close, and the lock
+# would stay held by a census and an image prune.
+#
+# Deploy 400 then arrived, found `docker-compose` on the lock, and exited 75
+# without touching the box: the merge it was carrying never went out, and
+# production sat on the previous release. `fuser` named the holder every
+# time and we read it as a release still swapping, because a lock called
+# wayfare-deploy.lock held by a docker-compose is a convincing story.
+#
+# Closing it here makes the lock mean what its name says: one release at a
+# time, ending when the release ends. Housekeeping is serialised by the
+# workflow's own concurrency group, which is where serialising a thing that
+# cannot fail a deploy belongs.
 setsid bash -c "$(declare -f after_release); after_release" \
-  >> "$AFTER_LOG" 2>&1 < /dev/null &
+  >> "$AFTER_LOG" 2>&1 < /dev/null 9>&- &
 disown || true
 echo "Housekeeping detached; it writes to $AFTER_LOG on the box."
 

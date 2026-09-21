@@ -73,7 +73,10 @@ async function tile(view, z) {
 
 /** One square, named by the grid rather than by a viewport. */
 async function tileAt({ z, x, y }) {
-  const url = `https://${host}/api/places/tiles/${z}/${x}/${y}`
+  /* The same address the map asks for, .bin and all — the suffix is what
+     makes a tile cacheable at the edge, so a probe that left it off would be
+     measuring a path no phone uses and reporting the old miss for ever. */
+  const url = `https://${host}/api/places/tiles/${z}/${x}/${y}.bin`
   const timed = async () => {
     const started = Date.now()
     const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
@@ -95,9 +98,12 @@ async function tileAt({ z, x, y }) {
        * straight through however the origin labels it.
        *
        * Which means the difference between "the box answers in 2 ms" and
-       * "the dots take ten seconds" can be entirely this header, and we have
-       * never once looked at it. BYPASS or DYNAMIC on a tile means every
-       * phone pays the full distance for bytes that never change. */
+       * "the dots take ten seconds" can be entirely this header, and we had
+       * never once looked at it. We looked, and it was DYNAMIC on every tile
+       * at every zoom in every city — nothing cached, anywhere, ever. The
+       * .bin on the address is the answer to that, and this is the line that
+       * says whether it took: BYPASS or DYNAMIC still means every phone pays
+       * the full distance for bytes that never change. */
       edge:
         response.headers.get('cf-cache-status') ||
         response.headers.get('x-cache') ||

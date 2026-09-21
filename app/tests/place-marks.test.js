@@ -117,6 +117,35 @@ test('the tile URL carries a generation, so a bad tile can be recalled', async (
   }
 })
 
+test('a tile is addressed as a file, so a CDN will hold one', async () => {
+  /* Measured against production, every tile at every zoom in every city:
+     `cf-cache-status: DYNAMIC`. Not a miss — a refusal. Nothing between a
+     phone and the box was keeping a single tile, while the box itself was
+     answering them in one to thirty-five milliseconds.
+
+     A CDN decides whether a thing is cacheable from the extension on the
+     path and from nothing else. `Cache-Control: public, max-age=3600` tells
+     it how long once it has decided, and it had decided not to: a path under
+     /api with no extension is somebody's account page as far as any edge is
+     concerned. So a phone in Regina crossed the Atlantic for every square of
+     a map whose bytes are identical for everybody and change once a release.
+
+     `.bin` is on every default-cached list there is, and it is honest — a
+     vector tile is an opaque binary blob and that is what it says. The
+     server takes the address with the suffix or without, so a phone holding
+     yesterday's bundle still gets a map. */
+  const source = await readFile(new URL('../src/backend-base.ts', import.meta.url), 'utf8')
+  const templates = source.match(/places\/tiles\/\{z\}\/\{x\}\/\{y\}[^`']*/g) || []
+  assert.equal(templates.length, 2)
+  for (const template of templates) {
+    assert.match(
+      template,
+      /^places\/tiles\/\{z\}\/\{x\}\/\{y\}\.bin\?/,
+      'the extension goes before the query string, or the edge never sees it',
+    )
+  }
+})
+
 test('a tile generation and the rule that fills it move together', async () => {
   /* The bug this exists for, reported from the road: "grey dots show at a
      further out zoom, then I scroll in a bit and they disappear, then I zoom

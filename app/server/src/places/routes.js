@@ -284,11 +284,29 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
    suppression floor every other query uses. */
 /* A tile address. Integers, and bounded by the deepest zoom the map goes to —
    an unbounded z is an unbounded ST_TileEnvelope and a query nobody asked
-   for. 20 is past the point where the basemap itself has detail. */
+   for. 20 is past the point where the basemap itself has detail.
+
+   The last number may carry a .bin, and that suffix is the whole reason the
+   map is quick from a phone. Measured against production: every tile came
+   back `cf-cache-status: DYNAMIC` — not cached, not once, anywhere — while
+   the box itself was answering in one to thirty-five milliseconds. A CDN
+   decides what to cache from the extension on the path and nothing else; a
+   path under /api with no extension is assumed to be somebody's account
+   page, and no Cache-Control the origin sends will talk it out of that. So
+   every phone in the world was paying the full distance to Europe for bytes
+   that are identical for everybody and change once a release.
+   .bin is not a trick — a vector tile is an opaque binary blob and that is
+   what the extension says — and it is on the default-cached list, so the
+   tiles cache at the edge with no console to click and nothing to remember.
+   Accepted with or without it, because a phone holding yesterday's bundle
+   asks the old way and deserves a map either way. */
 const tileQuery = z.object({
   z: z.coerce.number().int().min(0).max(20),
   x: z.coerce.number().int().min(0),
-  y: z.coerce.number().int().min(0),
+  y: z.preprocess(
+    value => (typeof value === 'string' ? value.replace(/\.bin$/, '') : value),
+    z.coerce.number().int().min(0),
+  ),
 })
 
 const viewQuery = z
@@ -786,13 +804,17 @@ export function registerPlaceRoutes(
          coverage read behind it. */
       timed(reply, { started, asked: queried })
       /* A tile is the same bytes for everybody for as long as the data behind
-         it holds, which is a release — so it is cached hard and at the edge.
-         This is the other half of why a tiled map does not flicker: the
-         second look at a square costs nothing at all.
+         it holds, which is a release — so it is cached hard, in the browser
+         and at the edge. This is the other half of why a tiled map does not
+         flicker: the second look at a square costs nothing at all.
+         This header is only half of the edge, mind: a CDN reads it to decide
+         how long, never whether. Whether is the .bin on the address — see
+         tileQuery.
          *
          * Unless the ground under it is still being ingested, in which case
          * these bytes are true for minutes and an hour of browser cache is
-         * how a filled-in city keeps looking empty. Answered, not kept. */
+         * how a filled-in city keeps looking empty. Answered, not kept —
+         * no-store is understood by the edge as well as by the phone. */
       reply.header('cache-control', settled ? TILE_CACHE : TILE_UNSETTLED)
       reply.header('content-type', 'application/vnd.mapbox-vector-tile')
       /* An empty tile is a real answer — that square has nothing in it — and
