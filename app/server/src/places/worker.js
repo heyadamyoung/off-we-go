@@ -62,7 +62,7 @@ import {
   indexIsReady,
   markEmptyCellsZoomed,
   markZoomed,
-  PLACE_GEOM_INDEX,
+  PLACE_INDEXES_REPLACED,
   PLACE_VIEW_INDEX,
   PLACE_VIEW_INDEX_SQL,
   placeTile,
@@ -424,14 +424,17 @@ export function createPlaceWorker({
     if (building || stopped) return
     const ready = await indexIsReady(pool, PLACE_VIEW_INDEX)
     if (ready) {
-      /* There and valid. The one it replaces can go, and that is cheap —
+      /* There and valid. The ones it replaces can go, and that is cheap —
          dropping an index is a catalogue write. Concurrently, because a plain
-         drop takes ACCESS EXCLUSIVE and every reader queues behind it. */
-      if ((await indexIsReady(pool, PLACE_GEOM_INDEX)) !== null) {
+         drop takes ACCESS EXCLUSIVE and every reader queues behind it. Only
+         now, never before: a build that fails must not take a working index
+         with it. */
+      for (const old of PLACE_INDEXES_REPLACED) {
+        if ((await indexIsReady(pool, old)) === null) continue
         await pool
-          .query(`drop index concurrently if exists ${PLACE_GEOM_INDEX}`)
-          .then(() => log(`places: ${PLACE_GEOM_INDEX} dropped; one spatial index now`))
-          .catch(error => log(`places: ${PLACE_GEOM_INDEX} not dropped — ${error.message}`))
+          .query(`drop index concurrently if exists ${old}`)
+          .then(() => log(`places: ${old} dropped; ${PLACE_VIEW_INDEX} replaces it`))
+          .catch(error => log(`places: ${old} not dropped — ${error.message}`))
       }
       return
     }

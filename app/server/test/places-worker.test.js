@@ -11,7 +11,14 @@ import {
   ZOOM_POLICY,
 } from '../src/places/rank.js'
 import { cellBounds, cellKey } from '../src/places/cells.js'
-import { assignLabelZoom, indexIsReady, markRequested, placeTile } from '../src/places/store.js'
+import {
+  assignLabelZoom,
+  indexIsReady,
+  markRequested,
+  PLACE_INDEXES_REPLACED,
+  PLACE_VIEW_INDEX,
+  placeTile,
+} from '../src/places/store.js'
 import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* The thing that drains the coverage queue on the box that serves queries.
@@ -481,18 +488,26 @@ test('places written before the zoom column get their zoom', {
       /* A fresh database has the geometry-only index from migration 043 and
        none of the replacement, which is the state every real box is in. */
       assert.equal(await indexIsReady(pool, 'places_geom_idx'), true)
-      assert.equal(await indexIsReady(pool, 'places_view_idx'), null)
+      assert.equal(await indexIsReady(pool, PLACE_VIEW_INDEX), null)
 
       const { worker } = workerOver(pool)
       await worker.once()
       await worker.settled()
-      assert.equal(await indexIsReady(pool, 'places_view_idx'), true, 'built, and valid')
+      assert.equal(await indexIsReady(pool, PLACE_VIEW_INDEX), true, 'built, and valid')
 
       /* The drop is the tick after the build, so a build that fails cannot
        take the working index with it. */
       await worker.once()
       await worker.settled()
-      assert.equal(await indexIsReady(pool, 'places_geom_idx'), null, 'one spatial index now')
+      for (const old of PLACE_INDEXES_REPLACED) {
+        assert.equal(await indexIsReady(pool, old), null, `${old} is still in the catalogue`)
+      }
+
+      /* The name carries the constant inside the index, so a changed default
+         is a different index rather than a stale one the planner quietly
+         stops choosing. */
+      assert.match(PLACE_VIEW_INDEX, /_z17_/)
+      assert.ok(!PLACE_INDEXES_REPLACED.includes(PLACE_VIEW_INDEX))
     },
   )
 

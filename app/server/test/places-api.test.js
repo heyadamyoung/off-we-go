@@ -4,6 +4,9 @@ import pg from 'pg'
 import { buildServer } from '../src/app.js'
 import { authenticate } from './auth-helper.js'
 import { privateDatabase } from './private-database.js'
+import { cellBounds } from '../src/places/cells.js'
+import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
+import { assignLabelZoom } from '../src/places/store.js'
 
 /* The three endpoints against real PostGIS, because everything that can go
  * quietly wrong here is a property of the database and not of the JavaScript:
@@ -146,6 +149,17 @@ async function seed(client) {
        values ($1,$2,$3,$4,$5,'ready','{"overture":"2026-08-19.0"}'::jsonb,$6, now())`,
       [cell, west, south, west + 1, south + 1, cell === AMSTERDAM.cell ? SEED.length : 1],
     )
+    /* And ranked, which is what a real cell gets on the way in — see
+       places/ingest.js, which calls this inside the load. A row with no
+       label_zoom is a row the pass has not reached, and the map draws those
+       only at the floor now, so a fixture that skipped this would be testing
+       a viewport over unranked ground rather than over a loaded cell. */
+    await assignLabelZoom(client, cellBounds(cell), {
+      weights: VIEW_WEIGHT,
+      perTile: LABEL_PER_TILE,
+      zooms: LABEL_ZOOMS,
+      earliest: EARLIEST_ZOOM,
+    })
   }
   return ids
 }
