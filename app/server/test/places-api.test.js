@@ -5,7 +5,7 @@ import { buildServer } from '../src/app.js'
 import { authenticate } from './auth-helper.js'
 import { privateDatabase } from './private-database.js'
 import { cellBounds } from '../src/places/cells.js'
-import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
+import { EARLIEST_ZOOM, LABEL_ZOOMS } from '../src/places/rank.js'
 import { assignLabelZoom } from '../src/places/store.js'
 
 /* The three endpoints against real PostGIS, because everything that can go
@@ -155,10 +155,8 @@ async function seed(client) {
        only at the floor now, so a fixture that skipped this would be testing
        a viewport over unranked ground rather than over a loaded cell. */
     await assignLabelZoom(client, cellBounds(cell), {
-      weights: VIEW_WEIGHT,
-      perTile: LABEL_PER_TILE,
-      zooms: LABEL_ZOOMS,
       earliest: EARLIEST_ZOOM,
+      floor: LABEL_ZOOMS.floor,
     })
   }
   return ids

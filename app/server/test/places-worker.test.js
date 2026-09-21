@@ -5,7 +5,6 @@ import { createPlaceWorker } from '../src/places/worker.js'
 import {
   CONFIDENCE_FLOOR,
   EARLIEST_ZOOM,
-  LABEL_PER_TILE,
   LABEL_ZOOMS,
   VIEW_WEIGHT,
   ZOOM_POLICY,
@@ -269,67 +268,90 @@ test('a city does not arrive all at once', {
     assert.equal(rows[0].unplaced, 0, 'the zoom pass does not wait on the network')
   })
 
-  await t.test(
-    'a square over a dense city holds a couple of dozen marks, not the city',
-    async t => {
-      const pool = await freshDatabase(t)
-      await city(pool)
-      await assignLabelZoom(pool, null, {
-        weights: VIEW_WEIGHT,
-        perTile: LABEL_PER_TILE,
-        zooms: LABEL_ZOOMS,
-        earliest: EARLIEST_ZOOM,
-      })
+  await t.test('a place is given the zoom its kind is drawn from, and nothing else', async t => {
+    const pool = await freshDatabase(t)
+    await city(pool)
+    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
 
-      const centre = [-104.57, 50.47]
-      for (const z of [11, 12, 13]) {
-        const at = square(centre[0], centre[1], z)
+    /* The whole rule, stated exactly. Two thousand five hundred places over a
+       tenth of a degree, seven kinds among them, and every row holds the
+       number its category is drawn from — not a number it won from its
+       neighbours. A ranking used to decide this, and a museum's zoom then
+       depended on how many cafes stood near it. */
+    const byKind = await pool.query(
+      'select category, min(label_zoom) as lo, max(label_zoom) as hi, count(*)::int as n' +
+        ' from places group by category order by category',
+    )
+    assert.ok(byKind.rows.length > 1, 'the fixture holds several kinds')
+    for (const row of byKind.rows) {
+      const wanted = EARLIEST_ZOOM[row.category] ?? EARLIEST_ZOOM.other
+      assert.equal(Number(row.lo), wanted, `${row.category} starts at ${row.lo}, not ${wanted}`)
+      assert.equal(Number(row.hi), wanted, `${row.category} is not all one zoom`)
+    }
 
-        /* The algorithm's own contract, stated exactly: within one square of
-           the grid assignLabelZoom partitioned by, at most LABEL_PER_TILE
-           places earned that zoom. */
-        const earned = await pool.query(
-          `select count(*)::int as n from places p
-            where p.label_zoom = $1::real
-              and ${'floor((((ST_X(p.geom::geometry)) + 180) / 360) * power(2, $1)) = $2'}
-              and ${'floor((1 - ln(tan(radians(ST_Y(p.geom::geometry))) + 1 / cos(radians(ST_Y(p.geom::geometry)))) / pi()) / 2 * power(2, $1)) = $3'}`,
-          [at.z, at.x, at.y],
-        )
-        assert.ok(
-          earned.rows[0].n <= LABEL_PER_TILE,
-          `z${z}: ${earned.rows[0].n} places earned that zoom in one square, over ${LABEL_PER_TILE}`,
-        )
+    /* And the same kind in a village gets the same answer as in the city,
+       which is the property a per-tile quota could not have. */
+    await pool.query(
+      `insert into places (gers_id, name, geom, category, category_raw, confidence, cell)
+       values ('overture:lonely', 'The Only Museum For Miles',
+               ST_SetSRID(ST_MakePoint(-109.5, 49.5),4326)::geography,
+               'museum', 'museum', 0.8, 'N49W110')`,
+    )
+    await ground(pool, 'N49W110', 1)
+    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
+    const lonely = await pool.query(
+      "select label_zoom from places where gers_id = 'overture:lonely'",
+    )
+    const crowded = await pool.query(
+      "select distinct label_zoom from places where category = 'museum' and cell = 'N50W105'",
+    )
+    assert.equal(crowded.rows.length, 1)
+    assert.equal(
+      Number(lonely.rows[0].label_zoom),
+      Number(crowded.rows[0].label_zoom),
+      'a museum alone in a county and a museum in a city are drawn from the same zoom',
+    )
+  })
 
-        /* And what the tile actually draws. A few more than the budget,
-           because the envelope reaches a little past its own square and a
-           mark on the far side of the line should not vanish at the seam —
-           but a couple of dozen, not the city. That is the whole property,
-           and its absence is what put a carpet of dots on a phone. */
-        const marks = await marksIn(pool, at)
-        assert.ok(
-          marks > 0 && marks <= LABEL_PER_TILE * 4,
-          `z${z} drew ${marks} marks of 2500 places; a square carries a couple of dozen`,
-        )
-        /* And the square really encodes to a tile, rather than agreeing with
-           the count and then producing nothing. */
-        const bytes = await placeTile(pool, at, { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
-        assert.ok(bytes.length > 0, `z${z} encoded an empty tile`)
-      }
-    },
-  )
+  await t.test('a tile draws every place whose kind belongs at its zoom', async t => {
+    const pool = await freshDatabase(t)
+    await city(pool)
+    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
 
-  /* The other half, and the reason there is no cap in the tile query: zoom
-     far enough in and a square is small enough that a selection is not what
-     anybody wants. Everything in it is drawn. */
+    /* No quota, no cap, no "best of". Museums are drawn from 11, so a square
+       at 11 carries every museum inside it however many that is — which is
+       the thing a person means by zooming in. */
+    const at = square(-104.57, 50.47, 11)
+    const inSquare = await pool.query(
+      `select count(*)::int as n from places p, (select ST_TileEnvelope($1,$2,$3) as box) b
+        where p.geom && ST_Transform(b.box, 4326)::geography
+          and p.category = any($4::text[]) and p.confidence >= $5::real`,
+      [
+        at.z,
+        at.x,
+        at.y,
+        Object.keys(EARLIEST_ZOOM).filter(kind => EARLIEST_ZOOM[kind] <= 11),
+        CONFIDENCE_FLOOR,
+      ],
+    )
+    const marks = await marksIn(pool, at)
+    assert.ok(inSquare.rows[0].n > 100, `the fixture is dense: ${inSquare.rows[0].n} in one square`)
+    assert.equal(
+      marks,
+      inSquare.rows[0].n,
+      'a square drew fewer marks than it holds places of the kinds that belong there',
+    )
+
+    /* And it really encodes, rather than agreeing with the count and then
+       producing nothing. */
+    const bytes = await placeTile(pool, at, { floor: CONFIDENCE_FLOOR, weights: VIEW_WEIGHT })
+    assert.ok(bytes?.length > 0, 'the square encodes to a tile')
+  })
+
   await t.test('and close up, a square holds everything in it', async t => {
     const pool = await freshDatabase(t)
     await city(pool, 400)
-    await assignLabelZoom(pool, null, {
-      weights: VIEW_WEIGHT,
-      perTile: LABEL_PER_TILE,
-      zooms: LABEL_ZOOMS,
-      earliest: EARLIEST_ZOOM,
-    })
+    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
     const at = square(-104.62, 50.44, 17)
     const inSquare = await pool.query(
       `select count(*)::int as n
@@ -351,12 +373,7 @@ test('a city does not arrive all at once', {
   await t.test('no everyday place is drawn from across the city', async t => {
     const pool = await freshDatabase(t)
     await city(pool)
-    await assignLabelZoom(pool, null, {
-      weights: VIEW_WEIGHT,
-      perTile: LABEL_PER_TILE,
-      zooms: LABEL_ZOOMS,
-      earliest: EARLIEST_ZOOM,
-    })
+    await assignLabelZoom(pool, null, { earliest: EARLIEST_ZOOM, floor: LABEL_ZOOMS.floor })
     const early = await pool.query(
       `select distinct category from places
         where label_zoom < $1::real order by category`,
@@ -392,10 +409,17 @@ test('places written before the zoom column get their zoom', {
 
     const { rows } = await pool.query(
       'select count(*) filter (where label_zoom is null)::int as unplaced, ' +
-        'count(distinct label_zoom)::int as distinct_zooms from places',
+        'count(distinct label_zoom)::int as distinct_zooms, ' +
+        'min(label_zoom) as zoom from places',
     )
-    assert.equal(rows[0].unplaced, 0, 'every place has the zoom it earns')
-    assert.ok(rows[0].distinct_zooms > 1, 'and they did not all earn the same one')
+    assert.equal(rows[0].unplaced, 0, 'every place has the zoom its kind is drawn from')
+    /* Forty museums crowded into a few hundred metres, and all forty are
+       drawn from 11 — which is the point. Under the ranking this replaced
+       they would have been spread over six zooms by how close they stood to
+       each other, and thirty-nine of them would have been invisible at the
+       zoom the fortieth was drawn at. */
+    assert.equal(rows[0].distinct_zooms, 1, 'the same kind in one place is one zoom')
+    assert.equal(Number(rows[0].zoom), EARLIEST_ZOOM.museum)
 
     /* That square, specifically. Not "no tiles at all": the worker warms
        cold squares when it has nothing to ingest, and a square it builds

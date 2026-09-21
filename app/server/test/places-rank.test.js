@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CATEGORY_WEIGHT,
+  EARLIEST_ZOOM,
   CONFIDENCE_FLOOR,
   DECAY_FRACTION,
   ENOUGH,
-  LABEL_PER_TILE,
   LABEL_ZOOMS,
   MAX_RADIUS_METRES,
   NEAR_BIAS_METRES,
@@ -472,9 +472,21 @@ test('the zooms a mark can earn are the ones a person zooms through', () => {
   assert.equal(LABEL_ZOOMS.from, 11)
   assert.ok(LABEL_ZOOMS.to < LABEL_ZOOMS.floor, 'the floor is below the thinning zooms')
   assert.ok(LABEL_ZOOMS.floor - LABEL_ZOOMS.to === 1, 'and immediately below them')
-  /* A screen is four to six squares, so this is about a hundred marks in
-     view. A number far from that is a map that reads as noise or as empty. */
-  assert.ok(LABEL_PER_TILE >= 12 && LABEL_PER_TILE <= 40, 'a screen holds about a hundred')
+  /* Every kind sits inside the ladder, and the floor is strictly past the
+     last of them — which is what makes the unranked default (LABEL_ZOOMS.floor
+     in store.js ZOOM_AT) later than anything a pass would assign, so a row
+     the pass has not reached cannot outrank one it has. */
+  for (const [kind, zoom] of Object.entries(EARLIEST_ZOOM)) {
+    assert.ok(Number.isInteger(zoom), `${kind} has no zoom`)
+    assert.ok(zoom >= LABEL_ZOOMS.from, `${kind} is drawn from ${zoom}, below the first zoom`)
+    assert.ok(zoom < LABEL_ZOOMS.floor, `${kind} is drawn from the floor, which means never`)
+  }
+  /* And the table is the whole rule: no quota, no per-tile budget, nothing
+     that makes one place's zoom depend on another's. A museum is drawn from
+     the same zoom in Amsterdam and in Regina. */
+  assert.equal(EARLIEST_ZOOM.museum, EARLIEST_ZOOM.gallery)
+  assert.ok(EARLIEST_ZOOM.museum < EARLIEST_ZOOM.cafe)
+  assert.ok(EARLIEST_ZOOM.cafe < EARLIEST_ZOOM.services)
 })
 
 test('what a mark is worth still says a museum beats a launderette', () => {

@@ -167,7 +167,7 @@ export interface PlacePins {
 
 export async function loadPlacePins(
   box: { west: number; south: number; east: number; north: number },
-  { headline = false, limit = 300 } = {},
+  { headline = false } = {},
   signal?: AbortSignal,
 ): Promise<PlacePins | null> {
   /* The demo has no server to ask, so it draws its own canned Amsterdam —
@@ -175,7 +175,7 @@ export async function loadPlacePins(
      walking Wikipedia to fill a map nobody is really using. */
   if (!hasBackend) {
     return {
-      places: samplePins(box, { headline, limit }),
+      places: samplePins(box, { headline }),
       attribution: SAMPLE_ATTRIBUTION,
       degraded: false,
     }
@@ -186,7 +186,6 @@ export async function loadPlacePins(
     east: String(box.east),
     north: String(box.north),
     headline: String(headline),
-    limit: String(Math.min(limit, 1000)),
   })
   try {
     return await authClient.request<PlacePins>(`/places/in-view?${query}`, { signal })

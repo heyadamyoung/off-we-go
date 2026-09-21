@@ -282,22 +282,39 @@ export function rankSearch(rows, query) {
  * One rule, two opposite failures, because the rule never looked at how much
  * was around.
  *
- * So a place's zoom is computed, once, from its rank among its neighbours.
- * For each zoom from LABEL_ZOOMS.from upward, the places in each square of
- * that zoom are put in order of how much they are worth looking at, and the
- * best LABEL_PER_TILE of them that have not already earned a zoom earn this
- * one. A square holds the same number of marks at every zoom; there are four
- * times as many squares each level down, so the map fills in at a steady
- * rate however dense the ground is. Amsterdam thins itself. Skye shows what
- * it has from across the island, because on Skye a guest house is what there
- * is to see.
+ * So a place's zoom is a property of the place: EARLIEST_ZOOM below, one
+ * number per category, and that is the whole rule. A museum is drawn from
+ * 11, a cafe from 14, a launderette from 16, in Amsterdam and in Regina and
+ * on Skye alike. At a zoom you get every place whose kind belongs there,
+ * however many that is.
  *
- * This is what a real tiler does — tippecanoe calls it dropping the densest
- * as needed — and doing it in SQL at ingest rather than in a tiler is what
- * lets it be one number on the row, which is the part that matters: a tile
- * is then `label_zoom <= z` with no cap, so a mark that has appeared can
+ * It was a ranking for a while, and the ranking was the mistake. For each
+ * zoom the places in each tile square were put in order of what they are
+ * worth and the best two dozen earned that zoom — which is what a tiler does,
+ * tippecanoe calls it dropping the densest as needed, and it reads well on a
+ * screen. What it also does is make a place's zoom depend on its neighbours:
+ * an identical museum appeared at 12 in Regina and 15 in Amsterdam, and "the
+ * zoom decides what is drawn" was not true. The crowd decided; the zoom only
+ * set how big the crowd could be.
+ *
+ * Crowding is a rendering question and it is answered where rendering
+ * happens. This is how the map that does not flicker does it too: the data
+ * carries a prominence per feature, the tile ships generously, and the
+ * renderer places labels greedily by priority and drops the ones that will
+ * not fit on the glass this frame. Ours does exactly that — the dots are a
+ * circle layer, which never collides, so every place is a dot; the names are
+ * a symbol layer whose `symbol-sort-key` is this file's markRank, so when two
+ * names want the same pixels the better one keeps them and the other waits
+ * for a zoom where there is room. Nothing is lost and nothing is decided
+ * permanently at write time.
+ *
+ * What the one-number-per-row buys is unchanged and is the part that matters:
+ * a tile is `label_zoom <= z` with no cap, so a mark that has appeared can
  * never disappear as you zoom further in. Monotonic by construction rather
- * than by luck. See places/store.js assignLabelZoom.
+ * than by luck. See places/store.js assignLabelZoom, which is now a plain
+ * UPDATE rather than six zooms of window function — the densest degree on
+ * Earth was 18.2 seconds under the old rule, which is why the backfill never
+ * finished.
  *
  * What the category still decides is the ordering — CATEGORY_WEIGHT, below,
  * times confidence. A museum beats a café for a place in the square. It no
@@ -313,16 +330,6 @@ export function rankSearch(rows, query) {
  * selection of it. Marks below 11 are not drawn at all, so nothing is
  * computed for them. */
 export const LABEL_ZOOMS = Object.freeze({ from: 11, to: 16, floor: 17 })
-
-/** Marks per square, at every zoom that thins.
- *
- * A screen is four to six squares, so this is roughly a hundred marks in
- * view — near what a phone can carry before it reads as noise, and close to
- * what the maps people compare us to show. It is a density, not a budget:
- * the count is per square and squares quadruple each level, so zooming in
- * reveals more of the same ground rather than the same number spread thinner.
- */
-export const LABEL_PER_TILE = 24
 
 /**
  * The furthest away a kind of place may ever be drawn from.
@@ -367,8 +374,8 @@ export const EARLIEST_ZOOM = Object.freeze({
   beach: 11,
   /* A destination is a destination. Oude Kerk is the oldest building in
      Amsterdam and Albert Cuyp is the reason people go to De Pijp; a station
-     is what a traveller navigates a city by. Which of them actually get the
-     slots at zoom 11 is the density's business, not this table's. */
+     is what a traveller navigates a city by. All of them at 11, everywhere —
+     there are no slots to compete for any more. */
   entertainment: 11,
   religious: 11,
   market: 11,
@@ -388,13 +395,14 @@ export const EARLIEST_ZOOM = Object.freeze({
   other: 16,
 })
 
-/* Bumped whenever anything above changes how a zoom is decided — the
-   ceilings, the weights, the per-tile budget, the range. The worker keeps a
-   copy of the last version it ran and redoes the whole pass when they
-   differ, because a stored number gives no hint of the rule that made it. */
-export const ZOOM_POLICY = 2
+/* Bumped whenever anything above changes how a zoom is decided. The worker
+   keeps a copy of the last version it ran and redoes the whole pass when they
+   differ, because a stored number gives no hint of the rule that made it.
+   3 is the move from a per-tile ranking to EARLIEST_ZOOM alone. */
+export const ZOOM_POLICY = 3
 
-/** The lowest zoom this kind of place may ever earn. */
+/** The zoom this kind of place is drawn from. Not a ceiling on a ranking:
+    the whole rule. */
 export const earliestFor = category => EARLIEST_ZOOM[category] ?? EARLIEST_ZOOM.other
 
 /**

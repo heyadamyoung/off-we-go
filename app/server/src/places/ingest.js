@@ -64,7 +64,7 @@ import {
 } from './overture.js'
 import { qualityReport } from './quality.js'
 import { retryAfterMs } from './retry.js'
-import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT, ZOOM_POLICY } from './rank.js'
+import { EARLIEST_ZOOM, LABEL_ZOOMS, ZOOM_POLICY } from './rank.js'
 import { assignLabelZoom } from './store.js'
 import { MATCH_METRES, bestMatch, mergeFields } from './resolve.js'
 
@@ -749,10 +749,8 @@ export function createIngest({
        * over the whole world and is the authority; this is what keeps a cell
        * from being invisible in the meantime. */
       loaded.marked = await assignLabelZoom(client, bounds, {
-        weights: VIEW_WEIGHT,
-        perTile: LABEL_PER_TILE,
-        zooms: LABEL_ZOOMS,
         earliest: EARLIEST_ZOOM,
+        floor: LABEL_ZOOMS.floor,
       })
       /* The tiles over this ground are now describing a city that has
        * changed, so they go — inside the same transaction as the places they

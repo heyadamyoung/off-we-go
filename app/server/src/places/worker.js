@@ -47,14 +47,7 @@
 import { cellBounds } from './cells.js'
 import { createIngest } from './ingest.js'
 import { createParquetReader } from './parquet.js'
-import {
-  CONFIDENCE_FLOOR,
-  EARLIEST_ZOOM,
-  LABEL_PER_TILE,
-  LABEL_ZOOMS,
-  VIEW_WEIGHT,
-  ZOOM_POLICY,
-} from './rank.js'
+import { CONFIDENCE_FLOOR, EARLIEST_ZOOM, LABEL_ZOOMS, VIEW_WEIGHT, ZOOM_POLICY } from './rank.js'
 import {
   assignLabelZoom,
   cellsAwaitingZoom,
@@ -479,10 +472,8 @@ export function createPlaceWorker({
          from the other side). A cell that times out is simply tried again. */
       await client.query("set local lock_timeout = '10s'")
       const marked = await assignLabelZoom(client, cell, {
-        weights: VIEW_WEIGHT,
-        perTile: LABEL_PER_TILE,
-        zooms: LABEL_ZOOMS,
         earliest: EARLIEST_ZOOM,
+        floor: LABEL_ZOOMS.floor,
       })
       /* Every tile over this ground was encoded from the zooms these rows
          used to have. Inside the same transaction as the placing, so a tile
