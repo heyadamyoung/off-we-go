@@ -12,9 +12,20 @@ if [[ ! "$original_command" =~ ^deploy[[:space:]]+([0-9a-f]{40})$ ]]; then
 fi
 readonly release_sha="${BASH_REMATCH[1]}"
 
+# Ninety seconds, not ten minutes.
+#
+# One release at a time on this box is right; waiting out a predecessor is
+# not. Deploy 370 spent 2m06s here before it printed a single line, because
+# 369 had been cancelled and its script was still holding the lock — a run
+# nobody was watching, whose work was already superseded, charging the run
+# that replaced it. Ten minutes of patience cannot distinguish that from a
+# healthy deploy, and either way the answer is the same: this release is not
+# going out in the next ninety seconds, so fail now and say what is holding
+# it, rather than eating the budget in silence.
 exec 9>"$LOCK_FILE"
-if ! flock -w 600 9; then
-  echo "Another Off We Go deployment is still running." >&2
+if ! flock -w 90 9; then
+  echo "Another Off We Go deployment is still running:" >&2
+  fuser -v "$LOCK_FILE" >&2 2>&1 || true
   exit 75
 fi
 
@@ -173,9 +184,23 @@ export RELEASE_SHA="$release_sha"
 #
 # Not `|| true`. A schema that will not migrate is the one thing that must
 # stop a release, and the ERR trap restores the previous one.
+#
+# --no-deps and a service of its own, because the container is the cost. The
+# `compose run api` this used to be spent 1m56s of deploy 370 being created
+# before node started, against 2.1 seconds of actual SQL: it instantiates the
+# api's four mounts, one of them the twelve-gigabyte tile volume, and loads
+# the OpenTelemetry SDK. The migrate service carries a database URL and an
+# admin address and nothing else, and the database is already up and healthy
+# by the time we are here, so there is nothing to wait on either.
 migrate_with_new_image() {
   echo "Bringing the schema up to date before anything is recreated."
-  docker compose run --rm -T api node server/scripts/migrate.mjs
+  # --no-deps means nothing starts the database for us, so we start it. A
+  # no-op on every release — it has been running since the last one, and
+  # `up -d` on an unchanged service does nothing — and the three seconds it
+  # costs on a box being brought up from nothing is the whole reason the
+  # migrate container can skip resolving the api's dependency graph.
+  docker compose up -d --no-build --wait --wait-timeout 120 db
+  docker compose --profile migrate run --rm --no-deps -T migrate
 }
 
 # Fifteen minutes, which is the api healthcheck's start period and not a
