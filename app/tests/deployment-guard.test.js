@@ -879,9 +879,20 @@ test('nothing that cannot fail a release runs before the health check', () => {
   const call = script.slice(detached, script.indexOf('disown', detached))
   assert.match(
     call,
-    />>\s*"\$AFTER_LOG"\s*2>&1\s*<\s*\/dev\/null\s*&/,
+    />>\s*"\$AFTER_LOG"\s*2>&1\s*<\s*\/dev\/null\s*9>&-\s*&/,
     'and lets go of the channel',
   )
+  /* `9>&-` is not tidiness. Fd 9 is the release lock, a child inherits every
+     descriptor its parent had open, and so the housekeeping — detached
+     exactly because it is not the release and must hold nobody up — was
+     keeping the lock for the whole of its run. Deploy 400 arrived, found a
+     docker-compose on /run/lock/wayfare-deploy.lock, and exited 75 without
+     touching the box: the merge it carried never went out and production sat
+     on the release before it, with a red tick the only sign. 393 was the
+     same and we read it as a release still swapping, because that lock held
+     by that process is a convincing story.
+     Whatever else moves here, the detached half must not hold the lock. */
+  assert.match(call, /9>&-/, 'the housekeeping inherits the release lock and holds it')
   /* A detached shell gets the environment and nothing else. */
   assert.match(script, /export APP_ROOT deployment_domain image_repo release_sha/)
   for (const [what, needle] of [
@@ -1648,19 +1659,56 @@ test('a backfill nobody is waiting for does not hold a deploy', () => {
   assert.match(sweep, /^ {6}- --resume$/m, 'a restarted sweep pays for the whole planet again')
 })
 
-test('a deploy that cannot have the box fails instead of waiting it out', () => {
-  /* Deploy 370 printed nothing for 2m06s because cancelled 369 still held the
-     lock — a superseded run nobody was watching, charging the run that
-     replaced it. Ten minutes of patience cannot tell that apart from a
-     healthy deploy, and the answer is the same either way. */
+test('a deploy queues behind the release in front, out loud, rather than dropping', () => {
+  /* This guard said the opposite until deploy 400, and deploy 400 is what
+     the opposite costs.
+
+     It found 399's docker-compose still on the lock, waited the ninety
+     seconds this test used to insist on, and exited 75. The merge it was
+     carrying never reached the box at all: production stayed on the release
+     before it, and the only thing anywhere that said so was a red tick.
+
+     The old argument was that a superseded run and a healthy one look alike
+     from here, so patience cannot tell them apart and failing fast at least
+     says who is holding it. Half right. Silence was the real complaint —
+     deploy 370 printed nothing for 2m06s and looked hung. Impatience was
+     never the answer to it, because the two outcomes are not symmetric: a
+     predecessor holding this lock is a compose swap that ends, so waiting
+     costs minutes, while giving up costs the release entirely. The step
+     timeout above cannot save it either — that kills an ssh client on a
+     runner, and the box finishes whatever it was handed regardless.
+
+     So the rule is now: wait, bounded, and narrate. Long enough to outlast a
+     healthy predecessor, short enough that a genuinely stuck one still
+     fails, and never a stretch with nothing on the screen. */
   const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
-  const wait = deploy.match(/flock -w (\d+) 9/)
-  assert.ok(wait, 'the deploy does not take the lock with a timeout')
+  const bound = deploy.match(/^ *readonly LOCK_WAIT_SECONDS=(\d+)$/m)
+  assert.ok(bound, 'the deploy has no bound on how long it waits for the lock')
+  const seconds = Number(bound[1])
   assert.ok(
-    Number(wait[1]) <= 120,
-    `the deploy waits ${wait[1]}s for the lock; the whole release has 240`,
+    seconds >= 240,
+    `the deploy gives up on the lock after ${seconds}s; a healthy release holds it for minutes ` +
+      'and deploy 400 was lost to exactly this',
+  )
+  assert.ok(
+    seconds <= 600,
+    `the deploy waits ${seconds}s for the lock; past ten minutes a holder is stuck, not busy`,
+  )
+  /* Waited for in short hops, so the gap between two lines is a gap somebody
+     can sit through. A single long flock is the silence all over again. */
+  const hop = deploy.match(/flock -w (\d+) 9/)
+  assert.ok(hop, 'the deploy does not take the lock with a timeout')
+  assert.ok(
+    Number(hop[1]) <= 30,
+    `the deploy waits ${hop[1]}s between saying anything; that is the silence deploy 370 was`,
+  )
+  assert.match(
+    deploy,
+    /echo "waiting for the release in front: \$\{lock_waited\}s"/,
+    'a deploy queued behind another one says nothing while it waits',
   )
   assert.ok(deploy.includes('fuser -v "$LOCK_FILE"'), 'a blocked deploy does not say what holds it')
+  assert.match(deploy, /^ *exit 75$/m, 'giving up on the lock is not reported as a failure')
 })
 
 /* A box, a release, and the bootstrap that stands between them.

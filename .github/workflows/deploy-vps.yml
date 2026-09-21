@@ -359,7 +359,14 @@ jobs:
     # that fails is worth more than one that holds the box. What is not worth
     # anything is a red deploy on a release that went out fine, because the
     # next real failure then looks exactly like the last two.
-    timeout-minutes: 12
+    #
+    # Sixteen rather than twelve since the release step learned to queue
+    # behind a predecessor instead of dropping the release — see the lock in
+    # deploy/github-deploy.sh. The waiting is bounded at five minutes and is
+    # rare now that housekeeping no longer holds the lock, but a run that
+    # waits and then releases needs room for both or the job kills it
+    # halfway and we are back to red deploys that mean nothing.
+    timeout-minutes: 16
     # The box, one release at a time. This is the only real conflict in the
     # workflow and this is the only place it is locked.
     concurrency:
@@ -462,7 +469,12 @@ jobs:
         # Whatever the ceiling, the swap says where its time goes now: see the
         # `step` markers in deploy/github-deploy.sh. Deploy 392 spent 3m16s
         # in silence and no one could say which command had it.
-        timeout-minutes: 8
+        #
+        # Twelve rather than eight, for the same reason the job is sixteen: a
+        # release may now spend up to five minutes queued behind the one in
+        # front before it starts, and eight would have covered the queue or
+        # the release but not both.
+        timeout-minutes: 12
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
         run: |
