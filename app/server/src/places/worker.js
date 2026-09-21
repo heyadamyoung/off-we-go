@@ -346,10 +346,25 @@ export function createPlaceWorker({
    *
    * So a cell a trip has a stop in outranks one nobody has asked about, and
    * the oldest-first walk is what happens once those are done. */
-  async function coldCells() {
+  async function coldCells({ underAStop = false, limit = 1 } = {}) {
     const result = await pool.query(
       `select c.cell from place_coverage c
        where c.status = 'ready' and c.place_count > 0 and not (c.cell = any($1::text[]))
+         /* And placed under the current rule.
+          *
+          * A tile built from rows that are about to be given a zoom is a tile
+          * of the wrong answer, kept — which is why warming used to stand
+          * aside for the whole zoom pass. That was too blunt: the pass walks
+          * the planet a cell at a time and the question is only ever about
+          * one cell. Asked per cell, warming can get on with the ground that
+          * is settled while the pass works on the ground that is not. */
+         and c.zoom_policy = $4::smallint
+         and ($2::boolean is not true or exists (
+           select 1 from stops s
+           where s.lng is not null and s.lat is not null
+             and s.lng >= c.west and s.lng < c.east
+             and s.lat >= c.south and s.lat < c.north
+         ))
        order by
          exists (
            select 1 from stops s
@@ -358,10 +373,38 @@ export function createPlaceWorker({
              and s.lat >= c.south and s.lat < c.north
          ) desc,
          c.last_refresh asc nulls first
-       limit 1`,
-      [[...warmed]],
+       limit $3`,
+      [[...warmed], underAStop, limit, ZOOM_POLICY],
     )
     return result.rows.map(row => row.cell)
+  }
+
+  /**
+   * The ground somebody is actually standing on, warmed before anything else.
+   *
+   * Reported: "I clicked a button to go to Regina. It took maybe 10 seconds
+   * before places started to show." The tiles were cold, and they were cold
+   * because nothing had built them. The sweep loads the planet and builds no
+   * tiles at all; the only thing that does is the idle pass below, which runs
+   * only when the ingest queue happens to be empty, takes one cell at a time
+   * and needs about two minutes for each. Against twenty-six thousand cells
+   * already swept, that is weeks behind — so the first person to look at any
+   * of that ground pays for a screenful of cold builds at once.
+   *
+   * A trip's stops are a handful of cells. They are also the only cells we
+   * can say with certainty somebody will open, because somebody has already
+   * put a stop in them. So they are warmed first, on every tick, whether or
+   * not there is ingesting to do — the idle pass is for everywhere else and
+   * can stay idle-only.
+   *
+   * Bounded by the same clock as the rest of the warming, and `warmed`
+   * remembers the finished ones, so this costs one indexed query per tick
+   * once the trip's ground is built.
+   */
+  async function warmWhereTheyAre() {
+    const cells = await coldCells({ underAStop: true, limit: 4 })
+    if (!cells.length) return 0
+    return await warmTiles(cells)
   }
 
   /* Places written under some other rule than the one this code holds, put
@@ -655,6 +698,11 @@ export function createPlaceWorker({
     await buildTheIndex()
     await placeTheUnplaced()
     await noteTheLicences()
+    /* Before the ingest queue, because this is the ground with somebody on
+       it and the queue is the ground nobody has asked for yet. Not behind
+       `placing`: coldCells asks per cell whether it is settled, so the zoom
+       pass walking Peru is no longer a reason to leave Regina cold. */
+    await warmWhereTheyAre()
 
     const pipe = await pipeline()
     if (!pipe) return
