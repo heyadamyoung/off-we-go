@@ -514,6 +514,39 @@ setsid bash -c "$(declare -f after_release); after_release" \
 disown || true
 echo "Housekeeping detached; it writes to $AFTER_LOG on the box."
 
+# Where the planet has got to, in the log a person actually reads.
+#
+# This used to be here and #202 took it with the rest of the housekeeping,
+# which was the wrong call: the other lines down there are things the deploy
+# *does*, and a detached log is the right place for those. This is the one
+# thing the deploy *reports*, on a box with no shell and a key restricted to
+# one command — so sending it to a file nobody can open means the only answer
+# to "is the sweep still going, and how much of the world do we hold" is the
+# size of a docker volume.
+#
+# Two read-only queries and a `docker ps`, seconds in total, and every line
+# `|| true` because a release that is live and answering is not rolled back
+# over a count.
+places_now() {
+  docker compose exec -T db psql -U wayfare -d wayfare -tAc "$1" 2>/dev/null | tr -d ' ' || true
+}
+echo "places: $(places_now 'select count(*) from places') places in \
+$(places_now "select count(*) from place_coverage where status in ('ready','empty')") of 53333 cells, \
+$(places_now 'select count(*) from place_coverage where zoom_policy is null') cell(s) awaiting a zoom"
+if [ -n "$(docker ps -q --filter status=running \
+  --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
+  echo "places: the sweep is running"
+else
+  last_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
+    --latest 2>/dev/null || true)"
+  if [ -n "$last_sweep" ]; then
+    echo "places: no sweep running; the last one exited $(docker inspect \
+      --format '{{.State.ExitCode}} at {{.State.FinishedAt}}' "$last_sweep" 2>/dev/null || echo '?')"
+  else
+    echo "places: no sweep has ever run on this box"
+  fi
+fi
+
 echo
 echo "--- capacity ---"
 # Every line below ends in `|| true`. The script runs under `set -Eeuo
