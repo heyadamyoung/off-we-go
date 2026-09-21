@@ -1517,7 +1517,23 @@ test('a deploy says where the planet has got to, where a person can read it', ()
   assert.ok(censusAt > 0, 'the deploy does not report how many places there are')
   assert.ok(sweepAt > 0, 'the deploy does not report whether the sweep is running')
   assert.ok(censusAt > detachedAt, 'the census is inside the detached half again')
-  assert.ok(deploy.includes('cell(s) awaiting a zoom'), 'and how much is still unranked')
+  /* The whole backlog, in the three shapes it comes in. The first version
+     reported `zoom_policy is null` alone and called it "awaiting a zoom",
+     which is a third of the answer: a cell ranked under an older rule is
+     equally owing — rank.js ZOOM_POLICY had just gone 2 to 3, so twelve
+     thousand cells were backlog nobody could see and the log said 617 — and
+     a cell wedged in `ingesting` is skipped by the pass on purpose and so
+     looks like nothing at all. */
+  for (const shape of ['never zoomed', 'under an older rule', 'mid-ingest']) {
+    assert.ok(deploy.includes(shape), `the census does not report cells ${shape}`)
+  }
+  /* Against the table's own newest rule rather than a number copied into
+     bash, which is a number that drifts from rank.js the first time it
+     changes — which is exactly how this broke. */
+  assert.ok(
+    deploy.includes('(select max(zoom_policy) from place_coverage)'),
+    'the census hard-codes the policy version',
+  )
   /* Read-only, and unable to fail a release: it runs below the health check
      and below `trap - ERR`, and every command that could fail says so rather
      than exiting. */

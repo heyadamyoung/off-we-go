@@ -539,22 +539,23 @@ test('places written before the zoom column get their zoom', {
     assert.equal(none.length, 0, 'and a planet of skipped cells is genuinely empty')
   })
 
-  await t.test('the zoom queue does the cheap cells first', async t => {
+  await t.test('the zoom queue does the cities first', async t => {
     const pool = await freshDatabase(t)
     await ground(pool, 'N43W080', 120_000)
     await ground(pool, 'N50W105', 900)
     await ground(pool, 'N64W022', 40)
 
-    /* It was `place_count desc`. The densest cell on Earth is eighteen
-       seconds of window function, so twelve thousand cells that take
-       milliseconds each queued behind the twenty-five that take minutes — and
-       on a box that restarts every deploy the pass got through about one of
-       them. A cell somebody is looking at still goes first, because priority
-       leads the ordering; the backfill behind it is cheapest first. */
+    /* Cheapest-first for one release, because a dense cell was eighteen
+       seconds of window function and blocked everything behind it. What it
+       bought was a map with no pins in Amsterdam, Edinburgh, Dublin or
+       Regina, because a city is the most expensive cell there is and went
+       last. The window function is gone — assignLabelZoom is a CASE and an
+       assignment — so the cost that justified it is gone too, and the map is
+       worth most where the places are. */
     const order = await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 25 })
     assert.deepEqual(
       order.map(cell => cell.cell),
-      ['N64W022', 'N50W105', 'N43W080'],
+      ['N43W080', 'N50W105', 'N64W022'],
     )
 
     await pool.query("update place_coverage set priority = 0 where cell = 'N43W080'")
