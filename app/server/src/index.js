@@ -367,6 +367,23 @@ const pushTick = startPushTick({
   log: app.log,
 })
 
+/* Eight seconds, and then out whatever is still holding on.
+ *
+ * Docker sends SIGTERM and, ten seconds later, a signal nothing can catch. So
+ * a shutdown either finishes inside that window or it is a kill with extra
+ * steps — and until deploy 368 it was the latter: the places worker awaited a
+ * zoom pass over the planet, so the api container took five minutes and
+ * fifty-seven seconds to be recreated and the web one six minutes and
+ * forty-three, on a box where the same operation normally takes three.
+ *
+ * Nothing here is lost by leaving. The zoom pass commits a cell at a time and
+ * records which cells are done, the index build is CONCURRENTLY and
+ * idempotent, an unfinished transaction is rolled back by the database when
+ * the connection drops, and Fastify has already stopped taking new requests.
+ * The tidy path is tried first and given a real chance; the timer is what
+ * makes sure the difference between tidy and not is seconds rather than
+ * minutes of somebody's deploy. */
+const SHUTDOWN_MS = 8_000
 const stop = async signal => {
   app.log.info({ signal }, 'shutting down')
   clearInterval(pruneTimer)
@@ -374,13 +391,17 @@ const stop = async signal => {
   travelWatch?.stop()
   flightWatch.stop()
   pushTick.stop()
-  /* Awaited, unlike the rest: the cell in flight is a transaction, and the
-     ingest leaves it resumable only if it is allowed to finish abandoning
-     it. See places/worker.js. */
-  await placesWorker?.stop().catch(() => {})
-  await enrichWorker?.stop().catch(() => {})
-  await app.close().catch(() => {})
-  await repository.close().catch(() => {})
+  const tidily = (async () => {
+    /* Awaited, unlike the timers above: the cell in flight is a transaction,
+       and the ingest leaves it resumable only if it is allowed to finish
+       abandoning it. See places/worker.js, which bounds its own wait too. */
+    await placesWorker?.stop().catch(() => {})
+    await enrichWorker?.stop().catch(() => {})
+    await app.close().catch(() => {})
+    await repository.close().catch(() => {})
+  })()
+  const late = new Promise(resolve => setTimeout(resolve, SHUTDOWN_MS).unref?.())
+  await Promise.race([tidily, late])
   process.exit(0)
 }
 process.once('SIGTERM', () => stop('SIGTERM'))
