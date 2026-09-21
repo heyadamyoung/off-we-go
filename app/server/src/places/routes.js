@@ -121,6 +121,16 @@ const TILE_CACHE = 'public, max-age=3600, stale-while-revalidate=86400'
     ten minutes, so nothing between here and the screen may keep it. */
 const TILE_UNSETTLED = 'no-store'
 
+/* The status page. Half a minute, because what it describes moves on the order
+   of minutes and it is a public route on a box carrying a planet: a status
+   page that cannot be hammered is worth more than one current to the
+   millisecond. */
+const STATUS_CACHE = 'public, max-age=30'
+
+/* Candidate one-degree squares — the land ones, from cells.js. Named here so
+   the status route can say "of" without recomputing the grid on every ask. */
+const PLANET_CELLS = 53333
+
 /* The notices a client must render, by licence. ODbL is the one with teeth:
    OpenStreetMap's licence requires the attribution to be shown wherever the
    data is, which is why it rides on the record and not in a footer somewhere
@@ -930,6 +940,91 @@ export function registerPlaceRoutes(
         attribution: attributionFor(licenses.map(license => ({ license }))),
         degraded: !found.ready,
         ...(found.ready ? {} : { coverage: { cell: found.home, status: found.status } }),
+      }
+    })
+  })
+
+  /* What the places layer holds, and whether the thing filling it is alive.
+   *
+   * This exists because of a question I could not answer: "the sweep seems to
+   * have slowed or stopped". The sweep knew exactly where it was — it computes
+   * groups read, rows read, cells loaded, places written, reads retried and
+   * groups set aside every twenty-five row groups — and told a log line on a
+   * box with no shell. The only way to read it was to push a release and grep
+   * the deploy's output, which samples whatever moment the release landed on.
+   * One sample cannot describe a rate, and a rate was the question.
+   *
+   * The same gap covered the enrichment: "are places getting a description and
+   * a picture, and is it doing the good ones first" needed a deploy too.
+   *
+   * So both are counted here, honestly:
+   *   planet      cells by coverage state, and roughly how many places. The
+   *               place count is reltuples and the ~ is meant — deploy 387
+   *               failed on a live, healthy box because count(*) over thirteen
+   *               million rows outran the step it ran in.
+   *   sweep       the run's own record, including `seenAt`. Two reads a minute
+   *               apart are a rate; a seenAt that has not moved is a stall.
+   *   enrichment  what has words and a picture, and the rank check: of the
+   *               highest-ranked places, how many were reached. If the ordering
+   *               works that pulls away from the overall proportion; if it is
+   *               broken they track each other.
+   *   attribution the licences these records are under, which we are obliged
+   *               to be able to state.
+   *
+   * Public and unauthenticated like the rest of this file, and it carries
+   * nothing but counts — no ids, no names, no coordinates, nothing anybody
+   * could learn a person from. Thirty seconds of cache, because the thing it
+   * describes moves on the order of minutes and a status page nobody can
+   * hammer is worth more than one that is current to the millisecond. */
+  app.get('/api/places/status', async (_request, reply) => {
+    if (!servable || !repository.placesStatus) return unavailable(reply)
+    return span('places status', {}, async () => {
+      const started = Date.now()
+      const asked = Date.now()
+      const [held, licenses] = await Promise.all([
+        repository.placesStatus(),
+        repository.placeLicenses ? repository.placeLicenses() : Promise.resolve([]),
+      ])
+      const run = held.sweep
+      const since = at => (at ? Math.round((Date.now() - new Date(at).getTime()) / 1000) : null)
+      stamp({
+        'places.query.kind': 'status',
+        'places.status.cells': held.planet?.cells?.ready ?? 0,
+        'places.status.sweep.outcome': run?.outcome || 'running',
+        'places.status.sweep.quiet.s': since(run?.seen_at) ?? -1,
+        'places.status.words': held.enrichment?.withWords ?? 0,
+      })
+      timed(reply, { started, asked })
+      reply.header('cache-control', STATUS_CACHE)
+      return {
+        planet: {
+          cells: { of: PLANET_CELLS, ...held.planet.cells },
+          places: held.planet.places,
+        },
+        sweep: run
+          ? {
+              release: run.release,
+              startedAt: run.started_at,
+              seenAt: run.seen_at,
+              finishedAt: run.finished_at,
+              /* Running, and how long since it last got anywhere. A caller
+                 deciding whether to worry needs the second number, not a
+                 boolean somebody else computed from a threshold. */
+              running: !run.finished_at,
+              quietFor: since(run.seen_at),
+              outcome: run.outcome,
+              note: run.note,
+              groups: { read: Number(run.groups_read), of: Number(run.groups_planned) },
+              rows: { read: Number(run.rows_read), of: Number(run.rows_planned) },
+              cells: { loaded: Number(run.cells_loaded), of: Number(run.cells_planned) },
+              places: Number(run.places_written),
+              open: Number(run.cells_open),
+              retried: Number(run.retried),
+              setAside: Number(run.set_aside),
+            }
+          : null,
+        enrichment: held.enrichment,
+        attribution: attributionFor(licenses.map(license => ({ license }))),
       }
     })
   })

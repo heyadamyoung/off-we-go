@@ -207,6 +207,20 @@ export function createSweep({
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
   log = () => {},
   onCell = () => {},
+  /* Where the run is, on the same cadence as the log line above and with the
+     same numbers.
+   *
+   * This exists because a log line is not an answer. Asked whether the planet
+   * sweep had slowed or stopped, nobody could say: the run knew exactly, and
+   * was telling a file on a box with no shell. One sample from a deploy's
+   * output cannot describe a rate, and a rate was the question.
+   *
+   * Still not a database — this file does not know what one is and the header
+   * says so. It hands the caller its totals and the caller decides where they
+   * go. Never awaited and never allowed to throw: a run that dies because it
+   * could not report its progress has turned an observability feature into an
+   * outage. */
+  onProgress = () => {},
   clock = () => Date.now(),
 }) {
   let stopped = false
@@ -222,6 +236,19 @@ export function createSweep({
     retried: 0,
     setAside: 0,
     unread: 0,
+  }
+
+  /** Progress, handed over without being waited for and without being allowed
+      to fail. A run that dies reporting where it is has turned a line in a
+      dashboard into a planet that stopped loading. */
+  const say = at => {
+    try {
+      const said = onProgress(at)
+      if (said && typeof said.catch === 'function') said.catch(() => {})
+    } catch {
+      /* Deliberate. There is nothing this run can usefully do about a report
+         that would not go, and every alternative is worse than carrying on. */
+    }
   }
 
   /** The error that ends the run, when one does. Kept so the caller can say
@@ -392,6 +419,7 @@ export function createSweep({
             `${Math.round((clock() - started) / 1000)}s`,
           { ...totals, open: held.size },
         )
+        say({ ...totals, open: held.size })
       }
     }
     await Promise.all(loads)

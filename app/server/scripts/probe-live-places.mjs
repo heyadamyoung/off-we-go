@@ -262,6 +262,76 @@ const health = await fetch(`https://${host}/api/health`)
 console.log(`${host} health: ${health}\n`)
 
 let served = 0
+/* What the layer holds and what is filling it, before any viewport.
+ *
+ * This is here because of a question that took a deploy to answer: "the sweep
+ * seems to have slowed or stopped." Two runs of this probe a minute apart are
+ * now a rate, which is what the question was actually asking for, and one run
+ * says whether the enrichment is reaching the places worth reaching. */
+async function held() {
+  try {
+    const response = await fetch(`https://${host}/api/places/status`, {
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!response.ok) return { error: `HTTP ${response.status}` }
+    return await response.json()
+  } catch (error) {
+    return { error: String(error?.message || error) }
+  }
+}
+
+const state = await held()
+if (state.error) {
+  console.log(`status: ${state.error}\n`)
+} else {
+  const cells = state.planet?.cells || {}
+  const ready = (cells.ready || 0) + (cells.empty || 0)
+  console.log(
+    `planet: ~${(state.planet?.places || 0).toLocaleString('en-GB')} places in ` +
+      `${ready.toLocaleString('en-GB')} of ${cells.of || 0} cells` +
+      Object.entries(cells)
+        .filter(([key]) => key !== 'of' && key !== 'ready' && key !== 'empty')
+        .map(([key, n]) => `, ${n} ${key}`)
+        .join(''),
+  )
+  const run = state.sweep
+  if (!run) console.log('sweep:  no run has ever recorded itself')
+  else {
+    console.log(
+      `sweep:  ${run.release} — ${run.running ? 'running' : run.outcome || 'ended'}, ` +
+        `${run.groups.read}/${run.groups.of} groups, ` +
+        `${run.rows.read.toLocaleString('en-GB')}/${run.rows.of.toLocaleString('en-GB')} rows, ` +
+        `${run.cells.loaded}/${run.cells.of} cells, ${run.open} open`,
+    )
+    /* The line the question turns on. A number, not somebody else's threshold:
+       seconds since this run last got anywhere. */
+    console.log(
+      `        last moved ${run.quietFor}s ago, ${run.retried} read(s) retried, ` +
+        `${run.setAside} group(s) set aside` +
+        (run.note ? `\n        ! ${run.note}` : ''),
+    )
+  }
+  const rich = state.enrichment
+  if (rich) {
+    console.log(
+      `words:  ${rich.withWords} with words, ${rich.withPicture} with a picture, ` +
+        `${rich.barren} nothing to show, ${rich.queued} queued, ${rich.failed} failed, ` +
+        `${rich.toReach.toLocaleString('en-GB')} of ${rich.prominent.toLocaleString('en-GB')} still to reach`,
+    )
+    /* Whether the rank ordering took. If the good places go first this climbs
+       away from the overall proportion immediately; if the order is random the
+       two track each other. */
+    const front = rich.leading || { of: 0, withWords: 0 }
+    const share = n => (rich.prominent ? ((100 * n) / rich.prominent).toFixed(2) : '0.00')
+    console.log(
+      `rank:   ${front.withWords}/${front.of} of the highest-ranked have words ` +
+        `(${front.of ? ((100 * front.withWords) / front.of).toFixed(1) : '0.0'}%) ` +
+        `against ${share(rich.withWords)}% overall`,
+    )
+  }
+  console.log('')
+}
+
 for (const view of VIEWS) {
   const found = await ask(view)
   if (found.error) {

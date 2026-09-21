@@ -21,11 +21,14 @@ import {
   tileGround,
   writePlaceTile,
   licensesHeld,
+  latestSweep,
   pendingCells,
   placeById,
+  planetHeld,
   searchPlaces,
   sourcesFor,
 } from './places/store.js'
+import { enrichmentCensus } from './places/enrich/store.js'
 
 /* How long a migration may sit in the lock queue before it gets out of the
    way, and how long the whole run may keep trying. */
@@ -3397,6 +3400,18 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     },
     async placeLicenses() {
       return licensesHeld(pool)
+    },
+    /* What the places layer holds and what its planet run is doing, for the
+       status route. Three cheap reads rather than one join: they answer about
+       different things and a caller that only wanted one of them should not
+       pay for the others being on the same page. */
+    async placesStatus() {
+      const [planet, sweep, enrichment] = await Promise.all([
+        planetHeld(pool),
+        latestSweep(pool),
+        enrichmentCensus(pool),
+      ])
+      return { planet, sweep, enrichment }
     },
     async placeCoverage(cells) {
       return coverageFor(pool, cells)

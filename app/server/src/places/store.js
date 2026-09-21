@@ -1245,3 +1245,114 @@ export async function clearPlaceTiles(db, bounds, { zooms = KEPT_ZOOMS } = {}) {
   )
   return result.rowCount ?? 0
 }
+
+/* Where a planet run got to, written down rather than logged.
+ *
+ * The sweep already knows all of this — it builds the whole picture every
+ * twenty-five row groups and hands it to a log line on a box with no shell.
+ * Asked "has the sweep slowed or stopped", the only answer available was to
+ * push a release and grep its output, which samples whatever moment the
+ * release landed on and so cannot describe a rate at all.
+ *
+ * One row per run, moved along in place. Two reads a minute apart are a rate;
+ * a `seen_at` that has not moved is a stall. Telling those two apart is the
+ * entire reason this exists. */
+
+/** A run beginning, with the plan it was handed. Returns its id. */
+export async function openSweep(db, { release, groups = 0, rows = 0, cells = 0 }) {
+  const { rows: made } = await db.query(
+    `insert into place_sweeps (release, groups_planned, rows_planned, cells_planned)
+     values ($1, $2::integer, $3::bigint, $4::integer)
+     returning id`,
+    [String(release || 'unknown'), groups, rows, cells],
+  )
+  return made[0]?.id ?? null
+}
+
+/**
+ * How far a run has got. Called on the sweep's own reporting cadence.
+ *
+ * Every counter is written absolutely rather than incremented, because the
+ * sweep's totals are already absolute and a lost report must not become a
+ * permanently wrong number. `seen_at` moves on every call, which is what makes
+ * silence mean something.
+ */
+export async function markSweep(db, id, totals = {}) {
+  if (!id) return
+  await db.query(
+    `update place_sweeps set
+       seen_at = now(),
+       groups_read = $2::integer,
+       rows_read = $3::bigint,
+       cells_loaded = $4::integer,
+       places_written = $5::bigint,
+       cells_open = $6::integer,
+       retried = $7::integer,
+       set_aside = $8::integer
+     where id = $1`,
+    [
+      id,
+      Number(totals.groups || 0),
+      Number(totals.rows || 0),
+      Number(totals.cells || 0),
+      Number(totals.places || 0),
+      Number(totals.open || 0),
+      Number(totals.retried || 0),
+      Number(totals.setAside || 0),
+    ],
+  )
+}
+
+/**
+ * A run ending, and why.
+ *
+ * `outcome` is a word rather than a constrained enum: the ways a planet run
+ * can end have grown twice already, and a check constraint would have made
+ * each of those a migration. `note` is for the upstream's own words when the
+ * ending was not a clean one — a 404 from a deleted release, the decode that
+ * would not decode — because "failed" with nothing behind it is the thing this
+ * whole file exists to stop.
+ */
+export async function closeSweep(db, id, { outcome, note = null, ...totals } = {}) {
+  if (!id) return
+  await markSweep(db, id, totals)
+  await db.query(
+    `update place_sweeps
+        set finished_at = now(), outcome = $2, note = $3
+      where id = $1`,
+    [id, String(outcome || 'ended'), note ? String(note).slice(0, 500) : null],
+  )
+}
+
+/** The most recent run, however it ended, or null if none has ever run. */
+export async function latestSweep(db) {
+  const { rows } = await db.query(
+    `select id, release, started_at, seen_at, finished_at, outcome, note,
+            groups_planned, rows_planned, cells_planned,
+            groups_read, rows_read, cells_loaded, places_written, cells_open,
+            retried, set_aside
+       from place_sweeps
+      order by started_at desc
+      limit 1`,
+  )
+  return rows[0] || null
+}
+
+/**
+ * What the layer holds, by cell state, and roughly how many places.
+ *
+ * The place count is `reltuples` and not `count(*)`, and the `~` on it in
+ * every report is meant literally. Deploy 387 was live, healthy and answering,
+ * and then failed, because counting thirteen million rows on a box where the
+ * sweep was writing took longer than the step was allowed. This is read by a
+ * public route on a box carrying a planet: it is an estimate or it is nothing.
+ */
+export async function planetHeld(db) {
+  const [states, size] = await Promise.all([
+    db.query('select status, count(*)::int as n from place_coverage group by status'),
+    db.query(`select coalesce(reltuples, 0)::bigint as n from pg_class where relname = 'places'`),
+  ])
+  const byStatus = {}
+  for (const row of states.rows) byStatus[row.status] = Number(row.n)
+  return { cells: byStatus, places: Number(size.rows[0]?.n ?? 0) }
+}
