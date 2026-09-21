@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -1356,4 +1357,104 @@ test('a deploy that cannot have the box fails instead of waiting it out', () => 
     `the deploy waits ${wait[1]}s for the lock; the whole release has 240`,
   )
   assert.ok(deploy.includes('fuser -v "$LOCK_FILE"'), 'a blocked deploy does not say what holds it')
+})
+
+/* A box, a release, and the bootstrap that stands between them.
+   Runs the real deploy script with its three absolute paths pointed at a
+   temporary directory, so every refusal below is the script's own and not a
+   regular expression's opinion of it. */
+const releaseWorld = () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'offwego-handover-'))
+  mkdirSync(path.join(dir, 'opt'), { recursive: true })
+  mkdirSync(path.join(dir, 'lock'), { recursive: true })
+  const installed = path.join(dir, 'installed.sh')
+  writeFileSync(
+    installed,
+    readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+      .replace(/^readonly APP_ROOT=.*$/m, `readonly APP_ROOT=${dir}/opt/wayfare`)
+      .replace(/^readonly ROLLBACK_ROOT=.*$/m, `readonly ROLLBACK_ROOT=${dir}/opt/rollback`)
+      .replace(/^readonly LOCK_FILE=.*$/m, `readonly LOCK_FILE=${dir}/lock/deploy.lock`)
+      .replaceAll('/opt/wayfare-release.XXXXXX', `${dir}/opt/wayfare-release.XXXXXX`)
+      .replace(/^(\s*)find \/opt -maxdepth/m, `$1find ${dir}/opt -maxdepth`),
+  )
+  return {
+    dir,
+    /* `files` is a map of path-inside-the-archive to contents. */
+    deploy(files, { command = `deploy ${'0'.repeat(39)}7` } = {}) {
+      const tree = mkdtempSync(path.join(tmpdir(), 'offwego-release-'))
+      for (const [where, what] of Object.entries(files)) {
+        mkdirSync(path.join(tree, path.dirname(where)), { recursive: true })
+        writeFileSync(path.join(tree, where), what)
+      }
+      const top = readdirSync(tree)
+      const archive = path.join(tree, '..', `${path.basename(tree)}.tgz`)
+      assert.equal(
+        spawnSync('tar', ['-czf', archive, '-C', tree, ...top], { encoding: 'utf8' }).status,
+        0,
+      )
+      const result = spawnSync('bash', [installed], {
+        input: readFileSync(archive),
+        env: { ...process.env, SSH_ORIGINAL_COMMAND: command },
+        encoding: 'utf8',
+      })
+      rmSync(tree, { recursive: true, force: true })
+      rmSync(archive, { force: true })
+      return result
+    },
+    /* Whether the deploy got as far as writing anything to the box. */
+    touchedTheBox: () => existsSync(path.join(dir, 'opt', 'wayfare')),
+  }
+}
+
+test('every deploy runs the deploy script it shipped with', () => {
+  /* The script used to run as the copy installed by the last deploy that
+     succeeded, so a fix to the deploy could not take effect until a deploy
+     had already worked — which is exactly the case where nobody needs one.
+     Releases 363 through 367 failed on the same line five times and every fix
+     for it sat unread, because none of those five reached the install.
+
+     It bought nothing either: backup.sh, configure-logto.sh and
+     object-storage.sh have always run from the pushed copy on the same
+     deploy that pushes them. */
+  const world = releaseWorld()
+  const result = world.deploy({
+    'app/deploy/github-deploy.sh': [
+      '#!/usr/bin/env bash',
+      'set -Eeuo pipefail',
+      'echo "ran: $WAYFARE_RELEASE_SHA"',
+      'echo "staged: $([[ -f "$WAYFARE_STAGED/app/marker" ]] && echo yes)"',
+      /* The lock is an open file description and survives the handover, so
+         the two passes are one process holding it once. */
+      'echo "lock: $(: >&9 2>/dev/null && echo held)"',
+      '',
+    ].join('\n'),
+    'app/marker': 'the release brought its own tree',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /ran: 0{39}7/, 'the pushed script did not run')
+  assert.match(result.stdout, /staged: yes/, 'the pushed script cannot see its own tree')
+  assert.match(result.stdout, /lock: held/, 'the deploy lock was dropped at the handover')
+})
+
+test('a release that cannot deploy itself changes nothing on the box', () => {
+  /* The handover is above every write, so all four of these fail with
+     /opt/wayfare untouched — which is a better failure than the old design
+     could manage, where a bad script that happened to deploy successfully was
+     installed and then broke every deploy after it. */
+  for (const [what, files, command, code] of [
+    ['no deploy script at all', { 'app/marker': 'x' }, undefined, 66],
+    [
+      'a deploy script that does not parse',
+      { 'app/deploy/github-deploy.sh': 'if then fi done )\n' },
+      undefined,
+      2,
+    ],
+    ['a path outside app/', { 'etc/passwd': 'root::0:0\n' }, undefined, 65],
+    ['a command that is not a deploy', { 'app/marker': 'x' }, 'bash -i', 64],
+  ]) {
+    const world = releaseWorld()
+    const result = world.deploy(files, command ? { command } : {})
+    assert.equal(result.status, code, `${what}: exited ${result.status}\n${result.stderr}`)
+    assert.ok(!world.touchedTheBox(), `${what}: wrote to the box before refusing`)
+  }
 })
