@@ -342,6 +342,24 @@ test('an Overture place and a Foursquare place at one shopfront become one row w
      applies, gathered across the rows rather than baked into each. */
   const notices = new Set(museum.rows.map(row => row.license))
   assert.ok(notices.has('ODbL-1.0'), 'the OpenStreetMap-derived record still obliges us')
+
+  /* Which the ingest records as it writes them, in the same transaction, so
+     the map can print that line without gathering it from the rows in view —
+     see migration 053. The recorded set is exactly what the cell wrote: every
+     licence among its sources, once each, and nothing invented. */
+  const held = await pool.query('select license from place_licenses order by license')
+  const written = await pool.query(
+    `select distinct ps.license from place_sources ps
+     join places p on p.id = ps.place_id order by ps.license`,
+  )
+  assert.deepEqual(
+    held.rows.map(row => row.license),
+    written.rows.map(row => row.license),
+  )
+  assert.ok(
+    held.rows.some(row => row.license === 'ODbL-1.0'),
+    'the licence with teeth is in the line the map prints',
+  )
 })
 
 test('two genuinely different places three hundred metres apart stay two', {

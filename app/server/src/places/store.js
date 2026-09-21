@@ -510,28 +510,48 @@ export async function sourcesFor(db, ids) {
   return out
 }
 
-/* Which licences a page of places is under, without the rows behind them.
+/* Which licences this deployment holds places under.
  *
  * A map draws one attribution line for the whole layer, which is how OSM data
  * is attributed on every map that carries it — and it is what the licence
- * actually asks for. Three hundred pins each carrying their own provenance is
- * a join of three hundred rows to render one sentence: measured, it was most
- * of a 119 ms viewport query. The distinct list costs an index-only scan.
+ * actually asks for. This used to be asked per viewport, by handing the ids of
+ * the places in view to `select distinct license from place_sources`: three
+ * hundred pins each carrying their own provenance is a join of three hundred
+ * rows to render one sentence, and it was most of a 119 ms viewport query.
+ *
+ * Then the cap went, because a zoom decides what is drawn and nothing
+ * truncates it, and the same join became seventeen hundred uuids over Toronto
+ * for a sentence that was never going to differ from Dublin's.
+ *
+ * So the licences are kept as they are written — see migration 053 and the
+ * statement in the cell transaction that writes them — and this reads three
+ * rows. The answer is a property of the layer, which is what the line on the
+ * map has always claimed to be.
  *
  * Per-record provenance is still there, on `/api/places/:id`, which is where
  * somebody asking about one place gets it.
  */
-const LICENSES_FOR_SQL = `
-  select distinct license from place_sources where place_id = any($1::uuid[])`
+const LICENSES_HELD_SQL = 'select license from place_licenses order by license'
 
-export async function licensesFor(db, ids) {
-  const wanted = [...new Set(ids || [])]
-  if (!wanted.length) return []
-  const result = await db.query(LICENSES_FOR_SQL, [wanted])
-  return result.rows
-    .map(row => row.license)
-    .filter(Boolean)
-    .sort()
+export async function licensesHeld(db) {
+  const result = await db.query(LICENSES_HELD_SQL)
+  return result.rows.map(row => row.license).filter(Boolean)
+}
+
+/* The seed, for a planet that was loaded before the table existed.
+ *
+ * This is the scan the design exists to avoid, run once by the worker after a
+ * release is live rather than on the read path or in a deploy. `on conflict do
+ * nothing` so a second run is free, and the worker stops calling it once the
+ * table has rows. */
+export async function seedLicensesHeld(db) {
+  const result = await db.query(
+    `insert into place_licenses (license)
+     select distinct license from place_sources
+     where license is not null and license <> ''
+     on conflict (license) do nothing`,
+  )
+  return result.rowCount || 0
 }
 
 /* ---- the index the map is served from ----------------------------------- */

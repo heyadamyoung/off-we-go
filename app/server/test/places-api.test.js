@@ -6,7 +6,7 @@ import { authenticate } from './auth-helper.js'
 import { privateDatabase } from './private-database.js'
 import { cellBounds } from '../src/places/cells.js'
 import { EARLIEST_ZOOM, LABEL_ZOOMS } from '../src/places/rank.js'
-import { assignLabelZoom } from '../src/places/store.js'
+import { assignLabelZoom, seedLicensesHeld } from '../src/places/store.js'
 
 /* The three endpoints against real PostGIS, because everything that can go
  * quietly wrong here is a property of the database and not of the JavaScript:
@@ -133,6 +133,15 @@ async function seed(client) {
     `insert into place_sources (place_id, source, license, upstream_id, version, confidence, fields)
      values ($1,'overture','CDLA-Permissive-2.0','ov-zoom','2026-08-19.0',0.71,'{name}')`,
     [ids.get('Café Zoöm')],
+  )
+  /* What the ingest writes beside the sources, in the same transaction: the
+     licences this deployment holds places under. The attribution line on the
+     map is read from here rather than gathered from the rows in view — see
+     migration 053 — so a seed that wrote sources and not this would be a
+     database no ingest could have produced. */
+  await client.query(
+    `insert into place_licenses (license)
+     select distinct license from place_sources on conflict (license) do nothing`,
   )
 
   for (const cell of [AMSTERDAM.cell, PRAIRIE.cell]) {
@@ -608,6 +617,96 @@ test('a viewport draws the best of what is in it, not the first rows found', {
     url: '/api/places/in-view?west=4&south=53&east=5&north=52',
   })
   assert.equal(upsideDown.statusCode, 400)
+})
+
+/* The other question a map asks, and the reason it is a route of its own.
+ *
+ * The pins come from tiles. This is "is the ground under this view ingested
+ * yet", and it used to be asked by requesting pins with `limit: 1` and
+ * dropping them. When the cap on a viewport went — a zoom decides what is
+ * drawn, and nothing truncates it — that became a request for every place in
+ * the box: seventeen hundred rows and four seconds over Toronto, on every
+ * settled pan, to read one boolean. */
+test('the coverage question is answered without the places in view', {
+  skip: reachable,
+}, async t => {
+  const { app, client } = await world(t)
+  const box = 'west=4.87&south=52.35&east=4.89&north=52.37'
+  const ask = async query => {
+    const reply = await app.inject({ method: 'GET', url: `/api/places/coverage?${query}` })
+    assert.equal(reply.statusCode, 200, reply.body)
+    return reply
+  }
+
+  const first = (await ask(box)).json()
+  assert.equal(first.degraded, false, 'Amsterdam is ingested in this world')
+  /* The layer's licence line, which ODbL obliges us to show wherever the data
+     is — including on a map whose pins arrived as tiles. */
+  assert.deepEqual(first.attribution.map(notice => notice.license).sort(), [
+    'CDLA-Permissive-2.0',
+    'ODbL-1.0',
+  ])
+  for (const notice of first.attribution) assert.ok(notice.notice, JSON.stringify(notice))
+  /* And not one place, however many are in the box. */
+  assert.ok(!('places' in first), 'the coverage answer carries pins')
+
+  /* The assertion that matters: the answer does not depend on what is in the
+     view. Five hundred more places in the same box, and the same answer. */
+  await client.query(
+    `insert into places (name, category, confidence, geom, cell, label_zoom)
+     select 'Bench ' || n, 'other', 0.5,
+            ST_SetSRID(ST_MakePoint(4.88, 52.36), 4326)::geography, 'N52E004', 17
+     from generate_series(1, 500) as n`,
+  )
+  assert.deepEqual((await ask(box)).json(), first, 'the answer changed with the rows in view')
+
+  /* Ground nobody has ingested says so, and says which square it is waiting
+     on — and must not be cached, because it is true for minutes at most. */
+  const tokyo = await ask('west=139.74&south=35.65&east=139.75&north=35.66')
+  assert.equal(tokyo.json().degraded, true)
+  assert.equal(tokyo.json().coverage.cell, 'N35E139')
+  assert.equal(tokyo.headers['cache-control'], 'no-store')
+
+  /* Public, like the tiles and the viewport: built from nobody's trip. */
+  const anonymous = await app.inject({ method: 'GET', url: `/api/places/coverage?${box}` })
+  assert.equal(anonymous.statusCode, 200)
+  /* A box that is not a box is refused rather than guessed at. */
+  const upsideDown = await app.inject({
+    method: 'GET',
+    url: '/api/places/coverage?west=4&south=53&east=5&north=52',
+  })
+  assert.equal(upsideDown.statusCode, 400)
+})
+
+test('the licences a planet already holds are recorded once, by the worker', {
+  skip: reachable,
+}, async t => {
+  /* Every cell ingested from now on writes its own licences. This is the
+     twelve million places that were already here when the table was not:
+     one scan, run by the worker after a release is live rather than by a
+     migration in the middle of a deploy. */
+  const { client, app } = await world(t)
+  await client.query('delete from place_licenses')
+  const none = await app.inject({
+    method: 'GET',
+    url: '/api/places/coverage?west=4.87&south=52.35&east=4.89&north=52.37',
+  })
+  assert.deepEqual(none.json().attribution, [], 'a layer with no recorded licences claims none')
+
+  assert.equal(await seedLicensesHeld(client), 2, 'both licences in the sources were recorded')
+  const again = await app.inject({
+    method: 'GET',
+    url: '/api/places/coverage?west=4.87&south=52.35&east=4.89&north=52.37',
+  })
+  assert.deepEqual(
+    again
+      .json()
+      .attribution.map(notice => notice.license)
+      .sort(),
+    ['CDLA-Permissive-2.0', 'ODbL-1.0'],
+  )
+  /* Run twice, writes nothing the second time. */
+  assert.equal(await seedLicensesHeld(client), 0)
 })
 
 test('an uncovered cell is asked for, and the answer says it is thin', {

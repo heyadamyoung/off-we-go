@@ -20,7 +20,7 @@ import {
   readPlaceTile,
   tileGround,
   writePlaceTile,
-  licensesFor,
+  licensesHeld,
   pendingCells,
   placeById,
   searchPlaces,
@@ -3357,8 +3357,8 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
     async placesInView(bounds, options) {
       return placesInView(pool, bounds, options)
     },
-    async placeLicenses(ids) {
-      return licensesFor(pool, ids)
+    async placeLicenses() {
+      return licensesHeld(pool)
     },
     async placeCoverage(cells) {
       return coverageFor(pool, cells)

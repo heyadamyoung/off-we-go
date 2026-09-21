@@ -307,6 +307,18 @@ const viewQuery = z
   })
   .refine(box => box.north > box.south, 'north must be above south')
 
+/* The same box, without the question about what is drawn in it: coverage is
+   about the ground, so `headline` — which is about which places deserve a dot
+   — would be a parameter this answer could not use. */
+const coverageQuery = z
+  .object({
+    west: z.coerce.number().min(-180).max(180),
+    east: z.coerce.number().min(-180).max(180),
+    south: z.coerce.number().min(-90).max(90),
+    north: z.coerce.number().min(-90).max(90),
+  })
+  .refine(box => box.north > box.south, 'north must be above south')
+
 const PLACE_ID = z
   .string()
   .trim()
@@ -775,11 +787,9 @@ export function registerPlaceRoutes(
         radius: DEFAULT_RADIUS_METRES,
       })
       /* One attribution for the layer rather than one per pin — see
-         licensesFor in store.js. A pin needs a name, a kind and a position;
+         licensesHeld in store.js. A pin needs a name, a kind and a position;
          provenance for one place is what /api/places/:id is for. */
-      const licenses = repository.placeLicenses
-        ? await repository.placeLicenses(rows.map(place => place.id))
-        : []
+      const licenses = repository.placeLicenses ? await repository.placeLicenses() : []
       const page = rows
       stamp({
         'places.query.kind': 'view',
@@ -794,6 +804,54 @@ export function registerPlaceRoutes(
       reply.header('cache-control', found.ready ? NEARBY_CACHE : DEGRADED_CACHE)
       return {
         places: page.map(pin),
+        attribution: attributionFor(licenses.map(license => ({ license }))),
+        degraded: !found.ready,
+        ...(found.ready ? {} : { coverage: { cell: found.home, status: found.status } }),
+      }
+    })
+  })
+
+  /* Is the ground under this view ingested yet — and nothing else.
+   *
+   * The map draws its pins from tiles. This is the other question it has, and
+   * it used to be asked by requesting pins and throwing them away: the client
+   * sent `limit: 1` alongside the viewport, read `degraded` and the
+   * attribution off the answer, and dropped the rest. Then the limit went,
+   * because a zoom decides what is drawn and nothing truncates it, and the
+   * question quietly became "send me every place in this box" — seventeen
+   * hundred rows and four seconds over Toronto, on every settled pan, to learn
+   * one boolean. A cap was the only thing that had ever made that reasonable,
+   * and caps are what we got rid of.
+   *
+   * So the question has its own answer. Two coverage rows and three licence
+   * rows; it never touches `places` at all, whatever is in the box.
+   *
+   * Unauthenticated like the tiles and the viewport, and for the same reason:
+   * the answer is built from nobody's trip and carries nothing private. */
+  app.get('/api/places/coverage', async (request, reply) => {
+    if (!servable) return unavailable(reply)
+    const asked = coverageQuery.safeParse(request.query || {})
+    if (!asked.success) return reply.code(400).send({ error: message(asked.error) })
+    const { west, south, east, north } = asked.data
+
+    return span('places coverage', {}, async () => {
+      const started = Date.now()
+      /* The middle of the view, because that is where somebody is looking —
+         the same centre the viewport query asks about, so the two never
+         disagree about whether this ground is ready. */
+      const found = await coverageFor({
+        lng: (west + east) / 2,
+        lat: (south + north) / 2,
+        radius: DEFAULT_RADIUS_METRES,
+      })
+      const licenses = repository.placeLicenses ? await repository.placeLicenses() : []
+      stamp({
+        'places.query.kind': 'coverage',
+        'places.query.ms': Date.now() - started,
+        'places.degraded': !found.ready,
+      })
+      reply.header('cache-control', found.ready ? NEARBY_CACHE : DEGRADED_CACHE)
+      return {
         attribution: attributionFor(licenses.map(license => ({ license }))),
         degraded: !found.ready,
         ...(found.ready ? {} : { coverage: { cell: found.home, status: found.status } }),

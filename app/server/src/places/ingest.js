@@ -689,6 +689,17 @@ export function createIngest({
         where ss.key = k.key and ps.source = ss.source
           and ps.upstream_id = ss.upstream_id and ps.place_id <> k.place_id`)
       await client.query(UPSERT_SOURCES)
+      /* The attribution line for the whole layer, written where the licences
+         themselves are. Three values in the life of this layer, so this is a
+         no-op on all but the first cell of a release — and it is the reason
+         the map does not ask `select distinct license` over every source row
+         it holds to print one sentence. See migration 053. */
+      await client.query(
+        `insert into place_licenses (license)
+         select distinct license from stage_sources
+         where license is not null and license <> ''
+         on conflict (license) do nothing`,
+      )
       /* A source that no longer describes a place we just loaded — only for
          the sources this run actually read, so a run without Foursquare does
          not throw away what Foursquare said last month. */

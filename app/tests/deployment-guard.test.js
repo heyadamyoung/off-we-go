@@ -307,13 +307,17 @@ test('the release images are put together beside the tests, and the deploy waits
   const dockerfile = readFileSync(path.join(appRoot, 'server', 'Dockerfile'), 'utf8')
   const webDockerfile = readFileSync(path.join(appRoot, 'Dockerfile.web'), 'utf8')
   assert.match(workflow, /needs: \[checks, server, browser, live\]/)
-  /* The images are put together in the checks job, beside the unit tests
-     and the guard rather than after them: each is waited on, and one
-     failing fails the job. */
-  assert.match(
-    workflow,
-    /wait "\$unit" \|\| failed=1\n\s*wait "\$guard" \|\| failed=1\n\s*wait "\$built" \|\| failed=1/,
-  )
+  /* The images are put together in the checks job, beside the unit tests,
+     the typechecker and the guard rather than after them. The property is
+     per process rather than an order: each is waited on, and any one of them
+     failing fails the job. A `wait` that does not set `failed` is a check
+     whose failure is a line in a log. */
+  for (const job of ['unit', 'types', 'guard', 'built']) {
+    assert.ok(
+      workflow.includes(`wait "$${job}" || failed=1`),
+      `${job} is started in the background and its result is not waited on`,
+    )
+  }
   assert.match(workflow, /packages: write/)
   /* The api image is the Dockerfile's base stage with the server laid over
      it by crane, so the final stage — what a hand build makes — must be that
@@ -1377,6 +1381,28 @@ test('the commands the containers run are checked before a container runs them',
     assert.ok(reaches(script), `nothing link-checks ${script}; see biome.jsonc overrides`)
   }
   assert.ok(reaches('server/src/'), 'the modules those scripts import are link-checked too')
+})
+
+test('the pipeline compiles the code it ships', () => {
+  /* It did not, for three releases. `tsc --noEmit` is a script in
+     package.json that nothing ran: a call site was still handing a `limit` to
+     a places API that had stopped taking one, and the bundle was built,
+     pushed and served by a pipeline that had never asked whether it compiled.
+     Vite builds with esbuild, and esbuild strips types rather than checking
+     them, so "it built" says nothing at all about whether it typechecks.
+
+     Two seconds, beside the unit tests, on the job the deploy waits for. */
+  const workflow = readFileSync(
+    path.join(appRoot, '..', '.github', 'workflows', 'deploy-vps.yml'),
+    'utf8',
+  )
+  const checks = workflow.slice(workflow.indexOf('\n  checks:'), workflow.indexOf('\n  server:'))
+  assert.match(checks, /pnpm typecheck/, 'nothing in the checks job typechecks')
+  /* Waited on, not merely started: a background process nobody waits for is a
+     check whose failure is a line in a log. */
+  assert.match(checks, /wait "\$types" \|\| failed=1/, 'the typecheck cannot fail the run')
+  const scripts = JSON.parse(readFileSync(path.join(appRoot, 'package.json'), 'utf8')).scripts
+  assert.match(scripts.typecheck, /tsc --noEmit/)
 })
 
 test('the day census only ever reads', () => {
