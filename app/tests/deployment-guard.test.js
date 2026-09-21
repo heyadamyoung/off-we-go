@@ -769,6 +769,60 @@ test('the enrichment pipeline can actually be switched on', () => {
   assert.match(api, /PLACES_CONTACT: \$\{PLACES_CONTACT:-\}/, 'unset is off, not a failure')
 })
 
+/* The database is told how big the machine is.
+ *
+ * It ran on stock PostgreSQL defaults for the whole of the places layer's
+ * life — 128 MB of shared buffers and a gigabyte of WAL between checkpoints,
+ * on a box with sixty-two gigabytes and sixteen cores. Those defaults exist
+ * so PostgreSQL starts anywhere, not so it runs well, and they are not a
+ * missed optimisation here: a gigabyte of WAL while ten million rows go in is
+ * a checkpoint every few seconds, and the write storm that follows is what
+ * made two container recreates take six minutes each in deploy 368 while
+ * everything else on the machine queued for the same disk.
+ *
+ * Asserted as "not the default and not a laptop's" rather than as exact
+ * numbers, because the right numbers are a share of whatever this box turns
+ * out to be and the wrong one is any of them being absent. The one thing
+ * pinned exactly is durability: nothing here may buy speed with somebody's
+ * trip.
+ */
+test('the database is configured for the machine it runs on', {
+  skip: dockerAvailable ? false : 'docker is not installed on this machine',
+}, () => {
+  const result = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
+    cwd: appRoot,
+    env: composeEnv(),
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr || result.error?.message)
+  const db = JSON.parse(result.stdout).services.db
+  const command = (db.command || []).join(' ')
+  assert.ok(command.startsWith('postgres '), 'the database is given settings on its command line')
+
+  const sizeOf = name => {
+    const found = command.match(new RegExp(`${name}=(\\d+)(MB|GB)`))
+    assert.ok(found, `${name} is set`)
+    return Number(found[1]) * (found[2] === 'GB' ? 1024 : 1)
+  }
+  /* Defaults are 128 MB and 1 GB. Anything near them means this was lost. */
+  assert.ok(sizeOf('shared_buffers') >= 2048, "shared buffers are gigabytes, not a laptop's")
+  assert.ok(sizeOf('max_wal_size') >= 4096, 'checkpoints are minutes apart, not seconds')
+  assert.ok(sizeOf('maintenance_work_mem') >= 512, 'an index build has room to sort in memory')
+  assert.match(command, /work_mem=\d+MB/, 'sorts have more than the default four megabytes')
+  /* An SSD. The default of 4.0 is the ratio for a disk with a head to move,
+     and it biases the planner into reading whole tables. */
+  assert.match(
+    command,
+    /random_page_cost=[01]\.\d/,
+    'the planner knows this is not a spinning disk',
+  )
+
+  /* And the line nothing may cross. */
+  assert.doesNotMatch(command, /fsync=off/, 'fsync stays on')
+  assert.doesNotMatch(command, /synchronous_commit=off/, 'commits stay durable')
+  assert.doesNotMatch(command, /full_page_writes=off/, 'torn pages stay impossible')
+})
+
 /* The deploy's critical path is: make the schema right, swap the containers,
  * check the site answers. Nothing else.
  *

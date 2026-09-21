@@ -9,6 +9,81 @@ services:
     # 043 creates the extension. See docs/places-layer.md.
     image: postgis/postgis:17-3.5-alpine
     restart: unless-stopped
+    # Told how big the machine is.
+    #
+    # It had been running on stock defaults, which are sized for a laptop and
+    # are what PostgreSQL ships so that it starts anywhere: 128 MB of shared
+    # buffers on a box with sixty-two gigabytes, 4 MB of work memory, a
+    # gigabyte of WAL between checkpoints, and a random-page cost tuned for a
+    # disk that spins. That last set of numbers is not a missed optimisation,
+    # it is the reason a deploy took eighteen minutes — see #202, where two
+    # container recreates took six minutes each on a box that normally does
+    # one in three seconds. A gigabyte of WAL while the sweep writes ten
+    # million rows is a checkpoint every few seconds, each one flushing the
+    # buffers and writing a full page image of everything touched since the
+    # last, and the Docker daemon queues for the same disk.
+    #
+    # Every number below is a share of this box and says which:
+    shm_size: 1gb
+    command:
+      - postgres
+      # A quarter of memory, which is the long-standing rule and is what lets
+      # the places table's hot pages stay resident instead of being read from
+      # disk for every viewport.
+      - -c
+      - shared_buffers=12GB
+      # What the planner believes the operating system is caching on top of
+      # that. Too low and it costs index scans it should be choosing.
+      - -c
+      - effective_cache_size=40GB
+      # Sixteen gigabytes between checkpoints rather than one. This is the
+      # single number that was hurting: it turns a bulk load from a continuous
+      # write storm into a checkpoint every few minutes, spread out by the
+      # completion target below.
+      - -c
+      - max_wal_size=16GB
+      - -c
+      - min_wal_size=2GB
+      - -c
+      - checkpoint_completion_target=0.9
+      # Less to write in the first place. The WAL is mostly page images of a
+      # spatial index; they compress well and the CPU is idle when the disk
+      # is not.
+      - -c
+      - wal_compression=on
+      # Per sort, per connection, so it is multiplied by how busy the box is
+      # rather than set to what one query would like. Sixteen megabytes keeps
+      # the viewport and nearby queries in memory without letting a hundred
+      # connections add up to more than the machine has.
+      - -c
+      - work_mem=16MB
+      # Index builds and vacuums, which are one at a time and want room.
+      - -c
+      - maintenance_work_mem=2GB
+      # An SSD. The default of 4.0 is the ratio for a disk that has to move a
+      # head, and it biases the planner towards reading whole tables.
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      # Sixteen cores, and the places queries are the kind that parallelise.
+      - -c
+      - max_worker_processes=16
+      - -c
+      - max_parallel_workers=12
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - max_parallel_maintenance_workers=4
+      # Autovacuum at the default cost limit cannot keep up with a table
+      # taking ten million rows, and a table it falls behind on is one whose
+      # statistics go stale and whose dead tuples are read by every scan.
+      - -c
+      - autovacuum_max_workers=4
+      - -c
+      - autovacuum_vacuum_cost_limit=2000
+      # Durability is untouched: fsync and synchronous_commit stay on. This is
+      # the real database and nothing here trades somebody's trip for speed.
     environment:
       POSTGRES_DB: wayfare
       POSTGRES_USER: wayfare
@@ -236,26 +311,20 @@ services:
       # after a release does not re-parse sixteen 1.6 MB footers.
       PLACES_INDEX_DIR: /data/places
       PLACES_RELEASE: ${PLACES_RELEASE:-}
-    # A share of the box, not the box.
+    # No CPU or I/O limit, deliberately.
     #
-    # Deploy 368 took eighteen minutes and all but a minute of it was two
-    # container recreates — five minutes fifty-seven for the api, six
-    # forty-three for the web — on a machine where the same operation takes
-    # three seconds. Nothing was wrong with either container. The sweep was
-    # reading the planet at seven thousand records a second on all sixteen
-    # cores, and the Docker daemon was queueing behind it for disk.
+    # There was one for a release: four cores of sixteen and a low block-IO
+    # weight, after deploy 368 spent six minutes on each of two container
+    # recreates while this was running. That was the wrong lever. The box has
+    # sixteen cores and sixty-two gigabytes and was being brought down by a
+    # database configured for a laptop — a gigabyte of WAL between
+    # checkpoints while ten million rows go in is a continuous write storm,
+    # and everything else on the machine, the Docker daemon included, queues
+    # behind it for the disk. See the db service above.
     #
-    # Four cores of sixteen and a low block-IO weight. The planet takes longer
-    # and nobody is waiting on the planet; a deploy is a person waiting, and a
-    # release that cannot be swapped in because a backfill has the disk is a
-    # backfill that has been allowed to matter more than the product.
-    #
-    # Memory is left alone on purpose: the run holds about 1.5 million records
-    # across the cells still open, and a limit below that buys an out-of-memory
-    # kill two hours in rather than a share of anything.
-    cpus: 4.0
-    blkio_config:
-      weight: 100
+    # Rationing a process is what you do when the machine is genuinely too
+    # small. This one is not, and a backfill that finishes sooner is worth
+    # having, so it gets the box when the box is idle.
     volumes:
       - places_data:/data/places
     depends_on:
