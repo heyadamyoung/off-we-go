@@ -269,26 +269,28 @@ test('the deploy pulls with a token it destroys, builds without one, and keeps t
   assert.match(script, /docker compose up -d --no-build --wait --wait-timeout \d+/)
   assert.match(script, /docker compose up -d --build --wait --wait-timeout \d+/)
 
-  /* The schema before anything is recreated, in a container of its own.
+  /* The schema is the api's boot, and the deploy creates nothing to do it.
    *
-   * A migration that does real work — 051 builds a GiST index over ten
-   * million places — kept the api from listening for minutes, so `web` sat
-   * on `depends_on: api: service_healthy` until Compose gave up at its own
-   * 180-second limit, which is not the --wait-timeout above and cannot be
-   * raised from here. Deploys 363 and 365 both died exactly there with
-   * nothing wrong with them. Asserted as an order, because the order is the
-   * whole of it: the previous release serves while the schema moves. */
-  const migrateAt = script.indexOf('migrate_with_new_image\n')
-  /* The recreate, not the `up -d db` inside migrate_with_new_image: that one
-     only makes sure there is a database to migrate against, which is what
-     lets the migrate container run --no-deps. */
-  const upAt = script.indexOf('docker compose up -d --no-build --wait --wait-timeout 900')
-  assert.ok(migrateAt > 0, 'the deploy migrates in a container of its own')
-  assert.ok(upAt > migrateAt, 'and does it before it recreates anything')
-  assert.match(script, /docker compose --profile migrate run --rm --no-deps -T migrate/)
+   * It was a step here for four releases. Creating the one-off container was
+   * 1m56s of deploy 370 and 2m51s of 374 — either side of two seconds of SQL
+   * — while deploy 373 created a container with four more mounts in 8.8
+   * seconds. The container was never the variable; the planet sweep holding
+   * the disk was, which is why it is paused for the swap instead.
+   *
+   * What makes the boot the right place again is guard 201: a migration
+   * changes the schema and never does work whose size depends on how much
+   * data there is. index.js has always migrated before it listens, so the
+   * step here was applying a schema the next container would have applied
+   * itself. */
+  assert.ok(!/^[^#\n]*compose[^\n]*\brun\b/m.test(script), 'the deploy creates a one-off container')
+  assert.match(
+    readFileSync(path.join(appRoot, 'server', 'src', 'index.js'), 'utf8'),
+    /await repository\.migrate\(\)/,
+    'nothing applies the schema: the deploy does not and neither does the boot',
+  )
   assert.ok(
     existsSync(path.join(appRoot, 'server', 'scripts', 'migrate.mjs')),
-    'and the script it runs is in the image',
+    'the by-hand schema entry point is gone',
   )
   assert.match(script, /docker tag "\$running" "\$image_repo\/\$image:rollback"/)
   assert.match(script, /IMAGE_TAG=rollback docker compose up -d --no-build --force-recreate/)
@@ -1331,17 +1333,45 @@ test('the schema step carries nothing but the schema', () => {
   assert.ok(!/^\s+depends_on:/m.test(service), 'the schema step waits on a container')
   assert.ok(service.includes('server/scripts/migrate.mjs'))
 
+  /* By hand, never by the deploy: for a schema that has to be moved without
+     recreating anything. The deploy's own copy is the api's boot. */
   const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
-  assert.match(
-    deploy,
-    /docker compose --profile migrate run --rm --no-deps -T migrate/,
-    'the deploy does not use the migrate service',
-  )
   const code = deploy
     .split('\n')
     .filter(line => !/^\s*#/.test(line))
     .join('\n')
-  assert.ok(!/compose run[^\n]*\bapi\b/.test(code), 'the deploy still runs a one-off api container')
+  assert.ok(!/compose[^\n]*\brun\b/.test(code), 'the deploy creates a one-off container')
+})
+
+test('a backfill nobody is waiting for does not hold a deploy', () => {
+  /* Deploy 373 created a container in 8.8 seconds and 374 took 2m51s, on the
+     same box, six minutes apart, for the same command. The difference is the
+     planet sweep: since deploy 370 it has been reading sixteen Parquet parts
+     at 7,250 records a second across sixteen cores, and everything else on
+     the machine queues behind it for the disk.
+
+     Not a cap — there was one for a release and it was the wrong lever on a
+     box this size. The two are not made to share, they take turns: the sweep
+     stops for the swap and the housekeeping starts it again once the release
+     is live, and `--resume` means that costs the cell in flight and nothing
+     else. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const stopAt = deploy.search(/^docker compose --profile sweep stop[^\n]*places-sweep/m)
+  const swapAt = deploy.search(/^ {2}docker compose up -d --no-build --wait --wait-timeout 900$/m)
+  const healthAt = deploy.indexOf('curl --fail --silent --show-error --retry')
+  const startAt = deploy.search(/^\s*if docker compose --profile sweep up -d/m)
+  assert.ok(stopAt > 0, 'the sweep is not stood down for the swap')
+  assert.ok(swapAt > stopAt, 'the sweep is stopped after the containers are swapped')
+  assert.ok(startAt > healthAt, 'the sweep is restarted before the release is proved live')
+  /* Stopped, not killed and not removed: the coverage rows are the record of
+     what is done and the run resumes from them. */
+  assert.match(deploy, /--profile sweep stop -t \d+ places-sweep/)
+  assert.ok(
+    !/--profile sweep (kill|rm|down)/.test(deploy),
+    'a sweep three hours in is thrown away rather than paused',
+  )
+  const sweep = readFileSync(path.join(appRoot, 'docker-compose.yml'), 'utf8')
+  assert.match(sweep, /^ {6}- --resume$/m, 'a restarted sweep pays for the whole planet again')
 })
 
 test('a deploy that cannot have the box fails instead of waiting it out', () => {
