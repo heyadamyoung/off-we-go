@@ -5,58 +5,118 @@ readonly APP_ROOT=/opt/wayfare
 readonly ROLLBACK_ROOT=/root/wayfare-rollback
 readonly LOCK_FILE=/run/lock/wayfare-deploy.lock
 
-original_command="${SSH_ORIGINAL_COMMAND:-}"
-if [[ ! "$original_command" =~ ^deploy[[:space:]]+([0-9a-f]{40})$ ]]; then
-  echo "Refusing unauthorized deploy command." >&2
-  exit 64
-fi
-readonly release_sha="${BASH_REMATCH[1]}"
-
-# Ninety seconds, not ten minutes.
+# This script runs twice, and the second time it is the copy that was just
+# pushed.
 #
-# One release at a time on this box is right; waiting out a predecessor is
-# not. Deploy 370 spent 2m06s here before it printed a single line, because
-# 369 had been cancelled and its script was still holding the lock — a run
-# nobody was watching, whose work was already superseded, charging the run
-# that replaced it. Ten minutes of patience cannot distinguish that from a
-# healthy deploy, and either way the answer is the same: this release is not
-# going out in the next ninety seconds, so fail now and say what is holding
-# it, rather than eating the budget in silence.
-exec 9>"$LOCK_FILE"
-if ! flock -w 90 9; then
-  echo "Another Off We Go deployment is still running:" >&2
-  fuser -v "$LOCK_FILE" >&2 2>&1 || true
-  exit 75
+# It used to run once, as the copy installed by the last deploy that
+# succeeded — and that was the worst property this repository had. A fix to
+# the deploy could not take effect until a deploy had already worked, which
+# is exactly the case in which nobody needs one. Releases 363 through 367
+# all failed on the same line and every fix for it sat in the repository
+# unread, because none of those five deploys reached the install at the
+# bottom of this file. The loop could only be broken by a release that
+# happened not to need the fix.
+#
+# It bought nothing, either. `backup.sh`, `configure-logto.sh` and
+# `object-storage.sh` are all run from the pushed copy on the same deploy
+# that pushes them; only this one file had the lag. What actually restricts
+# this key is the forced command — `deploy <40 hex>` and nothing else — and
+# that is enforced below, on every pass, before anything is read.
+#
+# So: the first pass is a bootstrap that never changes. It checks the
+# command, takes the lock, receives the archive, refuses any path outside
+# app/, unpacks it, and hands over to the deploy script inside it. The
+# handover happens before a single byte of /opt/wayfare has been touched, so
+# a release carrying a broken script fails having changed nothing — which is
+# a better failure than today's, where a broken script could be installed by
+# a deploy that happened to succeed and then break every deploy after it.
+#
+# The second pass is everything below the handover, and it is this release's
+# own. Keep the bootstrap small; it is the only part that still takes a
+# deploy to update.
+if [[ -z "${WAYFARE_STAGED:-}" ]]; then
+  original_command="${SSH_ORIGINAL_COMMAND:-}"
+  if [[ ! "$original_command" =~ ^deploy[[:space:]]+([0-9a-f]{40})$ ]]; then
+    echo "Refusing unauthorized deploy command." >&2
+    exit 64
+  fi
+  bootstrap_sha="${BASH_REMATCH[1]}"
+
+  # Ninety seconds, not ten minutes.
+  #
+  # One release at a time on this box is right; waiting out a predecessor is
+  # not. Deploy 370 spent 2m06s here before it printed a single line, because
+  # 369 had been cancelled and its script was still holding the lock — a run
+  # nobody was watching, whose work was already superseded, charging the run
+  # that replaced it. Ten minutes of patience cannot distinguish that from a
+  # healthy deploy, and either way the answer is the same: this release is
+  # not going out in the next ninety seconds, so fail now and say what is
+  # holding it, rather than eating the budget in silence.
+  #
+  # The lock is an open file description on fd 9, so it is held across the
+  # exec below rather than dropped and retaken — the two passes are one
+  # process and one PID.
+  exec 9>"$LOCK_FILE"
+  if ! flock -w 90 9; then
+    echo "Another Off We Go deployment is still running:" >&2
+    fuser -v "$LOCK_FILE" >&2 2>&1 || true
+    exit 75
+  fi
+
+  # A handover that fails to exec leaves its staging directory behind, which
+  # is the one path out of here that cannot clean up after itself.
+  find /opt -maxdepth 1 -name 'wayfare-release.*' -mtime +1 -exec rm -rf -- {} + 2>/dev/null || true
+
+  bootstrap_staging="$(mktemp -d /opt/wayfare-release.XXXXXX)"
+  bootstrap_archive="$(mktemp /opt/wayfare-release.XXXXXX.tgz)"
+  trap 'rm -rf -- "$bootstrap_staging" "$bootstrap_archive"' EXIT
+
+  cat > "$bootstrap_archive"
+
+  while IFS= read -r entry; do
+    case "$entry" in
+      app|app/*) ;;
+      *)
+        echo "Archive contains a path outside app/: $entry" >&2
+        exit 65
+        ;;
+    esac
+
+    case "/$entry/" in
+      *'/../'*|*'/./'*)
+        echo "Archive contains an unsafe path: $entry" >&2
+        exit 65
+        ;;
+    esac
+  done < <(tar -tzf "$bootstrap_archive")
+
+  tar --no-same-owner --no-same-permissions -xzf "$bootstrap_archive" -C "$bootstrap_staging"
+  rm -f -- "$bootstrap_archive"
+
+  readonly handover="$bootstrap_staging/app/deploy/github-deploy.sh"
+  if [[ ! -f "$handover" ]]; then
+    echo "Release is missing app/deploy/github-deploy.sh." >&2
+    exit 66
+  fi
+  sed -i 's/\r$//' "$handover"
+
+  # Nothing on the box has changed yet, and from here it is the release's
+  # own script that decides what does.
+  trap - EXIT
+  export WAYFARE_STAGED="$bootstrap_staging" WAYFARE_RELEASE_SHA="$bootstrap_sha"
+  exec bash "$handover"
 fi
 
-staging_dir="$(mktemp -d /opt/wayfare-release.XXXXXX)"
-archive_path="$(mktemp /opt/wayfare-release.XXXXXX.tgz)"
+# ---------------------------------------------------------------------------
+# The release's own deploy, with its tree already unpacked and the lock held.
+# ---------------------------------------------------------------------------
+readonly release_sha="$WAYFARE_RELEASE_SHA"
+
+readonly staging_dir="$WAYFARE_STAGED"
 cleanup() {
   rm -rf -- "$staging_dir"
-  rm -f -- "$archive_path"
 }
 trap cleanup EXIT
-
-cat > "$archive_path"
-
-while IFS= read -r entry; do
-  case "$entry" in
-    app|app/*) ;;
-    *)
-      echo "Archive contains a path outside app/: $entry" >&2
-      exit 65
-      ;;
-  esac
-
-  case "/$entry/" in
-    *'/../'*|*'/./'*)
-      echo "Archive contains an unsafe path: $entry" >&2
-      exit 65
-      ;;
-  esac
-done < <(tar -tzf "$archive_path")
-
-tar --no-same-owner --no-same-permissions -xzf "$archive_path" -C "$staging_dir"
 readonly staged_app="$staging_dir/app"
 
 while IFS= read -r -d '' shell_script; do
@@ -66,7 +126,7 @@ done < <(find "$staged_app/deploy" -type f -name '*.sh' -print0)
 # Everything the two image builds read. A release that omits one of these
 # is rejected here, with the missing name, rather than failing minutes
 # later as an unreadable docker cache-key error.
-for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/Caddyfile deploy/alloy.config deploy/object-storage.sh server/scripts/migrate-media-to-bucket.mjs server/scripts/day-census.mjs; do
+for required_path in docker-compose.yml package.json pnpm-lock.yaml server/Dockerfile Dockerfile.web vite.config.ts tsconfig.json src public scripts/check-release-assets.mjs deploy/github-deploy.sh deploy/Caddyfile deploy/alloy.config deploy/object-storage.sh server/scripts/migrate-media-to-bucket.mjs server/scripts/day-census.mjs; do
   if [[ ! -e "$staged_app/$required_path" ]]; then
     echo "Release is missing app/$required_path." >&2
     exit 66
@@ -249,6 +309,14 @@ fi
 # and rolling a good release back is the more expensive mistake.
 curl --fail --silent --show-error --retry 30 --retry-delay 5 --retry-all-errors \
   "https://${deployment_domain}/api/health" >/dev/null
+# The bootstrap, kept current. It is no longer what decides how a release is
+# deployed — the handover at the top of this file means every deploy runs the
+# script it shipped with — so what this keeps up to date is only the first
+# thirty lines: the forced command's check, the lock, and unpacking the
+# archive. Still installed, for two reasons. A hand deploy or install.sh has
+# to start somewhere. And if a release ever arrives with no deploy script
+# inside it, the copy here refuses it by name rather than the box having
+# nothing to run at all.
 bash -n "$APP_ROOT/deploy/github-deploy.sh"
 install -o root -g root -m 755 \
   "$APP_ROOT/deploy/github-deploy.sh" /usr/local/sbin/wayfare-github-deploy
