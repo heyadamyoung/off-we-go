@@ -60,8 +60,8 @@ import {
 import { createParquetReader } from '../src/places/parquet.js'
 import { createIndexStore, discoverRelease, releaseIndex } from '../src/places/release.js'
 import { EARLIEST_ZOOM, LABEL_ZOOMS, MARKS_PER_TILE, VIEW_WEIGHT } from '../src/places/rank.js'
-import { assignLabelZoom } from '../src/places/store.js'
 import { STANDOFF_MS, createSweep, sweepPlan } from '../src/places/sweep.js'
+import { assignLabelZoom, closeSweep, markSweep, openSweep } from '../src/places/store.js'
 
 const argv = process.argv.slice(2)
 const flag = name => argv.includes(`--${name}`)
@@ -298,12 +298,35 @@ async function runSweep() {
       `${plan.rows.toLocaleString('en-GB')} rows to read`,
   )
   const results = []
+  /* The run writes itself down, so somebody who is not reading this log can
+     tell whether it is getting anywhere.
+   *
+     "The sweep seems to have slowed or stopped" was unanswerable. Every number
+     needed to answer it was already computed, every twenty-five row groups,
+     and handed to a log line on a box with no shell — so the only sample
+     available was whatever moment a deploy happened to land on, and one sample
+     cannot describe a rate. A row per run, moved along in place, can: two
+     reads a minute apart are a rate, and a seen_at that has not moved is a
+     stall.
+
+     `|| null` on the open, because a run that cannot record itself is still a
+     run worth having. Every write after it is a no-op on a null id. */
+  const runId = await openSweep(pool, {
+    release: `overture-${overture.version}`,
+    groups: plan.groups.length,
+    rows: plan.rows,
+    cells: plan.cells,
+  }).catch(error => {
+    say(`  ! could not record this run (${error.message}); it runs anyway`)
+    return null
+  })
   const swept = createSweep({
     plan,
     read: ingest.readSwept,
     load: ingest.loadSwept,
     log: line => say(`  ${line}`),
     onCell: outcome => results.push(outcome),
+    onProgress: at => markSweep(pool, runId, at),
   })
   stopSweep = () => swept.stop()
   const totals = await swept.run()
@@ -342,6 +365,33 @@ async function runSweep() {
     )
     await new Promise(resolve => setTimeout(resolve, STANDOFF_MS))
   }
+  /* And how it ended, in one word plus whatever the upstream said.
+   *
+     The words are the ones that matter to somebody deciding whether to worry:
+     `done` is the planet loaded, `owing` is honest progress with cells still
+     to come, `interrupted` is a deploy taking the container away and is not a
+     problem at all, and `release moved` is Overture deleting the older of its
+     two releases under us — self-healing, because the restart discovers the
+     new one. Anything else and the note carries the reason, because "failed"
+     with nothing behind it is the thing this whole layer's logging rules
+     exist to forbid. */
+  const outcome = totals.expired
+    ? 'release moved'
+    : totals.interrupted
+      ? 'interrupted'
+      : owing
+        ? 'owing'
+        : 'done'
+  await closeSweep(pool, runId, {
+    ...totals,
+    open: 0,
+    outcome,
+    note: totals.expired
+      ? String(totals.expired?.message || totals.expired)
+      : totals.setAside
+        ? `${totals.setAside} row group(s) would not read, leaving ${totals.unread} cell(s) unwritten`
+        : null,
+  }).catch(error => say(`  ! could not record how this run ended (${error.message})`))
   return {
     results,
     skipped: cells.length - wanted.length,

@@ -5,7 +5,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { createIngest } from '../src/places/ingest.js'
-import { createSweep, sweepPlan } from '../src/places/sweep.js'
+import { SAY_EVERY, createSweep, sweepPlan } from '../src/places/sweep.js'
 import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* The sweep: reading the release once instead of once per cell.
@@ -481,4 +481,85 @@ test('a sweep refuses to load into an ingest that has a second source', {
   await assert.rejects(both.loadSwept('N52E004', []), /two sources are clustered together/)
   /* And nothing was written on the way to refusing. */
   assert.deepEqual(await coverage(pool), [])
+})
+
+test('a run says where it got to, and cannot be killed by saying it', async () => {
+  /* The question that could not be answered: "the sweep seems to have slowed
+     or stopped." Every number needed to settle it was already computed, every
+     twenty-five row groups, and handed to a log line on a box with no shell.
+     So the run now hands the same numbers to the caller, who writes them where
+     anybody can read them.
+
+     Twenty-five groups over one square, which is exactly one report. */
+  const boxes = Array.from({ length: SAY_EVERY }, (_, at) =>
+    box(at * 10, at * 10 + 10, 4.1, 52.1, 4.9, 52.9),
+  )
+  const said = []
+  const plan = sweepPlan(indexOf(...boxes), { cells: ['N52E004'] })
+  const swept = createSweep({
+    plan,
+    read: async (_part, group) => [{ cell: 'N52E004', key: `k${group.s}` }],
+    load: async (cell, held) => ({ cell, status: 'ready', places: held.length }),
+    onProgress: at => said.push(at),
+  })
+  const totals = await swept.run()
+
+  assert.equal(said.length, 1, 'one report per twenty-five groups read')
+  const [at] = said
+  assert.equal(at.groups, SAY_EVERY, 'the report carries how far through the plan it is')
+  assert.equal(at.rows, SAY_EVERY, 'and how many rows have been read')
+  assert.equal(at.cells, totals.cells)
+  assert.equal(at.places, totals.places)
+  /* `open` is not in `totals` and has to be added by the reporter: a run
+     holding two hundred squares' rows and getting nowhere looks exactly like
+     one that is fine unless somebody says how many are open. */
+  assert.equal(typeof at.open, 'number', 'and how many squares are being held')
+  assert.equal(at.retried, 0)
+  assert.equal(at.setAside, 0)
+})
+
+test('a report that throws does not end the planet', async () => {
+  /* The failure mode this forbids: an observability feature taking down the
+     thing it observes. The database is behind this callback on the real path,
+     and a planet run that dies because it could not write down its progress
+     has made everything worse. */
+  const boxes = Array.from({ length: SAY_EVERY }, (_, at) =>
+    box(at * 10, at * 10 + 10, 4.1, 52.1, 4.9, 52.9),
+  )
+  const plan = sweepPlan(indexOf(...boxes), { cells: ['N52E004'] })
+  let asked = 0
+  const swept = createSweep({
+    plan,
+    read: async (_part, group) => [{ cell: 'N52E004', key: `k${group.s}` }],
+    load: async (cell, held) => ({ cell, status: 'ready', places: held.length }),
+    onProgress: () => {
+      asked += 1
+      throw new Error('the database went away')
+    },
+  })
+  const totals = await swept.run()
+  assert.equal(asked, 1, 'it was asked')
+  assert.equal(totals.groups, SAY_EVERY, 'and the run finished anyway')
+  assert.equal(totals.cells, 1)
+})
+
+test('a rejected report does not become an unhandled rejection', async () => {
+  /* Same rule, the async shape. A promise returned and dropped is how Node
+     kills a process, and losing a planet run to that would be a joke. */
+  const boxes = Array.from({ length: SAY_EVERY }, (_, at) =>
+    box(at * 10, at * 10 + 10, 4.1, 52.1, 4.9, 52.9),
+  )
+  const plan = sweepPlan(indexOf(...boxes), { cells: ['N52E004'] })
+  const swept = createSweep({
+    plan,
+    read: async (_part, group) => [{ cell: 'N52E004', key: `k${group.s}` }],
+    load: async (cell, held) => ({ cell, status: 'ready', places: held.length }),
+    onProgress: async () => {
+      throw new Error('the pool was drained')
+    },
+  })
+  const totals = await swept.run()
+  assert.equal(totals.groups, SAY_EVERY)
+  /* Nothing to assert about the rejection itself beyond the test finishing:
+     an unhandled one takes the runner with it. */
 })

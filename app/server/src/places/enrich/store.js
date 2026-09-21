@@ -306,3 +306,70 @@ export async function readEnrichment(db, placeId) {
     })),
   }
 }
+
+/**
+ * What the enrichment has actually achieved, and whether it did the important
+ * places first.
+ *
+ * Two questions, and the second is the one worth the extra clause. "How many
+ * have words and a picture" says whether the pipeline works. It does not say
+ * whether the queue is being drained in the right order — and the order was
+ * wrong for three releases, because the backfill's tiebreak was `p.id asc` and
+ * an id here is a random uuid, so a planet's worth of launderettes went ahead
+ * of the Rijksmuseum. That was fixed by ordering on the same rank the map
+ * draws with, and a fix nobody can see the effect of is a fix nobody can trust.
+ *
+ * So `leading` asks it directly: of the places the map would draw first, how
+ * many have been reached? If the ordering is working that number climbs away
+ * from the overall proportion immediately. If it is broken the two track each
+ * other, which is exactly what random order looks like.
+ *
+ * Every count is over the prominent set — label_zoom at or under `zoom` — and
+ * not over the planet's tens of millions, so this is index work rather than a
+ * sequential scan. It is read by a public route and must stay cheap.
+ */
+export async function enrichmentCensus(db, { zoom = 13, pipeline = 1, leading = 500 } = {}) {
+  const { rows } = await db.query(
+    `with prominent as (
+       select p.id, p.label_zoom, p.confidence
+         from places p
+        where p.label_zoom is not null and p.label_zoom <= $1::real
+     ),
+     front as (
+       select id from prominent order by label_zoom asc, confidence desc nulls last limit $3::int
+     )
+     select
+       (select count(*) from prominent) as prominent,
+       (select count(*) from place_descriptions d join prominent p on p.id = d.place_id)
+         as with_words,
+       (select count(distinct i.place_id) from place_images i join prominent p on p.id = i.place_id)
+         as with_picture,
+       (select count(*) from place_enrichment e join prominent p on p.id = e.place_id
+          where e.pipeline = $2::smallint and e.status = 'barren') as barren,
+       (select count(*) from place_enrichment e join prominent p on p.id = e.place_id
+          where e.status in ('pending', 'stale', 'working')) as queued,
+       (select count(*) from place_enrichment e join prominent p on p.id = e.place_id
+          where e.status = 'failed') as failed,
+       (select count(*) from prominent p
+          left join place_enrichment e on e.place_id = p.id
+         where e.place_id is null or e.pipeline <> $2::smallint) as to_reach,
+       (select count(*) from front) as front,
+       (select count(*) from place_descriptions d join front f on f.id = d.place_id)
+         as front_with_words`,
+    [zoom, pipeline, leading],
+  )
+  const row = rows[0] || {}
+  const count = key => Number(row[key] ?? 0)
+  return {
+    prominent: count('prominent'),
+    withWords: count('with_words'),
+    withPicture: count('with_picture'),
+    barren: count('barren'),
+    queued: count('queued'),
+    failed: count('failed'),
+    toReach: count('to_reach'),
+    /* The rank check. `of` is how many of the highest-ranked places were
+       looked at, `withWords` how many of those came back with something. */
+    leading: { of: count('front'), withWords: count('front_with_words') },
+  }
+}
