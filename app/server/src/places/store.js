@@ -624,22 +624,48 @@ export async function indexIsReady(db, name) {
  * places and the coverage row in the same transaction, which is asserted
  * next door in places-ingest.test.js.
  */
+/* Two things about this query are the difference between a pass that walks
+ * the planet and one that stops on its first bad batch.
+ *
+ * `except` is asked of the database rather than filtered afterwards. The
+ * caller keeps the cells this run could not place, and it used to drop them
+ * from the rows this returned — so when every cell in a batch failed, the
+ * filter emptied the batch, the loop read that as "nothing left to do" and
+ * ended. Nothing in the database had changed, so the next tick asked the same
+ * question, got the same rows, filtered them all out and stopped again. A
+ * handful of cells that will not place stood in front of the whole planet,
+ * for ever, silently — which is the exact failure the skipping was written to
+ * prevent.
+ *
+ * And the cheapest first, not the densest. The order was `place_count desc`,
+ * and the densest cell on Earth is eighteen seconds of window function, so
+ * the twelve thousand cells that take milliseconds each were queued behind
+ * the twenty-five that take minutes. On a box that restarts every deploy that
+ * meant the pass got through about one of them: production has ranked exactly
+ * one cell in the world, and it is Toronto. Cheapest first fills the map in
+ * at thousands of cells a minute and the expensive ones still get done, just
+ * not in front of everybody else.
+ *
+ * `priority` still leads, which is what keeps this honest: a cell somebody is
+ * looking at right now is priority 0 and goes before any of the backfill,
+ * however big it is. */
 const CELLS_AWAITING_ZOOM_SQL = `
   select cell, west, south, east, north, place_count
   from place_coverage
   where coalesce(zoom_policy, -1) <> $1::smallint
     and status <> 'ingesting'
-  order by priority asc, place_count desc, cell asc
+    and cell <> all($3::text[])
+  order by priority asc, place_count asc, cell asc
   limit $2`
 
 /**
  * @param {{query: Function}} db
- * @param {{policy: number, limit?: number}} input
+ * @param {{policy: number, limit?: number, except?: string[]}} input
  * @returns {Promise<{cell: string, west: number, south: number, east: number,
  *                    north: number, places: number}[]>}
  */
-export async function cellsAwaitingZoom(db, { policy, limit = 25 }) {
-  const { rows } = await db.query(CELLS_AWAITING_ZOOM_SQL, [policy, limit])
+export async function cellsAwaitingZoom(db, { policy, limit = 25, except = [] }) {
+  const { rows } = await db.query(CELLS_AWAITING_ZOOM_SQL, [policy, limit, [...except]])
   return rows.map(row => ({
     cell: row.cell,
     west: Number(row.west),
