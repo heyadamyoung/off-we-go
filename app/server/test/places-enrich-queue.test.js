@@ -163,6 +163,50 @@ test('the enrichment queue', { skip: unreachable, concurrency: false }, async t 
   })
 })
 
+test('the queue is worked in the order somebody would want', {
+  skip: unreachable,
+  concurrency: false,
+}, async t => {
+  /* Reported, and fair: "do things by rank, not just alphabetical or whatever
+     the fuck you are doing. I'd expect museums, sights all that shit to be
+     done first."
+   *
+   * It was `order by p.label_zoom asc, p.id asc`. The zoom half is right — a
+   * place drawn from far out is one people see without looking for it — but
+   * the tiebreak was a uuid, which is random. Every place sharing a zoom went
+   * in by the flip of a hash, so a museum and a bus stop on the same street
+   * were equally likely to be first, and at four hundred a batch it would be
+   * days before the museum came up. */
+  const pool = await freshDatabase(t)
+  /* One of each, all at the same zoom, so the only thing that can order them
+     is what they are worth. Inserted worst-first, so passing cannot be the
+     insertion order in disguise. */
+  const ids = new Map()
+  for (const [name, category] of [
+    ['Kwik Wash', 'services'],
+    ['Multi-storey', 'transit'],
+    ['Corner Cafe', 'cafe'],
+    ['City Museum', 'museum'],
+    ['Castle Rock Viewpoint', 'viewpoint'],
+  ]) {
+    ids.set(name, await place(pool, name, 11, { category }))
+  }
+
+  const queued = await enqueueProminent(pool, { zoom: 13, limit: 3 })
+  const byId = new Map([...ids].map(([name, id]) => [id, name]))
+  const names = queued.map(id => byId.get(id))
+
+  /* The three worth having, and not the launderette or the car park. */
+  assert.deepEqual(
+    [...names].sort(),
+    ['Castle Rock Viewpoint', 'City Museum', 'Corner Cafe'],
+    `queued ${names.join(', ')}`,
+  )
+  /* And the best first: a viewpoint outranks a museum outranks a cafe — the
+     same weighting the map uses to decide which mark a crowded tile keeps. */
+  assert.deepEqual(names, ['Castle Rock Viewpoint', 'City Museum', 'Corner Cafe'])
+})
+
 test('writing down what was found', { skip: unreachable, concurrency: false }, async t => {
   const outcome = {
     status: READY,
@@ -275,11 +319,10 @@ test('the worker, end to end', { skip: unreachable, concurrency: false }, async 
       },
     })
 
-    /* First tick finds nothing queued and queues the prominent places. */
-    await worker.once()
-    assert.equal(await statusOf(pool, castle), 'pending')
-
-    /* Second tick works them. */
+    /* One tick, not two. The drain used to stop after six places and the
+       top-up used to cost a whole tick of its own, so the first tick queued
+       and the second began working; a tick now refills and then keeps going
+       until its clock runs out. */
     await worker.once()
     const read = await readEnrichment(pool, castle)
     assert.equal(read.status, READY)

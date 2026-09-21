@@ -7,6 +7,9 @@
  * again. Either all of it is true or none of it happened.
  */
 
+import { VIEW_WEIGHT } from '../rank.js'
+import { markRankSql, weightPairs } from '../store.js'
+
 import { retryAfterMs } from '../retry.js'
 
 /** Somebody is waiting for this one. */
@@ -46,7 +49,26 @@ export async function enqueue(db, placeIds, priority = WANTED_SOON) {
  * rather than per category, so this is the set that is actually on screen at
  * a glance rather than a guess at which categories matter.
  */
-export async function enqueueProminent(db, { zoom = 13, limit = 500, pipeline = 1 } = {}) {
+export async function enqueueProminent(
+  db,
+  { zoom = 13, limit = 500, pipeline = 1, weights = VIEW_WEIGHT } = {},
+) {
+  /* In the order somebody would want them, which is not the order they were
+     inserted in.
+   *
+   * This was `order by p.label_zoom asc, p.id asc`. The zoom half is right —
+   * a place drawn from far out is one people see without looking for it — but
+   * the tiebreak was a uuid, which is to say random. Every place at zoom 11
+   * queued in an arbitrary order, so a museum and a bus stop on the same
+   * street went in by the flip of a hash, and at four hundred at a time it
+   * would be days before the museum's turn came up.
+   *
+   * So the second key is what the place is worth: markRankSql, the same
+   * expression that decides which marks a crowded tile keeps and which name
+   * survives a collision. Viewpoints, museums, historic sites and galleries
+   * carry the weight; launderettes and car parks do not. One taxonomy, spent
+   * in a third place rather than restated. */
+  const rank = markRankSql(weightPairs(weights, 'the enrichment queue'))
   const { rows } = await db.query(
     `insert into place_enrichment (place_id, status, priority)
      select p.id, 'pending', $3::smallint
@@ -54,7 +76,7 @@ export async function enqueueProminent(db, { zoom = 13, limit = 500, pipeline = 
        left join place_enrichment e on e.place_id = p.id
       where p.label_zoom is not null and p.label_zoom <= $1::real
         and (e.place_id is null or e.pipeline <> $4::smallint)
-      order by p.label_zoom asc, p.id asc
+      order by p.label_zoom asc, ${rank} desc, p.id asc
       limit $2
      on conflict (place_id) do update set
        status = 'pending', pipeline = $4::smallint, next_attempt_at = null
@@ -62,6 +84,27 @@ export async function enqueueProminent(db, { zoom = 13, limit = 500, pipeline = 
     [zoom, limit, WANTED_SOON, pipeline],
   )
   return rows.map(row => row.place_id)
+}
+
+/**
+ * How many places the backfill still has to reach, and how many it has.
+ *
+ * For the census, and for one question it could not answer: the enrichment
+ * tables held thirty-three rows on a box holding thirty million places, and
+ * "the top-up has only just started" and "the top-up is matching almost
+ * nothing" look identical from outside. One indexed count each settles it.
+ */
+export async function enrichmentBacklog(db, { zoom = 13, pipeline = 1 } = {}) {
+  const { rows } = await db.query(
+    `select
+       (select count(*) from place_enrichment where pipeline = $2::smallint) as held,
+       (select count(*) from places p
+          left join place_enrichment e on e.place_id = p.id
+         where p.label_zoom is not null and p.label_zoom <= $1::real
+           and (e.place_id is null or e.pipeline <> $2::smallint)) as owing`,
+    [zoom, pipeline],
+  )
+  return { held: Number(rows[0]?.held ?? 0), owing: Number(rows[0]?.owing ?? 0) }
 }
 
 /* Claimed rather than read, for the same reason the coverage queue is: two
