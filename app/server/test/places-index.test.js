@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import pg from 'pg'
 import { CONFIDENCE_FLOOR, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
-import { nearbyPlaces, placesInView, placeTile } from '../src/places/store.js'
+import { nearbyPlaces, PLACE_VIEW_INDEX_SQL, placesInView, placeTile } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
 
 /* That the map's questions are answered by the index and not by the heap.
@@ -83,6 +83,10 @@ async function fill(pool, { centre = [2.3522, 48.8566], count = 400 } = {}) {
                  $7::real[]) as t(name, lng, lat, category, confidence, cell, label_zoom)`,
     [0, 1, 2, 3, 4, 5, 6].map(column => rows.map(row => row[column])),
   )
+  /* The index the map is served from. The worker builds it online on a real
+     box — see places/worker.js buildTheIndex — so a test that wants to ask
+     what the planner does with it has to build it too. */
+  await pool.query(PLACE_VIEW_INDEX_SQL)
   await pool.query('analyze places')
 }
 
@@ -119,18 +123,27 @@ function planner(pool) {
 const box = { west: 2.3, south: 48.82, east: 2.4, north: 48.89 }
 
 test('places index', { skip: unreachable }, async t => {
-  await t.test('the migration and the queries spell the zoom the same way', async () => {
-    const here = path.dirname(fileURLToPath(import.meta.url))
-    const sql = await readFile(
-      path.join(here, '..', 'migrations', '051_the_index_carries_the_zoom.sql'),
-      'utf8',
-    )
-    const built = sql.match(/on places using gist \(geom, \((.+)\)\)\s*;/)
-    assert.ok(built, 'migration 051 builds an index on geom and an expression')
+  await t.test('the index and the queries spell the zoom the same way', async () => {
+    const built = PLACE_VIEW_INDEX_SQL.match(/on places using gist \(geom, \((.+)\)\)/)
+    assert.ok(built, 'the index is on geom and an expression')
     /* The index has no alias and the queries do; everything else about the
        two strings has to be identical, because Postgres matches an
        expression index on its text. */
     assert.equal(built[1], `coalesce(label_zoom, ${LABEL_ZOOMS.from}::real)`)
+    /* And it is built online. A GiST index over ten million places is longer
+       than a boot may take, and putting it in a migration cost five releases
+       in a row — see migration 051, which now says so and builds nothing. */
+    assert.match(PLACE_VIEW_INDEX_SQL, /create index concurrently/)
+    const here = path.dirname(fileURLToPath(import.meta.url))
+    const migration = await readFile(
+      path.join(here, '..', 'migrations', '051_the_index_carries_the_zoom.sql'),
+      'utf8',
+    )
+    assert.doesNotMatch(
+      migration,
+      /create index/,
+      'and the migration does not build it inside a boot',
+    )
   })
 
   await t.test('a viewport asks the index for the box and the zoom together', async t => {
