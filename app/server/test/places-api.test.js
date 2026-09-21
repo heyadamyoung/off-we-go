@@ -841,6 +841,34 @@ test('a tile of places is real vector tile bytes, and knows its own zoom', {
   const again = await app.inject({ method: 'GET', url: `/api/places/tiles/${z}/${x}/${y}` })
   assert.deepEqual(again.rawPayload, tile.rawPayload)
 
+  /* The same square under the address the map actually asks for.
+   *
+   * Every tile fetched from production came back `cf-cache-status: DYNAMIC`
+   * — the CDN was caching none of them, at any zoom, in any city — while the
+   * box was answering in single-digit milliseconds. A CDN decides whether to
+   * cache from the extension on the path and from nothing else, and a path
+   * under /api with no extension reads as somebody's private account page
+   * however hard the origin labels it public. So every phone was paying the
+   * full distance to the box for bytes that are identical for everybody.
+   * The .bin is the fix, a vector tile being exactly the opaque binary blob
+   * that extension claims, and these two assertions are the contract: it is
+   * accepted, and it is the same square rather than a different one. */
+  const suffixed = await app.inject({
+    method: 'GET',
+    url: `/api/places/tiles/${z}/${x}/${y}.bin`,
+  })
+  assert.equal(suffixed.statusCode, 200, suffixed.body)
+  assert.deepEqual(suffixed.rawPayload, tile.rawPayload)
+  assert.match(suffixed.headers['content-type'], /vnd\.mapbox-vector-tile/)
+  /* And only that one suffix. `.bin` is a tile spelled for a cache; anything
+     else is a client asking for a format we do not serve, and saying 400 is
+     how it finds that out instead of being handed a protobuf named .png. */
+  const wrongSuffix = await app.inject({
+    method: 'GET',
+    url: `/api/places/tiles/${z}/${x}/${y}.png`,
+  })
+  assert.equal(wrongSuffix.statusCode, 400, wrongSuffix.body)
+
   /* Zoomed out far enough, the everyday places have not earned their dot yet,
      so the same ground carries fewer of them. Compared by size rather than by
      decoding the protobuf: fewer features is fewer bytes, and a decoder is a

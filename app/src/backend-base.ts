@@ -43,10 +43,22 @@ export const PLACE_TILES_EPOCH = 3
    expands itself. Null in the demo, which has no server and draws its own
    canned Amsterdam from a GeoJSON source instead.
    Relative when nothing named an API, because that is the same-origin case
-   and a relative tile URL is one MapLibre resolves against the page. */
+   and a relative tile URL is one MapLibre resolves against the page.
+
+   The .bin is load-bearing and is not decoration. Every tile fetched from
+   production was coming back `cf-cache-status: DYNAMIC` — the CDN was
+   caching none of them, ever — because a CDN decides whether to cache from
+   the extension on the path, and a path under /api with no extension reads
+   as somebody's private account page whatever Cache-Control the origin
+   sends. So a phone in Canada was crossing the Atlantic for bytes that are
+   byte-identical for everybody and change once a release. A vector tile is
+   an opaque binary blob, .bin says exactly that, and it is on every CDN's
+   default-cached list — so the second phone to look at a city gets its dots
+   from the nearest edge instead of from the box. The server takes the
+   address with the suffix or without. */
 export const placeTilesUrl = hasBackend
-  ? `${API_URL}/places/tiles/{z}/{x}/{y}?v=${PLACE_TILES_EPOCH}`
-  : `/api/places/tiles/{z}/{x}/{y}?v=${PLACE_TILES_EPOCH}`
+  ? `${API_URL}/places/tiles/{z}/{x}/{y}.bin?v=${PLACE_TILES_EPOCH}`
+  : `/api/places/tiles/{z}/{x}/{y}.bin?v=${PLACE_TILES_EPOCH}`
 
 export const authClient = createApiClient({
   baseUrl: API_URL || '/api',
