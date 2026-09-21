@@ -59,9 +59,9 @@ import {
 } from '../src/places/ingest.js'
 import { createParquetReader } from '../src/places/parquet.js'
 import { createIndexStore, discoverRelease, releaseIndex } from '../src/places/release.js'
-import { EARLIEST_ZOOM, LABEL_PER_TILE, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
+import { EARLIEST_ZOOM, LABEL_ZOOMS } from '../src/places/rank.js'
 import { assignLabelZoom } from '../src/places/store.js'
-import { createSweep, sweepPlan } from '../src/places/sweep.js'
+import { STANDOFF_MS, createSweep, sweepPlan } from '../src/places/sweep.js'
 
 const argv = process.argv.slice(2)
 const flag = name => argv.includes(`--${name}`)
@@ -159,19 +159,18 @@ const started = Date.now()
 /* The zoom pass on its own, over everything, and then nothing else.
  *
  * No release is discovered and no bytes are read: every place is already
- * here and the only question is which of them earn a mark from how far away.
- * It is the same function the ingest calls per cell, over the whole world, so
- * the seams between cells rank against each other rather than against half a
- * neighbourhood. Minutes, not hours, and it holds no transaction open. */
+ * here and the only question is the zoom its kind is drawn from. It is the
+ * same function the ingest calls per cell, over the whole world at once
+ * rather than a cell at a time — the answer is identical either way, because
+ * no row's zoom depends on any other row's. Minutes, not hours, and it holds
+ * no transaction open. */
 if (options.rezoom) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 })
-  say('Giving every place its zoom, ranked over the whole world.')
+  say('Giving every place the zoom its kind is drawn from.')
   /* Null rather than a world-sized box: see assignLabelZoom. */
   const placed = await assignLabelZoom(pool, null, {
-    weights: VIEW_WEIGHT,
-    perTile: LABEL_PER_TILE,
-    zooms: LABEL_ZOOMS,
     earliest: EARLIEST_ZOOM,
+    floor: LABEL_ZOOMS.floor,
   })
   const { rows } = await pool.query(
     'select label_zoom, count(*)::int as places from places group by label_zoom order by label_zoom',
@@ -320,21 +319,32 @@ async function runSweep() {
     say(`  ${totals.dropped.toLocaleString('en-GB')} rows fell outside the cells asked for`)
   }
   /* What the exit code has to mean, because a supervisor reads it and not
-     this log. Non-zero is "there is more to do and it is worth doing again",
-     which is what `restart: on-failure` on the compose service turns into the
-     retry of last resort. Zero when the run has nothing more to offer —
-     either it finished, or it made no progress at all, and a restart that
-     would make no progress either is a hot loop rather than a retry. */
+     this log. Non-zero is "there is more to do", which is what `restart:
+     on-failure` on the compose service turns into the retry of last resort.
+     Zero means the planet is loaded and there is nothing to come back for.
+
+     A run that owes cells and loaded none of them used to exit zero as well,
+     to keep a restart that would also get nowhere from becoming a hot loop.
+     That bought a hot loop's absence at the price of a planet that stops
+     loading permanently, with the supervisor told not to try and nobody told
+     anything. It waits instead — see STANDOFF_MS — and exits owing, so the
+     restart is paced rather than cancelled. Not when the stop came from
+     outside: the deploy stops the sweep for the swap with `-t 20` and
+     restarts it on the other side, and a minute of standing off would be a
+     minute of a deploy waiting for a container that is already leaving. */
   const owing = totals.setAside + totals.unfinished
-  const worthAgain = owing > 0 && totals.cells > 0
-  if (owing && !worthAgain) {
-    say('  ! this run loaded nothing and still owes cells; stopping rather than looping')
+  if (owing && !totals.cells && !totals.interrupted) {
+    say(
+      `  ! this run loaded nothing and still owes ${owing.toLocaleString('en-GB')} cell(s); ` +
+        `waiting ${Math.round(STANDOFF_MS / 1000)}s so the restart is a retry and not a hot loop`,
+    )
+    await new Promise(resolve => setTimeout(resolve, STANDOFF_MS))
   }
   return {
     results,
     skipped: cells.length - wanted.length,
     interrupted: totals.interrupted,
-    again: worthAgain,
+    again: owing > 0,
     expired: totals.expired,
   }
 }

@@ -143,6 +143,35 @@
       "formatter": { "enabled": false }
     },
     {
+      /* The half of the codebase no typechecker reads, link-checked.
+       *
+       * `src/` is TypeScript under full strict, so tsc already refuses an
+       * import of something that does not exist. The server and its tests are
+       * plain JavaScript and nothing checked them at all. On 21 September the
+       * planet sweep ran `node server/scripts/places-ingest.mjs --planet`,
+       * which imported a LABEL_PER_TILE deleted from rank.js an hour earlier;
+       * the container died at module load in 150 milliseconds, Docker
+       * restarted it into the same SyntaxError for eight hours, and the world
+       * stopped loading at a quarter of it while every test in the suite
+       * passed.
+       *
+       * A script is an entrypoint: nothing imports it, so no test loads it,
+       * and a deleted export is invisible until production runs the command.
+       * This is the check that sees it, in the lint step that already runs
+       * and costs it nothing.
+       *
+       * Scoped rather than repo-wide because Biome's resolver cannot follow a
+       * CJS package with no `exports` field, Vite's `?worker` and `?url`
+       * specifiers, or React's interop shape — and every file it cannot
+       * follow is TypeScript, where tsc has already done this job. */
+      "includes": ["server/**", "tests/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUnresolvedImports": "error" }
+        }
+      }
+    },
+    {
       // Unit tests exercise slice internals directly on purpose — the barrel
       // is the boundary for other slices, not for the tests that pin a
       // module's own behaviour. Node scripts get the same door: the seeder

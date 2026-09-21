@@ -1,3 +1,4 @@
+// biome-ignore lint/correctness/noUnresolvedImports: nodemailer is CommonJS with no `exports` field; Node resolves it by `main` and Biome's resolver does not.
 import nodemailer from 'nodemailer'
 import { span } from './tracing.js'
 

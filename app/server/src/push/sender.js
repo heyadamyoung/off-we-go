@@ -1,3 +1,4 @@
+// biome-ignore lint/correctness/noUnresolvedImports: web-push is CommonJS with no `exports` field; Node resolves it by `main` and Biome's resolver does not.
 import webpush from 'web-push'
 
 /* The one thing that talks to the push services. The key pair that signs
