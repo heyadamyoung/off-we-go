@@ -12,7 +12,7 @@ import {
 } from '../src/places/rank.js'
 import { cellBounds, cellKey } from '../src/places/cells.js'
 import { assignLabelZoom, indexIsReady, markRequested, placeTile } from '../src/places/store.js'
-import { privateDatabase } from './private-database.js'
+import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* The thing that drains the coverage queue on the box that serves queries.
  *
@@ -27,7 +27,6 @@ import { privateDatabase } from './private-database.js'
 
 const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
-let databaseUrl = baseUrl
 const unreachable = await (async () => {
   const client = new pg.Client({ connectionString: baseUrl })
   try {
@@ -36,27 +35,26 @@ const unreachable = await (async () => {
   } catch {
     return 'no PostgreSQL to test against'
   }
-  databaseUrl = await privateDatabase(baseUrl, 'placesworker')
   return false
 })()
 
 const { createPostgresRepository } = await import('../src/postgres.js')
 
-async function freshDatabase(t) {
-  const admin = new pg.Client({ connectionString: databaseUrl })
-  await admin.connect()
-  await admin.query('drop schema public cascade; create schema public')
-  await admin.end()
+/* A database of its own per case, copied from one migrated once.
+ *
+ * It used to drop the schema and run all fifty-two migrations for every
+ * case. Measured, this file alone was 79.8 seconds of a server suite whose
+ * every other file put together was 55. See private-database.js. */
+const migrate = async url => {
   const repository = await createPostgresRepository({
-    databaseUrl,
+    databaseUrl: url,
     adminEmail: 'owner@example.com',
   })
   await repository.migrate()
   await repository.close()
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 })
-  t.after(() => pool.end())
-  return pool
 }
+
+const freshDatabase = t => makeDatabase(baseUrl, 'placesworker', t, migrate)
 
 /** A coverage row, said in full so each test states the case it means. */
 async function coverage(pool, cell, row = {}) {
@@ -91,6 +89,14 @@ function workerOver(pool, options = {}) {
   const handed = []
   const worker = createPlaceWorker({
     pool,
+    /* Tile warming gets a tenth of a second rather than its production
+       budget. An idle tick spends that budget encoding squares over whatever
+       ground it can find, which is the right thing on a box nobody is using
+       and was four and a half seconds of every case in this file — most of
+       the 79.8 seconds it took, against 55 for the whole of the rest of the
+       server suite. What warming does is proved in places-tiles.test.js;
+       what these cases are about is which cells a tick claims. */
+    tileBudgetMs: 100,
     loadIndex: async () => ({ source: 'overture', version: '2026-08-19.0', index: { parts: [] } }),
     loadSecondIndex: null,
     makeReader: () => ({ readBox: async () => {} }),
