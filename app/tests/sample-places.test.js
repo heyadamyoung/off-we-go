@@ -49,10 +49,19 @@ test('a viewport gets what is inside it, best first', () => {
   for (let at = 1; at < found.length; at += 1) {
     assert.ok(found[at - 1].confidence >= found[at].confidence, `${found[at].name} out of order`)
   }
-  /* A limit is the best few, not an arbitrary few. */
-  assert.deepEqual(
-    samplePins(AMSTERDAM, { limit: 3 }).map(pin => pin.name),
-    found.slice(0, 3).map(pin => pin.name),
+  /* And all of them. There is no limit to pass: what a viewport shows is
+     decided by the zoom each place's kind is drawn from and by nothing else,
+     on the server and here — see places/rank.js EARLIEST_ZOOM. */
+  assert.equal(
+    found.length,
+    samplePins({ west: -180, south: -90, east: 180, north: 90 }).filter(
+      pin =>
+        pin.lng >= AMSTERDAM.west &&
+        pin.lng <= AMSTERDAM.east &&
+        pin.lat >= AMSTERDAM.south &&
+        pin.lat <= AMSTERDAM.north,
+    ).length,
+    'the demo cut a viewport short',
   )
 })
 
@@ -86,19 +95,11 @@ test('the demo thins the way the server does, and cannot drift from it', async (
   const server = await readFile(new URL('../server/src/places/rank.js', import.meta.url), 'utf8')
   const demo = await readFile(new URL('../src/sample-places-core.ts', import.meta.url), 'utf8')
 
-  const zooms = /LABEL_ZOOMS = Object\.freeze\(\{ from: (\d+), to: (\d+), floor: (\d+) \}\)/.exec(
-    server,
-  )
-  assert.ok(zooms, 'the server still names the zooms that thin')
-  const perTile = /LABEL_PER_TILE = (\d+)/.exec(server)
-  assert.ok(perTile, 'and how many a square holds')
-
-  assert.match(
-    demo,
-    new RegExp(`SAMPLE_ZOOMS = \\{ from: ${zooms[1]}, to: ${zooms[2]}, floor: ${zooms[3]} \\}`),
-    'the demo thins at the zooms the server thins at',
-  )
-  assert.match(demo, new RegExp(`SAMPLE_PER_TILE = ${perTile[1]}`), 'and holds as many per square')
+  /* Neither side ranks any more. A quota on one and not the other would be a
+     demo of a different product, and a quota on both would be two copies of a
+     rule this stopped having. */
+  assert.ok(!/LABEL_PER_TILE/.test(server), 'the server thins by a per-tile quota again')
+  assert.ok(!/SAMPLE_PER_TILE|squareOf/.test(demo), 'the demo thins by a per-tile quota again')
   /* And the table that was deleted is not quietly still here. */
   assert.ok(!/MARK_ZOOM/.test(demo), 'no copy of the zoom table the server no longer has')
   assert.ok(!/MARK_ZOOM/.test(server), 'and the server does not have one either')
@@ -109,7 +110,10 @@ test('the demo thins the way the server does, and cannot drift from it', async (
      what happened, and the browser suite caught it only because somebody had
      written a test about that one café. */
   const ceilings = source => {
-    const block = /EARLIEST_ZOOM[^{]*\{([^}]*)\}/.exec(source)
+    /* Anchored on the declaration, not on the name appearing anywhere: a
+       comment that mentions EARLIEST_ZOOM used to be enough to match, and
+       then the braces it found were the next function's. */
+    const block = /const (?:EARLIEST_ZOOM|SAMPLE_EARLIEST)[^{]*\{([^}]*)\}/.exec(source)
     assert.ok(block, 'the ceilings are where the guard expects them')
     return Object.fromEntries(
       [...block[1].matchAll(/^\s*(\w+):\s*(\d+),/gm)].map(([, kind, zoom]) => [kind, zoom]),
@@ -132,16 +136,15 @@ test('the demo thins the way the server does, and cannot drift from it', async (
     assert.equal(Number(onTheServer[kind]), 11, `a ${kind} is visible across a city`)
   }
 
-  /* Twenty-two places in one city do not fill a square, so the density never
-     has to choose and every pin lands exactly on its own ceiling. That makes
-     the demo a clean reading of the ceilings — arrived at by running the rule
-     rather than asserted by a table, which is the whole point. */
+  /* Every pin lands exactly on its kind's zoom — not near it, on it. There is
+     no density to nudge it and nothing else the number could come from, which
+     is the property that replaced the ranking: what a place is decides when it
+     is drawn, and where it happens to stand decides nothing. */
   for (const pin of SAMPLE_PINS) {
-    const ceiling = Number(onTheServer[pin.category] ?? onTheServer.other)
     assert.equal(
       pin.minzoom,
-      Math.max(Number(zooms[1]), ceiling),
-      `${pin.name} (${pin.category}) earns its ceiling, nothing sooner`,
+      Number(onTheServer[pin.category] ?? onTheServer.other),
+      `${pin.name} (${pin.category}) is not drawn from its kind's zoom`,
     )
   }
 

@@ -13,40 +13,9 @@ import type { AttractionPoi } from './shared/model/types'
  * Amsterdam, because that is where the sample trip goes. Real places at real
  * coordinates, and the categories are the ones the server would give them.
  */
-/* How sight-like each kind is — the same ordering places/rank.js ranks by,
-   and the only part of the server's taxonomy the demo needs. There is no
-   table of zooms here because there is no table of zooms anywhere any more:
-   a mark earns its zoom from where it comes among its neighbours, and the
-   twenty-two below run through that same rule rather than through a copy of
-   a table that would drift the moment the real one changed. */
-const SAMPLE_WEIGHT: Record<string, number> = {
-  sights: 1,
-  viewpoint: 1,
-  museum: 0.95,
-  historic: 0.9,
-  gallery: 0.9,
-  nature: 0.85,
-  beach: 0.85,
-  entertainment: 0.7,
-  religious: 0.65,
-  market: 0.65,
-  food: 0.6,
-  cafe: 0.55,
-  bar: 0.5,
-  lodging: 0.35,
-  shopping: 0.35,
-  sport: 0.3,
-  transit: 0.3,
-  services: 0.15,
-  health: 0.15,
-  other: 0.1,
-}
-
 /* The zooms the server thins at, and the one it does not. Kept in step with
    places/rank.js LABEL_ZOOMS and LABEL_PER_TILE by the test beside this file,
    which reads both and fails when they part. */
-const SAMPLE_ZOOMS = { from: 11, to: 16, floor: 17 }
-const SAMPLE_PER_TILE = 24
 
 /* The furthest away each kind may ever be drawn from — places/rank.js
    EARLIEST_ZOOM, kept in step by the test beside this file. Density alone put
@@ -76,52 +45,23 @@ const SAMPLE_EARLIEST: Record<string, number> = {
   other: 16,
 }
 
-/** Which slippy square a point is in — the server's tileX and tileY. */
-const squareOf = (lng: number, lat: number, z: number) => {
-  const side = 2 ** z
-  const x = Math.floor(((lng + 180) / 360) * side)
-  const radians = (lat * Math.PI) / 180
-  const y = Math.floor(
-    ((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * side,
-  )
-  return `${z}/${x}/${y}`
-}
-
-/**
- * The zoom each of these earns among the others, by the server's rule.
+/* The zoom each of these is drawn from, which is one lookup per place.
  *
- * Two rules doing different jobs. The category says how prominent a kind of
- * place may ever be; the density picks which of the places allowed at a zoom
- * take its slots. Neither does the other's work, and this file is where that
- * was learned: twenty-two places do not fill a square, so density alone put
- * Winkel 43 — a café — on the map beside the Rijksmuseum from across the
- * city. The algorithm was right that there was room. Room is not the only
- * question, and a café does not become a landmark by being unopposed.
+ * places/rank.js EARLIEST_ZOOM is the rule and SAMPLE_EARLIEST below is this
+ * file's copy of it, held to the original by the test beside this file.
  *
- * Run rather than copied, so the demo cannot quietly start behaving
- * differently from the app it demonstrates.
+ * It used to rank them against each other — best two dozen per square earn
+ * this zoom, the rest fall through — and this file is where that was learned
+ * to be wrong. Twenty-two places do not fill a square, so density alone put
+ * Winkel 43, a cafe, on the map beside the Rijksmuseum from across the city.
+ * The algorithm was right that there was room. Room was never the question:
+ * a cafe does not become a landmark by being unopposed, and a museum does not
+ * stop being one by standing next to four others. The kind decides, the
+ * crowd does not, and crowding is settled at render time by the map's own
+ * label collision — see use-attraction-layers.ts symbol-sort-key.
  */
-function zoomsFor(places: { lng: number; lat: number; category: string; confidence: number }[]) {
-  const worth = (place: { category: string; confidence: number }) =>
-    (SAMPLE_WEIGHT[place.category] ?? SAMPLE_WEIGHT.other) *
-    (0.4 + 0.6 * Math.min(1, Math.max(0, place.confidence)))
-  const order = places
-    .map((place, at) => ({ at, place, worth: worth(place) }))
-    .sort((left, right) => right.worth - left.worth || left.at - right.at)
-  const earned = new Map<number, number>()
-  for (let z = SAMPLE_ZOOMS.from; z <= SAMPLE_ZOOMS.to; z += 1) {
-    const taken = new Map<string, number>()
-    for (const { at, place } of order) {
-      if (earned.has(at)) continue
-      if (z < (SAMPLE_EARLIEST[place.category] ?? SAMPLE_EARLIEST.other)) continue
-      const square = squareOf(place.lng, place.lat, z)
-      const already = taken.get(square) ?? 0
-      if (already >= SAMPLE_PER_TILE) continue
-      taken.set(square, already + 1)
-      earned.set(at, z)
-    }
-  }
-  return places.map((_, at) => earned.get(at) ?? SAMPLE_ZOOMS.floor)
+function zoomsFor(places: { category: string }[]) {
+  return places.map(place => SAMPLE_EARLIEST[place.category] ?? SAMPLE_EARLIEST.other)
 }
 
 export const SAMPLE_PINS: AttractionPoi[] = [
