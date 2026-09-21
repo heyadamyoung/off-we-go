@@ -1488,3 +1488,31 @@ test('a release that cannot deploy itself changes nothing on the box', () => {
     assert.ok(!world.touchedTheBox(), `${what}: wrote to the box before refusing`)
   }
 })
+
+test('a deploy says where the planet has got to, where a person can read it', () => {
+  /* The box has no shell and the deploy key runs one command, so a line in
+     the deploy log is the only channel there is. #202 moved the places census
+     into the detached housekeeping along with everything else, and the only
+     remaining answer to "is the sweep alive, and how much of the world do we
+     hold" became the size of a docker volume in the capacity block.
+
+     The distinction the detach should have drawn: what a deploy *does* can go
+     to a file on the box; what it *reports* cannot. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  const detachedAt = deploy.indexOf('Housekeeping detached')
+  const censusAt = deploy.indexOf("echo \"places: $(places_now 'select count(*) from places')")
+  const sweepAt = deploy.indexOf('places: the sweep is running')
+  assert.ok(censusAt > 0, 'the deploy does not report how many places there are')
+  assert.ok(sweepAt > 0, 'the deploy does not report whether the sweep is running')
+  assert.ok(censusAt > detachedAt, 'the census is inside the detached half again')
+  assert.ok(deploy.includes('cell(s) awaiting a zoom'), 'and how much is still unranked')
+  /* Read-only, and unable to fail a release: it runs below the health check
+     and below `trap - ERR`, and every command that could fail says so rather
+     than exiting. */
+  const census = deploy.slice(censusAt - 400, sweepAt + 600)
+  assert.ok(!/\b(insert|update|delete|drop|alter|truncate)\b/i.test(census), 'the census writes')
+  assert.ok(
+    deploy.indexOf('trap - ERR') < censusAt,
+    'the census runs while a failure can still restore the previous release',
+  )
+})
