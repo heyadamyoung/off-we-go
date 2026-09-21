@@ -311,16 +311,14 @@ after_release() {
   # line in a deploy log that is wrong about what it did is worse than no line.
   # The labels are Compose's own and need no profile to be visible, which is the
   # whole point; the cleanup below already reads them the same way.
-  if [ -n "$(docker ps -q --filter status=running \
+  # Why the last one stopped, if it did.
+  #
+  # The first live planet run exited somewhere in the Atlantic and left an
+  # exited container nobody could ask, because the deploy key is restricted to
+  # `deploy <sha>` and there is no shell on this box. A run that ends has to
+  # say so here or it has said so nowhere. Read-only, and `|| true` throughout.
+  if [ -z "$(docker ps -q --filter status=running \
     --filter label=com.docker.compose.service=places-sweep 2>/dev/null || true)" ]; then
-    echo "places: a sweep is already running; left alone"
-  else
-    # Why the last one stopped, before starting another.
-    #
-    # The first live planet run exited somewhere in the Atlantic and left an
-    # exited container nobody could ask, because the deploy key is restricted to
-    # `deploy <sha>` and there is no shell on this box. A run that ends has to
-    # say so here or it has said so nowhere. Read-only, and `|| true` throughout.
     stopped_sweep="$(docker ps -aq --filter label=com.docker.compose.service=places-sweep \
       2>/dev/null | head -n 1 || true)"
     if [ -n "$stopped_sweep" ]; then
@@ -329,11 +327,26 @@ after_release() {
         "$stopped_sweep" 2>/dev/null || echo '?') — its last lines:"
       docker logs --tail 15 "$stopped_sweep" 2>&1 | sed 's/^/places:   /' || true
     fi
-    if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
-      echo "places: sweep started — docker compose logs -f places-sweep"
-    else
-      echo "places: the sweep could not be started"
-    fi
+  fi
+
+  # And then `up`, whether or not one is running.
+  #
+  # This used to be skipped entirely when a sweep was up, so that a release
+  # could not kill a run three hours in. That is what the profile is for —
+  # `compose up` does not touch a profiled service — and naming the service
+  # here does not undo it: `up -d` on a service whose configuration has not
+  # changed is a no-op, and a running sweep is left exactly alone.
+  #
+  # What the skip also prevented was a configuration change ever reaching it.
+  # The sweep has just been given four cores of sixteen and a low block-IO
+  # weight, precisely so it cannot pin the box during a deploy — and with the
+  # skip in place the container already running would have kept the whole
+  # machine until the day it happened to exit. A recreate costs the cell in
+  # flight; `--resume` means the next run pays for that one and nothing else.
+  if docker compose --profile sweep up -d --no-build places-sweep >/dev/null 2>&1; then
+    echo "places: sweep up to date — docker compose logs -f places-sweep"
+  else
+    echo "places: the sweep could not be started"
   fi
 
   # Media onto the object store, once, with the release already live and
