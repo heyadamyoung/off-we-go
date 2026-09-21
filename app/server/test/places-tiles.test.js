@@ -222,9 +222,63 @@ test('the probe reads a tile the way PostGIS wrote it', async t => {
     'select minzoom, count(*)::int as n from mvt_probe group by minzoom order by minzoom',
   )
   assert.equal(held.features, 137, 'the reader lost features the encoder wrote')
+  assert.equal(held.ids.length, 137, 'every feature carries its id back out')
   assert.equal(
     held.zooms,
     expected.rows.map(row => `${row.minzoom}:${row.n}`).join(' '),
     'the reader disagrees with the table about which zoom each mark is drawn from',
   )
+})
+
+/* The seam, and why a monotonic pyramid can look like it is losing marks.
+ *
+ * ST_AsMVTGeom is given a 64-unit buffer, so a tile carries the marks just
+ * outside its own square as well — that is how a dot on a boundary is drawn
+ * whole instead of clipped in half. The probe walks the pyramid by comparing
+ * a square against the four below it, and a neighbour's mark riding in the
+ * buffer belongs to a different four: counted, it reads as a mark that
+ * vanished on the way in. It read exactly that against production, one to
+ * three marks a step, and the pyramid was correct the whole time.
+ *
+ * So the reader separates them, and this is that separation against the
+ * encoder rather than against itself. */
+test('a tile says which marks are its own and which ride in the buffer', async t => {
+  const { databaseUrl, skip } = await database()
+  if (skip) return t.skip('no test database')
+  const pg = (await import('pg')).default
+  const { tileHolds } = await import('../src/places/mvt.js')
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  t.after(() => client.query('drop table if exists mvt_seam'))
+  t.after(() => client.end())
+
+  const z = 13
+  const [x, y] = [tileX(4.88, z), tileY(52.36, z)]
+  const box = tileBounds(z, x, y)
+  const width = box.east - box.west
+  await client.query('drop table if exists mvt_seam')
+  await client.query('create table mvt_seam (id int, geom geometry(Point, 4326))')
+  /* Three marks well inside the square, and two just outside its western
+     edge — close enough that a 64-of-4096 buffer takes them in. */
+  const inside = [0.25, 0.5, 0.75].map(part => box.west + width * part)
+  const beyond = [box.west - width * 0.005, box.west - width * 0.01]
+  const middle = (box.south + box.north) / 2
+  await client.query(
+    `insert into mvt_seam (id, geom)
+     select i, ST_SetSRID(ST_MakePoint(lng, $2), 4326)
+     from unnest($1::float8[]) with ordinality as t(lng, i)`,
+    [[...inside, ...beyond], middle],
+  )
+  const { rows } = await client.query(
+    `with bounds as (select ST_TileEnvelope($1, $2, $3) as box)
+     select ST_AsMVT(t, 'places', 4096, 'geom') as tile from (
+       select id::text as id,
+              ST_AsMVTGeom(ST_Transform(geom, 3857), b.box, 4096, 64, true) as geom
+       from mvt_seam, bounds b
+     ) t where t.geom is not null`,
+    [z, x, y],
+  )
+  const held = tileHolds(new Uint8Array(rows[0].tile))
+  assert.equal(held.features, 5, 'the buffer did not take the neighbours in')
+  assert.deepEqual(held.own.sort(), ['1', '2', '3'], 'the square claimed a neighbour as its own')
 })

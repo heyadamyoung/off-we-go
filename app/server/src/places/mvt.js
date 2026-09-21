@@ -74,16 +74,40 @@ function oneValue(bytes, from, to) {
   return found
 }
 
+/** A zigzag varint, which is how a tile stores a coordinate delta. */
+const zigzag = value => (value >> 1) ^ -(value & 1)
+
+/* Where a mark sits in its square, which is not the same as being in the
+ * tile. A tile is encoded with a buffer — 64 units of 4096 here — so a mark
+ * just outside the square is included on purpose, to be drawn whole rather
+ * than clipped in half at the seam. Those marks belong to the square next
+ * door, and comparing a square against the four below it has to leave them
+ * out or a perfectly monotonic pyramid reports marks vanishing. (It did.)
+ *
+ * A point's geometry is three varints: a MoveTo command and a delta from the
+ * origin. Nothing here draws lines or polygons, so nothing here reads them. */
+function pointOf(bytes, from, to) {
+  const at = { i: from }
+  const command = varint(bytes, at)
+  if ((command & 0x7) !== 1 || at.i >= to) return null
+  const x = zigzag(varint(bytes, at))
+  const y = zigzag(varint(bytes, at))
+  return { x, y }
+}
+
 /**
- * What a tile holds: how many features, and how many of them at each zoom.
+ * What a tile holds: how many features, how many of them at each zoom, and
+ * their ids — all of them, and separately the ones inside the square itself.
  *
  * @param {Uint8Array} bytes  a .mvt body
  * @param {string} attribute  the tag to count by
+ * @param {number} extent     the tile's extent, 4096 as ST_AsMVT writes it
  */
-export function tileHolds(bytes, attribute = 'minzoom') {
+export function tileHolds(bytes, attribute = 'minzoom', extent = 4096) {
   let features = 0
   const zooms = new Map()
   const ids = []
+  const own = []
   fields(bytes, 0, bytes.length, (field, from, to) => {
     if (field !== 3) return
     const keys = []
@@ -100,17 +124,26 @@ export function tileHolds(bytes, attribute = 'minzoom') {
       features += 1
       let at = null
       let id = null
-      fields(bytes, start, end, (inner, tagsFrom, tagsTo) => {
+      let where = null
+      fields(bytes, start, end, (inner, partFrom, partTo) => {
+        if (inner === 4) {
+          where = pointOf(bytes, partFrom, partTo)
+          return
+        }
         if (inner !== 2) return
-        const walk = { i: tagsFrom }
-        while (walk.i < tagsTo) {
+        const walk = { i: partFrom }
+        while (walk.i < partTo) {
           const key = varint(bytes, walk)
           const value = varint(bytes, walk)
           if (key === wanted && wanted >= 0) at = values[value] ?? null
           if (key === named && named >= 0) id = values[value] ?? null
         }
       })
-      if (id !== null) ids.push(String(id))
+      if (id !== null) {
+        ids.push(String(id))
+        const inside = where && where.x >= 0 && where.x < extent && where.y >= 0 && where.y < extent
+        if (inside) own.push(String(id))
+      }
       const key = at === null ? 'none' : String(at)
       zooms.set(key, (zooms.get(key) ?? 0) + 1)
     }
@@ -118,6 +151,7 @@ export function tileHolds(bytes, attribute = 'minzoom') {
   return {
     features,
     ids,
+    own,
     zooms: [...zooms.entries()]
       .sort((a, b) => Number(a[0]) - Number(b[0]))
       .map(([zoom, count]) => `${zoom}:${count}`)
