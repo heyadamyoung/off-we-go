@@ -84,14 +84,63 @@ export function createEnrichWorker({
     }
   }
 
+  /* Whether there is anything to match a place against.
+   *
+   * The chain is: find the OSM object this place is, then follow the links a
+   * human put on it. The first step reads `osm_landmarks`, and that table is
+   * empty until somebody loads a planet extract into it.
+   *
+   * Empty, every backfill place returns "no OpenStreetMap object matches" —
+   * which is BARREN, and BARREN is written down as a finished answer. The
+   * backfill takes four hundred at a time; one evening of that and every
+   * prominent place on earth is recorded as having nothing to show, from a
+   * lookup against an empty table. Nothing re-runs them either:
+   * enqueueProminent only picks a place up again when the pipeline version
+   * changes, so it would take a code change and a release to undo, and only
+   * if somebody remembered why.
+   *
+   * It was not reachable before because PLACES_CONTACT was unset and the
+   * whole worker was dark. Both are being fixed in the same change, and this
+   * is the half that stops the other half being a catastrophe.
+   *
+   * So the backfill does not start until there is something to match against.
+   * A precondition, not a per-place verdict: with nothing to look in there is
+   * no work to queue, and "no work yet" is the honest state. Cards people
+   * open are unaffected — that is the on-demand path, one place with somebody
+   * waiting, and it is what Overpass is for.
+   *
+   * One indexed existence check, only on the tick that would have queued more
+   * work, and said once so the log is not a minute of the same line. */
+  let saidEmpty = false
+  async function landmarksLoaded() {
+    const { rows } = await pool.query('select exists (select 1 from osm_landmarks) as any')
+    const loaded = Boolean(rows[0]?.any)
+    if (!loaded && !saidEmpty) {
+      saidEmpty = true
+      log(
+        'places: enrichment is idle — osm_landmarks is empty, so there is nothing to match ' +
+          'places against. Load an extract with server/scripts/osm-landmarks.mjs.',
+      )
+      event('places enrichment idle', { 'places.enrich.reason': 'no landmarks' })
+    }
+    if (loaded) saidEmpty = false
+    return loaded
+  }
+
   async function tick() {
     if (stopped) return
     const places = await claimEnrichment(pool, placesPerTick)
 
     /* Nothing waiting: put the next slice of the prominent places in. The
        top-up is bounded and indexed, so an empty queue costs one indexed
-       read rather than a scan of a table with millions of rows in it. */
+       read rather than a scan of a table with millions of rows in it.
+
+       Unless there is nothing to match them against — see landmarksLoaded.
+       The gate is on the top-up rather than on the whole tick, because a
+       place somebody has opened is the one case that works with an empty
+       table: Overpass answers it, for one place, with a person waiting. */
     if (!places.length) {
+      if (!(await landmarksLoaded())) return
       const added = await enqueueProminent(pool, {
         zoom: prominentZoom,
         limit: topUp,

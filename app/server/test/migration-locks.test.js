@@ -23,7 +23,7 @@ function clientRefusing(refusals, code = '55P03') {
   let refused = 0
   return {
     sent,
-    async query(sql, params) {
+    async query(sql) {
       sent.push(typeof sql === 'string' ? sql.trim() : sql)
       if (typeof sql === 'string' && sql.startsWith('alter table') && refused < refusals) {
         refused += 1
