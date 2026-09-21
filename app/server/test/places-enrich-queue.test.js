@@ -14,7 +14,7 @@ import {
   writeEnrichment,
 } from '../src/places/enrich/store.js'
 import { createEnrichWorker } from '../src/places/enrich/worker.js'
-import { privateDatabase } from './private-database.js'
+import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* The queue and the writing, against a real database.
  *
@@ -24,7 +24,6 @@ import { privateDatabase } from './private-database.js'
 
 const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
-let databaseUrl = baseUrl
 const unreachable = await (async () => {
   const client = new pg.Client({ connectionString: baseUrl })
   try {
@@ -33,27 +32,26 @@ const unreachable = await (async () => {
   } catch {
     return 'no PostgreSQL to test against'
   }
-  databaseUrl = await privateDatabase(baseUrl, 'placesenrich')
   return false
 })()
 
 const { createPostgresRepository } = await import('../src/postgres.js')
 
-async function freshDatabase(t) {
-  const admin = new pg.Client({ connectionString: databaseUrl })
-  await admin.connect()
-  await admin.query('drop schema public cascade; create schema public')
-  await admin.end()
+/* A database of its own per case, copied from one migrated once.
+ *
+ * It used to drop the schema and run all fifty-two migrations for every
+ * case. Measured, this file alone was 79.8 seconds of a server suite whose
+ * every other file put together was 55. See private-database.js. */
+const migrate = async url => {
   const repository = await createPostgresRepository({
-    databaseUrl,
+    databaseUrl: url,
     adminEmail: 'owner@example.com',
   })
   await repository.migrate()
   await repository.close()
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 })
-  t.after(() => pool.end())
-  return pool
 }
+
+const freshDatabase = t => makeDatabase(baseUrl, 'placesenrich', t, migrate)
 
 /** A place, at a zoom that decides whether the backfill wants it. */
 async function place(pool, name, labelZoom, over = {}) {

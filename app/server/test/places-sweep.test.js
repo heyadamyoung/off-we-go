@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { createIngest } from '../src/places/ingest.js'
 import { createSweep, sweepPlan } from '../src/places/sweep.js'
-import { privateDatabase } from './private-database.js'
+import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* The sweep: reading the release once instead of once per cell.
  *
@@ -331,7 +331,6 @@ test('a failing read never becomes a half-loaded cell', async () => {
 
 const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
-let databaseUrl = baseUrl
 const unreachable = await (async () => {
   const client = new pg.Client({ connectionString: baseUrl })
   try {
@@ -340,27 +339,26 @@ const unreachable = await (async () => {
   } catch {
     return 'no PostgreSQL to test against'
   }
-  databaseUrl = await privateDatabase(baseUrl, 'sweep')
   return false
 })()
 
 const { createPostgresRepository } = await import('../src/postgres.js')
 
-async function freshDatabase(t) {
-  const admin = new pg.Client({ connectionString: databaseUrl })
-  await admin.connect()
-  await admin.query('drop schema public cascade; create schema public')
-  await admin.end()
+/* A database of its own per case, copied from one migrated once.
+ *
+ * It used to drop the schema and run all fifty-two migrations for every
+ * case. Measured, this file alone was 79.8 seconds of a server suite whose
+ * every other file put together was 55. See private-database.js. */
+const migrate = async url => {
   const repository = await createPostgresRepository({
-    databaseUrl,
+    databaseUrl: url,
     adminEmail: 'owner@example.com',
   })
   await repository.migrate()
   await repository.close()
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 })
-  t.after(() => pool.end())
-  return pool
 }
+
+const freshDatabase = t => makeDatabase(baseUrl, 'sweep', t, migrate)
 
 /* The fixture rows, cut into row groups the way a real part is: each group a
    contiguous run of rows with the bounding box those rows actually have. */

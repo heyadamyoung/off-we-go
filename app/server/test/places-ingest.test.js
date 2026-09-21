@@ -13,7 +13,7 @@ import {
   PLACE_PIPELINE,
 } from '../src/places/ingest.js'
 import { qualityReport } from '../src/places/quality.js'
-import { privateDatabase } from './private-database.js'
+import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* The pipeline, end to end, against a real PostGIS and a bucket that is a
    JSON file. The reads are stubbed because what is being proved here is what
@@ -203,7 +203,6 @@ test('the same shopfront clusters; three hundred metres apart does not', () => {
 
 const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
-let databaseUrl = baseUrl
 const unreachable = await (async () => {
   const client = new pg.Client({ connectionString: baseUrl })
   try {
@@ -212,27 +211,26 @@ const unreachable = await (async () => {
   } catch {
     return 'no PostgreSQL to test against'
   }
-  databaseUrl = await privateDatabase(baseUrl, 'places')
   return false
 })()
 
 const { createPostgresRepository } = await import('../src/postgres.js')
 
-async function freshDatabase(t) {
-  const admin = new pg.Client({ connectionString: databaseUrl })
-  await admin.connect()
-  await admin.query('drop schema public cascade; create schema public')
-  await admin.end()
+/* A database of its own per case, copied from one migrated once.
+ *
+ * It used to drop the schema and run all fifty-two migrations for every
+ * case. Measured, this file alone was 79.8 seconds of a server suite whose
+ * every other file put together was 55. See private-database.js. */
+const migrate = async url => {
   const repository = await createPostgresRepository({
-    databaseUrl,
+    databaseUrl: url,
     adminEmail: 'owner@example.com',
   })
   await repository.migrate()
   await repository.close()
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 })
-  t.after(() => pool.end())
-  return pool
 }
+
+const freshDatabase = t => makeDatabase(baseUrl, 'places', t, migrate)
 
 /** A reader whose bucket is a pair of arrays. The box test is the same
     inclusive one parquet.js applies, because that inclusiveness is exactly

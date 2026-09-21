@@ -6,7 +6,7 @@ import test from 'node:test'
 import pg from 'pg'
 import { CONFIDENCE_FLOOR, LABEL_ZOOMS, VIEW_WEIGHT } from '../src/places/rank.js'
 import { nearbyPlaces, PLACE_VIEW_INDEX_SQL, placesInView, placeTile } from '../src/places/store.js'
-import { privateDatabase } from './private-database.js'
+import { freshDatabase as makeDatabase } from './private-database.js'
 
 /* That the map's questions are answered by the index and not by the heap.
  *
@@ -27,7 +27,6 @@ import { privateDatabase } from './private-database.js'
 
 const baseUrl =
   process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:55432/wayfare_test'
-let databaseUrl = baseUrl
 const unreachable = await (async () => {
   const client = new pg.Client({ connectionString: baseUrl })
   try {
@@ -36,27 +35,26 @@ const unreachable = await (async () => {
   } catch {
     return 'no PostgreSQL to test against'
   }
-  databaseUrl = await privateDatabase(baseUrl, 'placesindex')
   return false
 })()
 
 const { createPostgresRepository } = await import('../src/postgres.js')
 
-async function freshDatabase(t) {
-  const admin = new pg.Client({ connectionString: databaseUrl })
-  await admin.connect()
-  await admin.query('drop schema public cascade; create schema public')
-  await admin.end()
+/* A database of its own per case, copied from one migrated once.
+ *
+ * It used to drop the schema and run all fifty-two migrations for every
+ * case. Measured, this file alone was 79.8 seconds of a server suite whose
+ * every other file put together was 55. See private-database.js. */
+const migrate = async url => {
   const repository = await createPostgresRepository({
-    databaseUrl,
+    databaseUrl: url,
     adminEmail: 'owner@example.com',
   })
   await repository.migrate()
   await repository.close()
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 })
-  t.after(() => pool.end())
-  return pool
 }
+
+const freshDatabase = t => makeDatabase(baseUrl, 'placesindex', t, migrate)
 
 /* A few hundred places around one point, spread over a tenth of a degree and
    over every zoom tier, so that a viewport asking for one tier has something
