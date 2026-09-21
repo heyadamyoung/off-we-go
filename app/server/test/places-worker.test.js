@@ -13,6 +13,7 @@ import {
 import { cellBounds, cellKey } from '../src/places/cells.js'
 import {
   assignLabelZoom,
+  cellsAwaitingZoom,
   indexIsReady,
   markRequested,
   PLACE_INDEXES_REPLACED,
@@ -475,6 +476,66 @@ test('places written before the zoom column get their zoom', {
       [ZOOM_POLICY],
     )
     assert.equal(stamped.rows[0].n, 2, 'both cells now record the rule they were placed under')
+  })
+
+  /* The queue, and the two things about it that stopped the planet.
+   *
+   * Production had ranked exactly one cell in the world when this was
+   * written, and the probe named it: every city but Toronto answered with
+   * three hundred pins all reporting zoom 11, which is the coalesce default
+   * — the pass had not touched them. */
+  await t.test('the zoom queue leaves out what this run gave up on', async t => {
+    const pool = await freshDatabase(t)
+    await ground(pool, 'N52E004', 10)
+    await ground(pool, 'N55W004', 10)
+    await ground(pool, 'N48E002', 10)
+
+    const all = await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 25 })
+    assert.equal(all.length, 3)
+
+    /* Skipping used to be a filter over the answer, so a batch in which every
+       cell failed came back empty and the pass read that as "nothing left" —
+       and every tick after it asked the same question of an unchanged
+       database and stopped in the same place. Asked of the query, a cell that
+       is stepped over lets the one behind it through. */
+    const rest = await cellsAwaitingZoom(pool, {
+      policy: ZOOM_POLICY,
+      limit: 25,
+      except: ['N52E004', 'N55W004'],
+    })
+    assert.deepEqual(
+      rest.map(cell => cell.cell),
+      ['N48E002'],
+    )
+    const none = await cellsAwaitingZoom(pool, {
+      policy: ZOOM_POLICY,
+      limit: 25,
+      except: ['N52E004', 'N55W004', 'N48E002'],
+    })
+    assert.equal(none.length, 0, 'and a planet of skipped cells is genuinely empty')
+  })
+
+  await t.test('the zoom queue does the cheap cells first', async t => {
+    const pool = await freshDatabase(t)
+    await ground(pool, 'N43W080', 120_000)
+    await ground(pool, 'N50W105', 900)
+    await ground(pool, 'N64W022', 40)
+
+    /* It was `place_count desc`. The densest cell on Earth is eighteen
+       seconds of window function, so twelve thousand cells that take
+       milliseconds each queued behind the twenty-five that take minutes — and
+       on a box that restarts every deploy the pass got through about one of
+       them. A cell somebody is looking at still goes first, because priority
+       leads the ordering; the backfill behind it is cheapest first. */
+    const order = await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 25 })
+    assert.deepEqual(
+      order.map(cell => cell.cell),
+      ['N64W022', 'N50W105', 'N43W080'],
+    )
+
+    await pool.query("update place_coverage set priority = 0 where cell = 'N43W080'")
+    const asked = await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 25 })
+    assert.equal(asked[0].cell, 'N43W080', 'a cell somebody is looking at waits for nobody')
   })
 
   /* The index the map is served from, built by the worker because a boot is

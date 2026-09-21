@@ -506,7 +506,15 @@ export function createPlaceWorker({
        a zoom to, and forty thousand of them are not forty thousand units of
        work. */
     await markEmptyCellsZoomed(pool, ZOOM_POLICY)
-    const waiting = await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 1 })
+    /* Same skip set: a planet whose only unplaced cells are ones this run has
+       already given up on is finished as far as this process is concerned,
+       and saying so once beats starting a pass every minute that has nothing
+       it is willing to do. A restart tries them again. */
+    const waiting = await cellsAwaitingZoom(pool, {
+      policy: ZOOM_POLICY,
+      limit: 1,
+      except: [...skipped],
+    })
     if (!waiting.length) {
       /* Nothing left. The planet-wide row is the cheap answer to "is this
          finished", written once rather than on every tick. */
@@ -538,9 +546,17 @@ export function createPlaceWorker({
     let said = false
     for (;;) {
       if (stopped) break
-      const batch = (await cellsAwaitingZoom(pool, { policy: ZOOM_POLICY, limit: 25 })).filter(
-        cell => !skipped.has(cell.cell),
-      )
+      /* The cells this run could not place are left out by the query, not
+         filtered out of its answer. Filtering afterwards meant a batch where
+         every cell failed came back empty, the loop read that as "the planet
+         is placed" and stopped — and since nothing in the database had
+         changed, every tick after it asked the same question and stopped
+         again. Twelve thousand cells behind twenty-five, for ever. */
+      const batch = await cellsAwaitingZoom(pool, {
+        policy: ZOOM_POLICY,
+        limit: 25,
+        except: [...skipped],
+      })
       if (!batch.length) break
       if (!said) {
         log('places: giving every place the zoom it earns, a cell at a time')
