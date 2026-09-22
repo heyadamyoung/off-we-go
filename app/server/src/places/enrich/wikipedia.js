@@ -29,6 +29,37 @@ export const WIKIPEDIA_LICENSE = 'CC BY-SA 4.0'
  * translated back at each one. It is stable enough for a stored link: a
  * renamed article leaves a redirect, and the summary endpoint follows it.
  */
+export function subjectOf(title) {
+  /* An article's title is not the thing's name, and treating them as the same
+   * string is worth a third of a point of similarity.
+   *
+   * Wikipedia titles carry two pieces of its own bookkeeping. A parenthetical
+   * — "Campbell House Museum (Toronto)" — is there because *another* article
+   * is also called Campbell House Museum; it says nothing about this subject.
+   * A trailing comma qualifier — "The Georgian House, Edinburgh" — is the
+   * same device in the house style used for places. Neither is part of what
+   * the building is called, and neither appears in the name Overture holds.
+   *
+   * Measured against the names production actually enriched:
+   *
+   *   Campbell House Museum (Toronto)     0.84 → 1.00
+   *   The Georgian House, Edinburgh       0.50 → 1.00
+   *
+   * Stripped on both sides by the caller, because our own names carry their
+   * own parentheses ("The Georgian House (National Trust for Scotland)") and
+   * comparing a bare title to a qualified name is the same mistake mirrored.
+   *
+   * Only a trailing one, and only when something is left: "(A) B" is a name
+   * that starts with a bracket, and an article called "(disambiguation)" is
+   * not a subject at all. */
+  const text = String(title ?? '').trim()
+  const bare = text
+    .replace(/\s*\([^()]*\)$/, '')
+    .replace(/,\s+[^,]+$/, '')
+    .trim()
+  return bare || text
+}
+
 export function readNearby(body, { lang = 'en' } = {}) {
   const found = body?.query?.geosearch
   if (!Array.isArray(found)) return []
@@ -36,7 +67,9 @@ export function readNearby(body, { lang = 'en' } = {}) {
     .filter(one => one && typeof one.title === 'string')
     .map(one => ({
       id: `${lang}:${one.title}`,
-      name: one.title,
+      /* The subject, for matching. The title is what you fetch; the name is
+         what the thing is called, and they are different facts. */
+      name: subjectOf(one.title),
       lat: Number(one.lat),
       lng: Number(one.lon),
       /* What `summary` and the link both want, carried rather than re-split

@@ -49,8 +49,14 @@ import { attributionFor } from './licenses.js'
  *    This number is the only thing that reaches them: every row whose
  *    pipeline is not this one is queued again, which is exactly what it is
  *    for. They keep what they have while they wait, because the rewrite is
- *    one transaction. */
-export const ENRICH_PIPELINE = 2
+ *    one transaction.
+ *
+ * 3  the picture gate became reachable. `mayPicture` asked for 0.9 against a
+ *    blended score whose ceiling, for a Wikipedia candidate, is 0.900 at zero
+ *    metres — so it admitted a perfect name at a distance of nothing and
+ *    refused everything else. Pipeline 2 re-ran everything against a rule
+ *    that still could not be met; this re-runs it against one that can. */
+export const ENRICH_PIPELINE = 3
 
 /** Wikidata's own one-line description, when there is no article. */
 export const WIKIDATA_LICENSE = 'CC0'
