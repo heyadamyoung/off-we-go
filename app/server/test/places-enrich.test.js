@@ -266,6 +266,41 @@ test('a picture needs more than a name', async t => {
     const out = await enrichPlace(withSite, sources)
     assert.equal(out.status, READY)
     assert.ok(out.description.text, 'the words are there either way')
+    /* And the picture, which is what this test is named for and never
+     * actually checked.
+     *
+     * That omission is why production held four pictures across eight hundred
+     * and fifty-two enriched places. `mayPicture` wants either a name strong
+     * enough to stand alone or a website that agrees; both were calibrated
+     * when candidates came from OpenStreetMap, where an object carries
+     * `tags.website`. They come from Wikipedia geosearch now and an article
+     * carries no website at all, so the website half of the gate became dead
+     * code the day the chain changed — leaving a bare 0.9 threshold against
+     * article titles. "The Old Bakery" against "Old Bakery" scores 0.765.
+     *
+     * The corroboration that would clear it was already being fetched and was
+     * read *inside* the gate, so a place whose website agrees could never earn
+     * a picture, because earning one was the precondition for looking. The
+     * evidence sat downstream of the decision it was evidence for. The entity
+     * is read first now, and this line is what holds that. */
+    assert.equal(out.images.length, 1, 'the third party agreeing is what unlocks it')
+    const article = out.links.find(link => link.kind === 'wikipedia')
+    assert.equal(article.confirmedBy, 'website', 'and the corroboration is recorded')
+  })
+
+  /* And the gate still holds where it should. The asymmetry it exists for has
+     not moved: a wrong sentence reads oddly, a wrong photograph is a different
+     building and nobody can tell by looking. */
+  await t.test('a website that agrees with nothing leaves the photograph alone', async () => {
+    const elsewhere = { ...bakery, website: 'https://somewhere-else.example/' }
+    const { sources } = sourcesOf({ near: nearBakery })
+    const out = await enrichPlace(elsewhere, sources)
+
+    assert.equal(out.status, READY)
+    assert.ok(out.description.text, 'the words are still worth having')
+    assert.equal(out.images.length, 0, 'the picture is not')
+    const article = out.links.find(link => link.kind === 'wikipedia')
+    assert.equal(article.confirmedBy, null)
   })
 })
 

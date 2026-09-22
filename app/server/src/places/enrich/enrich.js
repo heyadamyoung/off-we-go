@@ -110,30 +110,46 @@ export async function enrichPlace(place, sources, options = {}) {
    * sometimes a category with more. Both go through Commons for the licence
    * and the author, because a picture without them may not be shown. */
   let images = []
-  if (found.mayPicture) {
+  /* Wikidata first, then the picture decision — and that order is the fix for
+   * four pictures across eight hundred and fifty-two places.
+   *
+   * `mayPicture` wants either a name match strong enough to stand alone or a
+   * website that agrees. Both of those were calibrated when the candidates
+   * came from OpenStreetMap, where an object carries `tags.website` and is
+   * named the way Overture names things. They come from Wikipedia geosearch
+   * now, and an article carries no website at all — so the website half of the
+   * gate became dead code the day the chain changed, leaving a bare
+   * name-similarity threshold of 0.9 against article titles. "National
+   * Galleries of Scotland" against "National Gallery of Scotland" does not
+   * clear that, and should not have to.
+   *
+   * The corroboration that would clear it was already being fetched — the
+   * official site Wikidata records — and was being read *inside* the gate, so
+   * a place whose website agrees with Wikidata's could never earn a picture,
+   * because earning one was the precondition for looking. That is the bug: the
+   * evidence was downstream of the decision it was evidence for.
+   *
+   * So the entity is read first, its websites are compared, and a place the
+   * open web independently agrees with may have its picture. The asymmetry the
+   * gate exists for is untouched — a wrong sentence reads oddly, a wrong
+   * photograph is a different building — this only stops us throwing away the
+   * one third party that had never heard of either of us. */
+  const entity = wikidataId ? readEntity(await sources.entity(wikidataId, options)) : null
+  if (!found.confirmedBy && place.website && entity?.websites?.length) {
+    if (entity.websites.some(site => sameSite(place.website, site))) {
+      links[0].confirmedBy = 'website'
+    }
+  }
+  const mayPicture = found.mayPicture || links[0]?.confirmedBy === 'website'
+  if (mayPicture) {
     const wanted = []
     const lead = fileBehind(summary.thumbnail)
     if (lead) wanted.push(lead)
 
-    let category = null
-    if (wikidataId) {
-      const read = readEntity(await sources.entity(wikidataId, options))
-      if (read?.image && !wanted.includes(`File:${read.image}`)) {
-        wanted.push(`File:${read.image}`)
-      }
-      category = read?.commonsCategory ? `Category:${read.commonsCategory}` : null
-
-      /* The corroboration that costs nothing and is worth a great deal: if
-         Wikidata's official website agrees with ours, a match made on name
-         and distance has been confirmed by a third party that has never
-         heard of either of us. Recorded on the article link, since that is
-         the hop it vindicates. */
-      if (!found.confirmedBy && place.website && read?.websites?.length) {
-        if (read.websites.some(site => sameSite(place.website, site))) {
-          links[0].confirmedBy = 'website'
-        }
-      }
+    if (entity?.image && !wanted.includes(`File:${entity.image}`)) {
+      wanted.push(`File:${entity.image}`)
     }
+    const category = entity?.commonsCategory ? `Category:${entity.commonsCategory}` : null
 
     if (wanted.length || category) {
       images = readFiles(await sources.files({ files: wanted, category }, options))

@@ -563,3 +563,128 @@ test('a rejected report does not become an unhandled rejection', async () => {
   /* Nothing to assert about the rejection itself beyond the test finishing:
      an unhandled one takes the runner with it. */
 })
+
+test('a read that never returns is a failure, not a wedged planet', async () => {
+  /* The bug this exists for, read off production rather than guessed at:
+
+       sweep: overture-2026-08-19.0 — running, 75/2139 groups,
+              1,381,685/38,591,441 rows, 0/26469 cells, 43 open
+              last moved 1629s ago, 17 read(s) retried, 0 group(s) set aside
+
+     Twenty-seven minutes still, and `0 group(s) set aside` against a ten-minute
+     budget. That pair can only mean one thing: no read had failed. One was
+     hanging. The retry loop is built for reads that fail — a read that never
+     returns never hands control back, so the loop never checks its budget,
+     never sets the group aside, and the run sits holding forty-three squares
+     behind a healthy container with nothing in any log.
+
+     So every read is handed a deadline, and one that blows it arrives at the
+     retry as the failure it is. */
+  const plan = sweepPlan(indexOf(box(0, 10, 4.1, 52.1, 4.9, 52.9)), { cells: ['N52E004'] })
+  const deadlines = []
+  let asked = 0
+  const swept = createSweep({
+    plan,
+    read: async (_part, group, { deadlineMs } = {}) => {
+      asked += 1
+      deadlines.push(deadlineMs)
+      /* Answers the second time, so this asserts the hang was survived rather
+         than merely given up on. */
+      if (asked > 1) return [{ cell: 'N52E004', key: `k${group.s}` }]
+      await new Promise(resolve => setTimeout(resolve, deadlineMs))
+      throw new Error('read timed out')
+    },
+    load: async (cell, held) => ({ cell, status: 'ready', places: held.length }),
+    readDeadlineMs: 20,
+    retryFromMs: 1,
+    retryToMs: 1,
+  })
+  const totals = await swept.run()
+  assert.equal(asked, 2, 'the hung read was abandoned and asked again')
+  assert.deepEqual(deadlines, [20, 20], 'and every read carried a deadline of its own')
+  assert.equal(totals.retried, 1, 'counted as a retry, which is what it is')
+  assert.equal(totals.setAside, 0, 'the second answer arrived inside the budget')
+  assert.equal(totals.cells, 1, 'so the square was written')
+})
+
+test('a read that hangs past the budget is set aside rather than held for ever', async () => {
+  /* The other half. A socket that is dead rather than slow costs the run its
+     budget and no more: the cells waiting on it are left unwritten, which is
+     what `--resume` comes back for, instead of the planet stopping. */
+  const plan = sweepPlan(indexOf(box(0, 10, 4.1, 52.1, 4.9, 52.9)), { cells: ['N52E004'] })
+  const swept = createSweep({
+    plan,
+    read: async (_part, _group, { deadlineMs } = {}) => {
+      await new Promise(resolve => setTimeout(resolve, deadlineMs))
+      throw new Error('read timed out')
+    },
+    load: async (cell, held) => ({ cell, status: 'ready', places: held.length }),
+    readDeadlineMs: 5,
+    budgetMs: 30,
+    retryFromMs: 1,
+    retryToMs: 1,
+  })
+  const totals = await swept.run()
+  assert.equal(totals.setAside, 1, 'the group is set aside')
+  assert.equal(totals.cells, 0, 'and its square is left unwritten rather than written short')
+  assert.ok(totals.unread >= 1, 'and counted as owed, so --resume comes back for it')
+})
+
+test('a read is stopped by its deadline and by the run stopping, and by nothing else', async () => {
+  /* The composition, at the seam where it actually matters.
+   *
+   * The reader plumbs a signal into every fetch it makes, and the only one it
+   * was ever handed was the run's own stop controller — which fires when
+   * somebody stops the run and at no other time. So a range read against a
+   * socket that connected and then went silent hung for ever, with nothing for
+   * the sweep's retry machinery to catch, because that machinery only sees
+   * reads that fail.
+   *
+   * Both reasons have to work, which is why they are composed rather than one
+   * replacing the other: a deploy taking the container away must still stop a
+   * read instantly, and a dead socket must stop costing more than its
+   * deadline. */
+  const seen = []
+  const ingest = createIngest({
+    pool: { query: async () => ({ rows: [], rowCount: 0 }) },
+    reader: {
+      async readGroup(_part, _group, _columns, { signal } = {}) {
+        seen.push(signal)
+        return []
+      },
+    },
+    releases: { overture: { version: '2026-08-19.0', index: { source: 'overture', parts: [] } } },
+  })
+
+  await ingest.readSwept({ url: 'x' }, { s: 0, e: 1 }, { deadlineMs: 20 })
+  const [withDeadline] = seen
+  assert.ok(withDeadline, 'the reader is handed a signal')
+  assert.equal(withDeadline.aborted, false, 'which has not fired yet')
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.equal(withDeadline.aborted, true, 'and fires when the deadline passes')
+
+  /* And the run stopping still stops a read that is nowhere near its
+     deadline — the half that already worked and must go on working. */
+  await ingest.readSwept({ url: 'x' }, { s: 0, e: 1 }, { deadlineMs: 60_000 })
+  const stopping = seen[1]
+  assert.equal(stopping.aborted, false)
+  ingest.stop()
+  assert.equal(stopping.aborted, true, 'stopping the run stops the read in flight')
+
+  /* A read given no deadline gets the stop signal alone rather than a signal
+     that never fires — the cell-at-a-time path asks this way. */
+  const plain = createIngest({
+    pool: { query: async () => ({ rows: [], rowCount: 0 }) },
+    reader: {
+      async readGroup(_part, _group, _columns, { signal } = {}) {
+        seen.push(signal)
+        return []
+      },
+    },
+    releases: { overture: { version: '2026-08-19.0', index: { source: 'overture', parts: [] } } },
+  })
+  await plain.readSwept({ url: 'x' }, { s: 0, e: 1 })
+  assert.equal(seen[2].aborted, false)
+  plain.stop()
+  assert.equal(seen[2].aborted, true, 'and is still stoppable')
+})
