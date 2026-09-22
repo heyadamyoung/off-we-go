@@ -261,7 +261,22 @@ export async function discoverRelease({
       parts: [],
       expired: false,
       notice: null,
-      problem: `${source}: no dated release under ${SOURCES[source].bucket}${SOURCES[source].releasePrefix} — the publisher has moved the data or the bucket is no longer listable`,
+      /* Named as what it is, because the old wording guessed and guessed
+       * wrong. It said "the publisher has moved the data or the bucket is no
+       * longer listable", and when Foursquare's release prefix came back empty
+       * that reading sent us looking for a listing problem on our side. Asked
+       * directly:
+       *
+       *   GET fsq-os-places-us-east-1.s3.amazonaws.com/?prefix=release/
+       *     → 200 OK, KeyCount 0
+       *   GET fsq-os-places-us-east-1.s3.amazonaws.com/?delimiter=/
+       *     → 200 OK, Key: LICENSE.txt, Key: NOTICE.txt
+       *
+       * The bucket is alive and anonymously listable. It is empty but for the
+       * Apache-2.0 licence and a © 2025 Foursquare Labs notice: the dataset was
+       * removed. So the message says the listing worked and found nothing,
+       * which is a fact, and leaves the why to whoever reads it. */
+      problem: `${source}: ${SOURCES[source].bucket}${SOURCES[source].releasePrefix} lists clean and holds no dated release — the publisher has emptied or moved it`,
     }
   }
   const newest = available[0]

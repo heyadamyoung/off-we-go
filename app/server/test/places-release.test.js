@@ -165,7 +165,13 @@ test('a source that publishes nothing is a problem, not an exception', async () 
   const found = await discoverRelease({ source: 'fsq', fetch: fetchImpl })
   assert.equal(found.version, null)
   assert.deepEqual(found.parts, [])
-  assert.match(found.problem, /no dated release/)
+  /* And says what happened rather than guessing why. The old wording offered
+     "or the bucket is no longer listable", which sent me looking for a listing
+     problem on our side; the listing had in fact returned 200 with KeyCount 0,
+     and the bucket root held nothing but LICENSE.txt and NOTICE.txt. The
+     listing working and finding nothing is the fact. */
+  assert.match(found.problem, /lists clean and holds no dated release/)
+  assert.doesNotMatch(found.problem, /no longer listable/)
 })
 
 test('a bad status on a listing is raised rather than read as an empty bucket', async () => {

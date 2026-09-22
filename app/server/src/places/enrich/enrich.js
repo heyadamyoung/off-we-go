@@ -35,8 +35,22 @@ import { readEntity } from './wikidata.js'
 import { fileBehind, readNearby, readSummary, trimToCard } from './wikipedia.js'
 import { attributionFor } from './licenses.js'
 
-/** Bumped when the shape of what we fetch changes, so old rows re-run. */
-export const ENRICH_PIPELINE = 1
+/* Bumped when the shape of what we fetch changes, so old rows re-run.
+ *
+ * 2  the picture gate stopped asking its question in the wrong order. The
+ *    corroboration that unlocks a photograph — Wikidata's official website
+ *    agreeing with ours — was read *inside* the gate it was evidence for, so
+ *    no place could ever be let through by it. Production held four pictures
+ *    across two thousand and fifty-two enriched places because of that.
+ *
+ *    The fix only helps places enriched after it, and a place that came back
+ *    `ready` is never looked at again — five hundred and fifty-one of them
+ *    have their words, have no picture, and would have kept none for ever.
+ *    This number is the only thing that reaches them: every row whose
+ *    pipeline is not this one is queued again, which is exactly what it is
+ *    for. They keep what they have while they wait, because the rewrite is
+ *    one transaction. */
+export const ENRICH_PIPELINE = 2
 
 /** Wikidata's own one-line description, when there is no article. */
 export const WIKIDATA_LICENSE = 'CC0'

@@ -21,6 +21,7 @@ import pg from 'pg'
 
 import { buildServer } from '../src/app.js'
 import { createPostgresRepository } from '../src/postgres.js'
+import { ENRICH_PIPELINE } from '../src/places/enrich/enrich.js'
 import { enrichmentCensus, prominentPlaces } from '../src/places/enrich/store.js'
 import { closeSweep, markSweep, openSweep, planetHeld } from '../src/places/store.js'
 import { privateDatabase } from './private-database.js'
@@ -165,9 +166,13 @@ test('the census says whether the good places went first', { skip: reachable }, 
      values ($1, 'A museum in Amsterdam.', 'wikipedia', 'CC-BY-SA-4.0')`,
     [museum],
   )
+  /* On the current pipeline, not a hardcoded 1. A literal here went stale the
+     moment ENRICH_PIPELINE was bumped, and this test failed — which is the
+     whole point of the pair being held together. */
   await pool.query(
-    `insert into place_enrichment (place_id, status, pipeline) values ($1, 'ready', 1)`,
-    [museum],
+    `insert into place_enrichment (place_id, status, pipeline)
+     values ($1, 'ready', $2::smallint)`,
+    [museum, ENRICH_PIPELINE],
   )
 
   const census = await enrichmentCensus(pool)
@@ -285,4 +290,51 @@ test('the layer can be counted without counting every row', { skip: reachable },
   const held = await planetHeld(repository.pool)
   assert.equal(typeof held.places, 'number')
   assert.equal(typeof held.cells, 'object')
+})
+
+test('the pipeline number and the census agree about what counts as done', async t => {
+  /* The trap this exists for, which I walked into while fixing the picture
+     gate. That fix only helps places enriched after it, and a place that came
+     back `ready` is never looked at again — five hundred and fifty-one of them
+     had their words, had no picture, and would have kept none for ever. The
+     pipeline number is the only thing that reaches them: bumping it re-queues
+     every row that is not on it.
+
+     But four functions here carried `pipeline = 1` as a hardcoded default, and
+     `enrichmentCensus` is called from the repository with no pipeline at all.
+     Bumping the constant without them would have left the status route
+     counting rows on a pipeline nothing writes any more, reporting zero of
+     everything while the queue quietly refilled — a wrong number is worse than
+     the question mark it replaced.
+
+     So the default follows the constant, and this holds them together. */
+  const { repository } = await world(t)
+  const pool = repository.pool
+  const made = await pool.query(
+    `insert into places
+       (gers_id, name, geom, category, category_raw, confidence, cell, label_zoom)
+     values ('overture:rijksmuseum', 'Rijksmuseum',
+             ST_SetSRID(ST_MakePoint(4.8852, 52.36), 4326)::geography,
+             'museum', 'art_museum', 0.93, 'N52E004', 11)
+     returning id`,
+  )
+  const museum = made.rows[0].id
+  await pool.query(
+    `insert into place_enrichment (place_id, status, pipeline)
+     values ($1, 'ready', $2::smallint)`,
+    [museum, ENRICH_PIPELINE],
+  )
+
+  const census = await enrichmentCensus(pool)
+  assert.equal(census.reached, 1, 'the census counts a row written on the current pipeline')
+  assert.equal(census.ready, 1)
+
+  /* And a row left on an older pipeline is owed, not done — which is what
+     makes the bump re-reach everything already enriched. */
+  await pool.query('update place_enrichment set pipeline = $1::smallint where place_id = $2', [
+    ENRICH_PIPELINE - 1,
+    museum,
+  ])
+  const after = await enrichmentCensus(pool)
+  assert.equal(after.reached, 0, 'a row on an older pipeline is owed again')
 })

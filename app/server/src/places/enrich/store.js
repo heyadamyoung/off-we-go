@@ -9,6 +9,11 @@
 
 import { VIEW_WEIGHT } from '../rank.js'
 import { markRankSql, weightPairs } from '../store.js'
+/* The one number that decides which rows count as done. Imported rather than
+   repeated, because it has just been bumped and a stale copy here would make
+   the census report zero of everything while the queue refilled — a default
+   that silently disagrees with the worker is worse than no default. */
+import { ENRICH_PIPELINE } from './enrich.js'
 
 import { retryAfterMs } from '../retry.js'
 
@@ -51,7 +56,7 @@ export async function enqueue(db, placeIds, priority = WANTED_SOON) {
  */
 export async function enqueueProminent(
   db,
-  { zoom = 13, limit = 500, pipeline = 1, weights = VIEW_WEIGHT } = {},
+  { zoom = 13, limit = 500, pipeline = ENRICH_PIPELINE, weights = VIEW_WEIGHT } = {},
 ) {
   /* In the order somebody would want them, which is not the order they were
      inserted in.
@@ -94,7 +99,7 @@ export async function enqueueProminent(
  * "the top-up has only just started" and "the top-up is matching almost
  * nothing" look identical from outside. One indexed count each settles it.
  */
-export async function enrichmentBacklog(db, { zoom = 13, pipeline = 1 } = {}) {
+export async function enrichmentBacklog(db, { zoom = 13, pipeline = ENRICH_PIPELINE } = {}) {
   const { rows } = await db.query(
     `select
        (select count(*) from place_enrichment where pipeline = $2::smallint) as held,
@@ -179,7 +184,7 @@ export async function claimEnrichment(db, count = 4) {
  * would not have chosen means the row says one thing and the pipeline says
  * another.
  */
-export async function writeEnrichment(db, placeId, outcome, pipeline = 1) {
+export async function writeEnrichment(db, placeId, outcome, pipeline = ENRICH_PIPELINE) {
   const client = await db.connect()
   try {
     await client.query('begin')
@@ -405,7 +410,7 @@ export async function prominentPlaces(db, { zoom = 13, budgetMs = CENSUS_BUDGET_
  */
 export async function enrichmentCensus(
   db,
-  { zoom = 13, pipeline = 1, budgetMs = CENSUS_BUDGET_MS } = {},
+  { zoom = 13, pipeline = ENRICH_PIPELINE, budgetMs = CENSUS_BUDGET_MS } = {},
 ) {
   const [prominent, states, words, pictures, shape] = await Promise.all([
     prominentPlaces(db, { zoom, budgetMs }),
