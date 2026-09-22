@@ -2028,3 +2028,43 @@ test('the deploy says whether the places have anything to show', () => {
     'the enrichment census does not go through places_now',
   )
 })
+
+test('the deploy says who is locked out of sign-in, and whether anybody still can be', () => {
+  /* Logto's sentinel blocks a target that fails too many times in an hour, and
+     the block is a row of `sentinel_activities` nothing outside this box could
+     see: no shell, a deploy key restricted to one command, and a Management
+     API that is not a runner's to call. "Am I locked out?" was a question only
+     the person locked out could answer, and only by trying again.
+
+     `deploy/configure-logto.sql` turns the locking off and lets the live
+     blocks go. This asserts the other half — the reading — because a change
+     whose effect nobody can see from outside is a change nobody can trust. */
+  const deploy = readFileSync(path.join(appRoot, 'deploy', 'github-deploy.sh'), 'utf8')
+  assert.match(deploy, /blocked right now/, 'the deploy never says who is blocked')
+  assert.match(deploy, /blocked in the last day/, 'the deploy forgets a block the moment it ends')
+  assert.match(deploy, /sentinel_policy/, 'the deploy never says whether locking is off')
+  assert.match(deploy, /is_suspended/, 'the deploy never counts a suspended account')
+
+  /* Read-only, and unable to fail a release: it runs below the health check on
+     a box that is already live and answering, and a count is not worth rolling
+     a release back over. The same property the day census has, asserted the
+     same way — every statement the helper is handed is a select. */
+  const helper = deploy.indexOf('logto_ask() {')
+  assert.ok(helper > 0, 'the deploy has no helper for asking Logto anything')
+  assert.ok(
+    helper > deploy.indexOf('/api/health'),
+    'the sign-in census runs before the health check, where a count could undo a release',
+  )
+  assert.match(
+    deploy.slice(helper, deploy.indexOf('\n}', helper)),
+    /\|\| true$/m,
+    'a Logto that will not answer must not fail a release that is answering',
+  )
+  for (const [, statement] of deploy.matchAll(/logto_ask "([^"]*)"/g)) {
+    assert.match(
+      statement.replace(/\\\n\s*/g, ' ').trim(),
+      /^select /i,
+      `the sign-in census does more than read: ${statement}`,
+    )
+  }
+})

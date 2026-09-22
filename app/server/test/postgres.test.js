@@ -649,19 +649,31 @@ test('the VPS configures Logto for the email and password flow exposed by the ap
   try {
     await client.query('begin')
     await client.query(`create temporary table sign_in_experiences (
-      tenant_id text not null, id text not null, sign_in jsonb not null, sign_up jsonb not null
+      tenant_id text not null, id text not null, sign_in jsonb not null, sign_up jsonb not null,
+      sentinel_policy jsonb not null default '{}'::jsonb
     ) on commit drop`)
     await client.query(`insert into sign_in_experiences(tenant_id,id,sign_in,sign_up) values(
       'default', 'default',
       '{"methods":[{"identifier":"username","password":true,"verificationCode":false,"isPasswordPrimary":true}],"legacyOption":"keep"}',
       '{"identifiers":["username"],"password":true,"verify":false,"secondaryIdentifiers":["phone"],"legacyOption":"keep"}'
     )`)
+    await client.query(`create temporary table sentinel_activities (
+      id text not null, decision text not null,
+      decision_expires_at timestamptz not null, created_at timestamptz not null default now()
+    ) on commit drop`)
+    await client.query(`insert into sentinel_activities(id,decision,decision_expires_at,created_at) values
+      ('live',    'Blocked', now() + interval '1 hour',  now() - interval '1 minute'),
+      ('served',  'Blocked', now() - interval '2 hours', now() - interval '3 hours'),
+      ('yesterday','Blocked', now() - interval '20 hours', now() - interval '2 days'),
+      ('allowed', 'Allowed', now() + interval '1 hour',  now() - interval '1 minute')`)
 
     await client.query(sql)
-    const first = await client.query(`select sign_in,sign_up from sign_in_experiences
+    const first =
+      await client.query(`select sign_in,sign_up,sentinel_policy from sign_in_experiences
       where tenant_id='default' and id='default'`)
     await client.query(sql)
-    const result = await client.query(`select sign_in,sign_up from sign_in_experiences
+    const result =
+      await client.query(`select sign_in,sign_up,sentinel_policy from sign_in_experiences
       where tenant_id='default' and id='default'`)
     assert.deepEqual(result.rows, first.rows, 'reapplying the configuration must be idempotent')
     assert.deepEqual(result.rows[0].sign_in.methods, [
@@ -680,6 +692,33 @@ test('the VPS configures Logto for the email and password flow exposed by the ap
     assert.equal(result.rows[0].sign_up.verify, true)
     assert.deepEqual(result.rows[0].sign_up.secondaryIdentifiers, ['phone'])
     assert.equal(result.rows[0].sign_up.legacyOption, 'keep')
+
+    /* Account locking, off. A billion attempts is not five, and a lockout of
+     * zero minutes is already over when `isBlocked` asks for an expiry
+     * strictly in the future — either alone ends the locking, and the pair
+     * means a Logto that honours only one of them still ends it. */
+    assert.ok(
+      result.rows[0].sentinel_policy.maxAttempts >= 1_000_000,
+      'the sentinel must not block anybody after a handful of wrong passwords',
+    )
+    assert.equal(result.rows[0].sentinel_policy.lockoutDuration, 0)
+
+    /* And whoever it had already caught is let in. The unlock expires the
+     * live blocks; it does not delete them, so the day's record of who was
+     * locked out survives it — and because the row keeps its `Blocked`
+     * decision, it still does not count towards the next block either. */
+    const blocks = await client.query(`select id,decision,decision_expires_at > now() as live
+      from sentinel_activities order by id`)
+    assert.deepEqual(
+      blocks.rows.map(row => [row.id, row.decision, row.live]),
+      [
+        ['allowed', 'Allowed', true],
+        ['live', 'Blocked', false],
+        ['served', 'Blocked', false],
+        ['yesterday', 'Blocked', false],
+      ],
+      'every live block is let in, the rows are kept, and nothing else is touched',
+    )
   } finally {
     await client.query('rollback').catch(() => {})
     await client.end()
@@ -696,6 +735,34 @@ test('the VPS fails closed when Logto has no default sign-in experience to confi
       tenant_id text not null, id text not null, sign_in jsonb not null, sign_up jsonb not null
     ) on commit drop`)
     await assert.rejects(client.query(sql), /default Logto sign-in experience was not found/i)
+  } finally {
+    await client.query('rollback').catch(() => {})
+    await client.end()
+  }
+})
+
+/* The other way this can fail closed.
+ *
+ * Turning account locking off is two changes — the policy on the sign-in
+ * experience and the blocks already written — and the second one lives in a
+ * table Logto owns and could rename on any upgrade. A configuration that
+ * silently skipped it would leave a box where the deploy says locking is off
+ * and a person is still locked out, which is the worst of the three states.
+ * So the absence is an exception, and the message says which half is missing.
+ */
+test('the VPS fails closed when Logto has no sentinel table to unlock', async () => {
+  const sql = await readFile(join(deployDirectory, 'configure-logto.sql'), 'utf8')
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  try {
+    await client.query('begin')
+    await client.query(`create temporary table sign_in_experiences (
+      tenant_id text not null, id text not null, sign_in jsonb not null, sign_up jsonb not null,
+      sentinel_policy jsonb not null default '{}'::jsonb
+    ) on commit drop`)
+    await client.query(`insert into sign_in_experiences(tenant_id,id,sign_in,sign_up)
+      values('default','default','{"methods":[]}','{"identifiers":[]}')`)
+    await assert.rejects(client.query(sql), /sentinel_activities/i)
   } finally {
     await client.query('rollback').catch(() => {})
     await client.end()
