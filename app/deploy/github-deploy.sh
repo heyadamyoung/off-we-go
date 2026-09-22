@@ -774,6 +774,42 @@ awk '
         } }
 ' "$AFTER_LOG" 2>/dev/null || true
 
+# Who is locked out of sign-in, and whether anybody still can be.
+#
+# Logto's sentinel blocks a target that fails too many times in an hour, and
+# that block is a row of `sentinel_activities` with a decision of `Blocked`
+# and an expiry in the future. Nothing outside this box could see one: there
+# is no shell here, the deploy key runs a single command, and the Management
+# API is not a runner's to call — so "am I locked out?" was a question only
+# the person locked out could answer, and only by trying again.
+#
+# `deploy/configure-logto.sql` turns the locking off and lets the live blocks
+# go, up in the detached housekeeping. This is the reading of it, and it is
+# read-only. The blocks of the last day outlive the unlock — the rows are
+# expired, never deleted — so this answers "was anybody locked out" for a day
+# after the answer to "is anybody locked out" became no.
+#
+# The policy is printed rather than assumed. It is the one line that says the
+# locking is actually off on this box, as against off in a file.
+#
+# Suspension is a different thing and is reported, not touched: `is_suspended`
+# is an administrator putting an account out of use on purpose, and a deploy
+# that quietly undid that on every release would be a deploy nobody could
+# suspend an account with.
+#
+# Every line ends in `|| true` and asks a table of at most a few thousand
+# rows: a release that is live and answering is not rolled back over a count.
+logto_ask() {
+  docker compose exec -T logto-db psql -U logto -d logto -tAc "$1" 2>/dev/null | tr -d ' ' || true
+}
+echo "logto: $(logto_ask "select count(*) from sentinel_activities \
+  where decision = 'Blocked' and decision_expires_at > now()") sign-ins blocked right now, \
+$(logto_ask "select count(*) from sentinel_activities \
+  where decision = 'Blocked' and created_at > now() - interval '24 hours'") blocked in the last day, \
+$(logto_ask "select count(*) from users where is_suspended") accounts suspended"
+echo "logto: the sentinel policy on this box is $(logto_ask "select sentinel_policy::text \
+  from sign_in_experiences where tenant_id = 'default' and id = 'default'")"
+
 echo
 echo "--- capacity ---"
 # Every line below ends in `|| true`. The script runs under `set -Eeuo
