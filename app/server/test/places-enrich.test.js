@@ -322,3 +322,128 @@ test('what the API sends', async () => {
   assert.equal(shown.description.attribution.license, 'CC BY-SA 4.0')
   assert.ok(shown.description.sourceUrl.includes('wikipedia.org'))
 })
+
+test('a photograph is reachable on the evidence this chain actually has', async t => {
+  /* Four pictures across two thousand and fifty-two enriched places, and the
+     reason was arithmetic rather than tuning.
+     
+     `mayPicture` asked for `score >= 0.9` against the blended match score:
+     
+         0.5·name + 0.3·proximity + 0.2·category
+     
+     A Wikipedia article has no category, so `categoryAgreement` returns its
+     "one side is missing" value of 0.5 and that term contributes a fixed 0.1
+     rather than a possible 0.2. The ceiling for this chain is therefore 0.900
+     exactly — and only at zero metres, because proximity decays from the
+     first one. Measured against a character-perfect name:
+     
+         0m → 0.900    12m → 0.882    30m → 0.855    120m → 0.720
+     
+     So the gate admitted a perfect name at a distance of nothing and refused
+     everything else. The four were places whose coordinate happened to land
+     on the article's.
+     
+     The bug is the reuse: that score was built for Overture against
+     OpenStreetMap, where all three signals exist. Against an encyclopedia
+     article one is structurally absent, and its absence eats exactly the
+     margin the threshold sat on. The rule is now stated in the evidence this
+     chain has — how alike the names are, how far apart they are. */
+  const bakery = { id: 9, name: 'Old Bakery', lat: 55.95, lng: -3.19, category: 'cafe' }
+
+  await t.test('a perfect name a normal distance away may carry one', async () => {
+    /* Twenty-five metres: an ordinary gap between a building's Overture point
+       and the coordinate an encyclopedia gives it. Under the old rule this
+       scored 0.862 and got nothing. */
+    const near = {
+      query: {
+        geosearch: [{ pageid: 9, title: 'Old Bakery', lat: 55.950225, lon: -3.19, dist: 25 }],
+      },
+    }
+    const { sources } = sourcesOf({ near })
+    const out = await enrichPlace(bakery, sources)
+    assert.equal(out.status, READY, out.reason)
+    assert.equal(out.images.length, 1, 'a perfect name 25m away earns its picture')
+  })
+
+  await t.test('and the same name far enough away does not', async () => {
+    /* A hundred metres is close enough to still be this place — the strong
+       name carries the identification out to a hundred and twenty — and too
+       far to hang a photograph on. The gate exists for exactly that gap: a
+       wrong sentence reads oddly, a wrong photograph is a different building
+       and nobody can tell by looking. */
+    const near = {
+      query: {
+        geosearch: [{ pageid: 9, title: 'Old Bakery', lat: 55.9509, lon: -3.19, dist: 100 }],
+      },
+    }
+    const { sources } = sourcesOf({ near })
+    const out = await enrichPlace(bakery, sources)
+    assert.equal(out.status, READY, out.reason)
+    assert.ok(out.description.text, 'the words are still worth having')
+    assert.equal(out.images.length, 0, 'the photograph is not')
+  })
+
+  await t.test("an article's disambiguator is not part of the subject's name", async () => {
+    /* Wikipedia writes "(Toronto)" because another article is also called
+       Campbell House Museum. It says nothing about this building, and it cost
+       the comparison a sixth of a point: 0.84 against 1.00. The same device
+       in the house style for places — "The Georgian House, Edinburgh" — cost
+       half of one. */
+    const museum = {
+      id: 10,
+      name: 'Campbell House Museum',
+      lat: 43.6506,
+      lng: -79.3876,
+      category: 'museum',
+    }
+    const near = {
+      query: {
+        geosearch: [
+          {
+            pageid: 10,
+            title: 'Campbell House Museum (Toronto)',
+            lat: 43.650825,
+            lon: -79.3876,
+            dist: 25,
+          },
+        ],
+      },
+    }
+    const { sources } = sourcesOf({ near })
+    const out = await enrichPlace(museum, sources)
+    assert.equal(out.status, READY, out.reason)
+    assert.equal(out.images.length, 1, 'the bracket is Wikipedia’s bookkeeping, not a difference')
+    /* And the article is still fetched by its real title, because that is the
+       page's address. */
+    const article = out.links.find(link => link.kind === 'wikipedia')
+    assert.equal(article.ref, 'en:Campbell House Museum (Toronto)')
+  })
+
+  await t.test('a name that is genuinely different still gets words and no picture', async () => {
+    const hall = {
+      id: 11,
+      name: 'Saskatchewan Sports Hall of Fame',
+      lat: 50.4536,
+      lng: -104.6128,
+      category: 'museum',
+    }
+    const near = {
+      query: {
+        geosearch: [
+          {
+            pageid: 11,
+            title: 'Saskatchewan Sports Hall of Fame and Museum',
+            lat: 50.453825,
+            lon: -104.6128,
+            dist: 25,
+          },
+        ],
+      },
+    }
+    const { sources } = sourcesOf({ near })
+    const out = await enrichPlace(hall, sources)
+    assert.equal(out.status, READY, out.reason)
+    assert.ok(out.description.text)
+    assert.equal(out.images.length, 0, 'a different name is a different name')
+  })
+})
