@@ -941,11 +941,26 @@ export function createIngest({
    * @param {{url: string, size: number}} part
    * @param {{s: number, e: number}} group
    */
-  async function readSwept(part, group) {
+  /* One row group's rows, with two ways to be stopped: the run being asked to
+     stop, and this read taking too long.
+   *
+     The second was missing, and a planet run paid for it. The reader plumbs a
+     signal into every fetch it makes, and the only one it was ever given was
+     the run's own stop controller — which fires when somebody stops the run
+     and at no other time. So a range read against a socket that connected and
+     then went silent hung for ever: no bytes, no error, nothing for the
+     sweep's retry-and-set-aside machinery to catch, because that machinery
+     only sees reads that *fail*. Production had a run twenty-seven minutes
+     still with zero groups set aside, which is exactly what that looks like.
+
+     `AbortSignal.any` because both reasons must work: composing them means a
+     deploy stopping the sweep still stops it instantly, and a dead socket
+     stops costing more than its deadline. */
+  async function readSwept(part, group, { deadlineMs = 0 } = {}) {
     const source = sources[0]
-    const rows = await reader.readGroup(part, group, columnsFor(source), {
-      signal: controller.signal,
-    })
+    const deadline = deadlineMs > 0 ? AbortSignal.timeout(deadlineMs) : null
+    const signal = deadline ? AbortSignal.any([controller.signal, deadline]) : controller.signal
+    const rows = await reader.readGroup(part, group, columnsFor(source), { signal })
     return normalise(source, rows, releases[source]).places
   }
 

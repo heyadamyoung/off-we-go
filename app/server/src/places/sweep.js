@@ -89,6 +89,30 @@ export const SAY_EVERY = 25
 /** How long one row group may be retried before it is set aside. */
 export const RETRY_BUDGET_MS = 10 * 60_000
 
+/* How long a single read may take before it counts as having failed.
+ *
+ * This is the difference between a planet that loads and one that stops with
+ * nothing in any log, and it was missing. Measured on production: a run
+ * `running`, 75 of 2,139 row groups, last moved 1,629 seconds ago, 17 reads
+ * retried — and `0 group(s) set aside`. That last number is the whole
+ * diagnosis. The budget above is ten minutes, the run had been still for
+ * twenty-seven, and nothing had been set aside, so no read had *failed*. One
+ * was hanging.
+ *
+ * The retry loop below is built for reads that fail. It cannot see a read that
+ * never returns at all: `await read(part, group)` on a socket that connected
+ * and then went quiet — no bytes, no FIN, no error — never comes back, so the
+ * loop never regains control, never checks its budget, and never sets the
+ * group aside. The process stays alive holding forty-three squares' rows, the
+ * supervisor sees a healthy container, and the planet quietly stops loading.
+ *
+ * So every read gets a deadline of its own, and a read that blows it is
+ * aborted and handed to the retry above as the failure it is. Two minutes is
+ * far past what a thirty-megabyte range read costs on a working link and far
+ * short of the budget, so a slow bucket still gets its retries and a dead
+ * socket costs two minutes instead of for ever. */
+export const READ_DEADLINE_MS = 2 * 60_000
+
 /** First delay between attempts, doubling to the ceiling below. */
 export const RETRY_FROM_MS = 1000
 
@@ -202,6 +226,7 @@ export function createSweep({
   ahead = READ_AHEAD,
   loadAhead = LOAD_AHEAD,
   budgetMs = RETRY_BUDGET_MS,
+  readDeadlineMs = READ_DEADLINE_MS,
   retryFromMs = RETRY_FROM_MS,
   retryToMs = RETRY_TO_MS,
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -269,7 +294,10 @@ export function createSweep({
     let delay = Math.max(1, retryFromMs)
     for (;;) {
       try {
-        return await read(part, group)
+        /* Its own deadline, handed to the reader so the fetch underneath is
+           actually aborted rather than abandoned — a read we stopped waiting
+           for while its socket stays open is a leak as well as a lie. */
+        return await read(part, group, { deadlineMs: readDeadlineMs })
       } catch (error) {
         /* The release has been deleted under us. Every later read says the
            same thing, so asking again is not patience, it is a hot loop. */

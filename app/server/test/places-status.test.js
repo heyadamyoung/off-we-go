@@ -229,9 +229,44 @@ test('a count that will not finish is a null, not a dead route', { skip: reachab
       }
     },
   }
+  /* Null, because this stub cannot answer the planner either. The real path
+     falls back to an estimate — see below. */
   assert.equal(await prominentPlaces(timedOut, {}), null, 'a count past its budget is null')
   assert.ok(said.includes('rollback'), 'and the transaction is rolled back')
-  assert.equal(said.at(-1), 'release', 'and the client always goes home')
+  assert.ok(said.includes('release'), 'and the client always goes home')
+
+  /* And when the planner will answer, it does, because "?" is not an answer.
+   *
+   * The first production read printed "? of ? prominent still to go", which is
+   * honest and useless. The planner estimates exactly this — how many rows
+   * match a predicate — from statistics it keeps for its own purposes, in
+   * microseconds, without touching a row. An estimate that says so beats a
+   * question mark, and it is the same contract the place count beside it has
+   * carried since deploy 387. */
+  const estimating = {
+    async connect() {
+      return {
+        async query(sql) {
+          if (/count\(\*\)/.test(String(sql))) {
+            const error = new Error('canceling statement due to statement timeout')
+            error.code = '57014'
+            throw error
+          }
+          return { rows: [] }
+        },
+        release() {},
+      }
+    },
+    async query(sql) {
+      assert.match(String(sql), /^explain \(format json\)/, 'the fallback asks the planner')
+      return { rows: [{ 'QUERY PLAN': [{ Plan: { 'Plan Rows': 4_200_000 } }] }] }
+    },
+  }
+  assert.equal(
+    await prominentPlaces(estimating, {}),
+    4_200_000,
+    'a count that will not run falls back to the planner rather than to nothing',
+  )
 
   /* On a real pool it answers, and the next caller is unaffected — a
      statement_timeout left on a checked-out client would be their problem,

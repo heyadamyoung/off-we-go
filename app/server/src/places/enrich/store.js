@@ -349,7 +349,30 @@ export async function prominentPlaces(db, { zoom = 13, budgetMs = CENSUS_BUDGET_
     /* 57014 is the timeout; anything else here is equally not worth failing a
        status read over. Rolled back so the client goes home clean. */
     await client.query('rollback').catch(() => {})
-    return null
+    /* And then ask the planner, because "?" is not an answer.
+     *
+     * The first read of this in production printed "? of ? prominent still to
+     * go", which is honest and useless. The planner already estimates exactly
+     * this — how many rows match a predicate — from the statistics it keeps
+     * for its own purposes, in microseconds and without touching a row. It is
+     * an estimate and it says so, which is the same contract the place count
+     * beside it has carried since deploy 387.
+     *
+     * Its own attempt, outside the transaction that just rolled back, and null
+     * only if even this will not answer. */
+    try {
+      const { rows } = await db.query(
+        `explain (format json) select 1 from places
+          where label_zoom is not null and label_zoom <= $1::real`,
+        [zoom],
+      )
+      const plan = rows[0]?.['QUERY PLAN']
+      const parsed = typeof plan === 'string' ? JSON.parse(plan) : plan
+      const guess = parsed?.[0]?.Plan?.['Plan Rows']
+      return Number.isFinite(Number(guess)) ? Number(guess) : null
+    } catch {
+      return null
+    }
   } finally {
     client.release()
   }
