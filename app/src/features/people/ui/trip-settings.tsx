@@ -74,6 +74,7 @@ export default function TripSettingsSheet(props: SettingsProps) {
       {props.tab === 'phones' && (
         <PhonesTab
           tripId={props.tripId}
+          endsOn={props.trip.endsOn}
           family={props.family}
           canEdit={props.canEdit}
           me={props.me}

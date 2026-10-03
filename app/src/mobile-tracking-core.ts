@@ -211,6 +211,22 @@ export function createMobileTracker({
             )
             return
           }
+          /* The trip finished. The server will not take another fix for it
+             ever (`server/src/trip-day.js`), so this is not a retry and not an
+             error — it is the end of the job, and the watcher comes down for
+             good rather than waking the GPS every ten metres for a trip
+             nobody is on. The queue goes with it: those fixes have nowhere
+             left to be stored, and keeping them would mean carrying a
+             traveller's positions around on the phone for no purpose.
+
+             Said separately from the 401 above because the two are not the
+             same news. A revoked registration means somebody un-paired this
+             phone and it can be set up again; a finished trip means the trip
+             is finished. */
+          if (response.status === 410) {
+            await forget('This trip is over, so this phone has stopped sharing its location.')
+            return
+          }
           if (!response.ok && DISCARDABLE_STATUSES.has(response.status)) {
             queue!.shift()
             await saveQueue()

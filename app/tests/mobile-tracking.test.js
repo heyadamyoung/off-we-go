@@ -92,6 +92,54 @@ test('a revoked device token stops location services and clears saved fixes', as
   assert.equal(await relaunched.restore(), false)
 })
 
+test('a trip that is over stands the watcher down for good, and says so', async () => {
+  /* The server refuses a position once the trip has ended — 410, from
+     `server/src/app.js` via `tripIsOver`. The phone's job is then to stop,
+     not to retry: a watcher left running wakes the GPS every ten metres for
+     a trip nobody is on, and the queue it fills has nowhere left to be
+     stored.
+
+     Separate from the 401 above because the news is different. A revoked
+     registration means somebody un-paired this phone and it can be set up
+     again; a finished trip means the trip is finished, and telling a
+     traveller their phone had been un-paired would have been alarming and
+     wrong. */
+  let requests = 0
+  const url = await endpoint((_request, response) => {
+    requests++
+    response.writeHead(410, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ error: 'This trip is over' }))
+  })
+  const storage = memoryStorage()
+  const driver = locationDriver()
+  const tracker = createMobileTracker({ driver, storage, fetch })
+  await tracker.configure({
+    endpoint: url,
+    token: 'device-token-at-least-sixteen',
+    deviceId: 'phone-1',
+    name: 'Phone',
+  })
+
+  await driver.emit({ latitude: 51, longitude: -1, time: 1_788_000_000_000 })
+
+  assert.deepEqual(driver.removed, ['watch-1'], 'the watcher comes down')
+  const state = tracker.getState()
+  assert.equal(state.status, 'stopped')
+  assert.equal(state.configured, false)
+  assert.equal(state.queued, 0, 'and the queued fixes go with it')
+  assert.match(state.error, /trip is over/i)
+  assert.doesNotMatch(state.error, /revoked/i, 'a finished trip is not a revoked registration')
+
+  /* It stays down across a relaunch rather than resuming from saved config,
+     which is what `restore()` would otherwise do on every page load. */
+  const relaunched = createMobileTracker({ driver: locationDriver(), storage, fetch })
+  assert.equal(await relaunched.restore(), false)
+
+  /* And no further fix is offered to a server that has already said no. */
+  await driver.emit({ latitude: 52, longitude: -2, time: 1_788_000_600_000 })
+  assert.equal(requests, 1)
+})
+
 test('offline fixes older than the server retention window are removed without transmission', async () => {
   let requests = 0
   const url = await endpoint((_request, response) => {
