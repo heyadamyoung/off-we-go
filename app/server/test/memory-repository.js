@@ -1054,8 +1054,13 @@ export function createMemoryRepository({ allowedEmails = [] } = {}) {
       for (const [key, fix] of positions) if (fix.deviceId === deviceId) positions.delete(key)
       return true
     },
+    /* With the trip's last day on it, like the join in postgres.js: the
+       ingest route asks every fix whether the trip is over, and a double that
+       left the field off would make that gate untestable here. */
     async findDeviceByTokenHash(hash) {
-      return [...devices.values()].find(device => device.tokenHash === hash) || null
+      const device = [...devices.values()].find(device => device.tokenHash === hash)
+      if (!device) return null
+      return { ...device, tripEndsOn: trips.get(device.tripId)?.endsOn || null }
     },
     async createPairCode(user, tripId, deviceId, { code, token, tokenHash, expiresAt }) {
       if (!(await this.canEditTrip(user.id, tripId))) return null

@@ -360,3 +360,166 @@ test('expired positions are pruned to honour the 30-day promise', async () => {
   const removed = await repository.prunePositions(new Date('2027-06-04T13:00:00.000Z'))
   assert.equal(removed, 1)
 })
+
+/* The one thing that has ever stopped a phone reporting.
+ *
+ * Until this, `POST /api/ingest/track` asked only whether the token was known.
+ * A trip that finished in June had its travellers' positions arriving in
+ * October, while the Phones tab, the pairing page, trip settings, the profile,
+ * two home screens and the privacy page all said sharing happens "only while a
+ * trip is running". The route is the only place that can keep that promise:
+ * the phone's own copy can be an old build, a tab left open, or anybody
+ * holding the token.
+ */
+test('a phone stops reporting once its trip is over, and the trip cannot take a fix again', async () => {
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
+  /* Noon UTC on the 7th, to the second: the instant '2026-09-06' has finished
+     in the last timezone on Earth. One second earlier is still the last day
+     in Baker Island's reading of it, and the test below proves the route
+     takes a fix then. */
+  let now = new Date('2026-09-07T11:59:59.000Z')
+  const app = await buildServer({
+    repository,
+    mailer: { async send() {} },
+    publicUrl: 'https://offwego.example.com',
+    sessionSecret: 'test-secret-that-is-long-enough',
+    clock: () => now,
+  })
+
+  const authorization = await authenticate(repository, 'owner@example.com')
+  const trip = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/trips',
+      headers: { authorization },
+      payload: { title: 'A trip that ends', startsOn: '2026-09-04', endsOn: '2026-09-06' },
+    })
+  ).json()
+
+  const device = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/trips/${trip.id}/devices`,
+      headers: { authorization },
+      payload: { name: 'Sample iPhone', timezone: 'Pacific/Honolulu' },
+    })
+  ).json()
+
+  const report = (extra = {}) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/ingest/track',
+      headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+      payload: {
+        _type: 'location',
+        lat: 21.3,
+        lon: -157.86,
+        tst: Math.floor(now.getTime() / 1000),
+        acc: 8,
+        ...extra,
+      },
+    })
+
+  /* Still the last day somewhere, so the fix is taken. */
+  assert.equal((await report()).statusCode, 200)
+
+  now = new Date('2026-09-07T12:00:00.000Z')
+  const refused = await report({ lat: 21.31 })
+  assert.equal(refused.statusCode, 410, 'a finished trip must refuse a position')
+  assert.deepEqual(refused.json(), { error: 'This trip is over' })
+
+  /* And nothing was written on the way past. The refusal sits above the fix
+     parse, the insert and the pause beacon, so a finished trip cannot store a
+     position, move `last_seen`, or mark itself paused — each of which is a
+     write the viewers' map would show. */
+  const live = await app.inject({
+    method: 'GET',
+    url: `/api/trips/${trip.id}/live?hours=720`,
+    headers: { authorization },
+  })
+  assert.equal(live.statusCode, 200)
+  assert.equal(live.json().fixes.length, 1, 'only the fix from the trip itself is stored')
+
+  const paused = await app.inject({
+    method: 'POST',
+    url: '/api/ingest/track',
+    headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+    payload: { paused: true },
+  })
+  assert.equal(paused.statusCode, 410, 'not even a pause beacon is accepted')
+  assert.equal(
+    (
+      await app.inject({
+        method: 'GET',
+        url: `/api/trips/${trip.id}/devices`,
+        headers: { authorization },
+      })
+    ).json()[0].pausedAt,
+    null,
+    'and the phone is not marked paused by a refused beacon',
+  )
+
+  /* Extending the trip puts sharing back, without re-pairing the phone. The
+     gate reads the trip's dates on every fix rather than a flag written once,
+     which is what makes an owner changing their mind work at all. */
+  assert.equal(
+    (
+      await app.inject({
+        method: 'PATCH',
+        url: `/api/trips/${trip.id}`,
+        headers: { authorization },
+        payload: { endsOn: '2026-09-20' },
+      })
+    ).statusCode,
+    200,
+  )
+  assert.equal((await report({ lat: 21.32 })).statusCode, 200)
+})
+
+test('a trip with no dates keeps sharing, because it has not finished', async () => {
+  /* The trap in deriving "over" from a nullable date: most trips are planned
+     before anybody fills in the dates, and reading an empty `endsOn` as a
+     trip that has ended would have switched location sharing off for every
+     one of them. */
+  const repository = createMemoryRepository({ allowedEmails: ['owner@example.com'] })
+  const app = await buildServer({
+    repository,
+    mailer: { async send() {} },
+    publicUrl: 'https://offwego.example.com',
+    sessionSecret: 'test-secret-that-is-long-enough',
+    clock: () => new Date('2099-01-01T00:00:00.000Z'),
+  })
+  const authorization = await authenticate(repository, 'owner@example.com')
+  const trip = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/trips',
+      headers: { authorization },
+      payload: { title: 'An undated trip' },
+    })
+  ).json()
+  const device = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/trips/${trip.id}/devices`,
+      headers: { authorization },
+      payload: { name: 'Sample iPhone' },
+    })
+  ).json()
+  assert.equal(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/ingest/track',
+        headers: { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' },
+        payload: {
+          _type: 'location',
+          lat: 53.35,
+          lon: -6.26,
+          tst: Math.floor(new Date('2099-01-01T00:00:00.000Z').getTime() / 1000),
+        },
+      })
+    ).statusCode,
+    200,
+  )
+})

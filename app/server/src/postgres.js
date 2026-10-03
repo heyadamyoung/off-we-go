@@ -2741,11 +2741,31 @@ export async function createPostgresRepository({ databaseUrl, adminEmail }) {
       if (!row || new Date(row.expires_at).getTime() <= now.getTime()) return null
       return { token: row.token, deviceId: row.device_id, name: row.name, tripId: row.trip_id }
     },
+    /* The trip's last day comes back with the phone, in the same read.
+       Every fix has to ask whether the trip is over before it is stored, and
+       that question is the trip's to answer — so a second round trip per fix,
+       at a hundred and eighty fixes a minute per phone, is a join instead.
+       The join is inner because `devices.trip_id` is `not null references
+       trips(id)`: a phone with no trip cannot exist, and one that somehow did
+       would come back as no phone at all, which is the right answer. */
     async findDeviceByTokenHash(hash) {
-      const result = await pool.query('select * from devices where token_hash=$1', [hash])
+      const result = await pool.query(
+        `select d.*, t.ends_on as trip_ends_on from devices d
+         join trips t on t.id = d.trip_id
+         where d.token_hash=$1`,
+        [hash],
+      )
       const value = result.rows[0]
       return value
-        ? { ...value, tripId: value.trip_id, userId: value.user_id, lastSeen: value.last_seen }
+        ? {
+            ...value,
+            tripId: value.trip_id,
+            userId: value.user_id,
+            lastSeen: value.last_seen,
+            /* Same slice as `camelTrip`: a `date` arrives as a Date in this
+               box's zone, and reading it any other way moves the day. */
+            tripEndsOn: value.trip_ends_on ? String(value.trip_ends_on).slice(0, 10) : null,
+          }
         : null
     },
     /* ---- connected mailboxes ------------------------------------------

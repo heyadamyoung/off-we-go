@@ -10,12 +10,18 @@ import AdoptPhones from './adopt-phones'
 import SetupCard from './setup-card'
 import { isNativeApp, mobileTracker } from '../../../mobile'
 import { agoLabel } from '../../../shared/lib/geo'
+import { tripIsOver } from '../../../trip-over-core'
 import { appErrorMessage } from '../../../user-messages-core'
 import useTrackerState from '../model/use-tracker-state'
 import type { Device, Person, Toast } from '../../../shared/model/types'
 
 interface PhonesProps {
   tripId: string
+  /* The trip's last day, so this tab can tell whether sharing is still on
+     offer. The server refuses a position once the trip is over, and a tab
+     that kept offering to start sharing would be offering a button whose
+     first fix comes back 410. */
+  endsOn?: string
   family: Person[]
   canEdit: boolean
   me: Person
@@ -31,6 +37,7 @@ interface PhonesProps {
    the same endpoint by any tracker app. */
 export default function PhonesTab({
   tripId,
+  endsOn,
   family,
   canEdit,
   me,
@@ -45,8 +52,16 @@ export default function PhonesTab({
   const sayShareFailed = (error: unknown) =>
     toast(appErrorMessage(error, 'share-location'), 'error')
   const suggested = `${me?.name || 'My'}'s phone`
+  /* The same instant the server uses — see trip-over-core.ts. Read once per
+     render rather than ticked: nothing here needs to change in the second the
+     trip ends, and the tab is reopened far more often than that. */
+  const over = tripIsOver(endsOn)
 
   const enableTracking = async (phone: Device) => {
+    if (over) {
+      toast('This trip is over, so phones no longer share their location', 'error')
+      return
+    }
     try {
       await mobileTracker.configure({
         endpoint: `${functionsUrl}/track`,
@@ -102,8 +117,8 @@ export default function PhonesTab({
 
   return (
     <>
-      {canEdit && <AdoptPhones tripId={tripId} toast={toast} onChange={onChange} />}
-      {(isNativeApp || tracking.configured) && (
+      {canEdit && !over && <AdoptPhones tripId={tripId} toast={toast} onChange={onChange} />}
+      {(isNativeApp || tracking.configured) && !over && (
         <div className="surface trackrow grid grid-cols-[auto_1fr_auto] items-center gap-2 p-3">
           <span
             className={
@@ -179,18 +194,25 @@ export default function PhonesTab({
               <div className="min-w-0 flex-1">
                 <b className="block text-sm">{phone.name}</b>
                 <span className="text-xs text-muted">
-                  {phone.pausedAt
-                    ? 'Sharing paused'
-                    : phone.lastSeen
-                      ? `Last fix ${agoLabel(phone.lastSeen)}`
-                      : 'No fixes yet'}
-                  {phone.pausedAt && phone.lastSeen
+                  {/* On a finished trip, "last fix 3 months ago" reads like a
+                      phone that broke. It stopped because the trip ended, and
+                      saying so is the difference between a fault and a
+                      setting doing its job. */}
+                  {over
+                    ? 'Stopped — the trip is over'
+                    : phone.pausedAt
+                      ? 'Sharing paused'
+                      : phone.lastSeen
+                        ? `Last fix ${agoLabel(phone.lastSeen)}`
+                        : 'No fixes yet'}
+                  {/* Appended only when the clause above did not already name it. */}
+                  {(over || phone.pausedAt) && phone.lastSeen
                     ? ` · last fix ${agoLabel(phone.lastSeen)}`
                     : ''}
                   {who ? ` · ${who.name}` : ''}
                 </span>
               </div>
-              {canEdit && (
+              {canEdit && !over && (
                 <button
                   className="mini"
                   title="Show a pairing code for this phone; the old code stops working"
@@ -212,11 +234,13 @@ export default function PhonesTab({
       ) : (
         <p className="hint">
           No phones yet.
-          {canEdit ? ' Add one and the map moves with it, with nobody opening the app.' : ''}
+          {canEdit && !over
+            ? ' Add one and the map moves with it, with nobody opening the app.'
+            : ''}
         </p>
       )}
 
-      {canEdit && (
+      {canEdit && !over && (
         <form onSubmit={add} className="flex gap-2">
           <input
             className="min-w-0 flex-1 rounded-lg border border-line bg-raised px-3 py-2.5
@@ -231,7 +255,7 @@ export default function PhonesTab({
         </form>
       )}
 
-      {card && (
+      {card && !over && (
         <SetupCard
           tripId={tripId}
           card={card}
@@ -243,8 +267,18 @@ export default function PhonesTab({
       )}
 
       <p className="hint">
-        A phone shares its position only while a trip is running, and only with the people on that
-        trip. Positions delete themselves after 30 days — sooner if the trip is deleted.
+        {over ? (
+          <>
+            This trip is over, so no phone shares its position any more — the server stops taking
+            them at the end of the last day. Positions delete themselves after 30 days, sooner if
+            the trip is deleted.
+          </>
+        ) : (
+          <>
+            A phone shares its position only while a trip is running, and only with the people on
+            that trip. Positions delete themselves after 30 days — sooner if the trip is deleted.
+          </>
+        )}
       </p>
     </>
   )

@@ -48,7 +48,7 @@ import {
   mediaContentType,
 } from './media-types.js'
 import { exifFromImage } from './photo-exif.js'
-import { tripDayOrNull } from './trip-day.js'
+import { tripDayOrNull, tripIsOver } from './trip-day.js'
 import { clockOrNull, timeNoteOrNull } from './stop-time.js'
 import { signPlaylist } from './hls.js'
 import {
@@ -2303,6 +2303,39 @@ export async function buildServer({
         .header('retry-after', String(retryAfter))
         .code(429)
         .send({ error: 'Too many position updates' })
+    }
+
+    /* A trip that is over does not get to keep a phone reporting.
+     *
+     * This is the only thing in the app that has ever stopped one. A paired
+     * phone reported until somebody deleted its row, rotated its token or
+     * pressed Pause on the phone itself — so a trip that finished in June had
+     * its travellers' positions arriving in October, while six screens and
+     * the privacy page all said sharing happens "only while a trip is
+     * running". The promise lived in the copy and nowhere in the code.
+     *
+     * Below the rate limiter, deliberately: a phone that ignores the refusal
+     * and keeps posting is a client bug, and a client bug does not get an
+     * unthrottled route. Above everything else, so a finished trip cannot
+     * store a fix, move `last_seen`, or mark itself paused.
+     *
+     * 410 rather than 401 or 403. The phone's credential is perfectly good
+     * and it has every right to use it — the thing it is reporting to has
+     * ended, which is what 410 says and no other status does. The client has
+     * its own branch for it (`mobile-tracking-core.ts`) that stands the
+     * watcher down for good and says why; a 401 would have reused the
+     * revoked-token path and told the traveller their phone had been
+     * un-paired, which is a different and alarming thing.
+     *
+     * `tripIsOver` is in trip-day.js with the reasoning about why an unzoned
+     * date ends twelve hours after UTC midnight and why a trip with no end
+     * date is not over. */
+    if (tripIsOver(device.tripEndsOn, clock().getTime())) {
+      event('refuse a finished trip', {
+        'device.id': device.id,
+        'trip.ends_on': device.tripEndsOn,
+      })
+      return reply.code(410).send({ error: 'This trip is over' })
     }
 
     const body = request.body && typeof request.body === 'object' ? request.body : {}

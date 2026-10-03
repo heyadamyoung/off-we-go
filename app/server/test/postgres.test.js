@@ -400,6 +400,21 @@ test('PostgreSQL migrations create a repository that persists auth, trips and GP
   assert.equal(live.fixes.length, 1)
   assert.equal(live.fixes[0].lng, -104.618)
 
+  /* The phone's token lookup carries its trip's last day, which is the only
+     thing that stops a phone reporting after the trip is over — the ingest
+     route asks `tripIsOver(device.tripEndsOn, …)` on every fix. The read is a
+     join and a date, and neither can be proved by the in-memory double: only
+     real Postgres will say whether the SQL parses and whether a `date` comes
+     back as the day that was written rather than the day before it in this
+     box's zone. */
+  assert.equal((await repository.findDeviceByTokenHash('phone-hash')).tripEndsOn, null)
+  await repository.updateTrip(user, trip.id, { endsOn: '2027-01-02' })
+  const dated = await repository.findDeviceByTokenHash('phone-hash')
+  assert.equal(dated.tripEndsOn, '2027-01-02')
+  assert.equal(dated.id, device.id)
+  assert.equal(dated.tripId, trip.id)
+  assert.equal(await repository.findDeviceByTokenHash('no-such-hash'), null)
+
   const bulk = new pg.Client({ connectionString: databaseUrl })
   await bulk.connect()
   const secondDevice = await repository.registerDevice(user, trip.id, {

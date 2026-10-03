@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isTripDay, tripDayOrNull } from '../src/trip-day.js'
+import { isTripDay, tripDayOrNull, tripEndedAt, tripIsOver } from '../src/trip-day.js'
 
 /* A stop's day is a calendar date. This is the door that keeps it one. */
 
@@ -53,4 +53,52 @@ test('and something unreadable is refused rather than quietly dropped', () => {
 
 test('surrounding space is trimmed rather than refused', () => {
   assert.equal(tripDayOrNull(' 2026-09-04 '), '2026-09-04')
+})
+
+/* And when a trip is over, which is the question that stops a phone reporting.
+ *
+ * These instants are mirrored in `app/tests/trip-over.test.js` against the
+ * client's copy of the rule. The two files assert the same numbers on purpose:
+ * the Phones tab withholds the "share this phone" button exactly when the
+ * server would refuse the first fix, and a disagreement between them is a
+ * button that lies in one direction or the other.
+ */
+
+test('a trip is over once its last day has finished everywhere on Earth', () => {
+  /* '2026-09-06' names no instant on its own. The last clock to let that date
+     go is the one furthest behind UTC, so the trip ends at noon UTC on the
+     7th — and until then it is still somebody's last day somewhere. */
+  assert.equal(new Date(tripEndedAt('2026-09-06')).toISOString(), '2026-09-07T12:00:00.000Z')
+
+  const at = iso => Date.parse(iso)
+  assert.equal(tripIsOver('2026-09-06', at('2026-09-06T23:00:00Z')), false)
+  /* Four in the afternoon on the last day in Honolulu. This is the reading
+     that a naive UTC-midnight rule gets wrong, and it is the whole reason the
+     rule is written in instants. */
+  assert.equal(tripIsOver('2026-09-06', at('2026-09-07T02:00:00Z')), false)
+  assert.equal(tripIsOver('2026-09-06', at('2026-09-07T11:59:59Z')), false)
+  assert.equal(tripIsOver('2026-09-06', at('2026-09-07T12:00:00Z')), true)
+  assert.equal(tripIsOver('2026-09-06', at('2026-09-08T00:00:00Z')), true)
+})
+
+test('a trip with no last day is not over, and never becomes over', () => {
+  /* Most trips are planned before they have dates. Reading "we have not
+     decided yet" as "it has finished" would turn location sharing off for
+     everybody who had not filled in a box. */
+  for (const none of [null, undefined, '']) {
+    assert.equal(tripEndedAt(none), null, String(none))
+    assert.equal(tripIsOver(none, Date.parse('2099-01-01T00:00:00Z')), false, String(none))
+  }
+})
+
+test('a last day that is not a date leaves the trip running', () => {
+  /* `trips.ends_on` is a `date` column, so this is unreachable from the
+     database and only a bug could produce it. It fails towards keeping a live
+     trip's map working rather than towards cutting travellers off over a
+     parse error — the same direction `tripDayOrNull` refuses rather than
+     quietly storing null. */
+  for (const wrong of ['Fri 4 Sep', '2026-02-30', '2026-9-6', 10]) {
+    assert.equal(tripEndedAt(wrong), null, String(wrong))
+    assert.equal(tripIsOver(wrong, Date.parse('2099-01-01T00:00:00Z')), false, String(wrong))
+  }
 })
